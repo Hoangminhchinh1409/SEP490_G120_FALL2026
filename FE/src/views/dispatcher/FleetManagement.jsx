@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Table, Tag, Button, Input, Row, Col, Card } from 'antd';
+import { Table, Tag, Button, Input, Row, Col } from 'antd';
 import { Search, Plus, Truck, User, Activity } from 'lucide-react';
 
 const mockFleet = [
@@ -14,7 +14,7 @@ const statusColors = {
 };
 
 const FleetManagement = () => {
-  const [data, setData] = useState(mockFleet);
+  const [data] = useState(mockFleet);
 
   const columns = [
     { title: 'Biển số xe', dataIndex: 'license_plate', key: 'license_plate', render: (text) => <span className="font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded border border-gray-300">{text}</span> },

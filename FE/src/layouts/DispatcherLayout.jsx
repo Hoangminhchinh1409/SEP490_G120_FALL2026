@@ -1,13 +1,15 @@
+"use client";
 import { useState } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Dropdown, Menu, Avatar, Badge, Breadcrumb, Input } from 'antd';
-import { LayoutDashboard, Truck, Users, Settings, FileText, MapPin, Bell, Menu as MenuIcon, User, LogOut } from 'lucide-react';
+import { LayoutDashboard, Truck, Settings, FileText, MapPin, Bell, Menu as MenuIcon, User, LogOut } from 'lucide-react';
 
 const { Search: AntSearch } = Input;
 
-const DispatcherLayout = () => {
+const DispatcherLayout = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const location = useLocation();
+  const pathname = usePathname();
 
   const profileMenu = (
     <Menu className="min-w-[150px] mt-2 rounded-xl shadow-lg border border-gray-100 p-2">
@@ -15,7 +17,7 @@ const DispatcherLayout = () => {
       <Menu.Item key="2" icon={<Settings size={16} />} className="rounded-md hover:bg-indigo-50 hover:text-indigo-600 transition-colors p-2 text-gray-700 font-medium">Cài đặt</Menu.Item>
       <Menu.Divider className="my-1 border-gray-100" />
       <Menu.Item key="3" icon={<LogOut size={16} />} className="rounded-md hover:bg-red-50 hover:text-red-600 transition-colors p-2 text-red-500 font-medium">
-        <Link to="/">Đăng xuất</Link>
+        <Link href="/">Đăng xuất</Link>
       </Menu.Item>
     </Menu>
   );
@@ -48,9 +50,9 @@ const DispatcherLayout = () => {
         <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto custom-scrollbar">
           <div className="text-xs font-semibold text-gray-500 uppercase px-3 mb-2">{isSidebarOpen && 'Điều hướng'}</div>
           {navItems.map((item, index) => {
-            const isActive = location.pathname === item.path || (item.path !== '/dispatcher' && location.pathname.startsWith(item.path));
+            const isActive = pathname === item.path || (item.path !== '/dispatcher' && pathname.startsWith(item.path));
             return (
-              <Link key={index} to={item.path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium group transition-all relative ${isActive ? 'bg-transparent text-[#7367f0]' : 'text-gray-400 hover:bg-[#3b355a] hover:text-white'}`}>
+              <Link key={index} href={item.path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium group transition-all relative ${isActive ? 'bg-transparent text-[#7367f0]' : 'text-gray-400 hover:bg-[#3b355a] hover:text-white'}`}>
                 {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#7367f0] rounded-r-md"></div>}
                 <item.icon size={20} />
                 {isSidebarOpen && <span>{item.label}</span>}
@@ -91,7 +93,7 @@ const DispatcherLayout = () => {
 
         {/* Page Content */}
         <div className="flex-1 overflow-auto bg-[#f4f5f7]">
-          <Outlet />
+          {children}
         </div>
       </main>
     </div>

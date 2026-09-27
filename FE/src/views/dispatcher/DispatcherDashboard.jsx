@@ -1,7 +1,7 @@
+"use client";
 import { useState } from 'react';
 import { Table, Tag, Button, Row, Col } from 'antd';
-import { Users, Plus, TrendingUp, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Users, Plus, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell } from 'lucide-react';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import Chart from 'react-apexcharts';
 
@@ -106,7 +106,7 @@ const DispatcherDashboard = () => {
             
             {/* 1. Flat Cards Grid (3x2) */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              <Row className="divide-y md:divide-y-0 md:divide-x divide-gray-100 border-b border-gray-100">
+              <Row className="divide-y md:divide-y-0 md:divide-x divide-gray-100" style={{ borderBottom: '1px solid #f3f4f6' }}>
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Users size={28} className="text-[#7367f0] mb-1" />

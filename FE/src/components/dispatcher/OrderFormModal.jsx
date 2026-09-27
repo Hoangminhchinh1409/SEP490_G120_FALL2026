@@ -17,6 +17,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         const volumeWeight = (length_cm * width_cm * height_cm) / 5000;
         // Lấy Max giữa Trọng lượng thực tế và Trọng lượng thể tích
         const finalWeight = Math.max(weight_kg || 0, volumeWeight);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setChargeableWeight(finalWeight.toFixed(2));
       }
     }

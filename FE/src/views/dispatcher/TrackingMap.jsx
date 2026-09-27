@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Row, Col, Input, List, Tag, Badge } from 'antd';
+import { Input, Listy, Badge } from 'antd';
 import { Search, MapPin, Truck } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-const { Search: AntSearch } = Input;
+
 
 // Mock GPS Data for trucks
 const activeTrucks = [
@@ -61,31 +61,34 @@ const TrackingMap = () => {
         </div>
         
         <div className="flex-1 overflow-auto custom-scrollbar p-2">
-          <List
-            itemLayout="horizontal"
-            dataSource={activeTrucks}
-            renderItem={item => (
-              <List.Item 
-                className="p-3 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors border-b-0 mb-1"
+          <Listy
+            items={activeTrucks}
+            rowKey="id"
+            itemRender={(item) => (
+              <div 
+                className="p-3 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors border-b-0 mb-1 flex items-start gap-3"
                 onClick={() => setMapCenter([item.lat, item.lng])}
               >
-                <List.Item.Meta
-                  avatar={<div className="w-10 h-10 rounded-full bg-[#e0f9fc] text-[#00cfe8] flex items-center justify-center"><Truck size={20} /></div>}
-                  title={<div className="flex justify-between items-center"><span className="font-bold text-gray-800">{item.id}</span> <Badge status={item.status === 'Đang di chuyển' ? 'success' : item.status === 'Dừng nghỉ' ? 'warning' : 'processing'} /></div>}
-                  description={
-                    <div className="mt-1">
-                      <p className="text-xs text-gray-500 flex items-center gap-1 mb-1"><MapPin size={12} /> {item.route}</p>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
-                        <div className="bg-[#7367f0] h-1.5 rounded-full" style={{ width: `${item.progress}%` }}></div>
-                      </div>
-                      <div className="flex justify-between items-center mt-1">
-                        <span className="text-[10px] text-gray-400">{item.time}</span>
-                        <span className="text-[10px] font-semibold text-[#7367f0]">{item.progress}%</span>
-                      </div>
+                <div className="w-10 h-10 rounded-full bg-[#e0f9fc] text-[#00cfe8] flex items-center justify-center flex-shrink-0">
+                  <Truck size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-800">{item.id}</span>
+                    <Badge status={item.status === 'Đang di chuyển' ? 'success' : item.status === 'Dừng nghỉ' ? 'warning' : 'processing'} />
+                  </div>
+                  <div className="mt-1">
+                    <p className="text-xs text-gray-500 flex items-center gap-1 mb-1"><MapPin size={12} /> {item.route}</p>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                      <div className="bg-[#7367f0] h-1.5 rounded-full" style={{ width: `${item.progress}%` }}></div>
                     </div>
-                  }
-                />
-              </List.Item>
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-[10px] text-gray-400">{item.time}</span>
+                      <span className="text-[10px] font-semibold text-[#7367f0]">{item.progress}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           />
         </div>

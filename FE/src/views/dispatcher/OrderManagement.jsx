@@ -21,7 +21,7 @@ const statusColors = {
 
 const OrderManagement = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [data, setData] = useState(mockOrders);
+  const [data] = useState(mockOrders);
 
   const columns = [
     { title: 'Mã Vận Đơn', dataIndex: 'order_id', key: 'order_id', render: (text) => <span className="font-semibold text-[#7367f0]">{text}</span> },
