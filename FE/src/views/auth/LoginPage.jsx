@@ -1,10 +1,12 @@
+"use client";
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Header from '../../components/common/Header';
 import '../../style/AuthPages.css';
 
 const LoginPage = () => {
-  const navigate = useNavigate();
+  const navigate = useRouter();
 
   const [form, setForm] = useState({
     identifier: '',
@@ -53,7 +55,7 @@ const LoginPage = () => {
             className="auth-showcase login-hero relative overflow-hidden rounded-2xl"
             style={{ 
               backgroundColor: '#0056a0', 
-              backgroundImage: 'linear-gradient(rgba(0, 86, 160, 0.7), rgba(0, 86, 160, 0.8)), url(https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop)',
+              backgroundImage: 'linear-gradient(rgba(0, 86, 160, 0.7), rgba(0, 86, 160, 0.8)), url(https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auhref=format&fit=crop)',
               backgroundSize: 'cover',
               backgroundPosition: 'center'
             }}
@@ -139,7 +141,7 @@ const LoginPage = () => {
                   />
                   <span className="whitespace-nowrap">Ghi nhớ tôi</span>
                 </label>
-                <Link to="#" className="text-[#0056a0] hover:underline font-semibold whitespace-nowrap">Quên mật khẩu?</Link>
+                <Link href="#" className="text-[#0056a0] hover:underline font-semibold whitespace-nowrap">Quên mật khẩu?</Link>
               </div>
 
               {error && <div className="text-red-500 text-sm font-medium p-2 bg-red-50 rounded" role="alert">{error}</div>}
