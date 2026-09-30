@@ -17,6 +17,11 @@ export default function ReportIncidentPage() {
     });
   };
 
+  const normFile = (e) => {
+    if (Array.isArray(e)) return e;
+    return e?.fileList;
+  };
+
   return (
     <div className="p-4 max-w-lg mx-auto bg-gray-50 min-h-screen">
       <div className="mb-6 flex items-center gap-3">
@@ -44,7 +49,12 @@ export default function ReportIncidentPage() {
             <Input.TextArea rows={4} placeholder="Nhập chi tiết tình trạng sự cố đang gặp phải..." />
           </Form.Item>
 
-          <Form.Item name="photos" label="Ảnh hiện trường (Tối đa 5 ảnh)">
+          <Form.Item 
+            name="photos" 
+            label="Ảnh hiện trường (Tối đa 5 ảnh)"
+            valuePropName="fileList"
+            getValueFromEvent={normFile}
+          >
             <Upload listType="picture-card" maxCount={5} multiple action="/api/upload">
               <div className="text-gray-500 flex flex-col items-center">
                 <Camera className="mb-1" size={20}/>

@@ -14,20 +14,26 @@ export default function GuestTrackingPage() {
 
   useEffect(() => {
     // Giả lập API trả về data dựa trên token
-    setOrder({
-      id: 'ALS260930-0001',
-      customer: 'VinFast LLC',
-      status: 2, // 0: Chờ chứng từ, 1: Lấy hàng, 2: Đang giao, 3: Đã giao
-      pickup: 'Kho ALS Cảng Nội Bài, Sóc Sơn, Hà Nội',
-      dropoff: 'Nhà máy VinFast, KCN Đình Vũ, Hải Phòng',
-      eta: '2026-09-30 22:30:00',
-      dispatcher: { name: 'Nguyễn Văn A (Dispatcher 01)', phone: '0901234567', zalo: 'https://zalo.me/0901234567' },
-      isVendor: false,
-      vendorName: '',
-      vendorTracking: '',
-      sealImage: 'https://images.unsplash.com/photo-1586528116311-ad8ed7c50a41?q=80&w=2070',
-      podImage: 'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=2070'
-    });
+    const fetchOrder = async () => {
+      // Simulate network delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setOrder({
+        id: 'ALS260930-0001',
+        customer: 'VinFast LLC',
+        status: 2, // 0: Chờ chứng từ, 1: Lấy hàng, 2: Đang giao, 3: Đã giao
+        pickup: 'Kho ALS Cảng Nội Bài, Sóc Sơn, Hà Nội',
+        dropoff: 'Nhà máy VinFast, KCN Đình Vũ, Hải Phòng',
+        eta: '2026-09-30 22:30:00',
+        dispatcher: { name: 'Nguyễn Văn A (Dispatcher 01)', phone: '0901234567', zalo: 'https://zalo.me/0901234567' },
+        isVendor: false,
+        vendorName: '',
+        vendorTracking: '',
+        sealImage: 'https://images.unsplash.com/photo-1586528116311-ad8ed7c50a41?q=80&w=2070',
+        podImage: 'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=2070'
+      });
+    };
+
+    fetchOrder();
   }, [token]);
 
   if (!order) return <div className="p-10 text-center">Đang tải dữ liệu tra cứu...</div>;

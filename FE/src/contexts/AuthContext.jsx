@@ -14,9 +14,13 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const initializeAuth = () => {
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+      try {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          setUser(JSON.parse(storedUser));
+        }
+      } catch (e) {
+        console.warn('localStorage is not available:', e);
       }
       setLoading(false);
     };
@@ -47,26 +51,26 @@ export const AuthProvider = ({ children }) => {
     // Redirect based on role
     switch (role) {
       case 'ADMINISTRATOR':
-        router.push('/admin');
+        window.location.href = '/admin';
         break;
       case 'MANAGER':
-        router.push('/manager');
+        window.location.href = '/manager';
         break;
       case 'DISPATCHER':
-        router.push('/dispatcher');
+        window.location.href = '/dispatcher';
         break;
       case 'DRIVER':
-        router.push('/driver');
+        window.location.href = '/driver';
         break;
       default:
-        router.push('/');
+        window.location.href = '/';
     }
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem('user');
-    router.push('/login');
+    window.location.href = '/login';
   };
 
   const hasRole = (allowedRoles) => {

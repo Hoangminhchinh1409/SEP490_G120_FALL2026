@@ -144,7 +144,8 @@ const LoginPage = () => {
               {error && <div className="text-red-500 text-sm font-medium p-2 bg-red-50 rounded" role="alert">{error}</div>}
 
               <button 
-                type="submit" 
+                type="button" 
+                onClick={handleSubmit}
                 disabled={submitting} 
                 className="w-full py-3 !bg-[#0056a0] text-white rounded-lg font-bold hover:!bg-blue-800 transition disabled:opacity-70 mt-4"
               >
