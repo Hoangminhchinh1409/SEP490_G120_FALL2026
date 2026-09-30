@@ -8,8 +8,8 @@ import { LayoutDashboard, Truck, Settings, FileText, MapPin, Bell, Menu as MenuI
 
 const { Search: AntSearch } = Input;
 
-const DispatcherLayout = ({ children }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+const DriverLayout = ({ children }) => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Default closed for mobile
   const pathname = usePathname();
 
   const { user, logout } = useAuth();
@@ -25,10 +25,9 @@ const DispatcherLayout = ({ children }) => {
   );
 
   const navItems = [
-    { path: '/dispatcher', icon: LayoutDashboard, label: 'Tổng quan' },
-    { path: '/dispatcher/orders', icon: FileText, label: 'Quản lý Đơn hàng' },
-    { path: '/dispatcher/fleet', icon: Truck, label: 'Đội xe & Phân công' },
-    { path: '/dispatcher/tracking', icon: MapPin, label: 'Bản đồ Theo dõi' },
+    { path: '/driver', icon: Truck, label: 'Chuyến xe của tôi' },
+    { path: '/driver/history', icon: FileText, label: 'Lịch sử' },
+    { path: '/driver/incidents', icon: Bell, label: 'Báo cáo sự cố' },
   ];
 
   return (
@@ -78,7 +77,7 @@ const DispatcherLayout = ({ children }) => {
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-gray-500 hover:text-[#7367f0] hover:bg-indigo-50 p-2 rounded-lg transition-colors">
               <MenuIcon size={20} />
             </button>
-            <Breadcrumb items={[{ title: 'Điều phối viên', className: 'font-semibold text-gray-800 text-lg' }]} className="hidden sm:block text-sm ml-4" />
+            <Breadcrumb items={[{ title: 'Tài xế giao nhận', className: 'font-semibold text-gray-800 text-lg' }]} className="hidden sm:block text-sm ml-4" />
           </div>
           <div className="flex items-center gap-6">
             <AntSearch placeholder="Tìm kiếm..." className="hidden md:block w-64 rounded-full" />
@@ -108,4 +107,4 @@ const DispatcherLayout = ({ children }) => {
   );
 };
 
-export default DispatcherLayout;
+export default DriverLayout;

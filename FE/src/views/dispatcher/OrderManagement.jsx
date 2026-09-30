@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Table, Tag, Button, Input, DatePicker, Select, Row, Col } from 'antd';
+import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message } from 'antd';
 import { Search, Plus, Filter, Download, Edit, Trash2 } from 'lucide-react';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 
@@ -31,6 +31,11 @@ const OrderManagement = () => {
     { title: 'Điểm giao hàng', dataIndex: 'dropoff', key: 'dropoff' },
     { title: 'Ngày tạo', dataIndex: 'date', key: 'date' },
     { title: 'Trạng thái', dataIndex: 'status', key: 'status', render: (status) => <Tag color={statusColors[status] || 'default'} className="font-medium rounded-md px-2 py-1">{status}</Tag> },
+    { title: 'Chứng từ', key: 'docs', render: (_, record) => (
+      record.status === 'CREATED' ? 
+        <Button size="small" type="primary" ghost onClick={() => message.success('Đã xác nhận chứng từ!')}>Xác nhận CT</Button> : 
+        <Tag color="success">Đã duyệt</Tag>
+    )},
     { title: 'Hành động', key: 'action', render: () => (
       <div className="flex gap-2">
         <Button size="small" type="text" className="text-gray-500 hover:text-[#7367f0] p-1"><Edit size={16} /></Button>

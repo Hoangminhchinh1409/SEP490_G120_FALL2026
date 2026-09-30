@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '../../contexts/AuthContext';
 import Header from '../../components/common/Header';
 import '../../style/AuthPages.css';
 
@@ -13,6 +14,7 @@ const LoginPage = () => {
     password: '',
     rememberMe: true
   });
+  const { login } = useAuth();
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -33,17 +35,12 @@ const LoginPage = () => {
 
     setSubmitting(true);
     
-    // Giả lập API gọi đăng nhập
-    setTimeout(() => {
+    try {
+      await login(form.identifier, form.password);
+    } catch (err) {
+      setError(err.message || 'Đăng nhập thất bại.');
       setSubmitting(false);
-      // Chuyển hướng sau khi đăng nhập thành công
-      // Nếu là Dispatcher -> /dispatcher
-      if (form.identifier.includes('admin') || form.identifier.includes('dispatcher')) {
-        navigate('/dispatcher', { replace: true });
-      } else {
-        navigate('/', { replace: true });
-      }
-    }, 1000);
+    }
   };
 
   return (

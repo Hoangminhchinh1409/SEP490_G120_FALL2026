@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Table, Tag, Button, Input, Row, Col } from 'antd';
-import { Search, Plus, Truck, User, Activity } from 'lucide-react';
+import { Table, Tag, Button, Input, Row, Col, Modal, Form, Select, message, Alert } from 'antd';
+import { Search, Plus, Truck, User, Activity, Map, DollarSign, Repeat } from 'lucide-react';
+
+const { Option } = Select;
 
 const mockFleet = [
   { key: '1', license_plate: '29C-123.45', type: 'Xe Tải 5T', driver: 'Nguyễn Văn A', phone: '0901234567', status: 'AVAILABLE', location: 'Kho Bãi Nội Bài' },
@@ -15,6 +17,17 @@ const statusColors = {
 
 const FleetManagement = () => {
   const [data] = useState(mockFleet);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [form] = Form.useForm();
+  const [assignmentType, setAssignmentType] = useState('INTERNAL'); // INTERNAL or VENDOR
+
+  const handlePlanSubmit = () => {
+    form.validateFields().then(values => {
+      message.success(`Kế hoạch chuyến xe đã được tạo và gán cho ${assignmentType === 'INTERNAL' ? 'Nội bộ' : 'Vendor'}!`);
+      setIsPlanModalOpen(false);
+      form.resetFields();
+    });
+  };
 
   const columns = [
     { title: 'Biển số xe', dataIndex: 'license_plate', key: 'license_plate', render: (text) => <span className="font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded border border-gray-300">{text}</span> },
@@ -37,12 +50,17 @@ const FleetManagement = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Đội xe & Phân công</h1>
-            <p className="text-gray-500 text-sm">Quản lý phương tiện, tài xế và điều phối chuyến đi</p>
+            <h1 className="text-2xl font-bold text-gray-800">Lập Kế hoạch Chuyến xe & Gán Nguồn lực</h1>
+            <p className="text-gray-500 text-sm">Gộp đơn, tính giá, gợi ý loại xe và gán xe nội bộ hoặc chuyển Vendor.</p>
           </div>
-          <Button type="primary" icon={<Plus size={16} />} className="bg-[#7367f0] hover:bg-[#5e50ee] h-10 px-4">
-            Thêm phương tiện
-          </Button>
+          <div className="flex gap-2">
+            <Button type="primary" icon={<Map size={16} />} className="bg-green-600 hover:bg-green-700 h-10 px-4" onClick={() => setIsPlanModalOpen(true)}>
+              Lập Kế hoạch Chuyến mới
+            </Button>
+            <Button type="primary" ghost icon={<Plus size={16} />} className="h-10 px-4">
+              Thêm phương tiện
+            </Button>
+          </div>
         </div>
 
         {/* Overview Cards */}
@@ -91,6 +109,82 @@ const FleetManagement = () => {
         </div>
 
       </div>
+
+      <Modal
+        title={<span className="text-lg font-bold text-[#0056a0]">Lập Kế hoạch & Phân công (Trip Planning)</span>}
+        open={isPlanModalOpen}
+        onCancel={() => setIsPlanModalOpen(false)}
+        onOk={handlePlanSubmit}
+        width={750}
+        okText="Xác nhận Phân công"
+        cancelText="Hủy"
+      >
+        <Form form={form} layout="vertical" className="mt-4" initialValues={{ assignmentType: 'INTERNAL' }}>
+          
+          <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-100">
+            <h3 className="font-semibold text-blue-800 mb-2">Gộp đơn cùng tỉnh (Multi-drop Grouping)</h3>
+            <Form.Item name="selected_orders" rules={[{ required: true, message: 'Chọn ít nhất 1 đơn hàng' }]} className="mb-0">
+              <Select mode="multiple" placeholder="Chọn các đơn hàng chờ ghép chuyến...">
+                <Option value="O1">NEX-827364 (Hà Nội, 500kg)</Option>
+                <Option value="O2">NEX-827365 (Hà Nội, 300kg)</Option>
+                <Option value="O3">NEX-827366 (Hải Phòng, 1200kg)</Option>
+              </Select>
+            </Form.Item>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center">
+              <p className="text-gray-500 text-sm mb-1">Tổng Trọng lượng Quy đổi</p>
+              <p className="text-2xl font-bold text-gray-800">800 kg</p>
+              <Alert title="Gợi ý: Dùng xe Thaco 1.25T" type="success" showIcon className="mt-2 text-left" />
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center">
+              <p className="text-gray-500 text-sm mb-1">Giá Chuyến Tự động</p>
+              <p className="text-2xl font-bold text-orange-600 flex justify-center items-center gap-1">
+                <DollarSign size={20}/> 1,500,000 VNĐ
+              </p>
+              <p className="text-xs text-gray-400 mt-2">Bao gồm 300k/điểm phụ</p>
+            </div>
+          </div>
+
+          <Form.Item name="assignmentType" label="Loại Phân công">
+            <Select onChange={(val) => setAssignmentType(val)}>
+              <Option value="INTERNAL"><Truck size={14} className="inline mr-2" />Gán xe & Tài xế Nội bộ</Option>
+              <Option value="VENDOR"><Repeat size={14} className="inline mr-2" />Chuyển giao cho Nhà xe ngoài (Vendor)</Option>
+            </Select>
+          </Form.Item>
+
+          {assignmentType === 'INTERNAL' ? (
+            <div className="grid grid-cols-2 gap-4">
+              <Form.Item name="truck_id" label="Chọn Xe Tải" rules={[{ required: true }]}>
+                <Select placeholder="Chọn xe...">
+                  <Option value="T1">29C-123.45 (Thaco 1.25T) - Sẵn sàng</Option>
+                  <Option value="T2">29C-678.90 (Thaco 1.25T) - Đang chạy</Option>
+                </Select>
+              </Form.Item>
+              <Form.Item name="driver_id" label="Chọn Tài xế" rules={[{ required: true }]}>
+                <Select placeholder="Chọn tài xế...">
+                  <Option value="D1">Nguyễn Văn A - Đã nghỉ đủ giờ</Option>
+                  <Option value="D2">Lê Văn B - Đã nghỉ đủ giờ</Option>
+                </Select>
+              </Form.Item>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <Form.Item name="vendor_id" label="Chọn Nhà xe (Vendor)" rules={[{ required: true }]}>
+                <Select placeholder="Chọn đối tác...">
+                  <Option value="V1">Nhà xe Phương Trang (HĐ: HD-PT-2026)</Option>
+                  <Option value="V2">Vận tải Thành Bưởi</Option>
+                </Select>
+              </Form.Item>
+              <Form.Item name="vendor_tracking" label="Mã Vận Đơn Vendor" rules={[{ required: true }]}>
+                <Input placeholder="Nhập mã tracking do vendor cấp..." />
+              </Form.Item>
+            </div>
+          )}
+        </Form>
+      </Modal>
+
     </div>
   );
 };
