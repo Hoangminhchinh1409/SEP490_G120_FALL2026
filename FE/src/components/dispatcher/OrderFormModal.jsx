@@ -67,7 +67,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           </Form.Item>
         </div>
 
-        <Divider className="my-2" orientation="left">Thông số Hàng hóa</Divider>
+        <Divider className="my-2" titlePlacement="left">Thông số Hàng hóa</Divider>
 
         <div className="grid grid-cols-4 gap-2">
           <Form.Item label="Dài (cm)" name="length_cm" rules={[{ required: true }]}>
@@ -102,7 +102,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           </Form.Item>
         </div>
 
-        <Divider className="my-2" orientation="left">Tài chính & Phí phát sinh</Divider>
+        <Divider className="my-2" titlePlacement="left">Tài chính & Phí phát sinh</Divider>
         <div className="grid grid-cols-3 gap-4">
           <Form.Item label="Giá trị chốt ngoài (VNĐ)" name="agreed_price" rules={[{ required: true }]}>
             <InputNumber className="w-full" min={0} />

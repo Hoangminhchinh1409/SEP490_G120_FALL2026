@@ -72,10 +72,11 @@ const TrackingMap = () => {
         
         <div className="flex-1 overflow-auto custom-scrollbar p-2">
           <Listy
-            dataSource={activeTrucks}
+            items={activeTrucks}
             rowKey="id"
-            renderItem={(item) => (
-              <Listy.Item
+            itemRender={(item) => (
+              <div
+                key={item.id}
                 className="p-3 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors border-b-0 mb-1 flex flex-col items-start gap-1 w-full"
                 onClick={() => setMapCenter([item.lat, item.lng])}
               >
@@ -110,7 +111,7 @@ const TrackingMap = () => {
                     Xử lý Sự cố
                   </Button>
                 )}
-              </Listy.Item>
+              </div>
             )}
           />
         </div>
