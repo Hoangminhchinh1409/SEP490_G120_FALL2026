@@ -23,7 +23,7 @@ const mockFeeds = [
 // --- Chart Configurations ---
 const supportChartOptions = {
   chart: { type: 'area', height: 100, sparkline: { enabled: true } },
-  colors: ['#7367f0'],
+  colors: ['#3b82f6'],
   stroke: { curve: 'smooth', width: 2 },
   fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.5, opacityTo: 0, stops: [0, 90, 100] } },
   tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: () => 'Tỷ lệ' } }, marker: { show: false } }
@@ -32,7 +32,7 @@ const supportChartData = [{ name: 'Tỷ lệ giao', data: [0, 20, 10, 45, 30, 55
 
 const supportChart2Options = {
   chart: { type: 'bar', height: 100, sparkline: { enabled: true } },
-  colors: ['#7367f0'],
+  colors: ['#3b82f6'],
   plotOptions: { bar: { columnWidth: '50%', borderRadius: 2 } },
   tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: () => 'Đơn hàng' } }, marker: { show: false } }
 };
@@ -40,7 +40,7 @@ const supportChart2Data = [{ name: 'Giao hàng', data: [25, 66, 41, 89, 63, 25, 
 
 const accountChartOptions = {
   chart: { type: 'line', height: 350, toolbar: { show: false } },
-  colors: ['#7367f0', '#00cfe8'],
+  colors: ['#3b82f6', '#00cfe8'],
   stroke: { curve: 'smooth', width: [3, 0] },
   plotOptions: { bar: { columnWidth: '50%', borderRadius: 2 } },
   xaxis: { categories: ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'] },
@@ -54,7 +54,7 @@ const accountChartData = [
 const satisfactionChartOptions = {
   chart: { type: 'pie', height: 300 },
   labels: ['Rất hài lòng', 'Hài lòng', 'Chưa tốt'],
-  colors: ['#7367f0', '#a8a5f8', '#d6d5fc'],
+  colors: ['#3b82f6', '#93c5fd', '#dbeafe'],
   legend: { show: true, position: 'right' },
   dataLabels: { enabled: true, dropShadow: { enabled: false } }
 };
@@ -91,7 +91,7 @@ const DispatcherDashboard = () => {
     { title: 'Trạng thái', dataIndex: 'status', key: 'status', render: (status) => <Tag color={statusColors[status] || 'default'} className="font-medium rounded-md px-2 py-1">{status}</Tag> },
     { title: 'Hành động', key: 'action', render: () => (
       <div className="flex gap-2">
-        <Button size="small" type="primary" className="bg-[#7367f0] hover:bg-[#5e50ee] border-none">Phân xe</Button>
+        <Button size="small" type="primary" className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 border-none">Phân xe</Button>
       </div>
     )}
   ];
@@ -109,21 +109,21 @@ const DispatcherDashboard = () => {
               <Row className="divide-y md:divide-y-0 md:divide-x divide-gray-100" style={{ borderBottom: '1px solid #f3f4f6' }}>
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
-                    <Users size={28} className="text-[#7367f0] mb-1" />
+                    <Users size={28} className="text-[#3b82f6] mb-1" />
                     <h4 className="text-xl font-bold text-gray-800 m-0">1000</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Khách hàng</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
-                    <Globe size={28} className="text-[#7367f0] mb-1" />
+                    <Globe size={28} className="text-[#3b82f6] mb-1" />
                     <h4 className="text-xl font-bold text-gray-800 m-0">1252</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Doanh thu</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center hidden sm:block">
                   <div className="flex flex-col items-center justify-center gap-2">
-                    <Activity size={28} className="text-[#7367f0] mb-1" />
+                    <Activity size={28} className="text-[#3b82f6] mb-1" />
                     <h4 className="text-xl font-bold text-gray-800 m-0">600%</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Tăng trưởng</p>
                   </div>
@@ -132,21 +132,21 @@ const DispatcherDashboard = () => {
               <Row className="divide-y md:divide-y-0 md:divide-x divide-gray-100">
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
-                    <RefreshCcw size={28} className="text-[#7367f0] mb-1" />
+                    <RefreshCcw size={28} className="text-[#3b82f6] mb-1" />
                     <h4 className="text-xl font-bold text-gray-800 m-0">35</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Sự cố/Hoàn</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
-                    <CloudDownload size={28} className="text-[#7367f0] mb-1" />
+                    <CloudDownload size={28} className="text-[#3b82f6] mb-1" />
                     <h4 className="text-xl font-bold text-gray-800 m-0">3550</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Lượt tải App</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center hidden sm:block">
                   <div className="flex flex-col items-center justify-center gap-2">
-                    <ShoppingCart size={28} className="text-[#7367f0] mb-1" />
+                    <ShoppingCart size={28} className="text-[#3b82f6] mb-1" />
                     <h4 className="text-xl font-bold text-gray-800 m-0">94.5%</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Tỷ lệ On-Time</p>
                   </div>
@@ -160,12 +160,12 @@ const DispatcherDashboard = () => {
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
                   <div className="p-6 pb-2">
                     <h2 className="text-[28px] font-bold text-gray-800 m-0 leading-tight">53.94%</h2>
-                    <span className="text-[#7367f0] font-medium text-sm">Tỷ lệ Giao Thành Công</span>
+                    <span className="text-[#3b82f6] font-medium text-sm">Tỷ lệ Giao Thành Công</span>
                     <p className="text-gray-500 text-xs mt-3 mb-1 line-clamp-2">Tỷ lệ đơn hàng giao thành công trên tổng số đơn nhận.</p>
                   </div>
                   <div className="mt-auto">
                     <Chart options={supportChartOptions} series={supportChartData} type="area" height={80} />
-                    <div className="bg-[#7367f0] text-white py-3 px-4">
+                    <div className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white py-3 px-4">
                       <Row className="text-center">
                         <Col span={8}>
                           <h4 className="text-base font-bold m-0 text-white">10</h4><span className="text-[#d6d5fc] text-[10px] uppercase">Tháng 10</span>
@@ -185,7 +185,7 @@ const DispatcherDashboard = () => {
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
                   <div className="p-6 pb-2">
                     <h2 className="text-[28px] font-bold text-gray-800 m-0 leading-tight">1432</h2>
-                    <span className="text-[#7367f0] font-medium text-sm">Tổng Đơn Đã Giao</span>
+                    <span className="text-[#3b82f6] font-medium text-sm">Tổng Đơn Đã Giao</span>
                     <p className="text-gray-500 text-xs mt-3 mb-1 line-clamp-2">Tổng số lượng đơn hàng đã hoàn tất quá trình vận chuyển.</p>
                   </div>
                   <div className="mt-auto">
@@ -249,13 +249,13 @@ const DispatcherDashboard = () => {
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">
                   <div className="flex justify-between items-start mb-2">
                     <p className="text-gray-800 text-sm font-bold mb-1">Tổng Cước Nội Địa</p>
-                    <Package size={20} className="text-[#7367f0]" />
+                    <Package size={20} className="text-[#3b82f6]" />
                   </div>
                   <h3 className="text-[26px] font-bold text-gray-800 mt-2">$1,783</h3>
                 </div>
               </Col>
               <Col span={12}>
-                <div className="bg-[#7367f0] p-6 rounded-xl shadow-sm h-full relative overflow-hidden">
+                <div className="bg-gradient-to-br from-blue-500 to-cyan-500 p-6 rounded-xl shadow-sm h-full relative overflow-hidden">
                   <div className="flex justify-between items-start mb-2 z-10 relative">
                     <p className="text-white text-sm font-bold mb-1">Tổng Số Đơn</p>
                     <ShoppingCart size={20} className="text-white opacity-80" />
@@ -264,7 +264,7 @@ const DispatcherDashboard = () => {
                 </div>
               </Col>
               <Col span={12}>
-                <div className="bg-[#7367f0] p-6 rounded-xl shadow-sm h-full relative overflow-hidden">
+                <div className="bg-gradient-to-br from-blue-500 to-cyan-500 p-6 rounded-xl shadow-sm h-full relative overflow-hidden">
                   <div className="flex justify-between items-start mb-2 z-10 relative">
                     <p className="text-white text-sm font-bold mb-1">Giá Cước Trung Bình</p>
                     <DollarSign size={20} className="text-white opacity-80" />
@@ -292,7 +292,7 @@ const DispatcherDashboard = () => {
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
               <div className="mb-4 pb-4 border-b border-gray-100 flex justify-between items-center">
                 <h3 className="text-base font-bold text-gray-800">Danh sách Đơn hàng Gần đây</h3>
-                <Button type="primary" size="small" icon={<Plus size={14} />} className="bg-[#7367f0] hover:bg-[#5e50ee] border-none" onClick={() => setIsModalOpen(true)}>
+                <Button type="primary" size="small" icon={<Plus size={14} />} className="bg-gradient-to-br from-blue-500 to-cyan-500 hover:bg-[#5e50ee] border-none" onClick={() => setIsModalOpen(true)}>
                   Tạo đơn hàng
                 </Button>
               </div>

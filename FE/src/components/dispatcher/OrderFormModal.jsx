@@ -108,10 +108,10 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
             <InputNumber className="w-full" min={0} />
           </Form.Item>
           <Form.Item label="Phí phụ trội (VNĐ)" name="extra_fees_surcharge">
-            <InputNumber className="w-full" min={0} defaultValue={0} />
+            <InputNumber className="w-full" min={0} />
           </Form.Item>
           <Form.Item label="Phí Thu hộ (COD - VNĐ)" name="extra_fees_collection">
-            <InputNumber className="w-full" min={0} defaultValue={0} />
+            <InputNumber className="w-full" min={0} />
           </Form.Item>
         </div>
         
