@@ -1,10 +1,10 @@
 /* eslint-disable @next/next/no-img-element */
 
 'use client';
-import React from 'react';
+import React, { useState } from 'react';
 
 export default function HomePage() {
-  
+  const [activeTab, setActiveTab] = useState('awb');
 
   return (
     <>
@@ -36,17 +36,17 @@ export default function HomePage() {
                     <div className="w-full max-w-4xl bg-surface-container-lowest text-on-surface rounded-xl shadow-2xl p-space-md md:p-space-lg">
                         {/*  Tabs Header  */}
                         <div className="flex items-center gap-space-xs md:gap-space-sm bg-surface-container-low p-1.5 rounded-lg mb-space-lg" id="search-tabs">
-                            <button className="flex-1 flex items-center justify-center gap-space-xs py-space-sm px-space-md rounded-lg font-headline-sm text-headline-sm bg-surface-container-lowest text-on-tertiary-container shadow-sm transition-all" id="tab-btn-awb" onClick={() => {}} type="button">
+                            <button className={`flex-1 flex items-center justify-center gap-space-xs py-space-sm px-space-md rounded-lg font-headline-sm text-headline-sm transition-all ${activeTab === 'awb' ? 'bg-surface-container-lowest text-on-tertiary-container shadow-sm' : 'text-on-surface-variant hover:text-primary'}`} id="tab-btn-awb" onClick={() => setActiveTab('awb')} type="button">
                                 <span className="material-symbols-outlined text-base">local_shipping</span>
                                 <span>Tra cứu vận đơn</span>
                             </button>
-                            <button className="flex-1 flex items-center justify-center gap-space-xs py-space-sm px-space-md rounded-lg font-headline-sm text-headline-sm text-on-surface-variant hover:text-primary transition-all" id="tab-btn-invoice" onClick={() => {}} type="button">
+                            <button className={`flex-1 flex items-center justify-center gap-space-xs py-space-sm px-space-md rounded-lg font-headline-sm text-headline-sm transition-all ${activeTab === 'invoice' ? 'bg-surface-container-lowest text-on-tertiary-container shadow-sm' : 'text-on-surface-variant hover:text-primary'}`} id="tab-btn-invoice" onClick={() => setActiveTab('invoice')} type="button">
                                 <span className="material-symbols-outlined text-base">receipt_long</span>
                                 <span>Tra cứu hóa đơn</span>
                             </button>
                         </div>
                         {/*  Tab 1: Tra cứu vận đơn (Active)  */}
-                        <div className="flex flex-col gap-space-md" id="tab-panel-awb">
+                        <div className={`${activeTab === 'awb' ? 'flex' : 'hidden'} flex-col gap-space-md`} id="tab-panel-awb">
                             {/*  Row 1: AWB Number & Radio In/Out  */}
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-space-md items-center">
                                 <div className="md:col-span-8">
@@ -142,14 +142,100 @@ export default function HomePage() {
                             </div>
                         </div>
                         {/*  Tab 2 & 3 Placeholder Panels for Smooth Tab Interaction  */}
-                        <div className="hidden flex-col gap-space-md py-space-md text-center" id="tab-panel-invoice">
-                            <div className="p-space-lg bg-surface-container-low rounded-lg">
-                                <span className="material-symbols-outlined text-4xl text-secondary mb-space-xs">receipt</span>
-                                <h4 className="font-headline-md text-headline-md text-primary">Cổng Tra Cứu Hóa Đơn Điện Tử NEXLOG</h4>
-                                <p className="font-body-md text-body-md text-on-surface-variant mt-1 mb-space-md">Tra cứu hóa đơn GTGT cước lưu kho, bốc xếp và dịch vụ mặt đất theo mã tra cứu.</p>
-                                <div className="flex max-w-md mx-auto gap-space-xs">
-                                    <input className="flex-1 px-space-md py-2.5 rounded-lg bg-surface-container-lowest text-on-surface font-body-md" placeholder="Nhập mã bí mật hóa đơn / Mã số thuế..." type="text" />
-                                    <button className="px-space-md py-2.5 rounded-lg bg-primary text-on-primary font-label-lg">Tra cứu</button>
+                        <div className={`${activeTab === 'invoice' ? 'flex' : 'hidden'} flex-col gap-space-md`} id="tab-panel-invoice">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-space-xs pb-space-xs border-b border-surface-container">
+                                <p className="font-body-md text-body-md text-on-surface-variant flex items-center gap-space-xs">
+                                    <span className="material-symbols-outlined text-secondary text-base">verified_user</span>
+                                    <span>Tra cứu &amp; Tải hóa đơn điện tử (e-Invoice) của dịch vụ vận tải, lưu kho và thủ tục hàng hóa NEXLOG.</span>
+                                </p>
+                                <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider hidden md:inline-block">Thông tư 78 / NĐ-123</span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+                                <div>
+                                    <label className="block font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Mã tra cứu hóa đơn / Số hóa đơn</label>
+                                    <div className="relative flex items-center">
+                                        <span className="absolute left-space-md material-symbols-outlined text-outline text-lg pointer-events-none">receipt_long</span>
+                                        <input className="w-full pl-10 pr-space-md py-2.5 rounded-lg bg-surface-container-low text-on-surface font-data-mono text-data-mono focus:outline-none focus:bg-surface-container-lowest shadow-inner" placeholder="VD: 24AA/26E-0012894 hoặc Mã CQT" type="text" defaultValue="24AA/26E-0012894" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Mã số thuế bên mua (MST)</label>
+                                    <div className="relative flex items-center">
+                                        <span className="absolute left-space-md material-symbols-outlined text-outline text-lg pointer-events-none">corporate_fare</span>
+                                        <input className="w-full pl-10 pr-space-md py-2.5 rounded-lg bg-surface-container-low text-on-surface font-data-mono text-data-mono focus:outline-none focus:bg-surface-container-lowest shadow-inner" placeholder="Nhập mã số thuế doanh nghiệp (10 hoặc 13 số)" type="text" defaultValue="0102030405" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+                                <div>
+                                    <label className="block font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Khoảng thời gian phát hành</label>
+                                    <div className="grid grid-cols-2 gap-space-xs">
+                                        <div className="relative flex items-center">
+                                            <input className="w-full px-space-md py-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-md text-body-md focus:outline-none focus:bg-surface-container-lowest" type="text" defaultValue="01/05/2026" />
+                                            <span className="material-symbols-outlined absolute right-space-sm text-outline text-lg pointer-events-none">calendar_today</span>
+                                        </div>
+                                        <div className="relative flex items-center">
+                                            <input className="w-full px-space-md py-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-md text-body-md focus:outline-none focus:bg-surface-container-lowest" type="text" defaultValue="24/10/2026" />
+                                            <span className="material-symbols-outlined absolute right-space-sm text-outline text-lg pointer-events-none">event</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">Mã xác thực (Captcha)</label>
+                                    <div className="flex items-center gap-space-xs">
+                                        <div className="relative flex-1 flex items-center">
+                                            <span className="absolute left-space-md material-symbols-outlined text-outline text-lg pointer-events-none">security</span>
+                                            <input className="w-full pl-10 pr-space-md py-2.5 rounded-lg bg-surface-container-low text-on-surface font-data-mono text-data-mono focus:outline-none focus:bg-surface-container-lowest shadow-inner" placeholder="Nhập 6 ký tự" type="text" defaultValue="NX89K2" />
+                                        </div>
+                                        <div className="flex items-center gap-space-xs bg-surface-container-low px-space-sm py-2 rounded-lg border border-outline-variant/40">
+                                            <span className="font-data-mono text-headline-sm font-bold tracking-widest text-primary px-space-xs bg-surface-container-lowest rounded select-none">NX89K2</span>
+                                            <button className="text-outline hover:text-primary transition-colors flex items-center justify-center p-1 rounded" title="Đổi mã khác" type="button">
+                                                <span className="material-symbols-outlined text-lg">refresh</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-space-xs">
+                                <button className="w-full py-3.5 px-space-lg rounded-lg bg-on-tertiary-container hover:bg-tertiary-container active:scale-[0.99] text-on-primary font-headline-md text-headline-md font-bold uppercase tracking-wider flex items-center justify-center gap-space-xs shadow-md transition-all" type="button">
+                                    <span className="material-symbols-outlined text-2xl">search</span>
+                                    <span>TRA CỨU HÓA ĐƠN</span>
+                                </button>
+                            </div>
+                            <div className="mt-space-xs bg-surface-container-low rounded-lg p-space-md flex flex-col gap-space-sm border border-surface-container-high" id="invoice-result-card">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs pb-space-xs border-b border-surface-container">
+                                    <div className="flex items-center gap-space-xs flex-wrap">
+                                        <span className="material-symbols-outlined text-secondary">receipt</span>
+                                        <span className="font-headline-sm text-headline-sm text-primary font-bold">Hóa đơn GTGT #HD-2026-98124</span>
+                                        <span className="px-2 py-0.5 rounded text-label-sm font-label-sm bg-surface-container-high text-secondary font-semibold flex items-center gap-1">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>Đã phát hành / Đã ký số CQT
+                                        </span>
+                                    </div>
+                                    <span className="font-label-sm text-label-sm text-on-surface-variant font-data-mono">Ký ngày: 18/10/2026 14:22</span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-space-sm py-space-xs">
+                                    <div className="flex flex-col">
+                                        <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Ngày lập</span>
+                                        <span className="font-data-mono text-body-md font-semibold text-on-surface">18/10/2026</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Khách hàng / Doanh nghiệp</span>
+                                        <span className="font-body-md text-body-md font-semibold text-on-surface line-clamp-1">CÔNG TY TNHH LOGISTICS TOÀN CẦU</span>
+                                    </div>
+                                    <div className="flex flex-col md:text-right">
+                                        <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Tổng tiền thanh toán</span>
+                                        <span className="font-data-mono text-headline-sm font-bold text-on-tertiary-container">124.500.000 VNĐ</span>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center justify-end gap-space-sm pt-space-xs">
+                                    <button className="inline-flex items-center gap-space-xs px-space-md py-2 rounded-lg bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold shadow-sm hover:bg-secondary-fixed transition-colors" type="button">
+                                        <span className="material-symbols-outlined text-base">description</span>
+                                        <span>Xem hóa đơn (PDF)</span>
+                                    </button>
+                                    <button className="inline-flex items-center gap-space-xs px-space-md py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md font-semibold shadow-sm hover:bg-primary-container transition-colors" type="button">
+                                        <span className="material-symbols-outlined text-base">code</span>
+                                        <span>Tải XML</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
