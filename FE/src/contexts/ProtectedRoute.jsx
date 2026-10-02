@@ -1,7 +1,7 @@
 "use client";
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../providers/AuthProvider';
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading, hasRole } = useAuth();
