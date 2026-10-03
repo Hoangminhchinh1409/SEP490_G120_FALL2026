@@ -15,14 +15,13 @@ export default function DashboardLayout({
   const { user, logout, loading } = useAuth();
 
   const roleNames = {
-    ADMIN: "Quản trị viên",
-    ADMINISTRATOR: "Quản trị viên",
-    MANAGER: "Quản lý",
-    DISPATCHER: "Điều phối viên",
-    DRIVER: "Tài xế",
+    1: "Quản trị viên",
+    2: "Quản lý",
+    3: "Điều phối viên",
+    4: "Tài xế",
   };
 
-  const roleText = roleNames[user.role] || "Người dùng";
+  const roleText = roleNames[user.role_id] || "Người dùng";
 
   const defaultItems = [
     { name: "Tổng quan", href: `/${role}/dashboard`, icon: LayoutDashboard },
@@ -119,13 +118,13 @@ export default function DashboardLayout({
             <div className="h-8 w-px bg-slate-200"></div>
             <div className="flex items-center gap-3 cursor-pointer group">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-shadow">
-                {(user.name || user.username || "U")
+                {(user.full_name || user.username || "U")
                   .substring(0, 2)
                   .toUpperCase()}
               </div>
               <div className="hidden sm:block text-sm">
                 <p className="font-semibold text-slate-700">
-                  {user.name || user.username || "Người dùng"}
+                  {user.full_name || user.username || "Người dùng"}
                 </p>
                 <p className="text-slate-400 text-xs font-medium">
                   {roleText}
