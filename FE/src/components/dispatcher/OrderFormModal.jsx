@@ -47,21 +47,27 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           <Form.Item label="Khách hàng" name="customer_name" rules={[{ required: true, message: 'Nhập tên KH' }]}>
             <Input placeholder="Tên khách hàng" />
           </Form.Item>
+          <Form.Item label="Mã số thuế (Tùy chọn)" name="customer_tax_code">
+            <Input placeholder="Mã số thuế" />
+          </Form.Item>
           <Form.Item label="Số điện thoại" name="customer_phone" rules={[{ required: true, message: 'Nhập SĐT' }]}>
             <Input placeholder="Số điện thoại" />
+          </Form.Item>
+          <Form.Item label="Email nhận Link Tracking" name="customer_email" rules={[{ required: true, type: 'email' }]}>
+            <Input placeholder="Email" />
           </Form.Item>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Form.Item label="Điểm lấy hàng (Pickup)" name="pickup_address" rules={[{ required: true }]}>
-            <Input.TextArea rows={2} placeholder="Nhập địa chỉ..." />
+          <Form.Item label="Kho ALS lấy hàng" name="pickup_address" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} placeholder="Nhập địa chỉ lấy hàng..." />
           </Form.Item>
-          <Form.Item label="Điểm giao hàng (Delivery)" name="delivery_address" rules={[{ required: true }]}>
-            <Input.TextArea rows={2} placeholder="Nhập địa chỉ..." />
+          <Form.Item label="Địa chỉ giao hàng thực tế" name="delivery_address" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} placeholder="Nhập địa chỉ giao hàng..." />
           </Form.Item>
         </div>
 
-        <Divider className="my-2" orientation="left">Thông số Hàng hóa</Divider>
+        <Divider className="my-2" titlePlacement="left">Thông số Hàng hóa</Divider>
 
         <div className="grid grid-cols-4 gap-2">
           <Form.Item label="Dài (cm)" name="length_cm" rules={[{ required: true }]}>
@@ -95,6 +101,23 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
             <Switch checkedChildren="Có" unCheckedChildren="Không" />
           </Form.Item>
         </div>
+
+        <Divider className="my-2" titlePlacement="left">Tài chính & Phí phát sinh</Divider>
+        <div className="grid grid-cols-3 gap-4">
+          <Form.Item label="Giá trị chốt ngoài (VNĐ)" name="agreed_price" rules={[{ required: true }]}>
+            <InputNumber className="w-full" min={0} />
+          </Form.Item>
+          <Form.Item label="Phí phụ trội (VNĐ)" name="extra_fees_surcharge">
+            <InputNumber className="w-full" min={0} />
+          </Form.Item>
+          <Form.Item label="Phí Thu hộ (COD - VNĐ)" name="extra_fees_collection">
+            <InputNumber className="w-full" min={0} />
+          </Form.Item>
+        </div>
+        
+        <Form.Item label="Ghi chú vận hành" name="order_notes">
+          <Input.TextArea rows={2} placeholder="Nhập ghi chú cho tài xế..." />
+        </Form.Item>
 
       </Form>
     </Modal>

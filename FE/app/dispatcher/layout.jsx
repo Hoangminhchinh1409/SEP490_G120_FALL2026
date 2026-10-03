@@ -1,3 +1,11 @@
 "use client";
 import DispatcherLayout from '../../src/layouts/DispatcherLayout';
-export default function Layout({ children }) { return <DispatcherLayout>{children}</DispatcherLayout>; }
+import { ProtectedRoute } from '../../src/contexts/ProtectedRoute';
+
+export default function Layout({ children }) { 
+  return (
+    <ProtectedRoute allowedRoles={['DISPATCHER']}>
+      <DispatcherLayout>{children}</DispatcherLayout>
+    </ProtectedRoute>
+  ); 
+}
