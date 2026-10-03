@@ -1,9 +1,9 @@
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 require("dotenv").config();
 
-const pool = require("./config/db");
-const authRoutes = require("./routes/auth");
+const apiRoutes = require("./routes");
 
 const app = express();
 const PORT = process.env.PORT || 9999;
@@ -14,20 +14,16 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(cookieParser());
 
 app.get("/", (req, res) => {
-    res.json({ message: "NEXLOG Backend is running!" });
+    res.json({
+        message: "NEXLOG Backend is running!"
+    });
 });
 
-app.use("/api/auth", authRoutes);
+app.use("/api", apiRoutes);
 
-app.listen(PORT, async () => {
-    try {
-        await pool.query("SELECT 1");
-        console.log("PostgreSQL connected successfully!");
-    } catch (error) {
-        console.error("PostgreSQL connection failed:", error.message);
-    }
-
+app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
 });
