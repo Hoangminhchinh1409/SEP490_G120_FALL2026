@@ -13,7 +13,7 @@ const Header = () => {
         <Link href="/" className="hover:text-[#0056a0] transition">Về NEXLOG</Link>
         <Link href="/" className="hover:text-[#0056a0] transition">Dịch vụ</Link>
         <Link href="/" className="hover:text-[#0056a0] transition">Khách hàng</Link>
-        <Link href="/" className="hover:text-[#0056a0] transition">Tin tức</Link>
+        <Link href="/blog" className="hover:text-[#0056a0] transition">Tin tức</Link>
         <Link href="/" className="hover:text-[#0056a0] transition">Liên hệ</Link>
       </nav>
       <div className="hidden md:flex gap-4 items-center">

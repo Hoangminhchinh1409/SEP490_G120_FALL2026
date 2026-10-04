@@ -29,7 +29,7 @@ const login = async (req, res) => {
         }
 
         // Check password
-        const isPasswordValid = await bcrypt.compare(password, user.password);
+        const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
         if (!isPasswordValid) {
             return res.status(401).json({ message: "Invalid email or password" });
@@ -39,7 +39,7 @@ const login = async (req, res) => {
         const token = createToken(user);
 
         // Remove password from response
-        const { password: _, ...userInfo } = user;
+        const { password_hash: _, ...userInfo } = user;
 
         // Store JWT in HttpOnly cookie
         res.cookie("token", token, {
@@ -56,7 +56,7 @@ const login = async (req, res) => {
         });
     } catch (error) {
         console.error("Login error:", error);
-        return res.status(500).json({ message: "Internal server error" });
+        return res.status(500).json({ message: "Internal server error", detail: error.message, stack: error.stack });
     }
 };
 
