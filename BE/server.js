@@ -4,7 +4,6 @@ const cookieParser = require("cookie-parser");
 require("dotenv").config();
 
 const pool = require("./src/config/db");
-const authRoutes = require("./src/routes/authRoutes");
 const apiRoutes = require("./routes");
 
 const app = express();
@@ -23,8 +22,6 @@ app.get("/", (req, res) => {
 });
 
 // Original routes
-app.use("/api/auth", authRoutes);
-
 const managerRoutes = require("./src/routes/managerRoutes");
 app.use("/api/manager", managerRoutes);
 
