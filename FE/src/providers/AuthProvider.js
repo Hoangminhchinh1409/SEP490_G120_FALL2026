@@ -5,6 +5,7 @@ import React, {
     useContext,
     useState,
     useEffect,
+    useRef,
 } from "react";
 
 import { useRouter } from "next/navigation";
@@ -21,7 +22,11 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+
     const router = useRouter();
+
+    // Đánh dấu user đã thực hiện login/logout
+    const authActionRef = useRef(false);
 
     // Kiểm tra đăng nhập khi mở ứng dụng
     useEffect(() => {
@@ -31,9 +36,17 @@ export const AuthProvider = ({ children }) => {
                     API_ENDPOINTS.AUTH.ME
                 );
 
-                setUser(data.user);
+                // Nếu trong lúc kiểm tra mà user đã login
+                // thì không ghi đè user hiện tại
+                if (!authActionRef.current) {
+                    setUser(data.user);
+                }
             } catch (error) {
-                setUser(null);
+                // Nếu user chưa thực hiện login
+                // thì mới set user = null
+                if (!authActionRef.current) {
+                    setUser(null);
+                }
             } finally {
                 setLoading(false);
             }
@@ -43,26 +56,28 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     // Chuyển hướng theo role
-    const redirectByRole = (role) => {
-        switch (role) {
-            case "ADMIN":
-            case "ADMINISTRATOR":
+    const redirectByRole = (roleId) => {
+        console.log("REDIRECT ROLE:", roleId);
+
+        switch (Number(roleId)) {
+            case 1:
                 router.push("/admin");
                 break;
 
-            case "MANAGER":
+            case 2:
                 router.push("/manager");
                 break;
 
-            case "DISPATCHER":
+            case 3:
                 router.push("/dispatcher");
                 break;
 
-            case "DRIVER":
+            case 4:
                 router.push("/driver");
                 break;
 
             default:
+                console.log("Unknown role:", roleId);
                 router.push("/");
         }
     };
@@ -80,8 +95,15 @@ export const AuthProvider = ({ children }) => {
             }
         );
 
+        console.log("LOGIN RESPONSE:", data);
+        console.log("ROLE:", data.user?.role_id);
+
+        // Đánh dấu login đã xảy ra
+        authActionRef.current = true;
+
         setUser(data.user);
-        redirectByRole(data.user.role);
+
+        redirectByRole(data.user.role_id);
 
         return data;
     };
@@ -96,6 +118,7 @@ export const AuthProvider = ({ children }) => {
                 }
             );
         } finally {
+            authActionRef.current = true;
             setUser(null);
             router.push("/login");
         }
@@ -104,7 +127,8 @@ export const AuthProvider = ({ children }) => {
     // Kiểm tra quyền
     const hasRole = (allowedRoles) => {
         if (!user) return false;
-        return allowedRoles.includes(user.role);
+
+        return allowedRoles.includes(user.role_id);
     };
 
     return (

@@ -5,6 +5,7 @@ require("dotenv").config();
 
 const pool = require("./src/config/db");
 const authRoutes = require("./src/routes/authRoutes");
+const apiRoutes = require("./routes");
 
 const app = express();
 const PORT = process.env.PORT || 9999;
@@ -21,10 +22,14 @@ app.get("/", (req, res) => {
     res.json({ message: "NEXLOG Express Backend is running!" });
 });
 
+// Original routes
 app.use("/api/auth", authRoutes);
 
 const managerRoutes = require("./src/routes/managerRoutes");
 app.use("/api/manager", managerRoutes);
+
+// Chi's new API routes
+app.use("/api", apiRoutes);
 
 app.listen(PORT, async () => {
     try {
