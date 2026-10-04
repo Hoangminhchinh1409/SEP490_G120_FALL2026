@@ -6,7 +6,7 @@ const {
     getVendors, 
     getApprovals 
 } = require("../controllers/managerController");
-const { requireAuth, requireRole } = require("../middleware/authMiddleware");
+const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
 
 const router = express.Router();
 

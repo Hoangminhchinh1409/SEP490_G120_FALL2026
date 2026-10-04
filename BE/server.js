@@ -3,7 +3,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 require("dotenv").config();
 
-const pool = require("./src/config/db");
+const pool = require("./config/db");
 const apiRoutes = require("./routes");
 
 const app = express();
@@ -22,7 +22,7 @@ app.get("/", (req, res) => {
 });
 
 // Original routes
-const managerRoutes = require("./src/routes/managerRoutes");
+const managerRoutes = require("./routes/managerRoutes");
 app.use("/api/manager", managerRoutes);
 
 // Chi's new API routes

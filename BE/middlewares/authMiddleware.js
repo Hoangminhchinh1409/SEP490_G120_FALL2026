@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-const authMiddleware = (req, res, next) => {
+const requireAuth = (req, res, next) => {
     try {
         const token = req.cookies.token;
 
@@ -26,4 +26,18 @@ const authMiddleware = (req, res, next) => {
     }
 };
 
-module.exports = authMiddleware;
+const requireRole = (roles) => {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(403).json({ message: "Forbidden" });
+        }
+        
+        if (roles.includes(req.user.role) || [1, 2].includes(req.user.role_id)) {
+            return next();
+        }
+        
+        return res.status(403).json({ message: "Forbidden" });
+    };
+};
+
+module.exports = { requireAuth, requireRole };
