@@ -1,7 +1,7 @@
 "use client";
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../providers/AuthProvider';
 
 export const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading, hasRole } = useAuth();
@@ -12,12 +12,13 @@ export const ProtectedRoute = ({ children, allowedRoles }) => {
       if (!user) {
         router.push('/login');
       } else if (allowedRoles && !hasRole(allowedRoles)) {
-        // Redirect unauthorized users to their default dashboard or login
-        if (user.role === 'ADMINISTRATOR') router.push('/admin');
-        else if (user.role === 'MANAGER') router.push('/manager');
-        else if (user.role === 'DISPATCHER') router.push('/dispatcher');
-        else if (user.role === 'DRIVER') router.push('/driver');
-        else router.push('/login');
+        const roleRoutes = {
+          1: '/admin',
+          2: '/manager',
+          3: '/dispatcher',
+          4: '/driver',
+        };
+        router.push(roleRoutes[user.role_id] || '/login');
       }
     }
   }, [user, loading, allowedRoles, router, hasRole]);

@@ -4,7 +4,7 @@ import DriverLayout from '../../src/layouts/DriverLayout';
 
 export default function Layout({ children }) {
   return (
-    <ProtectedRoute allowedRoles={['DRIVER']}>
+    <ProtectedRoute allowedRoles={[4]}>
       <DriverLayout>{children}</DriverLayout>
     </ProtectedRoute>
   );

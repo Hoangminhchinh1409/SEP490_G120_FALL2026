@@ -4,7 +4,7 @@ import AdminLayout from '../../src/layouts/AdminLayout';
 
 export default function Layout({ children }) {
   return (
-    <ProtectedRoute allowedRoles={['ADMINISTRATOR']}>
+    <ProtectedRoute allowedRoles={[1]}>
       <AdminLayout>{children}</AdminLayout>
     </ProtectedRoute>
   );
