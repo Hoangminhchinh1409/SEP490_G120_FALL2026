@@ -33,6 +33,25 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
     order?.documents?.length ? order.documents : defaultDocumentList
   );
 
+  const [orderMessages, setOrderMessages] = useState([
+    { id: 1, sender: 'Tài xế Hồ Chí Học', role: 'DRIVER', time: '09:15', content: 'Xe đã đến kho ALS nhận đủ kiện hàng, niêm phong chì số SEAL-VN-98721.' },
+    { id: 2, sender: 'Điều phối viên (Bạn)', role: 'DISPATCHER', time: '09:20', content: 'Đã ghi nhận chì hợp lệ. Nhớ kiểm tra kỹ nhiệt độ thùng xe và đi tuyến cao tốc Nội Bài - Bắc Ninh.' }
+  ]);
+  const [newMessageText, setNewMessageText] = useState('');
+
+  const handleSendMessage = () => {
+    if (!newMessageText.trim()) return;
+    setOrderMessages(prev => [...prev, {
+      id: Date.now(),
+      sender: 'Điều phối viên (Bạn)',
+      role: 'DISPATCHER',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      content: newMessageText.trim()
+    }]);
+    setNewMessageText('');
+    message.success('Đã gửi tin nhắn cho tài xế!');
+  };
+
   if (!order) return null;
 
   const handleApproveDoc = (docKey) => {
@@ -216,6 +235,14 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
         width={950}
         footer={[
           <Button key="close" onClick={onCancel}>Đóng</Button>,
+          <Button 
+            key="revokeLink" 
+            onClick={() => {
+              message.success('Đã thu hồi và cấp lại link tracking bảo mật mới!');
+            }}
+          >
+            Thu hồi Link tracking
+          </Button>,
           order.status === 'DRAFT' && (
             <Button 
               key="confirmOrder" 
@@ -230,6 +257,20 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
           (order.status === 'CONFIRMED' || order.status === 'READY_FOR_PLANNING') && (
             <Button key="confirmDocs" type="primary" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleConfirmAllDocuments}>
               Xác nhận chứng từ
+            </Button>
+          ),
+          ['DELIVERED', 'CANCELLED'].includes(order.status) && (
+            <Button 
+              key="closeOrder" 
+              type="primary" 
+              className="bg-slate-700 hover:bg-slate-800 font-semibold" 
+              onClick={() => {
+                onUpdateOrder({ ...order, status: 'CLOSED' });
+                message.success('Đã hoàn tất đóng đơn hàng!');
+                onCancel();
+              }}
+            >
+              Đóng đơn hàng
             </Button>
           ),
           ['DRAFT', 'CONFIRMED', 'READY_FOR_PLANNING'].includes(order.status) && (
@@ -506,6 +547,48 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                           <div className="text-lg font-bold text-amber-600">0 VNĐ</div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                )
+              },
+              {
+                key: '5',
+                label: <span className="font-semibold text-xs flex items-center gap-1"><MessageCircle size={13} /> Trao đổi nội bộ</span>,
+                children: (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                      <div className="text-xs font-bold text-gray-700 mb-2">Lịch sử tin nhắn trao đổi trên đơn:</div>
+                      <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                        {orderMessages.map(msg => (
+                          <div 
+                            key={msg.id} 
+                            className={`p-2.5 rounded-lg text-xs ${msg.role === 'DISPATCHER' ? 'bg-indigo-50 border border-indigo-200 ml-6 text-indigo-950' : 'bg-white border border-gray-200 mr-6 text-gray-800'}`}
+                          >
+                            <div className="flex justify-between items-center mb-1 text-[11px]">
+                              <span className="font-bold">{msg.sender}</span>
+                              <span className="text-gray-400 font-mono">{msg.time}</span>
+                            </div>
+                            <p className="m-0 leading-relaxed">{msg.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 items-center">
+                      <Input 
+                        placeholder="Nhập tin nhắn hướng dẫn hoặc trao đổi với tài xế..." 
+                        value={newMessageText}
+                        onChange={e => setNewMessageText(e.target.value)}
+                        onPressEnter={handleSendMessage}
+                        className="text-xs"
+                      />
+                      <Button 
+                        type="primary" 
+                        onClick={handleSendMessage}
+                        className="bg-[#7367f0] hover:bg-[#5e50ee] text-xs font-semibold"
+                      >
+                        Gửi tin
+                      </Button>
                     </div>
                   </div>
                 )

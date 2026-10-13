@@ -16,7 +16,8 @@ const statusColors = {
   'ASSIGNED': 'orange',
   'IN_TRANSIT': 'purple', 
   'DELIVERED': 'green', 
-  'CANCELLED': 'red'
+  'CANCELLED': 'red',
+  'CLOSED': 'gray'
 };
 
 const statusLabels = {
@@ -26,7 +27,8 @@ const statusLabels = {
   'ASSIGNED': 'Đã gán xe',
   'IN_TRANSIT': 'Đang vận chuyển',
   'DELIVERED': 'Đã giao hàng',
-  'CANCELLED': 'Đã hủy'
+  'CANCELLED': 'Đã hủy',
+  'CLOSED': 'Đã đóng'
 };
 
 const OrderManagement = () => {
@@ -312,7 +314,7 @@ const OrderManagement = () => {
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button 
               icon={<RefreshCw size={15} className={loading ? "animate-spin text-indigo-600" : "text-gray-600"} />} 
               className="h-10 px-3 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium"
@@ -328,6 +330,32 @@ const OrderManagement = () => {
               onClick={() => setIsAIDrawerOpen(true)}
             >
               Trợ lý AI
+            </Button>
+
+            <Button
+              className="h-10 px-3.5 border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100 font-medium"
+              onClick={() => {
+                const guestLink = `${window.location.origin}/guest-order?token=${Math.random().toString(36).substring(2, 10)}`;
+                navigator.clipboard?.writeText(guestLink);
+                message.success('Đã sao chép link tạo đơn! Bạn có thể gửi cho khách hàng.');
+              }}
+            >
+              Sao chép Link tạo đơn
+            </Button>
+
+            <Button
+              className="h-10 px-3.5 border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 font-medium"
+              onClick={() => {
+                const delivereds = orders.filter(o => o.status === 'DELIVERED');
+                if (delivereds.length === 0) {
+                  message.info('Không có đơn hàng nào đã giao cần đóng.');
+                  return;
+                }
+                setOrders(prev => prev.map(o => o.status === 'DELIVERED' ? { ...o, status: 'CLOSED' } : o));
+                message.success(`Đã đóng thành công ${delivereds.length} đơn hàng đã giao!`);
+              }}
+            >
+              Đóng đơn hàng loạt
             </Button>
 
             <Button 
