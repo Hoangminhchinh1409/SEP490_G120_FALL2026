@@ -1,12 +1,22 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Modal, Tabs, Tag, Button, Input, InputNumber, Space, Table, message } from 'antd';
 import { FileText, AlertTriangle, Download, Upload, ShieldCheck, PhoneCall, MessageCircle, Mail, DollarSign } from 'lucide-react';
+import { orderApi } from '../../api/orderApi';
+
+const defaultDocumentList = [
+  { key: '1', name: 'Tờ khai hải quan', file: 'Chờ tải lên', status: 'PENDING', size: '-', uploadDate: '-' },
+  { key: '2', name: 'Lệnh giao hàng & Vận đơn', file: 'Chờ tải lên', status: 'PENDING', size: '-', uploadDate: '-' },
+  { key: '3', name: 'Hóa đơn thương mại & Phiếu đóng gói', file: 'Chờ tải lên', status: 'PENDING', size: '-', uploadDate: '-' },
+  { key: '4', name: 'Hợp đồng mua bán', file: 'Chờ tải lên', status: 'PENDING', size: '-', uploadDate: '-' }
+];
 
 const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
   const [activeTab, setActiveTab] = useState('1');
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelFee, setCancelFee] = useState(0);
+  const [savingPrice, setSavingPrice] = useState(false);
+  const [confirmingOrder, setConfirmingOrder] = useState(false);
 
   // Điều chỉnh state khi order prop thay đổi chuẩn React không dùng useEffect
   const [prevOrderKey, setPrevOrderKey] = useState(order?.key || order?.order_id);
@@ -20,13 +30,7 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
   }
 
   const [documents, setDocuments] = useState(
-    order?.documents || [
-      { key: '1', name: 'Tờ khai hải quan', file: 'ToKhaiHQ7N_QDTQ_108187779340.xlsx', status: 'SUBMITTED', size: '74.2 KB', uploadDate: '2026-10-12 10:15' },
-      { key: '2', name: 'Lệnh giao hàng & Vận đơn', file: 'Bill.pdf', status: 'SUBMITTED', size: '286.4 KB', uploadDate: '2026-10-12 10:20' },
-      { key: '3', name: 'Hóa đơn thương mại & Phiếu đóng gói', file: 'CI PL SOUND LIGHT.pdf', status: 'SUBMITTED', size: '119.7 KB', uploadDate: '2026-10-12 10:22' },
-      { key: '4', name: 'Hợp đồng mua bán', file: 'HDMB SLVN TT.pdf', status: 'APPROVED', size: '1.3 MB', uploadDate: '2026-10-12 09:40' },
-      { key: '5', name: 'Giấy nộp tiền thuế', file: 'Bankslip YEL 29952.jpg', status: 'SUBMITTED', size: '638.8 KB', uploadDate: '2026-10-12 10:30' }
-    ]
+    order?.documents?.length ? order.documents : defaultDocumentList
   );
 
   if (!order) return null;
@@ -51,38 +55,55 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
     message.success('Đã duyệt toàn bộ chứng từ!');
   };
 
-  // Xác nhận giá cước thỏa thuận đã chốt với khách
-  const handleSavePrice = () => {
+  // Xác nhận giá cước thỏa thuận đã chốt với khách qua BE
+  const handleSavePrice = async () => {
     if (!currentAgreedPrice || currentAgreedPrice <= 0) {
       message.error('Vui lòng nhập giá cước thỏa thuận lớn hơn 0!');
       return;
     }
-    onUpdateOrder({
-      ...order,
-      agreed_price: currentAgreedPrice
-    });
-    message.success(`Đã cập nhật giá thỏa thuận: ${currentAgreedPrice.toLocaleString()} đ`);
+    try {
+      setSavingPrice(true);
+      await orderApi.updateAgreedPrice(order.id || order.order_id, currentAgreedPrice);
+      onUpdateOrder({
+        ...order,
+        agreed_price: currentAgreedPrice
+      });
+      message.success(`Đã cập nhật giá thỏa thuận: ${currentAgreedPrice.toLocaleString()} đ lên hệ thống BE`);
+    } catch (err) {
+      console.error(err);
+      message.error(err.message || 'Lỗi khi cập nhật giá cước lên máy chủ');
+    } finally {
+      setSavingPrice(false);
+    }
   };
 
-  // Xác nhận đơn hàng: Đơn chuyển sang READY_FOR_PLANNING (Sẵn sàng xếp xe)
-  const handleConfirmOrder = () => {
+  // Xác nhận đơn hàng: Chuyển sang READY_FOR_PLANNING (Sẵn sàng xếp xe) qua BE
+  const handleConfirmOrder = async () => {
     if (!currentAgreedPrice || currentAgreedPrice <= 0) {
       message.error('Vui lòng nhập giá cước thỏa thuận đã chốt với khách hàng trước khi xác nhận đơn!');
       return;
     }
-    
-    // Duyệt tự động các chứng từ hợp lệ
-    const updatedDocs = documents.map(d => ({ ...d, status: 'APPROVED' }));
-    setDocuments(updatedDocs);
+    try {
+      setConfirmingOrder(true);
+      await orderApi.confirmOrder(order.id || order.order_id, currentAgreedPrice);
+      
+      const updatedDocs = documents.map(d => ({ ...d, status: 'APPROVED' }));
+      setDocuments(updatedDocs);
 
-    onUpdateOrder({
-      ...order,
-      status: 'READY_FOR_PLANNING',
-      agreed_price: currentAgreedPrice,
-      documents: updatedDocs,
-      contract_uploaded: true
-    });
-    message.success('Xác nhận đơn thành công! Đơn hàng đã chuyển sang trạng thái Sẵn sàng xếp xe.');
+      onUpdateOrder({
+        ...order,
+        status: 'READY_FOR_PLANNING',
+        agreed_price: currentAgreedPrice,
+        documents: updatedDocs,
+        contract_uploaded: true
+      });
+      message.success('Xác nhận đơn thành công! Đơn hàng đã chuyển sang trạng thái Sẵn sàng xếp xe.');
+    } catch (err) {
+      console.error(err);
+      message.error(err.message || 'Lỗi khi xác nhận đơn hàng trên máy chủ');
+    } finally {
+      setConfirmingOrder(false);
+    }
   };
 
   const handleExecuteCancel = () => {
@@ -196,7 +217,13 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
         footer={[
           <Button key="close" onClick={onCancel}>Đóng</Button>,
           order.status === 'DRAFT' && (
-            <Button key="confirmOrder" type="primary" className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold" onClick={handleConfirmOrder}>
+            <Button 
+              key="confirmOrder" 
+              type="primary" 
+              loading={confirmingOrder}
+              className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold" 
+              onClick={handleConfirmOrder}
+            >
               Xác nhận đơn hàng
             </Button>
           ),
@@ -301,6 +328,7 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                           <Button 
                             type="primary" 
                             size="middle" 
+                            loading={savingPrice}
                             className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs"
                             onClick={handleSavePrice}
                           >
@@ -314,8 +342,8 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                       <div>
                         <div className="text-xs text-gray-500">Khách hàng:</div>
                         <div className="font-bold text-gray-800 text-sm mt-0.5">{order.customer || order.customer_name}</div>
-                        <div className="text-xs text-gray-500 mt-1">Mã HAWB: <span className="font-mono font-semibold text-indigo-600">{order.hawb_code || 'HNAE25090222'}</span></div>
-                        <div className="text-xs text-gray-500 mt-1">SĐT: {order.customer_phone || '0977887918'} | Email: {order.customer_email || 'adtek@logistics.com'}</div>
+                        <div className="text-xs text-gray-500 mt-1">Mã HAWB: <span className="font-mono font-semibold text-indigo-600">{order.hawb_code || order.order_id}</span></div>
+                        <div className="text-xs text-gray-500 mt-1">SĐT: {order.customer_phone || 'Chưa cung cấp'} | Email: {order.customer_email || 'Chưa cung cấp'}</div>
                       </div>
                       <div>
                         <div className="text-xs text-gray-500">Tuyến đường:</div>
@@ -331,19 +359,19 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                     <div className="grid grid-cols-4 gap-3 text-center">
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
                         <div className="text-[11px] text-gray-500">Số lượng</div>
-                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.package_count || 18} {order.package_unit || 'Pallet'}</div>
+                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.package_count || 1} {order.package_unit || 'Kiện'}</div>
                       </div>
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
                         <div className="text-[11px] text-gray-500">Kích thước</div>
-                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.length_cm || 120}x{order.width_cm || 100}x{order.height_cm || 160} cm</div>
+                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.length_cm || 0}x{order.width_cm || 0}x{order.height_cm || 0} cm</div>
                       </div>
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
                         <div className="text-[11px] text-gray-500">Trọng lượng</div>
-                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.weight || order.weight_kg || '2,850'} kg</div>
+                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.weight || order.weight_kg || 0} kg</div>
                       </div>
                       <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
                         <div className="text-[11px] text-amber-800 font-medium">Tải trọng tính cước</div>
-                        <div className="font-bold text-amber-600 text-base mt-0.5">{order.chargeable || order.chargeable_weight || '2,850'} kg</div>
+                        <div className="font-bold text-amber-600 text-base mt-0.5">{order.chargeable || order.chargeable_weight || 0} kg</div>
                       </div>
                     </div>
 
@@ -452,14 +480,14 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                       <div className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-200">
                         <div className="text-xs text-indigo-700 font-semibold">Phí phụ trội:</div>
                         <div className="text-xl font-bold text-indigo-800 mt-1">
-                          {(order.extra_fees_surcharge || 450000).toLocaleString()} VNĐ
+                          {(order.extra_fees_surcharge || 0).toLocaleString()} VNĐ
                         </div>
                       </div>
 
                       <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200">
                         <div className="text-xs text-emerald-700 font-semibold">Phí thu hộ:</div>
                         <div className="text-xl font-bold text-emerald-800 mt-1">
-                          {(order.extra_fees_collection || 1200000).toLocaleString()} VNĐ
+                          {(order.extra_fees_collection || 0).toLocaleString()} VNĐ
                         </div>
                       </div>
                     </div>
@@ -468,13 +496,10 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="font-bold text-xs text-amber-900 uppercase">Phí chờ bốc dỡ:</div>
-                          <div className="text-xs text-amber-700 mt-0.5">Thời gian chờ vượt 80 phút. Mức đề xuất:</div>
+                          <div className="text-xs text-amber-700 mt-0.5">Phí chờ phát sinh nếu thời gian chờ bốc xếp vượt định mức 60 phút:</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-lg font-bold text-amber-600">200,000 VNĐ</div>
-                          <Button size="small" type="primary" className="bg-amber-600 mt-1" onClick={() => message.success('Đã xác nhận phí chờ!')}>
-                            Xác nhận phí chờ
-                          </Button>
+                          <div className="text-lg font-bold text-amber-600">0 VNĐ</div>
                         </div>
                       </div>
                     </div>

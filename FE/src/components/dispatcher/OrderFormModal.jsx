@@ -1,20 +1,12 @@
-﻿import { useState, useMemo } from 'react';
-import { Modal, Form, Input, InputNumber, Switch, Select, Checkbox, Tag } from 'antd';
+import { useState, useMemo } from 'react';
+import { Modal, Form, Input, InputNumber, Switch, Select, Checkbox } from 'antd';
 import { 
-  Sparkles, 
   FileText, 
-  CheckCircle2, 
   ShieldAlert, 
-  MapPin, 
-  Route, 
-  Calculator, 
-  Compass,
-  PhoneCall
+  Calculator
 } from 'lucide-react';
 import { 
-  SAMPLE_ORDER_PRESETS, 
   DOCUMENT_TYPES, 
-  POPULAR_LOCATIONS, 
   calculateRouteEstimate 
 } from '../../data/dispatcherPresets';
 import RouteMapPicker from '../common/RouteMapPicker';
@@ -25,12 +17,11 @@ const { Option } = Select;
 const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   const [form] = Form.useForm();
   const [noDocsRequired, setNoDocsRequired] = useState(false);
-  const [activePreset, setActivePreset] = useState(null);
 
-  const [pickupCoords, setPickupCoords] = useState({ lat: 21.1235, lng: 105.9876 });
-  const [deliveryCoords, setDeliveryCoords] = useState({ lat: 21.2215, lng: 105.8078 });
+  const [pickupCoords, setPickupCoords] = useState(null);
+  const [deliveryCoords, setDeliveryCoords] = useState(null);
 
-  // Tự động tính toán lộ trình qua useMemo
+  // Tự động tính toán lộ trình qua useMemo khi cả 2 tọa độ đã được chọn
   const routeInfo = useMemo(() => {
     if (pickupCoords?.lat && deliveryCoords?.lat) {
       return calculateRouteEstimate(
@@ -40,7 +31,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         deliveryCoords.lng
       );
     }
-    return { distanceKm: 38.5, durationMins: 45 };
+    return { distanceKm: 0, durationMins: 0 };
   }, [pickupCoords, deliveryCoords]);
 
   const values = Form.useWatch([], form);
@@ -56,28 +47,14 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   }, [values]);
 
   const estimatedBaselineRate = useMemo(() => {
-    const dist = routeInfo.distanceKm || 35;
+    if (!routeInfo.distanceKm) return 0;
+    const dist = routeInfo.distanceKm;
     const weight = parseFloat(chargeableWeight) || 0;
     const baseFare = 1500000;
     const distanceFee = dist * 45000;
     const weightFee = weight * 850;
     return Math.round((baseFare + distanceFee + weightFee) / 50000) * 50000;
   }, [routeInfo, chargeableWeight]);
-
-  const applyPreset = (presetKey) => {
-    const preset = SAMPLE_ORDER_PRESETS.find(p => p.key === presetKey);
-    if (!preset) return;
-    setActivePreset(presetKey);
-    setNoDocsRequired(false);
-
-    if (preset.data.pickup_coords) setPickupCoords(preset.data.pickup_coords);
-    if (preset.data.delivery_coords) setDeliveryCoords(preset.data.delivery_coords);
-
-    form.setFieldsValue({
-      ...preset.data,
-      no_documents: false
-    });
-  };
 
   const handleNoDocsChange = (e) => {
     const checked = e.target.checked;
@@ -104,7 +81,6 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         created_at: new Date().toISOString()
       });
       form.resetFields();
-      setActivePreset(null);
     });
   };
 
@@ -124,7 +100,6 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
       onOk={handleOk}
       onCancel={() => {
         onCancel();
-        setActivePreset(null);
       }}
       width={900}
       okText="Xác nhận tạo đơn"
@@ -132,35 +107,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
       okButtonProps={{ className: "bg-[#7367f0] hover:bg-[#5e50ee] font-semibold h-9 px-5" }}
       cancelButtonProps={{ className: "h-9 px-4" }}
     >
-      {/* Nút bấm Chọn Dữ liệu mẫu */}
-      <div className="mt-3 mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-            <Sparkles size={14} className="text-amber-500 fill-amber-400" />
-            Dữ liệu mẫu:
-          </span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {SAMPLE_ORDER_PRESETS.map((preset) => (
-            <button
-              key={preset.key}
-              type="button"
-              onClick={() => applyPreset(preset.key)}
-              className={`text-left p-2.5 rounded-lg border transition-all text-xs flex flex-col gap-1 ${
-                activePreset === preset.key 
-                  ? 'border-indigo-500 bg-white shadow-sm ring-2 ring-indigo-100' 
-                  : 'border-gray-200 bg-white hover:border-indigo-200'
-              }`}
-            >
-              <div className="font-bold text-gray-800 flex items-center justify-between">
-                <span>{preset.name}</span>
-                {activePreset === preset.key && <CheckCircle2 size={14} className="text-indigo-600" />}
-              </div>
-              <div className="text-gray-500 line-clamp-1">{preset.description}</div>
-            </button>
-          ))}
-        </div>
-      </div>
+      <div className="pt-2"></div>
 
       <Form 
         form={form} 
@@ -172,8 +119,8 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           cargo_type: 'GENERAL',
           package_unit: 'Pallet',
           package_count: 1,
-          pickup_address: 'KCN Tiên Sơn (Nhà máy ADTEK), Bắc Ninh',
-          delivery_address: 'Ga Hàng hóa NCTS Sân bay Nội Bài, Sóc Sơn, Hà Nội',
+          pickup_address: '',
+          delivery_address: '',
           required_documents: ['CUSTOMS_DECLARATION', 'DELIVERY_ORDER', 'COMMERCIAL_INVOICE', 'PACKING_LIST']
         }}
       >

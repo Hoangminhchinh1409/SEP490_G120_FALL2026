@@ -1,17 +1,10 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, Tag, Button, Row, Col } from 'antd';
 import { Users, Plus, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell } from 'lucide-react';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import Chart from 'react-apexcharts';
-
-// Mock Data
-const mockOrders = [
-  { key: '1', order_id: 'NEX-827364', customer: 'VinFast LLC', route: 'Nội Bài -> Hữu Nghị', weight: '350.00', chargeable: '400.00', status: 'CREATED', date: '2026-09-23 08:30' },
-  { key: '2', order_id: 'NEX-827365', customer: 'Samsung VN', route: 'Yên Phong -> Nội Bài', weight: '1200.00', chargeable: '1200.00', status: 'VEHICLE_ASSIGNED', date: '2026-09-23 09:15' },
-  { key: '3', order_id: 'NEX-827366', customer: 'Foxconn', route: 'Gia Lâm -> Hải Phòng', weight: '210.00', chargeable: '250.00', status: 'IN_TRANSIT', date: '2026-09-23 10:00' },
-  { key: '4', order_id: 'NEX-827367', customer: 'LG Electronics', route: 'Hải Phòng -> Hà Nội', weight: '550.00', chargeable: '550.00', status: 'DELIVERED', date: '2026-09-22 14:00' },
-];
+import { orderApi } from '../../api/orderApi';
 
 const mockFeeds = [
   { id: 1, title: 'Tài xế Nguyễn Văn A đã nhận đơn', time: '10 phút trước', color: 'text-blue-500' },
@@ -62,21 +55,36 @@ const satisfactionChartData = [66, 26, 8];
 
 const DispatcherDashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [data, setData] = useState(mockOrders);
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const handleCreateOrder = (values) => {
-    const newOrder = {
-      key: Date.now().toString(),
-      order_id: `NEX-${Math.floor(100000 + Math.random() * 900000)}`,
-      customer: values.customer_name,
-      route: 'TBD',
-      weight: values.weight_kg,
-      chargeable: values.chargeable_weight,
-      status: 'CREATED',
-      date: new Date().toISOString().slice(0, 16).replace('T', ' ')
-    };
-    setData([newOrder, ...data]);
-    setIsModalOpen(false);
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      const res = await orderApi.getAllOrders();
+      setData(res.map(o => ({
+        ...o,
+        route: `${o.pickup?.split('-')[0]?.trim() || 'Kho ALS'} -> ${o.dropoff?.split(',')[0]?.trim() || 'Điểm giao'}`
+      })));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const handleCreateOrder = async (values) => {
+    try {
+      await orderApi.createDirectOrder(values);
+      setIsModalOpen(false);
+      fetchOrders();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const statusColors = {

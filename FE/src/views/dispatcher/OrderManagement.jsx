@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip } from 'antd';
-import { Search, Plus, Download, Eye, Sparkles, Truck, PhoneCall, Globe, CheckCircle2 } from 'lucide-react';
+import { Search, Plus, Download, Eye, Sparkles, Truck, PhoneCall, Globe, RefreshCw } from 'lucide-react';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import OrderDetailsModal from '../../components/dispatcher/OrderDetailsModal';
 import DocumentAssistantDrawer from '../../components/dispatcher/DocumentAssistantDrawer';
 import TripAssignmentModal from '../../components/dispatcher/TripAssignmentModal';
-import { getStoredOrders, saveStoredOrders } from '../../data/orderStore';
+import { orderApi } from '../../api/orderApi';
 
 const { RangePicker } = DatePicker;
 
@@ -30,7 +30,8 @@ const statusLabels = {
 };
 
 const OrderManagement = () => {
-  const [orders, setOrders] = useState(() => getStoredOrders());
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   
@@ -40,62 +41,88 @@ const OrderManagement = () => {
   const [selectedOrderForAssign, setSelectedOrderForAssign] = useState(null);
   const [isAIDrawerOpen, setIsAIDrawerOpen] = useState(false);
 
-  // Lắng nghe thay đổi dữ liệu từ các tab khác hoặc từ Homepage
-  useEffect(() => {
-    const handleStorageChange = () => {
-      setOrders(getStoredOrders());
-    };
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('nexlog_orders_updated', handleStorageChange);
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('nexlog_orders_updated', handleStorageChange);
-    };
+  // Tải danh sách đơn hàng từ Backend Supabase
+  const fetchOrders = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await orderApi.getAllOrders();
+      setOrders(data);
+    } catch (err) {
+      console.error('Fetch orders error:', err);
+      message.error('Không thể kết nối đến máy chủ BE để lấy danh sách đơn');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleCreateOrder = (values) => {
-    const newOrder = {
-      key: Date.now().toString(),
-      order_id: `NEX-${Math.floor(100000 + Math.random() * 900000)}`,
-      hawb_code: values.hawb_code || 'HAWB-AUTO',
-      customer: values.customer_name,
-      customer_phone: values.customer_phone || '',
-      customer_email: values.customer_email || '',
-      pickup: values.pickup_address,
-      dropoff: values.delivery_address,
-      package_count: values.package_count || 1,
-      package_unit: values.package_unit || 'Pallet',
-      weight: values.weight_kg,
-      chargeable: values.chargeable_weight,
-      agreed_price: values.agreed_price,
-      extra_fees_surcharge: values.extra_fees_surcharge || 0,
-      extra_fees_collection: values.extra_fees_collection || 0,
-      order_notes: values.order_notes,
-      source: values.source || 'HOTLINE', // Cách 1: Khách liên hệ trực tiếp
-      status: values.status || 'READY_FOR_PLANNING',
-      date: new Date().toISOString().slice(0, 16).replace('T', ' ')
+  useEffect(() => {
+    let active = true;
+
+    const loadOrders = async () => {
+      try {
+        const data = await orderApi.getAllOrders();
+        if (active) {
+          setOrders(data);
+        }
+      } catch (err) {
+        if (active) {
+          console.error('Fetch orders error:', err);
+          message.error('Không thể kết nối đến máy chủ BE để lấy danh sách đơn');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
     };
-    const updated = [newOrder, ...orders];
-    setOrders(updated);
-    saveStoredOrders(updated);
-    window.dispatchEvent(new Event('nexlog_orders_updated'));
-    setIsCreateModalOpen(false);
-    message.success(`Đã tạo thành công đơn hàng: ${newOrder.order_id}!`);
+
+    loadOrders();
+
+    const handleStorageChange = () => {
+      fetchOrders();
+    };
+
+    window.addEventListener('nexlog_orders_updated', handleStorageChange);
+    return () => {
+      active = false;
+      window.removeEventListener('nexlog_orders_updated', handleStorageChange);
+    };
+  }, [fetchOrders]);
+
+  const handleCreateOrder = async (values) => {
+    try {
+      setLoading(true);
+      const newOrder = await orderApi.createDirectOrder(values);
+      message.success(`Đã tạo thành công đơn hàng vào Backend: ${newOrder.order_code}!`);
+      setIsCreateModalOpen(false);
+      await fetchOrders();
+    } catch (err) {
+      console.error(err);
+      message.error(err.message || 'Không thể tạo đơn hàng trên máy chủ');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdateOrder = (updatedOrder) => {
-    const updated = orders.map(o => o.key === updatedOrder.key ? updatedOrder : o);
-    setOrders(updated);
-    saveStoredOrders(updated);
-    window.dispatchEvent(new Event('nexlog_orders_updated'));
+    setOrders(prev => prev.map(o => (o.id === updatedOrder.id || o.order_id === updatedOrder.order_id) ? { ...o, ...updatedOrder } : o));
     setSelectedOrderForDetails(updatedOrder);
+    fetchOrders();
   };
 
-  const handleAssignSuccess = (assignedOrder) => {
-    const updated = orders.map(o => o.key === assignedOrder.key ? assignedOrder : o);
-    setOrders(updated);
-    saveStoredOrders(updated);
-    window.dispatchEvent(new Event('nexlog_orders_updated'));
+  const handleAssignSuccess = async (assignedOrder) => {
+    try {
+      setLoading(true);
+      await orderApi.assignTrip(assignedOrder.id || assignedOrder.order_id);
+      message.success('Đã gán xe cho đơn hàng thành công trên máy chủ!');
+      setSelectedOrderForAssign(null);
+      await fetchOrders();
+    } catch (err) {
+      console.error(err);
+      message.error('Không thể gán xe cho đơn hàng trên máy chủ');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Filter logic
@@ -287,8 +314,17 @@ const OrderManagement = () => {
 
           <div className="flex gap-2">
             <Button 
+              icon={<RefreshCw size={15} className={loading ? "animate-spin text-indigo-600" : "text-gray-600"} />} 
+              className="h-10 px-3 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium"
+              onClick={fetchOrders}
+              loading={loading}
+            >
+              Làm mới
+            </Button>
+
+            <Button 
               icon={<Sparkles size={16} className="text-purple-600" />} 
-              className="h-10 px-3.5 border-purple-200 text-purple-700 bg-purple-50/50 hover:bg-purple-100"
+              className="h-10 px-3.5 border-purple-200 text-purple-700 bg-purple-50/50 hover:bg-purple-100 font-medium"
               onClick={() => setIsAIDrawerOpen(true)}
             >
               Trợ lý AI
@@ -352,6 +388,7 @@ const OrderManagement = () => {
           <Table 
             columns={columns} 
             dataSource={filteredData} 
+            loading={loading}
             pagination={{ pageSize: 8 }} 
             className="custom-table"
           />

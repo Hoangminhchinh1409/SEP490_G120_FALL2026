@@ -3,18 +3,19 @@ import { Modal, Form, Input, InputNumber, Select, Button, message, Result } from
 import { Send, MapPin, Package, User } from 'lucide-react';
 import RouteMapPicker from '../common/RouteMapPicker';
 import LocationSearchInput from '../common/LocationSearchInput';
-import { createConsultationOrderFromWeb } from '../../data/orderStore';
+import { orderApi } from '../../api/orderApi';
 
 const { Option } = Select;
 
 const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
   const [form] = Form.useForm();
   const [submittedOrder, setSubmittedOrder] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   
-  // Tọa độ mặc định
-  const [pickupCoords, setPickupCoords] = useState({ lat: 21.2187, lng: 105.8042 }); // Kho ALS Nội Bài
-  const [deliveryCoords, setDeliveryCoords] = useState({ lat: 21.1235, lng: 105.9876 }); // KCN Tiên Sơn
-  const [routeInfo, setRouteInfo] = useState({ distanceKm: 38.5, durationMins: 45 });
+  // Tọa độ định vị lộ trình
+  const [pickupCoords, setPickupCoords] = useState(null);
+  const [deliveryCoords, setDeliveryCoords] = useState(null);
+  const [routeInfo, setRouteInfo] = useState({ distanceKm: 0, durationMins: 0 });
 
   const values = Form.useWatch([], form);
 
@@ -29,19 +30,27 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
     return (weight || 0).toFixed(2);
   }, [values]);
 
-  const handleSubmit = () => {
-    form.validateFields().then(formValues => {
-      const order = createConsultationOrderFromWeb({
+  const handleSubmit = async () => {
+    try {
+      const formValues = await form.validateFields();
+      setSubmitting(true);
+      const newOrder = await orderApi.createConsultationOrder({
         ...formValues,
         pickup_coords: pickupCoords,
         delivery_coords: deliveryCoords,
         estimated_distance_km: routeInfo.distanceKm,
         estimated_duration_mins: routeInfo.durationMins
       });
-      setSubmittedOrder(order);
-      if (onSuccess) onSuccess(order);
-      message.success('Đã gửi yêu cầu tư vấn thành công!');
-    });
+      setSubmittedOrder(newOrder);
+      if (onSuccess) onSuccess(newOrder);
+      window.dispatchEvent(new Event('nexlog_orders_updated'));
+      message.success('Đã gửi yêu cầu tư vấn thành công tới hệ thống!');
+    } catch (err) {
+      console.error('Submit error:', err);
+      message.error(err.message || 'Không thể gửi yêu cầu tư vấn');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleReset = () => {
@@ -101,12 +110,8 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               package_unit: 'Pallet',
               package_count: 1,
               cargo_type: 'GENERAL',
-              length_cm: 120,
-              width_cm: 100,
-              height_cm: 150,
-              weight: 1200,
-              pickup_address: 'Kho ALS Cảng HKQT Nội Bài, Sóc Sơn, Hà Nội',
-              delivery_address: 'KCN Tiên Sơn (Nhà máy ADTEK), Bắc Ninh'
+              pickup_address: '',
+              delivery_address: ''
             }}
           >
             {/* 1. Thông tin liên hệ */}
@@ -237,7 +242,13 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
             {/* Nút hành động */}
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <Button onClick={handleReset}>Đóng</Button>
-              <Button type="primary" onClick={handleSubmit} icon={<Send size={15} />} className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold px-6">
+              <Button 
+                type="primary" 
+                onClick={handleSubmit} 
+                loading={submitting}
+                icon={<Send size={15} />} 
+                className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold px-6"
+              >
                 Gửi yêu cầu vận chuyển
               </Button>
             </div>

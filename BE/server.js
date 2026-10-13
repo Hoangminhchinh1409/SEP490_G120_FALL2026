@@ -3,7 +3,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 require("dotenv").config();
 
-const pool = require("./config/db");
+const supabase = require("./config/supabase");
 const apiRoutes = require("./routes");
 
 const app = express();
@@ -25,13 +25,17 @@ app.get("/", (req, res) => {
 const managerRoutes = require("./routes/managerRoutes");
 app.use("/api/manager", managerRoutes);
 
-// Chi's new API routes
+// API routes
 app.use("/api", apiRoutes);
 
 app.listen(PORT, async () => {
     try {
-        await pool.query("SELECT 1");
-        console.log("PostgreSQL connected successfully!");
+        const { error } = await supabase.from("orders").select("id").limit(1);
+        if (error) {
+            console.error("PostgreSQL (Supabase) connection failed:", error.message);
+        } else {
+            console.log("PostgreSQL (Supabase) connected successfully!");
+        }
     } catch (error) {
         console.error("PostgreSQL connection failed:", error.message);
     }
