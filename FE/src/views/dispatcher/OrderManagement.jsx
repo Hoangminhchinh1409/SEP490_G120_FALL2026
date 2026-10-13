@@ -1,97 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip } from 'antd';
-import { Search, Plus, Download, Eye, Sparkles, Truck } from 'lucide-react';
+import { Search, Plus, Download, Eye, Sparkles, Truck, PhoneCall, Globe, CheckCircle2 } from 'lucide-react';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import OrderDetailsModal from '../../components/dispatcher/OrderDetailsModal';
 import DocumentAssistantDrawer from '../../components/dispatcher/DocumentAssistantDrawer';
 import TripAssignmentModal from '../../components/dispatcher/TripAssignmentModal';
+import { getStoredOrders, saveStoredOrders } from '../../data/orderStore';
 
 const { RangePicker } = DatePicker;
-
-// Dữ liệu đơn hàng mẫu khởi tạo bao gồm đơn ADTEK và Lô 2
-const initialOrders = [
-  { 
-    key: '1', 
-    order_id: 'NEX-827364', 
-    hawb_code: 'HNAE25090222',
-    customer: 'ADTEK (VIET NAM) COMPANY LIMITED', 
-    pickup: 'KCN Tiên Sơn, Bắc Ninh', 
-    dropoff: 'Kho Apex - Sân bay Nội Bài', 
-    status: 'READY_FOR_PLANNING', 
-    package_count: 18,
-    package_unit: 'Pallet',
-    weight: 2850,
-    chargeable: 2850,
-    agreed_price: 6500000,
-    extra_fees_surcharge: 450000,
-    extra_fees_collection: 1200000,
-    order_notes: 'LƯU Ý: OP tại sân bay kiểm tra seal chì thùng xe trước khi dỡ hàng. Chụp ảnh SOP đầy đủ.',
-    date: '2026-10-12 08:30' 
-  },
-  { 
-    key: '2', 
-    order_id: 'NEX-827365', 
-    hawb_code: 'SLVN-2026-HQ7N',
-    customer: 'CÔNG TY TNHH ÂM THANH ÁNH SÁNG SLVN', 
-    pickup: 'Kho ALS Cảng HKQT Nội Bài', 
-    dropoff: 'CCN Lai Xá, Hoài Đức, Hà Nội', 
-    status: 'CONFIRMED', 
-    package_count: 42,
-    package_unit: 'Kiện thùng gỗ',
-    weight: 1850,
-    chargeable: 2160,
-    agreed_price: 5200000,
-    extra_fees_surcharge: 300000,
-    extra_fees_collection: 2450000,
-    order_notes: 'Hàng thiết bị âm thanh ánh sáng nhập khẩu (Lô 2). Cần đối chiếu Tờ khai HQ 108187779340.',
-    date: '2026-10-12 09:15' 
-  },
-  { 
-    key: '3', 
-    order_id: 'NEX-827366', 
-    hawb_code: 'SAM-VN-9921',
-    customer: 'Samsung Electronics VN', 
-    pickup: 'Yên Phong, Bắc Ninh', 
-    dropoff: 'Kho ALS Cảng Nội Bài', 
-    status: 'ASSIGNED', 
-    package_count: 12,
-    package_unit: 'Pallet',
-    weight: 1200,
-    chargeable: 1200,
-    agreed_price: 4200000,
-    date: '2026-10-12 10:00' 
-  },
-  { 
-    key: '4', 
-    order_id: 'NEX-827367', 
-    hawb_code: 'FOX-GL-4412',
-    customer: 'Foxconn Bắc Giang', 
-    pickup: 'KCN Quang Châu, Bắc Giang', 
-    dropoff: 'Cảng Hải Phòng', 
-    status: 'IN_TRANSIT', 
-    package_count: 30,
-    package_unit: 'Pallet',
-    weight: 4500,
-    chargeable: 4500,
-    agreed_price: 8900000,
-    date: '2026-10-11 14:00' 
-  },
-  { 
-    key: '5', 
-    order_id: 'NEX-827368', 
-    hawb_code: 'VIN-HP-1122',
-    customer: 'VinFast Hải Phòng', 
-    pickup: 'Cát Hải, Hải Phòng', 
-    dropoff: 'Khu CNC Hòa Lạc, Hà Nội', 
-    status: 'DRAFT', 
-    package_count: 8,
-    package_unit: 'Kiện',
-    weight: 850,
-    chargeable: 920,
-    agreed_price: 3500000,
-    date: '2026-10-12 11:20' 
-  }
-];
 
 const statusColors = {
   'DRAFT': 'default',
@@ -103,8 +19,18 @@ const statusColors = {
   'CANCELLED': 'red'
 };
 
+const statusLabels = {
+  'DRAFT': 'Đơn nháp',
+  'CONFIRMED': 'Đã xác nhận',
+  'READY_FOR_PLANNING': 'Sẵn sàng xếp xe',
+  'ASSIGNED': 'Đã gán xe',
+  'IN_TRANSIT': 'Đang vận chuyển',
+  'DELIVERED': 'Đã giao hàng',
+  'CANCELLED': 'Đã hủy'
+};
+
 const OrderManagement = () => {
-  const [orders, setOrders] = useState(initialOrders);
+  const [orders, setOrders] = useState(() => getStoredOrders());
   const [filterText, setFilterText] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   
@@ -114,12 +40,27 @@ const OrderManagement = () => {
   const [selectedOrderForAssign, setSelectedOrderForAssign] = useState(null);
   const [isAIDrawerOpen, setIsAIDrawerOpen] = useState(false);
 
+  // Lắng nghe thay đổi dữ liệu từ các tab khác hoặc từ Homepage
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setOrders(getStoredOrders());
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('nexlog_orders_updated', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('nexlog_orders_updated', handleStorageChange);
+    };
+  }, []);
+
   const handleCreateOrder = (values) => {
     const newOrder = {
       key: Date.now().toString(),
       order_id: `NEX-${Math.floor(100000 + Math.random() * 900000)}`,
       hawb_code: values.hawb_code || 'HAWB-AUTO',
       customer: values.customer_name,
+      customer_phone: values.customer_phone || '',
+      customer_email: values.customer_email || '',
       pickup: values.pickup_address,
       dropoff: values.delivery_address,
       package_count: values.package_count || 1,
@@ -130,21 +71,31 @@ const OrderManagement = () => {
       extra_fees_surcharge: values.extra_fees_surcharge || 0,
       extra_fees_collection: values.extra_fees_collection || 0,
       order_notes: values.order_notes,
-      status: 'DRAFT',
+      source: values.source || 'HOTLINE', // Cách 1: Khách liên hệ trực tiếp
+      status: values.status || 'READY_FOR_PLANNING',
       date: new Date().toISOString().slice(0, 16).replace('T', ' ')
     };
-    setOrders([newOrder, ...orders]);
+    const updated = [newOrder, ...orders];
+    setOrders(updated);
+    saveStoredOrders(updated);
+    window.dispatchEvent(new Event('nexlog_orders_updated'));
     setIsCreateModalOpen(false);
-    message.success(`Đã tạo thành công đơn hàng nháp: ${newOrder.order_id}!`);
+    message.success(`Đã tạo thành công đơn hàng: ${newOrder.order_id}!`);
   };
 
   const handleUpdateOrder = (updatedOrder) => {
-    setOrders(prev => prev.map(o => o.key === updatedOrder.key ? updatedOrder : o));
+    const updated = orders.map(o => o.key === updatedOrder.key ? updatedOrder : o);
+    setOrders(updated);
+    saveStoredOrders(updated);
+    window.dispatchEvent(new Event('nexlog_orders_updated'));
     setSelectedOrderForDetails(updatedOrder);
   };
 
   const handleAssignSuccess = (assignedOrder) => {
-    setOrders(prev => prev.map(o => o.key === assignedOrder.key ? assignedOrder : o));
+    const updated = orders.map(o => o.key === assignedOrder.key ? assignedOrder : o);
+    setOrders(updated);
+    saveStoredOrders(updated);
+    window.dispatchEvent(new Event('nexlog_orders_updated'));
   };
 
   // Filter logic
@@ -159,100 +110,158 @@ const OrderManagement = () => {
 
   const columns = [
     { 
-      title: 'Mã Đơn / HAWB', 
-      key: 'order_id', 
+      title: 'Đơn hàng & Khách hàng', 
+      key: 'order_customer', 
+      width: '26%',
       render: (_, record) => (
         <div>
-          <span className="font-bold text-[#7367f0] block cursor-pointer hover:underline" onClick={() => setSelectedOrderForDetails(record)}>
-            {record.order_id}
-          </span>
-          <span className="text-[11px] font-mono text-gray-400 block">HAWB: {record.hawb_code}</span>
-        </div>
-      )
-    },
-    { 
-      title: 'Khách hàng', 
-      dataIndex: 'customer', 
-      key: 'customer', 
-      render: text => <span className="font-medium text-gray-800 text-xs">{text}</span> 
-    },
-    { 
-      title: 'Quy cách & Tải trọng', 
-      key: 'specs',
-      render: (_, record) => (
-        <div className="text-xs">
-          <div>{record.package_count} {record.package_unit}</div>
-          <div className="text-gray-400 text-[11px]">
-            Thực: {record.weight}kg | <span className="font-semibold text-amber-600">Cước: {record.chargeable}kg</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span 
+              className="font-bold text-[#7367f0] cursor-pointer hover:underline text-xs" 
+              onClick={() => setSelectedOrderForDetails(record)}
+            >
+              {record.order_id}
+            </span>
+            <span className="text-[11px] font-mono text-gray-400">
+              HAWB: {record.hawb_code}
+            </span>
+            {record.source === 'HOMEPAGE' ? (
+              <Tag color="orange" className="text-[10px] px-1.5 py-0 rounded font-semibold border-amber-300 bg-amber-50 text-amber-700 inline-flex items-center gap-1">
+                <Globe size={10} /> Web - Chờ tư vấn
+              </Tag>
+            ) : (
+              <Tag color="processing" className="text-[10px] px-1.5 py-0 rounded font-semibold border-blue-200 bg-blue-50 text-blue-700 inline-flex items-center gap-1">
+                <PhoneCall size={10} /> Hotline / Trực tiếp
+              </Tag>
+            )}
+          </div>
+          <div className="font-semibold text-gray-800 text-xs mt-1 leading-snug">
+            {record.customer}
           </div>
         </div>
       )
     },
     { 
-      title: 'Hành lang Vận chuyển', 
+      title: 'Tuyến đường', 
       key: 'route', 
+      width: '26%',
       render: (_, record) => (
-        <div className="text-xs max-w-[200px] truncate">
-          <div className="truncate"><span className="text-blue-600 font-semibold">Từ:</span> {record.pickup}</div>
-          <div className="truncate"><span className="text-emerald-600 font-semibold">Đến:</span> {record.dropoff}</div>
+        <div className="text-xs space-y-1">
+          <div className="text-gray-700 leading-snug">
+            <span className="text-blue-600 font-bold mr-1">Lấy:</span>
+            <span>{record.pickup}</span>
+          </div>
+          <div className="text-gray-700 leading-snug">
+            <span className="text-emerald-600 font-bold mr-1">Giao:</span>
+            <span>{record.dropoff}</span>
+          </div>
         </div>
       )
     },
     { 
-      title: 'Giá chốt (Agreed Price)', 
+      title: 'Hàng hóa & Tải trọng', 
+      key: 'specs', 
+      width: '16%',
+      render: (_, record) => (
+        <div className="text-xs">
+          <div className="font-semibold text-gray-800">{record.package_count} {record.package_unit}</div>
+          <div className="text-gray-400 text-[11px] mt-0.5">
+            Thực: {record.weight}kg | <span className="font-bold text-amber-600">Cước: {record.chargeable}kg</span>
+          </div>
+        </div>
+      )
+    },
+    { 
+      title: 'Giá cước', 
       dataIndex: 'agreed_price', 
-      key: 'agreed_price',
-      render: val => <span className="font-bold text-gray-800 text-xs">{val ? val.toLocaleString() + ' đ' : 'Chưa chốt'}</span>
+      key: 'agreed_price', 
+      width: '12%',
+      render: val => (
+        val && val > 0 ? (
+          <span className="font-bold text-gray-800 text-xs whitespace-nowrap">
+            {val.toLocaleString()} đ
+          </span>
+        ) : (
+          <span className="font-bold text-amber-600 text-xs whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+            Chờ chốt giá
+          </span>
+        )
+      )
     },
     { 
       title: 'Trạng thái', 
       dataIndex: 'status', 
       key: 'status', 
+      width: '10%',
       render: (status) => (
-        <Tag color={statusColors[status] || 'default'} className="font-semibold text-[11px] rounded-md px-2 py-0.5">
-          {status}
+        <Tag color={statusColors[status] || 'default'} className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+          {statusLabels[status] || status}
         </Tag>
       )
     },
     { 
-      title: 'Thao tác Nghiệp vụ', 
+      title: 'Thao tác', 
       key: 'action', 
+      width: '10%',
       render: (_, record) => (
-        <div className="flex items-center gap-1.5">
-          <Tooltip title="Xem chi tiết & kiểm duyệt chứng từ">
-            <Button 
-              size="small" 
-              icon={<Eye size={14} />} 
-              className="text-gray-600 hover:text-[#7367f0]"
-              onClick={() => setSelectedOrderForDetails(record)}
-            >
-              Hồ sơ
-            </Button>
-          </Tooltip>
-
-          {record.status === 'READY_FOR_PLANNING' && (
-            <Tooltip title="Lập kế hoạch & Gán xe">
+        <div className="flex items-center gap-1.5 flex-nowrap">
+          {record.status === 'DRAFT' ? (
+            <>
+              <Tooltip title="Liên hệ khách hàng để chốt giá và kiểm tra hồ sơ">
+                <Button 
+                  size="small" 
+                  type="primary"
+                  ghost
+                  className="text-xs border-indigo-400 text-indigo-700 font-semibold"
+                  onClick={() => setSelectedOrderForDetails(record)}
+                >
+                  Xử lý & Chốt đơn
+                </Button>
+              </Tooltip>
+              <Tooltip title="Đơn nháp chưa thể gán xe! Vui lòng liên hệ chốt giá và xác nhận đơn trước.">
+                <Button 
+                  size="small" 
+                  disabled
+                  icon={<Truck size={14} />}
+                  className="opacity-40 cursor-not-allowed"
+                >
+                  Gán xe
+                </Button>
+              </Tooltip>
+            </>
+          ) : record.status === 'READY_FOR_PLANNING' ? (
+            <>
+              <Tooltip title="Gán xe và lập chuyến vận chuyển">
+                <Button 
+                  size="small" 
+                  type="primary" 
+                  icon={<Truck size={14} />}
+                  className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold"
+                  onClick={() => setSelectedOrderForAssign(record)}
+                >
+                  Gán xe
+                </Button>
+              </Tooltip>
+              <Tooltip title="Xem chi tiết hồ sơ">
+                <Button 
+                  size="small" 
+                  icon={<Eye size={14} />} 
+                  className="text-gray-600 hover:text-[#7367f0]"
+                  onClick={() => setSelectedOrderForDetails(record)}
+                >
+                  Hồ sơ
+                </Button>
+              </Tooltip>
+            </>
+          ) : (
+            <Tooltip title="Xem chi tiết hồ sơ">
               <Button 
                 size="small" 
-                type="primary" 
-                icon={<Truck size={14} />}
-                className="bg-[#7367f0] hover:bg-[#5e50ee]"
-                onClick={() => setSelectedOrderForAssign(record)}
-              >
-                Gán xe
-              </Button>
-            </Tooltip>
-          )}
-
-          {record.status === 'DRAFT' && (
-            <Tooltip title="Mở chi tiết để tải Hợp đồng & Xác nhận">
-              <Button 
-                size="small" 
-                type="primary" 
-                ghost
+                icon={<Eye size={14} />} 
+                className="text-gray-600 hover:text-[#7367f0]"
                 onClick={() => setSelectedOrderForDetails(record)}
               >
-                Xác nhận
+                Hồ sơ
               </Button>
             </Tooltip>
           )}
@@ -262,21 +271,18 @@ const OrderManagement = () => {
   ];
 
   return (
-    <div className="p-6 md:p-8 custom-scrollbar">
+    <div className="p-4 sm:p-6 lg:p-8 custom-scrollbar">
       <div className="max-w-[1600px] mx-auto">
         
         {/* Header Action */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-800">Quản lý Đơn hàng & Hồ sơ Vận tải</h1>
+              <h1 className="text-2xl font-bold text-gray-800">Quản lý Đơn hàng</h1>
               <Badge count={orders.filter(o => o.status === 'READY_FOR_PLANNING').length} overflowCount={99} title="Đơn sẵn sàng xếp chuyến">
-                <Tag color="cyan" className="font-semibold ml-1">Ready: {orders.filter(o => o.status === 'READY_FOR_PLANNING').length}</Tag>
+                <Tag color="cyan" className="font-semibold ml-1">Sẵn sàng: {orders.filter(o => o.status === 'READY_FOR_PLANNING').length}</Tag>
               </Badge>
             </div>
-            <p className="text-gray-500 text-sm">
-              Tiếp nhận đơn, chốt giá thỏa thuận, kiểm duyệt chứng từ hải quan và gán xe nội bộ/vendor
-            </p>
           </div>
 
           <div className="flex gap-2">
@@ -285,7 +291,7 @@ const OrderManagement = () => {
               className="h-10 px-3.5 border-purple-200 text-purple-700 bg-purple-50/50 hover:bg-purple-100"
               onClick={() => setIsAIDrawerOpen(true)}
             >
-              Trợ lý AI Gemini
+              Trợ lý AI
             </Button>
 
             <Button 
@@ -294,7 +300,7 @@ const OrderManagement = () => {
               className="bg-[#7367f0] hover:bg-[#5e50ee] h-10 px-4 font-semibold" 
               onClick={() => setIsCreateModalOpen(true)}
             >
-              Tạo Đơn Hàng Mới (Order Intake)
+              Tạo đơn vận chuyển
             </Button>
           </div>
         </div>
@@ -305,7 +311,7 @@ const OrderManagement = () => {
             <Col xs={24} md={8}>
               <p className="text-xs font-semibold text-gray-500 mb-1.5 uppercase">Tìm kiếm Đơn hàng</p>
               <Input 
-                placeholder="Mã đơn (NEX-...), Mã HAWB (HNAE...), Khách hàng..." 
+                placeholder="Mã đơn, Mã HAWB, Khách hàng..." 
                 prefix={<Search size={16} className="text-gray-400" />} 
                 value={filterText}
                 onChange={e => setFilterText(e.target.value)}
@@ -320,12 +326,12 @@ const OrderManagement = () => {
                 className="w-full" 
                 options={[
                   { value: 'all', label: 'Tất cả trạng thái' },
-                  { value: 'DRAFT', label: 'Đơn nháp (Draft)' },
-                  { value: 'CONFIRMED', label: 'Đã xác nhận (Confirmed)' },
-                  { value: 'READY_FOR_PLANNING', label: 'Sẵn sàng xếp xe (Ready for Planning)' },
-                  { value: 'ASSIGNED', label: 'Đã gán xe/tài xế (Assigned)' },
-                  { value: 'IN_TRANSIT', label: 'Đang vận chuyển (In Transit)' },
-                  { value: 'DELIVERED', label: 'Đã giao hàng (Delivered)' },
+                  { value: 'DRAFT', label: 'Đơn nháp' },
+                  { value: 'CONFIRMED', label: 'Đã xác nhận' },
+                  { value: 'READY_FOR_PLANNING', label: 'Sẵn sàng xếp xe' },
+                  { value: 'ASSIGNED', label: 'Đã gán xe' },
+                  { value: 'IN_TRANSIT', label: 'Đang vận chuyển' },
+                  { value: 'DELIVERED', label: 'Đã giao hàng' },
                 ]} 
               />
             </Col>

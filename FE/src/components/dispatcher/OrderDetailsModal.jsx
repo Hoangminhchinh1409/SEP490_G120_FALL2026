@@ -1,69 +1,93 @@
 import { useState } from 'react';
-import { Modal, Tabs, Tag, Button, Input, InputNumber, Alert, Space, Table, message } from 'antd';
-import { FileText, AlertTriangle, Download, Upload, ShieldCheck } from 'lucide-react';
+import { Modal, Tabs, Tag, Button, Input, InputNumber, Space, Table, message } from 'antd';
+import { FileText, AlertTriangle, Download, Upload, ShieldCheck, PhoneCall, MessageCircle, Mail, DollarSign } from 'lucide-react';
 
 const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
   const [activeTab, setActiveTab] = useState('1');
-  const [contractUploaded, setContractUploaded] = useState(order?.contract_uploaded || false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelFee, setCancelFee] = useState(0);
 
-  // Danh sách chứng từ hải quan của đơn hàng
+  // Điều chỉnh state khi order prop thay đổi chuẩn React không dùng useEffect
+  const [prevOrderKey, setPrevOrderKey] = useState(order?.key || order?.order_id);
+  const [contractUploaded, setContractUploaded] = useState(order?.contract_uploaded || false);
+  const [currentAgreedPrice, setCurrentAgreedPrice] = useState(order?.agreed_price || 0);
+
+  if (order && (order.key || order.order_id) !== prevOrderKey) {
+    setPrevOrderKey(order.key || order.order_id);
+    setCurrentAgreedPrice(order.agreed_price || 0);
+    setContractUploaded(order.contract_uploaded || false);
+  }
+
   const [documents, setDocuments] = useState(
     order?.documents || [
-      { key: '1', name: 'Tờ khai Hải quan thông quan (ToKhaiHQ)', file: 'ToKhaiHQ7N_QDTQ_108187779340.xlsx', status: 'SUBMITTED', size: '74.2 KB', uploadDate: '2026-10-12 10:15' },
-      { key: '2', name: 'Lệnh giao hàng & Vận đơn (Bill/D/O)', file: 'Bill.pdf', status: 'SUBMITTED', size: '286.4 KB', uploadDate: '2026-10-12 10:20' },
-      { key: '3', name: 'Hóa đơn & Phiếu đóng gói (CI/PL)', file: 'CI PL SOUND LIGHT.pdf', status: 'SUBMITTED', size: '119.7 KB', uploadDate: '2026-10-12 10:22' },
-      { key: '4', name: 'Hợp đồng mua bán ngoại thương', file: 'HDMB SLVN TT.pdf', status: 'APPROVED', size: '1.3 MB', uploadDate: '2026-10-12 09:40' },
-      { key: '5', name: 'Giấy nộp tiền thuế / Bankslip', file: 'Bankslip YEL 29952.jpg', status: 'SUBMITTED', size: '638.8 KB', uploadDate: '2026-10-12 10:30' }
+      { key: '1', name: 'Tờ khai hải quan', file: 'ToKhaiHQ7N_QDTQ_108187779340.xlsx', status: 'SUBMITTED', size: '74.2 KB', uploadDate: '2026-10-12 10:15' },
+      { key: '2', name: 'Lệnh giao hàng & Vận đơn', file: 'Bill.pdf', status: 'SUBMITTED', size: '286.4 KB', uploadDate: '2026-10-12 10:20' },
+      { key: '3', name: 'Hóa đơn thương mại & Phiếu đóng gói', file: 'CI PL SOUND LIGHT.pdf', status: 'SUBMITTED', size: '119.7 KB', uploadDate: '2026-10-12 10:22' },
+      { key: '4', name: 'Hợp đồng mua bán', file: 'HDMB SLVN TT.pdf', status: 'APPROVED', size: '1.3 MB', uploadDate: '2026-10-12 09:40' },
+      { key: '5', name: 'Giấy nộp tiền thuế', file: 'Bankslip YEL 29952.jpg', status: 'SUBMITTED', size: '638.8 KB', uploadDate: '2026-10-12 10:30' }
     ]
   );
 
   if (!order) return null;
 
-  // Xử lý duyệt chứng từ đơn lẻ
   const handleApproveDoc = (docKey) => {
     setDocuments(prev => prev.map(d => d.key === docKey ? { ...d, status: 'APPROVED' } : d));
-    message.success('Đã xác nhận tính hợp lệ của chứng từ!');
+    message.success('Đã duyệt chứng từ!');
   };
 
-  // Xử lý từ chối / xóa file lỗi
   const handleRejectDoc = (docKey) => {
     setDocuments(prev => prev.map(d => d.key === docKey ? { ...d, status: 'REJECTED' } : d));
-    message.warning('Đã từ chối tệp chứng từ và yêu cầu khách hàng gửi lại.');
+    message.warning('Đã từ chối chứng từ.');
   };
 
-  // Xác nhận toàn bộ chứng từ (UC-06 -> Ready for Planning)
   const handleConfirmAllDocuments = () => {
     const updatedDocs = documents.map(d => ({ ...d, status: 'APPROVED' }));
     setDocuments(updatedDocs);
     onUpdateOrder({
       ...order,
-      status: 'READY_FOR_PLANNING',
       documents: updatedDocs
     });
-    message.success('Toàn bộ hồ sơ hải quan đã được duyệt! Đơn hàng sẵn sàng xếp xe (Ready for Planning).');
+    message.success('Đã duyệt toàn bộ chứng từ!');
   };
 
-  // Xác nhận đơn nháp sang Confirmed (UC-04 / BR-45)
-  const handleConfirmOrder = () => {
-    if (!contractUploaded) {
-      message.error('Bắt buộc: Cần khởi tạo và tải lên tệp Hợp đồng đơn hàng (Order Contract) đã ký trước khi Xác nhận đơn!');
+  // Xác nhận giá cước thỏa thuận đã chốt với khách
+  const handleSavePrice = () => {
+    if (!currentAgreedPrice || currentAgreedPrice <= 0) {
+      message.error('Vui lòng nhập giá cước thỏa thuận lớn hơn 0!');
       return;
     }
     onUpdateOrder({
       ...order,
-      status: 'CONFIRMED',
-      contract_uploaded: true
+      agreed_price: currentAgreedPrice
     });
-    message.success('Đơn hàng đã được xác nhận (CONFIRMED) và kích hoạt điều khoản hợp đồng!');
+    message.success(`Đã cập nhật giá thỏa thuận: ${currentAgreedPrice.toLocaleString()} đ`);
   };
 
-  // Xử lý Hủy đơn theo nấc phạt (UC-05 / BR-18)
+  // Xác nhận đơn hàng: Đơn chuyển sang READY_FOR_PLANNING (Sẵn sàng xếp xe)
+  const handleConfirmOrder = () => {
+    if (!currentAgreedPrice || currentAgreedPrice <= 0) {
+      message.error('Vui lòng nhập giá cước thỏa thuận đã chốt với khách hàng trước khi xác nhận đơn!');
+      return;
+    }
+    
+    // Duyệt tự động các chứng từ hợp lệ
+    const updatedDocs = documents.map(d => ({ ...d, status: 'APPROVED' }));
+    setDocuments(updatedDocs);
+
+    onUpdateOrder({
+      ...order,
+      status: 'READY_FOR_PLANNING',
+      agreed_price: currentAgreedPrice,
+      documents: updatedDocs,
+      contract_uploaded: true
+    });
+    message.success('Xác nhận đơn thành công! Đơn hàng đã chuyển sang trạng thái Sẵn sàng xếp xe.');
+  };
+
   const handleExecuteCancel = () => {
     if (!cancelReason.trim()) {
-      message.error('Bắt buộc nhập lý do hủy đơn!');
+      message.error('Vui lòng nhập lý do hủy đơn!');
       return;
     }
     onUpdateOrder({
@@ -73,18 +97,18 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
       cancellation_fee: cancelFee
     });
     setCancelModalOpen(false);
-    message.warning(`Đã hủy đơn hàng! Phí phạt hủy ghi nhận: ${cancelFee.toLocaleString()} VNĐ`);
+    message.warning(`Đã hủy đơn hàng! Phí phạt: ${cancelFee.toLocaleString()} VNĐ`);
   };
 
   const docColumns = [
     { 
-      title: 'Loại chứng từ hải quan', 
+      title: 'Tên chứng từ', 
       dataIndex: 'name', 
       key: 'name',
       render: (text) => <span className="font-semibold text-gray-800">{text}</span>
     },
     { 
-      title: 'Tệp đính kèm (Lô 2)', 
+      title: 'Tệp đính kèm', 
       dataIndex: 'file', 
       key: 'file',
       render: (text, record) => (
@@ -96,17 +120,17 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
       )
     },
     { 
-      title: 'Trạng thái duyệt', 
+      title: 'Trạng thái', 
       dataIndex: 'status', 
       key: 'status',
       render: (st) => (
-        st === 'APPROVED' ? <Tag color="success" className="font-medium">ĐÃ HỢP LỆ</Tag> :
-        st === 'REJECTED' ? <Tag color="error" className="font-medium">TỪ CHỐI</Tag> :
-        <Tag color="warning" className="font-medium">CHỜ KIỂM TRA</Tag>
+        st === 'APPROVED' ? <Tag color="success">ĐÃ HỢP LỆ</Tag> :
+        st === 'REJECTED' ? <Tag color="error">TỪ CHỐI</Tag> :
+        <Tag color="warning">CHỜ KIỂM TRA</Tag>
       )
     },
     { 
-      title: 'Thao tác kiểm duyệt', 
+      title: 'Thao tác', 
       key: 'action',
       render: (_, record) => (
         <Space size="small">
@@ -135,6 +159,8 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
     }
   ];
 
+  const cleanPhone = (order.customer_phone || '').replace(/[^0-9]/g, '');
+
   return (
     <>
       <Modal
@@ -145,13 +171,23 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                 {order.order_id}
               </div>
               <div>
-                <h3 className="text-lg font-bold text-gray-800">Chi tiết Hồ sơ Đơn hàng (Order Details)</h3>
-                <p className="text-xs text-gray-500 font-normal">Quản lý vòng đời đơn, duyệt chứng từ hải quan, hợp đồng và chi phí phát sinh</p>
+                <h3 className="text-lg font-bold text-gray-800">Chi tiết đơn hàng</h3>
               </div>
             </div>
-            <Tag color={order.status === 'DELIVERED' ? 'green' : order.status === 'CANCELLED' ? 'red' : 'blue'} className="px-3 py-1 font-semibold text-xs rounded-full">
-              {order.status}
-            </Tag>
+            <div className="flex items-center gap-2">
+              {order.source === 'HOMEPAGE' ? (
+                <Tag color="orange" className="font-semibold text-xs rounded-full px-3 py-0.5">
+                  Nguồn: Website
+                </Tag>
+              ) : (
+                <Tag color="blue" className="font-semibold text-xs rounded-full px-3 py-0.5">
+                  Nguồn: Hotline / Trực tiếp
+                </Tag>
+              )}
+              <Tag color={order.status === 'DELIVERED' ? 'green' : order.status === 'CANCELLED' ? 'red' : order.status === 'READY_FOR_PLANNING' ? 'cyan' : 'default'} className="px-3 py-1 font-semibold text-xs rounded-full">
+                {order.status === 'DRAFT' ? 'ĐƠN NHÁP' : order.status === 'READY_FOR_PLANNING' ? 'SẴN SÀNG XẾP XE' : order.status}
+              </Tag>
+            </div>
           </div>
         }
         open={open}
@@ -160,32 +196,38 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
         footer={[
           <Button key="close" onClick={onCancel}>Đóng</Button>,
           order.status === 'DRAFT' && (
-            <Button key="confirmOrder" type="primary" className="bg-[#7367f0]" onClick={handleConfirmOrder}>
-              Xác nhận Đơn hàng (Confirm Order)
+            <Button key="confirmOrder" type="primary" className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold" onClick={handleConfirmOrder}>
+              Xác nhận đơn hàng
             </Button>
           ),
           (order.status === 'CONFIRMED' || order.status === 'READY_FOR_PLANNING') && (
             <Button key="confirmDocs" type="primary" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleConfirmAllDocuments}>
-              Xác nhận Bộ Chứng từ (Confirm Docs)
+              Xác nhận chứng từ
             </Button>
           ),
           ['DRAFT', 'CONFIRMED', 'READY_FOR_PLANNING'].includes(order.status) && (
             <Button key="cancel" danger onClick={() => setCancelModalOpen(true)}>
-              Hủy đơn (Cancel Order)
+              Hủy đơn
             </Button>
           )
         ]}
       >
         <div className="py-2">
-          {/* Cảnh báo quy định lưu trữ */}
-          <Alert
-            title="Quy định Lưu trữ & Pháp lý:"
-            description="Tệp chứng từ hải quan sẽ tự động purge sau 60-90 ngày kể từ khi đóng đơn (Nghị định 13/2023/NĐ-CP). Bắt buộc lưu trữ ảnh niêm chì, ảnh POD và nhật ký trong 2 năm (Luật Thương mại 2005)."
-            type="info"
-            showIcon
-            className="mb-4 text-xs"
-          />
-
+          {/* Banner hướng dẫn luồng xử lý đối với đơn DRAFT */}
+          {order.status === 'DRAFT' && (
+            <div className="mb-4 p-3.5 bg-gradient-to-r from-amber-50 to-indigo-50 rounded-xl border border-amber-200">
+              <div className="flex items-center gap-2 font-bold text-amber-900 text-xs mb-1">
+                <AlertTriangle size={15} className="text-amber-600" />
+                <span>Quy trình xử lý đơn hàng nháp:</span>
+              </div>
+              <div className="text-xs text-gray-700 space-y-1">
+                <p>1. <b>Liên hệ khách hàng:</b> Gọi điện hoặc nhắn Zalo để xác nhận nhu cầu vận chuyển.</p>
+                <p>2. <b>Chốt giá cước:</b> Thống nhất giá cước thỏa thuận và cập nhật vào ô bên dưới.</p>
+                <p>3. <b>Thu thập chứng từ:</b> Yêu cầu khách cung cấp hồ sơ, kiểm tra và duyệt tính hợp lệ.</p>
+                <p>4. <b>Xác nhận đơn:</b> Bấm &quot;Xác nhận đơn hàng&quot; để chuyển sang trạng thái Sẵn sàng xếp xe (khi đó mới được gán xe và tài xế).</p>
+              </div>
+            </div>
+          )}
           <Tabs 
             activeKey={activeTab} 
             onChange={setActiveTab}
@@ -195,15 +237,88 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                 label: <span className="font-semibold text-xs">Tổng quan & Hàng hóa</span>,
                 children: (
                   <div className="space-y-4">
+                    {/* Box Liên hệ khách hàng & Chốt giá cước thỏa thuận */}
+                    <div className="bg-gradient-to-r from-blue-50/60 to-indigo-50/60 p-4 rounded-xl border border-indigo-100 space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                        <div>
+                          <span className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
+                            <PhoneCall size={14} className="text-indigo-600" /> Liên hệ khách hàng &amp; Chốt cước:
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {order.customer || order.customer_name} - SĐT: <b className="text-gray-800">{order.customer_phone || 'Chưa có'}</b>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {cleanPhone && (
+                            <>
+                              <a 
+                                href={`tel:${cleanPhone}`} 
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-semibold text-xs shadow-sm"
+                              >
+                                <PhoneCall size={13} /> Gọi điện
+                              </a>
+                              <a 
+                                href={`https://zalo.me/${cleanPhone}`} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold text-xs shadow-sm"
+                              >
+                                <MessageCircle size={13} /> Nhắn Zalo
+                              </a>
+                            </>
+                          )}
+                          {order.customer_email && (
+                            <a 
+                              href={`mailto:${order.customer_email}`}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium text-xs border border-gray-200"
+                            >
+                              <Mail size={13} /> Gửi Email
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Ô Chốt giá cước thỏa thuận */}
+                      <div className="p-3 bg-white rounded-lg border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <DollarSign size={18} className="text-indigo-600" />
+                          <div>
+                            <div className="text-xs font-bold text-gray-800">Giá cước thỏa thuận:</div>
+                            <div className="text-[11px] text-gray-400">Thống nhất với khách hàng sau khi tư vấn</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <InputNumber 
+                            className="w-44 font-bold text-blue-700"
+                            value={currentAgreedPrice}
+                            onChange={val => setCurrentAgreedPrice(val || 0)}
+                            formatter={val => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                            parser={val => val.replace(/\$\s?|(,*)/g, '')}
+                            placeholder="Nhập giá cước..."
+                            min={0}
+                          />
+                          <span className="text-xs text-gray-500 font-medium">VNĐ</span>
+                          <Button 
+                            type="primary" 
+                            size="middle" 
+                            className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs"
+                            onClick={handleSavePrice}
+                          >
+                            Lưu giá
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl">
                       <div>
-                        <div className="text-xs text-gray-500">Khách hàng / Doanh nghiệp:</div>
+                        <div className="text-xs text-gray-500">Khách hàng:</div>
                         <div className="font-bold text-gray-800 text-sm mt-0.5">{order.customer || order.customer_name}</div>
                         <div className="text-xs text-gray-500 mt-1">Mã HAWB: <span className="font-mono font-semibold text-indigo-600">{order.hawb_code || 'HNAE25090222'}</span></div>
                         <div className="text-xs text-gray-500 mt-1">SĐT: {order.customer_phone || '0977887918'} | Email: {order.customer_email || 'adtek@logistics.com'}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-gray-500">Tuyến đường di chuyển:</div>
+                        <div className="text-xs text-gray-500">Tuyến đường:</div>
                         <div className="font-medium text-gray-700 text-xs mt-1">
                           <span className="font-bold text-blue-600">Lấy:</span> {order.pickup || order.pickup_address}
                         </div>
@@ -215,15 +330,15 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
 
                     <div className="grid grid-cols-4 gap-3 text-center">
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-                        <div className="text-[11px] text-gray-500">Số lượng & Đơn vị</div>
+                        <div className="text-[11px] text-gray-500">Số lượng</div>
                         <div className="font-bold text-gray-800 text-sm mt-0.5">{order.package_count || 18} {order.package_unit || 'Pallet'}</div>
                       </div>
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-                        <div className="text-[11px] text-gray-500">Kích thước (D x R x C)</div>
+                        <div className="text-[11px] text-gray-500">Kích thước</div>
                         <div className="font-bold text-gray-800 text-sm mt-0.5">{order.length_cm || 120}x{order.width_cm || 100}x{order.height_cm || 160} cm</div>
                       </div>
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-                        <div className="text-[11px] text-gray-500">Trọng lượng thực tế</div>
+                        <div className="text-[11px] text-gray-500">Trọng lượng</div>
                         <div className="font-bold text-gray-800 text-sm mt-0.5">{order.weight || order.weight_kg || '2,850'} kg</div>
                       </div>
                       <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
@@ -235,7 +350,7 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                     {order.order_notes && (
                       <div className="p-3 bg-yellow-50/80 rounded-xl border border-yellow-200 text-xs text-yellow-900">
                         <div className="font-bold flex items-center gap-1 mb-1">
-                          <AlertTriangle size={14} /> Ghi chú nghiệp vụ / SOP hiện trường:
+                          <AlertTriangle size={14} /> Ghi chú:
                         </div>
                         {order.order_notes}
                       </div>
@@ -250,12 +365,11 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <h4 className="text-sm font-bold text-gray-800">Danh mục Hồ sơ Hải quan Đính kèm</h4>
-                        <p className="text-xs text-gray-500">Đối chiếu dữ liệu với tài liệu scan thực tế</p>
+                        <h4 className="text-sm font-bold text-gray-800">Danh mục chứng từ</h4>
                       </div>
                       <Space>
-                        <Button size="small" icon={<Upload size={14} />} onClick={() => message.info('Mở cửa sổ tải lên chứng từ thay khách hàng (Upload on behalf)')}>
-                          Tải lên thay khách (Upload on behalf)
+                        <Button size="small" icon={<Upload size={14} />} onClick={() => message.info('Mở cửa sổ tải lên chứng từ')}>
+                          Tải lên chứng từ
                         </Button>
                       </Space>
                     </div>
@@ -269,7 +383,7 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                     />
 
                     <div className="mt-3 p-3 bg-gray-50 rounded-xl flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Trạng thái hồ sơ: Đã duyệt <b>{documents.filter(d => d.status === 'APPROVED').length}/{documents.length}</b> tệp</span>
+                      <span className="text-xs text-gray-500">Đã duyệt: <b>{documents.filter(d => d.status === 'APPROVED').length}/{documents.length}</b> tệp</span>
                       <Button 
                         type="primary" 
                         size="small" 
@@ -277,7 +391,7 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                         className="bg-emerald-600 hover:bg-emerald-700"
                         onClick={handleConfirmAllDocuments}
                       >
-                        Xác nhận Toàn bộ Chứng từ
+                        Xác nhận toàn bộ chứng từ
                       </Button>
                     </div>
                   </div>
@@ -285,18 +399,15 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
               },
               {
                 key: '3',
-                label: <span className="font-semibold text-xs">Hợp đồng Đơn hàng</span>,
+                label: <span className="font-semibold text-xs">Hợp đồng</span>,
                 children: (
                   <div className="space-y-4">
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                      <h4 className="font-bold text-gray-800 text-sm mb-1">Hợp đồng Vận tải Đơn hàng (Order Contract)</h4>
-                      <p className="text-xs text-gray-500 mb-3">
-                        Hệ thống tự động liên kết với Hợp đồng khung đang có hiệu lực và sinh file PDF Hợp đồng chi tiết cho mã vận đơn <b>{order.order_id}</b>.
-                      </p>
+                      <h4 className="font-bold text-gray-800 text-sm mb-3">Hợp đồng vận tải</h4>
 
                       <div className="flex flex-wrap gap-2">
-                        <Button icon={<Download size={15} />} onClick={() => message.success('Đang tạo và tải về mẫu HĐ Vận tải PDF...')}>
-                          Sinh file Hợp đồng mẫu PDF (HDMB_SLVN.pdf)
+                        <Button icon={<Download size={15} />} onClick={() => message.success('Đang tải về mẫu hợp đồng PDF...')}>
+                          Tải mẫu hợp đồng PDF
                         </Button>
                         <Button 
                           type={contractUploaded ? "default" : "primary"}
@@ -304,17 +415,17 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
                           className={!contractUploaded ? "bg-[#7367f0]" : ""}
                           onClick={() => {
                             setContractUploaded(true);
-                            message.success('Đã tải lên tệp Hợp đồng đơn hàng có chữ ký số của Khách hàng!');
+                            message.success('Đã tải lên tệp hợp đồng!');
                           }}
                         >
-                          {contractUploaded ? 'Đã tải lên tệp hợp đồng có chữ ký (HĐMB_Signed.pdf)' : 'Tải lên Hợp đồng đã ký (Kích hoạt Confirm)'}
+                          {contractUploaded ? 'Đã tải lên hợp đồng đã ký' : 'Tải lên hợp đồng đã ký'}
                         </Button>
                       </div>
 
                       <div className="mt-4 p-3 bg-white rounded-lg border border-gray-200">
-                        <div className="text-xs font-bold text-gray-700 mb-1">Điều khoản Hợp đồng khung đang áp dụng:</div>
+                        <div className="text-xs font-bold text-gray-700 mb-1">Điều khoản áp dụng:</div>
                         <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4">
-                          <li>Thời gian chờ bốc dỡ miễn phí: <b>60 phút</b> (Vượt quá tính 150.000 VNĐ/giờ).</li>
+                          <li>Thời gian chờ bốc dỡ miễn phí: <b>60 phút</b>.</li>
                           <li>Nấc phạt hủy đơn: Hủy trước 4h phạt <b>30%</b>, hủy sau khi điều xe phạt <b>70%</b> giá trị cước.</li>
                           <li>Hạn mức đền bù tối đa: <b>100% giá trị khai báo</b> đối với hàng niêm phong nguyên chì.</li>
                         </ul>
@@ -325,45 +436,44 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
               },
               {
                 key: '4',
-                label: <span className="font-semibold text-xs">Tài chính & Phí Phát sinh</span>,
+                label: <span className="font-semibold text-xs">Tài chính & Chi phí</span>,
                 children: (
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-4">
                       <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-200">
-                        <div className="text-xs text-gray-500">Giá chốt thỏa thuận (Agreed Price):</div>
+                        <div className="text-xs text-gray-500">Giá thỏa thuận:</div>
                         <div className="text-xl font-bold text-blue-700 mt-1">
-                          {(order.agreed_price || 6500000).toLocaleString()} VNĐ
+                          {(currentAgreedPrice || order.agreed_price || 0) > 0 
+                            ? `${(currentAgreedPrice || order.agreed_price).toLocaleString()} VNĐ` 
+                            : 'Chưa chốt giá'}
                         </div>
-                        <div className="text-[11px] text-gray-400 mt-1">Thỏa thuận trực tiếp Zalo/Hotline</div>
                       </div>
 
                       <div className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-200">
-                        <div className="text-xs text-indigo-700 font-semibold">Phí phụ trội Surcharge (Có VAT):</div>
+                        <div className="text-xs text-indigo-700 font-semibold">Phí phụ trội:</div>
                         <div className="text-xl font-bold text-indigo-800 mt-1">
                           {(order.extra_fees_surcharge || 450000).toLocaleString()} VNĐ
                         </div>
-                        <div className="text-[11px] text-gray-500 mt-1">Phí lưu ca, bốc xếp đêm (Doanh thu ALS)</div>
                       </div>
 
                       <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200">
-                        <div className="text-xs text-emerald-700 font-semibold">Phí Thu hộ / Off-book (Cô lập VAT):</div>
+                        <div className="text-xs text-emerald-700 font-semibold">Phí thu hộ:</div>
                         <div className="text-xl font-bold text-emerald-800 mt-1">
                           {(order.extra_fees_collection || 1200000).toLocaleString()} VNĐ
                         </div>
-                        <div className="text-[11px] text-gray-500 mt-1">Nộp thuế HQ & Hạ bãi cảng theo Bankslip</div>
                       </div>
                     </div>
 
                     <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-200">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-bold text-xs text-amber-900 uppercase">Phí Chờ Tự Động (Waiting Fee):</div>
-                          <div className="text-xs text-amber-700 mt-0.5">Xe đã có mặt tại kho 140 phút (vượt thời gian miễn phí 80 phút). Hệ thống đề xuất:</div>
+                          <div className="font-bold text-xs text-amber-900 uppercase">Phí chờ bốc dỡ:</div>
+                          <div className="text-xs text-amber-700 mt-0.5">Thời gian chờ vượt 80 phút. Mức đề xuất:</div>
                         </div>
                         <div className="text-right">
                           <div className="text-lg font-bold text-amber-600">200,000 VNĐ</div>
-                          <Button size="small" type="primary" className="bg-amber-600 mt-1" onClick={() => message.success('Đã xác nhận Phí chờ vào tài chính đơn hàng!')}>
-                            Xác nhận Phí Chờ
+                          <Button size="small" type="primary" className="bg-amber-600 mt-1" onClick={() => message.success('Đã xác nhận phí chờ!')}>
+                            Xác nhận phí chờ
                           </Button>
                         </div>
                       </div>
@@ -378,32 +488,26 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
 
       {/* Modal Hủy Đơn Hàng */}
       <Modal
-        title={<span className="text-red-600 font-bold flex items-center gap-2"><AlertTriangle size={18} /> Hủy Đơn Hàng & Tính Phí Phạt</span>}
+        title={<span className="text-red-600 font-bold flex items-center gap-2"><AlertTriangle size={18} /> Hủy đơn hàng</span>}
         open={cancelModalOpen}
         onCancel={() => setCancelModalOpen(false)}
         onOk={handleExecuteCancel}
-        okText="Xác nhận Hủy Đơn"
+        okText="Xác nhận hủy đơn"
         okButtonProps={{ danger: true }}
       >
         <div className="py-2 space-y-3">
-          <Alert 
-            type="warning" 
-            title="Chính sách Phạt Hủy Đơn:"
-            description="Áp dụng mức phạt hủy theo Hợp đồng khung. Hủy trước khi bốc hàng lên xe được tính theo nấc giờ quy định."
-            showIcon 
-          />
           <div>
-            <label className="text-xs font-bold text-gray-700">Lý do hủy đơn (Bắt buộc):</label>
+            <label className="text-xs font-bold text-gray-700">Lý do hủy đơn:</label>
             <Input.TextArea 
               rows={3} 
               className="mt-1" 
-              placeholder="Nhập lý do chi tiết từ khách hàng..." 
+              placeholder="Nhập lý do hủy đơn..." 
               value={cancelReason}
               onChange={e => setCancelReason(e.target.value)}
             />
           </div>
           <div>
-            <label className="text-xs font-bold text-gray-700">Phí phạt hủy đơn (Cancellation Fee - VNĐ):</label>
+            <label className="text-xs font-bold text-gray-700">Phí phạt hủy đơn (VNĐ):</label>
             <InputNumber 
               className="w-full mt-1 font-bold text-red-600"
               value={cancelFee}
@@ -413,8 +517,8 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
             />
             <div className="flex gap-2 mt-2">
               <Button size="small" onClick={() => setCancelFee(0)}>Miễn phạt (0 VNĐ)</Button>
-              <Button size="small" onClick={() => setCancelFee(1000000)}>Nấc 1: 1,000,000 VNĐ</Button>
-              <Button size="small" onClick={() => setCancelFee(2000000)}>Nấc 2: 2,000,000 VNĐ</Button>
+              <Button size="small" onClick={() => setCancelFee(1000000)}>1,000,000 VNĐ</Button>
+              <Button size="small" onClick={() => setCancelFee(2000000)}>2,000,000 VNĐ</Button>
             </div>
           </div>
         </div>

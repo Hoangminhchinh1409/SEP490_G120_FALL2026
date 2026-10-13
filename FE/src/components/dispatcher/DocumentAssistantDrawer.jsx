@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Drawer, Button, Input, Tag, Spin, message, Divider } from 'antd';
 import { Sparkles, Bot, CheckCircle2 } from 'lucide-react';
 
@@ -6,15 +6,15 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
   const [cargoDesc, setCargoDesc] = useState('Lô hàng linh kiện viễn thông và thiết bị quang nhập khẩu từ Hàn Quốc về Nội Bài giao nhà máy tại KCN Tiên Sơn Bắc Ninh');
   const [loading, setLoading] = useState(false);
   const [analysisResult] = useState({
-    cargoCategory: 'Linh kiện Điện tử & Thiết bị Viễn thông (Cáp quang & Máy thu phát)',
-    route: 'Kho ALS Cảng HKQT Nội Bài -> KCN Tiên Sơn (Bắc Ninh)',
-    riskLevel: 'Cao (Yêu cầu niêm phong chì niêm phong SOP)',
+    cargoCategory: 'Linh kiện điện tử & Viễn thông',
+    route: 'Kho ALS Nội Bài -> KCN Tiên Sơn',
+    riskLevel: 'Cao',
     recommendedDocs: [
-      { name: 'Tờ khai Hải quan thông quan (ToKhaiHQ)', reason: 'Bắt buộc đối với mọi lô hàng nhập khẩu qua kho hàng không kéo dài' },
-      { name: 'Lệnh giao hàng & Vận đơn hàng không (HAWB / D/O)', reason: 'Cần để làm thủ tục nhận hàng tại ga NCTS / ASc' },
-      { name: 'Hóa đơn thương mại (Commercial Invoice)', reason: 'Cần thiết để đối chiếu mã HS Code và giá tính thuế' },
-      { name: 'Phiếu đóng gói (Packing List)', reason: 'Căn cứ số lượng 18 Pallet và kích thước kiểm tra an toàn tải trọng' },
-      { name: 'Biên bản giao nhận hàng (Proof of Cargo Receipt)', reason: 'Bắt buộc ký xác nhận tình trạng niêm phong chì tại sân bay' }
+      { name: 'Tờ khai hải quan', reason: 'Áp dụng cho lô hàng nhập khẩu' },
+      { name: 'Lệnh giao hàng & Vận đơn', reason: 'Thủ tục nhận hàng tại kho cảng' },
+      { name: 'Hóa đơn thương mại', reason: 'Đối chiếu giá trị hàng hóa' },
+      { name: 'Phiếu đóng gói', reason: 'Kiểm tra quy cách kiện' },
+      { name: 'Hợp đồng mua bán', reason: 'Căn cứ pháp lý giao dịch' }
     ]
   });
 
@@ -23,8 +23,8 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
     setLoading(true);
     setTimeout(() => {
       setLoading(false);
-      message.success('AI Gemini đã phân tích xong loại hàng hóa và tuyến đường!');
-    }, 800);
+      message.success('Đã phân tích xong loại hàng hóa!');
+    }, 600);
   };
 
   return (
@@ -35,8 +35,7 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
             <Sparkles size={18} />
           </div>
           <div>
-            <span className="font-bold text-gray-800 text-base">Trợ lý AI Gợi ý Chứng từ</span>
-            <p className="text-[11px] text-gray-400 font-normal">Tích hợp Google Gemini phân tích tự động hồ sơ hải quan cần thu thập</p>
+            <span className="font-bold text-gray-800 text-base">Trợ lý AI</span>
           </div>
         </div>
       }
@@ -48,13 +47,13 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
       <div className="space-y-4">
         <div>
           <label className="text-xs font-bold text-gray-700 mb-1.5 block">
-            Mô tả Lô hàng & Tuyến đường Vận chuyển:
+            Mô tả lô hàng:
           </label>
           <Input.TextArea 
             rows={3} 
             value={cargoDesc} 
             onChange={(e) => setCargoDesc(e.target.value)}
-            placeholder="Nhập loại hàng hóa, xuất xứ, điểm bốc và điểm dỡ..."
+            placeholder="Nhập loại hàng hóa, điểm lấy và điểm giao..."
             className="text-xs"
           />
           <div className="mt-2 flex justify-end">
@@ -65,7 +64,7 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
               onClick={handleAskAI}
               className="bg-indigo-600 hover:bg-indigo-700 text-xs h-8"
             >
-              Phân tích với Gemini AI
+              Phân tích
             </Button>
           </div>
         </div>
@@ -75,7 +74,7 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
         {loading ? (
           <div className="py-12 text-center space-y-2">
             <Spin size="large" />
-            <p className="text-xs text-gray-500">Gemini đang phân tích quy định thông quan và danh mục chứng từ...</p>
+            <p className="text-xs text-gray-500">Đang phân tích danh mục chứng từ...</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -89,7 +88,7 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
                 <Tag color="red" className="font-semibold text-[10px] m-0">{analysisResult.riskLevel}</Tag>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-gray-500">Hành lang:</span>
+                <span className="text-gray-500">Tuyến đường:</span>
                 <span className="font-medium text-gray-700">{analysisResult.route}</span>
               </div>
             </div>
@@ -97,7 +96,7 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-gray-800 uppercase tracking-wider">
-                  Danh mục Chứng từ Hải quan Bắt buộc (Gợi ý):
+                  Chứng từ đề xuất:
                 </span>
                 <Tag color="blue">{analysisResult.recommendedDocs.length} loại</Tag>
               </div>
@@ -126,10 +125,10 @@ const DocumentAssistantDrawer = ({ open, onClose, onApplyRecommendations }) => {
                   onApplyRecommendations();
                 }
                 onClose();
-                message.success('Đã áp dụng danh mục chứng từ do AI gợi ý vào đơn hàng!');
+                message.success('Đã áp dụng danh mục chứng từ!');
               }}
             >
-              Áp dụng Danh mục Chứng từ Này vào Đơn
+              Áp dụng vào đơn hàng
             </Button>
           </div>
         )}

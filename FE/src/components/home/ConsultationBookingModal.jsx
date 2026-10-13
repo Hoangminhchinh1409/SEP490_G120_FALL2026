@@ -1,0 +1,251 @@
+import { useState, useMemo } from 'react';
+import { Modal, Form, Input, InputNumber, Select, Button, message, Result } from 'antd';
+import { Send, MapPin, Package, User } from 'lucide-react';
+import RouteMapPicker from '../common/RouteMapPicker';
+import LocationSearchInput from '../common/LocationSearchInput';
+import { createConsultationOrderFromWeb } from '../../data/orderStore';
+
+const { Option } = Select;
+
+const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
+  const [form] = Form.useForm();
+  const [submittedOrder, setSubmittedOrder] = useState(null);
+  
+  // Tọa độ mặc định
+  const [pickupCoords, setPickupCoords] = useState({ lat: 21.2187, lng: 105.8042 }); // Kho ALS Nội Bài
+  const [deliveryCoords, setDeliveryCoords] = useState({ lat: 21.1235, lng: 105.9876 }); // KCN Tiên Sơn
+  const [routeInfo, setRouteInfo] = useState({ distanceKm: 38.5, durationMins: 45 });
+
+  const values = Form.useWatch([], form);
+
+  // Tính Chargeable weight
+  const chargeableWeight = useMemo(() => {
+    if (!values) return '0.00';
+    const { length_cm, width_cm, height_cm, weight } = values;
+    if (length_cm && width_cm && height_cm) {
+      const vol = (length_cm * width_cm * height_cm) / 5000;
+      return Math.max(weight || 0, vol).toFixed(2);
+    }
+    return (weight || 0).toFixed(2);
+  }, [values]);
+
+  const handleSubmit = () => {
+    form.validateFields().then(formValues => {
+      const order = createConsultationOrderFromWeb({
+        ...formValues,
+        pickup_coords: pickupCoords,
+        delivery_coords: deliveryCoords,
+        estimated_distance_km: routeInfo.distanceKm,
+        estimated_duration_mins: routeInfo.durationMins
+      });
+      setSubmittedOrder(order);
+      if (onSuccess) onSuccess(order);
+      message.success('Đã gửi yêu cầu tư vấn thành công!');
+    });
+  };
+
+  const handleReset = () => {
+    form.resetFields();
+    setSubmittedOrder(null);
+    onCancel();
+  };
+
+  return (
+    <Modal
+      open={open}
+      onCancel={handleReset}
+      footer={null}
+      width={800}
+      centered
+      className="consultation-modal"
+    >
+      {submittedOrder ? (
+        <div className="py-6 text-center">
+          <Result
+            status="success"
+            title={<span className="text-xl font-bold text-gray-800">Gửi Yêu Cầu Vận Chuyển Thành Công!</span>}
+            subTitle={
+              <div className="text-sm text-gray-600 max-w-md mx-auto space-y-2 mt-2">
+                <p>
+                  Mã đơn nháp đã khởi tạo: <b className="text-indigo-600 font-mono text-base">{submittedOrder.order_id}</b>
+                </p>
+                <p className="bg-indigo-50 p-3 rounded-lg text-indigo-900 text-xs">
+                  Yêu cầu của bạn đã được chuyển tới Điều phối viên NEXLOG. Chúng tôi sẽ liên hệ lại qua SĐT <b>{submittedOrder.customer_phone}</b> để tư vấn lộ trình và chốt giá cước trong ít phút!
+                </p>
+              </div>
+            }
+            extra={[
+              <Button type="primary" key="close" className="bg-[#7367f0] px-6 h-9" onClick={handleReset}>
+                Hoàn tất
+              </Button>
+            ]}
+          />
+        </div>
+      ) : (
+        <div className="py-2">
+          {/* Header */}
+          <div className="border-b border-gray-100 pb-3 mb-4">
+            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <span className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg"><Send size={18} /></span>
+              Đăng ký nhận tư vấn &amp; Báo giá vận chuyển
+            </h3>
+            <p className="text-xs text-gray-500 mt-1">
+              Điền thông tin lô hàng để hệ thống tính khoảng cách và điều phối viên liên hệ báo giá ưu đãi
+            </p>
+          </div>
+
+          <Form
+            form={form}
+            layout="vertical"
+            initialValues={{
+              package_unit: 'Pallet',
+              package_count: 1,
+              cargo_type: 'GENERAL',
+              length_cm: 120,
+              width_cm: 100,
+              height_cm: 150,
+              weight: 1200,
+              pickup_address: 'Kho ALS Cảng HKQT Nội Bài, Sóc Sơn, Hà Nội',
+              delivery_address: 'KCN Tiên Sơn (Nhà máy ADTEK), Bắc Ninh'
+            }}
+          >
+            {/* 1. Thông tin liên hệ */}
+            <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
+              <User size={14} className="text-indigo-600" /> 1. Thông tin liên hệ
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4">
+              <Form.Item label="Họ tên / Doanh nghiệp" name="customer_name" rules={[{ required: true, message: 'Vui lòng nhập tên' }]} className="mb-0">
+                <Input placeholder="VD: Công ty TNHH ADTEK" className="text-xs" />
+              </Form.Item>
+              <Form.Item label="Số điện thoại" name="customer_phone" rules={[{ required: true, message: 'Nhập số điện thoại' }]} className="mb-0">
+                <Input placeholder="VD: 0988 123 456" className="text-xs font-semibold" />
+              </Form.Item>
+              <Form.Item label="Email" name="customer_email" rules={[{ type: 'email', message: 'Email hợp lệ' }]} className="mb-0">
+                <Input placeholder="contact@company.com" className="text-xs" />
+              </Form.Item>
+            </div>
+
+            {/* 2. Địa điểm giao nhận & Bản đồ */}
+            <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
+              <MapPin size={14} className="text-blue-600" /> 2. Địa điểm lấy hàng &amp; Giao hàng
+            </div>
+            <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-100 mb-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Điểm lấy hàng */}
+                <Form.Item name="pickup_address" rules={[{ required: true, message: 'Vui lòng nhập địa điểm lấy hàng' }]} className="mb-0">
+                  <LocationSearchInput
+                    label="Điểm lấy hàng"
+                    markerLetter="A"
+                    markerColor="#2563eb"
+                    placeholder="Gõ tìm địa chỉ lấy hàng (VD: Thái Hà, Nội Bài...)..."
+                    value={form.getFieldValue('pickup_address')}
+                    onChange={(val) => form.setFieldsValue({ pickup_address: val })}
+                    onSelectLocation={(loc) => {
+                      setPickupCoords({ lat: loc.lat, lng: loc.lng });
+                      form.setFieldsValue({ pickup_address: loc.address });
+                    }}
+                    required
+                  />
+                </Form.Item>
+
+                {/* Điểm giao hàng */}
+                <Form.Item name="delivery_address" rules={[{ required: true, message: 'Vui lòng nhập địa điểm giao hàng' }]} className="mb-0">
+                  <LocationSearchInput
+                    label="Điểm giao hàng"
+                    markerLetter="B"
+                    markerColor="#10b981"
+                    placeholder="Gõ tìm địa chỉ giao hàng (VD: Láng Hạ, Tiên Sơn...)..."
+                    value={form.getFieldValue('delivery_address')}
+                    onChange={(val) => form.setFieldsValue({ delivery_address: val })}
+                    onSelectLocation={(loc) => {
+                      setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
+                      form.setFieldsValue({ delivery_address: loc.address });
+                    }}
+                    required
+                  />
+                </Form.Item>
+              </div>
+
+              {/* Bản đồ tương tác trực quan */}
+              <div className="bg-white p-2 rounded-lg border border-gray-200">
+                <RouteMapPicker
+                  pickupAddress={form.getFieldValue('pickup_address')}
+                  deliveryAddress={form.getFieldValue('delivery_address')}
+                  pickupCoords={pickupCoords}
+                  deliveryCoords={deliveryCoords}
+                  onRouteChange={setRouteInfo}
+                  height={190}
+                />
+              </div>
+            </div>
+
+            {/* 3. Thông tin hàng hóa */}
+            <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
+              <Package size={14} className="text-emerald-600" /> 3. Thông tin hàng hóa &amp; Quy cách
+            </div>
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2.5">
+                <Form.Item label="Tên hàng hóa" name="cargo_name" rules={[{ required: true, message: 'Nhập tên hàng' }]} className="mb-0">
+                  <Input placeholder="VD: Linh kiện điện tử, Cáp quang..." className="text-xs" />
+                </Form.Item>
+                <Form.Item label="Loại hàng" name="cargo_type" className="mb-0">
+                  <Select className="text-xs">
+                    <Option value="GENERAL">Hàng bách hóa thông thường</Option>
+                    <Option value="FRAGILE">Hàng điện tử dễ vỡ</Option>
+                    <Option value="VALUABLE">Hàng giá trị cao (Niêm chì)</Option>
+                  </Select>
+                </Form.Item>
+                <div className="grid grid-cols-2 gap-2">
+                  <Form.Item label="Số lượng" name="package_count" className="mb-0">
+                    <InputNumber min={1} className="w-full" />
+                  </Form.Item>
+                  <Form.Item label="Đơn vị" name="package_unit" className="mb-0">
+                    <Select className="text-xs">
+                      <Option value="Pallet">Pallet</Option>
+                      <Option value="Kiện gỗ">Kiện gỗ</Option>
+                      <Option value="Thùng carton">Thùng</Option>
+                    </Select>
+                  </Form.Item>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-gray-200 items-end">
+                <Form.Item label="Dài (cm)" name="length_cm" className="mb-0">
+                  <InputNumber min={1} className="w-full" />
+                </Form.Item>
+                <Form.Item label="Rộng (cm)" name="width_cm" className="mb-0">
+                  <InputNumber min={1} className="w-full" />
+                </Form.Item>
+                <Form.Item label="Cao (cm)" name="height_cm" className="mb-0">
+                  <InputNumber min={1} className="w-full" />
+                </Form.Item>
+                <Form.Item label="Trọng lượng (kg)" name="weight" className="mb-0">
+                  <InputNumber min={1} className="w-full" />
+                </Form.Item>
+              </div>
+
+              <div className="mt-2 text-right text-xs text-gray-500">
+                Tải trọng tính cước ước tính: <b className="text-amber-600 font-bold">{chargeableWeight} kg</b>
+              </div>
+            </div>
+
+            {/* Ghi chú thêm */}
+            <Form.Item label="Ghi chú yêu cầu đặc biệt (nếu có):" name="notes" className="mb-4">
+              <Input.TextArea rows={2} placeholder="Thời gian lấy hàng mong muốn, yêu cầu nâng hạ bốc xếp..." className="text-xs" />
+            </Form.Item>
+
+            {/* Nút hành động */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <Button onClick={handleReset}>Đóng</Button>
+              <Button type="primary" onClick={handleSubmit} icon={<Send size={15} />} className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold px-6">
+                Gửi yêu cầu vận chuyển
+              </Button>
+            </div>
+          </Form>
+        </div>
+      )}
+    </Modal>
+  );
+};
+
+export default ConsultationBookingModal;
