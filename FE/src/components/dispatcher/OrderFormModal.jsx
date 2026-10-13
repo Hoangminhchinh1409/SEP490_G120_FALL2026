@@ -2,13 +2,9 @@ import { useState, useMemo } from 'react';
 import { Modal, Form, Input, InputNumber, Switch, Select, Checkbox } from 'antd';
 import { 
   FileText, 
-  ShieldAlert, 
   Calculator
 } from 'lucide-react';
-import { 
-  DOCUMENT_TYPES, 
-  calculateRouteEstimate 
-} from '../../data/dispatcherPresets';
+import { calculateRouteEstimate } from '../../data/dispatcherPresets';
 import RouteMapPicker from '../common/RouteMapPicker';
 import LocationSearchInput from '../common/LocationSearchInput';
 
@@ -16,7 +12,6 @@ const { Option } = Select;
 
 const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   const [form] = Form.useForm();
-  const [noDocsRequired, setNoDocsRequired] = useState(false);
 
   const [pickupCoords, setPickupCoords] = useState(null);
   const [deliveryCoords, setDeliveryCoords] = useState(null);
@@ -38,12 +33,15 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
 
   const chargeableWeight = useMemo(() => {
     if (!values) return '0.00';
-    const { length_cm, width_cm, height_cm, weight_kg } = values;
+    const { length_cm, width_cm, height_cm, weight_kg, cargo_type } = values;
+    if (cargo_type === 'BULK') {
+      return (Number(weight_kg) || 0).toFixed(2);
+    }
     if (length_cm && width_cm && height_cm) {
       const volumeWeight = (length_cm * width_cm * height_cm) / 5000;
-      return Math.max(weight_kg || 0, volumeWeight).toFixed(2);
+      return Math.max(Number(weight_kg) || 0, volumeWeight).toFixed(2);
     }
-    return (weight_kg || 0).toFixed(2);
+    return (Number(weight_kg) || 0).toFixed(2);
   }, [values]);
 
   const estimatedBaselineRate = useMemo(() => {
@@ -56,23 +54,20 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
     return Math.round((baseFare + distanceFee + weightFee) / 50000) * 50000;
   }, [routeInfo, chargeableWeight]);
 
-  const handleNoDocsChange = (e) => {
-    const checked = e.target.checked;
-    setNoDocsRequired(checked);
-    if (checked) {
-      form.setFieldsValue({ required_documents: [] });
-    } else {
-      form.setFieldsValue({ 
-        required_documents: ['CUSTOMS_DECLARATION', 'DELIVERY_ORDER', 'COMMERCIAL_INVOICE', 'PACKING_LIST'] 
-      });
-    }
-  };
-
   const handleOk = () => {
     form.validateFields().then((fieldValues) => {
+      const isBulk = fieldValues.cargo_type === 'BULK';
+      const finalCargoType = fieldValues.cargo_type === 'OTHER' && fieldValues.other_cargo_type
+        ? `OTHER: ${fieldValues.other_cargo_type}`
+        : fieldValues.cargo_type;
+
       onSubmit({ 
         ...fieldValues, 
-        chargeable_weight: parseFloat(chargeableWeight) || fieldValues.weight_kg,
+        length_cm: isBulk ? 0 : (fieldValues.length_cm || 0),
+        width_cm: isBulk ? 0 : (fieldValues.width_cm || 0),
+        height_cm: isBulk ? 0 : (fieldValues.height_cm || 0),
+        cargo_type: finalCargoType,
+        chargeable_weight: parseFloat(chargeableWeight) || (Number(fieldValues.weight_kg) || 0),
         pickup_coords: pickupCoords,
         delivery_coords: deliveryCoords,
         estimated_distance_km: routeInfo.distanceKm,
@@ -115,13 +110,14 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         initialValues={{ 
           source: 'HOTLINE',
           status: 'READY_FOR_PLANNING',
+          is_new_customer: false,
+          pickup_same_as_customer: false,
           is_stackable: true, 
-          cargo_type: 'GENERAL',
           package_unit: 'Pallet',
           package_count: 1,
           pickup_address: '',
           delivery_address: '',
-          required_documents: ['CUSTOMS_DECLARATION', 'DELIVERY_ORDER', 'COMMERCIAL_INVOICE', 'PACKING_LIST']
+          customer_address: ''
         }}
       >
         {/* Phân vùng 1: Thông tin Khách hàng */}
@@ -142,12 +138,16 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
               <Option value="DRAFT">Lưu nháp</Option>
             </Select>
           </Form.Item>
-          <Form.Item label="Mã vận đơn HAWB" name="hawb_code" rules={[{ required: true, message: 'Nhập mã HAWB' }]} className="mb-2">
-            <Input placeholder="Mã vận đơn" className="font-mono text-indigo-700 font-semibold" />
+          
+          {/* Mã vận đơn HAWB: Không bắt buộc */}
+          <Form.Item label="Mã vận đơn HAWB" name="hawb_code" className="mb-2">
+            <Input placeholder="Tự sinh nếu để trống" className="font-mono text-indigo-700 font-semibold" />
           </Form.Item>
+          
           <Form.Item label="Mã số thuế" name="customer_tax_code" className="mb-2">
             <Input placeholder="Mã số thuế" />
           </Form.Item>
+
           <Form.Item label="Khách hàng" name="customer_name" rules={[{ required: true, message: 'Nhập tên khách hàng' }]} className="lg:col-span-2 mb-2">
             <Input placeholder="Tên công ty hoặc doanh nghiệp" />
           </Form.Item>
@@ -157,15 +157,51 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           <Form.Item label="Email" name="customer_email" rules={[{ required: true, type: 'email', message: 'Email hợp lệ' }]} className="mb-2">
             <Input placeholder="Email liên hệ" />
           </Form.Item>
-          <Form.Item label="Nhà máy / Kho" name="factory_name" className="lg:col-span-4 mb-0">
-            <Input placeholder="Nhà máy hoặc kho hàng" />
+
+          {/* Địa chỉ khách hàng */}
+          <Form.Item label="Địa chỉ" name="customer_address" className="lg:col-span-4 mb-2">
+            <Input 
+              placeholder="Địa chỉ trụ sở hoặc văn phòng của khách hàng" 
+              onChange={(e) => {
+                if (form.getFieldValue('pickup_same_as_customer')) {
+                  form.setFieldsValue({ pickup_address: e.target.value });
+                }
+              }}
+            />
           </Form.Item>
+
+          {/* Khách hàng mới đặt bên dưới địa chỉ */}
+          <div className="lg:col-span-4 flex items-center -mt-1 mb-1">
+            <Form.Item name="is_new_customer" valuePropName="checked" className="mb-0">
+              <Checkbox className="text-xs font-semibold text-indigo-600">
+                Khách hàng mới
+              </Checkbox>
+            </Form.Item>
+          </div>
         </div>
 
         {/* Phân vùng 2: Tuyến đường */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider">
-          2. Điểm lấy hàng & Điểm giao hàng
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+            2. Điểm lấy hàng & Điểm giao hàng
+          </div>
+          <Form.Item name="pickup_same_as_customer" valuePropName="checked" className="mb-0">
+            <Checkbox 
+              className="text-xs font-semibold text-indigo-600"
+              onChange={(e) => {
+                if (e.target.checked) {
+                  const custAddr = form.getFieldValue('customer_address');
+                  if (custAddr) {
+                    form.setFieldsValue({ pickup_address: custAddr });
+                  }
+                }
+              }}
+            >
+              Địa điểm lấy hàng trùng với địa chỉ của khách
+            </Checkbox>
+          </Form.Item>
         </div>
+
         <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Điểm Lấy hàng */}
@@ -220,82 +256,93 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           3. Quy cách hàng hóa & Tải trọng
         </div>
         <div className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-100 mb-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+            <Form.Item label="Loại hàng" name="cargo_type" rules={[{ required: true, message: 'Vui lòng chọn loại hàng' }]} className="mb-0">
+              <Select placeholder="Chọn loại hàng...">
+                <Option value="PALLET">Hàng Pallet (Tính kích thước &amp; trọng tải)</Option>
+                <Option value="BULK">Hàng rời (Xếp tính theo trọng tải)</Option>
+                <Option value="GENERAL">Hàng bách hóa thông thường</Option>
+                <Option value="FRAGILE">Hàng điện tử dễ vỡ</Option>
+                <Option value="VALUABLE">Hàng giá trị cao (Niêm chì)</Option>
+                <Option value="OTHER">Khác</Option>
+              </Select>
+            </Form.Item>
+
             <Form.Item label="Số lượng" name="package_count" rules={[{ required: true }]} className="mb-0">
               <InputNumber min={1} className="w-full" />
             </Form.Item>
-            <Form.Item label="Đơn vị tính" name="package_unit" className="mb-0">
-              <Select>
-                <Option value="Pallet">Pallet</Option>
-                <Option value="Kiện gỗ">Kiện gỗ</Option>
-                <Option value="Thùng carton">Thùng carton</Option>
-                <Option value="Cuộn cáp">Cuộn cáp</Option>
-              </Select>
-            </Form.Item>
-            <Form.Item label="Dài (cm)" name="length_cm" rules={[{ required: true }]} className="mb-0">
-              <InputNumber className="w-full" min={1} />
-            </Form.Item>
-            <Form.Item label="Rộng (cm)" name="width_cm" rules={[{ required: true }]} className="mb-0">
-              <InputNumber className="w-full" min={1} />
-            </Form.Item>
-            <Form.Item label="Cao (cm)" name="height_cm" rules={[{ required: true }]} className="mb-0">
-              <InputNumber className="w-full" min={1} />
-            </Form.Item>
-            <Form.Item label="Trọng lượng (kg)" name="weight_kg" rules={[{ required: true }]} className="mb-0">
-              <InputNumber className="w-full" min={1} />
-            </Form.Item>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center pt-2 border-t border-gray-200">
-            <Form.Item label="Loại hàng" name="cargo_type" className="mb-0">
-              <Select>
-                <Option value="GENERAL">Hàng thông thường</Option>
-                <Option value="FRAGILE">Hàng dễ vỡ</Option>
-                <Option value="VALUABLE">Hàng giá trị cao</Option>
-              </Select>
+            
+            <Form.Item label="Đơn vị tính" name="package_unit" rules={[{ required: true, message: 'Nhập đơn vị' }]} className="mb-0">
+              <Input placeholder="VD: Pallet, Kiện, Tấn..." />
             </Form.Item>
 
             <Form.Item label="Xếp chồng" name="is_stackable" valuePropName="checked" className="mb-0">
               <Switch checkedChildren="Cho phép" unCheckedChildren="Không" />
             </Form.Item>
-
-            <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 flex flex-col justify-center">
-              <span className="text-[11px] font-semibold text-amber-900">Tải trọng tính cước:</span>
-              <span className="text-lg font-bold text-amber-600">{chargeableWeight} kg</span>
-            </div>
           </div>
-        </div>
 
-        {/* Phân vùng 4: Chứng từ */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider flex items-center justify-between">
-          <span className="flex items-center gap-1.5">
-            <ShieldAlert size={14} className="text-blue-600" />
-            4. Danh mục chứng từ yêu cầu
-          </span>
-          <Checkbox checked={noDocsRequired} onChange={handleNoDocsChange} className="text-xs text-gray-600">
-            Không yêu cầu chứng từ
-          </Checkbox>
-        </div>
-        <div className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-100 mb-4">
-          <Form.Item name="required_documents" className="mb-0">
-            <Checkbox.Group className="w-full" disabled={noDocsRequired}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {DOCUMENT_TYPES.map(doc => (
-                  <div key={doc.key} className="p-2 bg-white rounded-lg border border-gray-200">
-                    <Checkbox value={doc.key} className="w-full text-xs font-semibold text-gray-800">
-                      <div>{doc.label}</div>
-                      <div className="text-[11px] text-gray-400 font-normal mt-0.5">{doc.description}</div>
-                    </Checkbox>
-                  </div>
-                ))}
+          {/* Ô nhập loại hàng khác khi chọn "Khác" */}
+          {values?.cargo_type === 'OTHER' && (
+            <div className="mb-3 pt-2 border-t border-gray-150">
+              <Form.Item label="Chi tiết loại hàng khác" name="other_cargo_type" rules={[{ required: true, message: 'Vui lòng nhập tên loại hàng' }]} className="mb-0">
+                <Input placeholder="VD: Hóa chất đặc thù, Vật liệu xây dựng, Cáp quang..." />
+              </Form.Item>
+            </div>
+          )}
+
+          {/* Chưa chọn loại hàng -> Hiển thị hướng dẫn */}
+          {!values?.cargo_type && (
+            <div className="pt-2 border-t border-gray-200">
+              <div className="text-xs text-indigo-700 bg-indigo-50/70 p-2.5 rounded-lg border border-indigo-100 flex items-center justify-center">
+                <span>💡 Vui lòng chọn <b>Loại hàng</b> ở trên: nếu là <b>Hàng rời</b> sẽ tính theo trọng tải; nếu là <b>Hàng Pallet</b> sẽ tính cả trọng tải và kích thước dài rộng cao.</span>
               </div>
-            </Checkbox.Group>
-          </Form.Item>
+            </div>
+          )}
+
+          {/* Hàng rời -> Chỉ hiển thị trọng tải xe */}
+          {values?.cargo_type === 'BULK' && (
+            <div className="pt-2 border-t border-gray-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                <Form.Item label="Trọng tải hàng rời (kg)" name="weight_kg" rules={[{ required: true, message: 'Vui lòng nhập trọng tải' }]} className="mb-0">
+                  <InputNumber min={0.1} className="w-full font-semibold text-emerald-700" placeholder="VD: 5000" />
+                </Form.Item>
+
+                <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex flex-col justify-center">
+                  <span className="text-[11px] font-semibold text-emerald-900">Tải trọng tính cước hàng rời:</span>
+                  <span className="text-lg font-bold text-emerald-600">{chargeableWeight} kg</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Hàng Pallet / Đóng kiện -> Hiển thị cả Dài, Rộng, Cao & Trọng tải */}
+          {values?.cargo_type && values?.cargo_type !== 'BULK' && (
+            <div className="pt-2 border-t border-gray-200">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
+                <Form.Item label="Dài (cm)" name="length_cm" rules={[{ required: true }]} className="mb-0">
+                  <InputNumber className="w-full" min={1} placeholder="Dài" />
+                </Form.Item>
+                <Form.Item label="Rộng (cm)" name="width_cm" rules={[{ required: true }]} className="mb-0">
+                  <InputNumber className="w-full" min={1} placeholder="Rộng" />
+                </Form.Item>
+                <Form.Item label="Cao (cm)" name="height_cm" rules={[{ required: true }]} className="mb-0">
+                  <InputNumber className="w-full" min={1} placeholder="Cao" />
+                </Form.Item>
+                <Form.Item label="Trọng lượng (kg)" name="weight_kg" rules={[{ required: true }]} className="mb-0">
+                  <InputNumber className="w-full" min={0.1} placeholder="Kg" />
+                </Form.Item>
+                <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 flex flex-col justify-center col-span-2 sm:col-span-1">
+                  <span className="text-[11px] font-semibold text-amber-900">Tải trọng tính cước:</span>
+                  <span className="text-base font-bold text-amber-600">{chargeableWeight} kg</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Phân vùng 5: Cước phí */}
+        {/* Phân vùng 4: Cước phí (Đã bỏ chọn chứng từ theo yêu cầu luồng nghiệp vụ) */}
         <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider">
-          5. Cước phí vận chuyển
+          4. Cước phí vận chuyển
         </div>
         <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
           <div className="p-2.5 bg-indigo-50/50 rounded-lg border border-indigo-100 mb-3 flex items-center justify-between">
@@ -304,7 +351,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
               <span className="text-xs text-gray-600">Cước tham chiếu theo lộ trình:</span>
             </div>
             <span className="text-sm font-bold text-indigo-700">
-              ~ {estimatedBaselineRate.toLocaleString()} đ
+              ~ {estimatedBaselineRate.toLocaleString()} VNĐ
             </span>
           </div>
 

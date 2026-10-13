@@ -1,174 +1,6 @@
 'use client';
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { Input } from 'antd';
-import { MapPin, Search, Clock, Loader2, X, Navigation } from 'lucide-react';
-
-// Kho dữ liệu địa điểm phong phú ở Việt Nam (phục vụ instant search tức thì)
-const LOCAL_VIETNAM_PLACES = [
-  // Tuyến đường, địa danh theo đúng ví dụ ảnh người dùng
-  {
-    main: 'Thái Hà',
-    sub: 'Phường Trung Liệt, Quận Đống Đa, Hà Nội',
-    lat: 21.0135,
-    lng: 105.8198,
-    isHistory: true
-  },
-  {
-    main: 'Thái Thịnh',
-    sub: 'Phường Thịnh Quang, Quận Đống Đa, Hà Nội',
-    lat: 21.0105,
-    lng: 105.8162,
-    isHistory: false
-  },
-  {
-    main: '200b Phố Láng Hạ',
-    sub: 'Thái Thịnh, Phường Láng Hạ, Quận Đống Đa, Hà Nội',
-    lat: 21.0152,
-    lng: 105.8134,
-    isHistory: true
-  },
-  {
-    main: 'Thành phố Thái Nguyên',
-    sub: 'Tỉnh Thái Nguyên',
-    lat: 21.5942,
-    lng: 105.8482,
-    isHistory: false
-  },
-  {
-    main: 'Thành phố Thái Bình',
-    sub: 'Tỉnh Thái Bình',
-    lat: 20.4463,
-    lng: 106.3365,
-    isHistory: false
-  },
-  {
-    main: 'Huyện Thái Thụy',
-    sub: 'Tỉnh Thái Bình',
-    lat: 20.5482,
-    lng: 106.5684,
-    isHistory: false
-  },
-  // Các điểm Logistics, Cảng Hàng không, KCN trọng điểm
-  {
-    main: 'Kho ALS Cảng HKQT Nội Bài',
-    sub: 'Cảng hàng không quốc tế Nội Bài, Sóc Sơn, Hà Nội',
-    lat: 21.2187,
-    lng: 105.8042,
-    isHistory: true
-  },
-  {
-    main: 'Ga Hàng hóa NCTS Sân bay Nội Bài',
-    sub: 'Xã Phú Minh, Huyện Sóc Sơn, Hà Nội',
-    lat: 21.2215,
-    lng: 105.8078,
-    isHistory: false
-  },
-  {
-    main: 'Kho Hàng Không Kéo Dài Apex',
-    sub: 'Khu công nghiệp Nội Bài, Quang Tiến, Sóc Sơn, Hà Nội',
-    lat: 21.2125,
-    lng: 105.7954,
-    isHistory: false
-  },
-  {
-    main: 'KCN Tiên Sơn (Nhà máy ADTEK)',
-    sub: 'Đường TS8, KCN Tiên Sơn, Phường Đồng Nguyên, TP. Từ Sơn, Bắc Ninh',
-    lat: 21.1235,
-    lng: 105.9876,
-    isHistory: true
-  },
-  {
-    main: 'KCN Yên Phong (Samsung Electronics)',
-    sub: 'Xã Yên Trung, Huyện Yên Phong, Tỉnh Bắc Ninh',
-    lat: 21.2054,
-    lng: 105.9732,
-    isHistory: false
-  },
-  {
-    main: 'KCN Quang Châu (Foxconn Bắc Giang)',
-    sub: 'KCN Quang Châu, Huyện Việt Yên, Tỉnh Bắc Giang',
-    lat: 21.2345,
-    lng: 106.1234,
-    isHistory: false
-  },
-  {
-    main: 'Bệnh viện Bạch Mai',
-    sub: 'Số 78 Giải Phóng, Phường Phương Mai, Quận Đống Đa, Hà Nội',
-    lat: 20.9995,
-    lng: 105.8415,
-    isHistory: true
-  },
-  {
-    main: 'Cảng cạn ICD Mỹ Đình',
-    sub: 'Số 17 Phạm Hùng, Phường Mỹ Đình 2, Quận Nam Từ Liêm, Hà Nội',
-    lat: 21.0265,
-    lng: 105.7789,
-    isHistory: false
-  },
-  {
-    main: 'KCN Thăng Long I',
-    sub: 'Xã Kim Chung, Huyện Đông Anh, Hà Nội',
-    lat: 21.1278,
-    lng: 105.7865,
-    isHistory: false
-  },
-  {
-    main: 'KCN Phố Nối A',
-    sub: 'Xã Lạc Đạo, Huyện Văn Lâm, Tỉnh Hưng Yên',
-    lat: 20.9542,
-    lng: 106.0125,
-    isHistory: false
-  },
-  {
-    main: 'Cảng Hải Phòng',
-    sub: 'Đường Hoàng Diệu, Phường Minh Khai, Quận Hồng Bàng, TP. Hải Phòng',
-    lat: 20.8542,
-    lng: 106.7584,
-    isHistory: false
-  },
-  {
-    main: 'Khu Công Nghệ Cao Hòa Lạc',
-    sub: 'Km 29 Đại Lộ Thăng Long, Huyện Thạch Thất, Hà Nội',
-    lat: 21.0123,
-    lng: 105.5342,
-    isHistory: false
-  },
-  {
-    main: 'Cụm Công Nghiệp Lai Xá',
-    sub: 'Xã Kim Chung, Huyện Hoài Đức, Hà Nội',
-    lat: 21.0567,
-    lng: 105.7198,
-    isHistory: false
-  },
-  {
-    main: 'Quận Cầu Giấy',
-    sub: 'Thành phố Hà Nội',
-    lat: 21.0333,
-    lng: 105.7939,
-    isHistory: false
-  },
-  {
-    main: 'Quận Hoàn Kiếm',
-    sub: 'Thành phố Hà Nội',
-    lat: 21.0285,
-    lng: 105.8542,
-    isHistory: false
-  },
-  {
-    main: 'Sân bay Quốc tế Tân Sơn Nhất',
-    sub: 'Đường Trường Sơn, Phường 2, Quận Tân Bình, TP. Hồ Chí Minh',
-    lat: 10.8185,
-    lng: 106.6588,
-    isHistory: false
-  },
-  {
-    main: 'Cảng Tân Cảng - Cát Lái',
-    sub: 'Đường Nguyễn Thị Định, Cát Lái, TP. Thủ Đức, TP. Hồ Chí Minh',
-    lat: 10.7626,
-    lng: 106.7932,
-    isHistory: false
-  }
-];
+import { useState, useEffect, useRef } from 'react';
+import { MapPin, Search, Loader2, X, Navigation, Check } from 'lucide-react';
 
 // Hàm loại bỏ dấu tiếng Việt để so sánh tìm kiếm mềm dẻo
 const removeVietnameseTones = (str) => {
@@ -191,15 +23,17 @@ const LocationSearchInput = ({
   markerColor = '#2563eb', // blue
   required = false
 }) => {
+  const [prevValue, setPrevValue] = useState(value);
   const [inputValue, setInputValue] = useState(value);
   const [isOpen, setIsOpen] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef(null);
 
-  useEffect(() => {
+  if (value !== prevValue) {
+    setPrevValue(value);
     setInputValue(value || '');
-  }, [value]);
+  }
 
   // Đóng dropdown khi click bên ngoài
   useEffect(() => {
@@ -212,72 +46,83 @@ const LocationSearchInput = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Tìm kiếm địa điểm (kết hợp Local Database tức thì + Nominatim API trực tuyến)
+  // Tìm kiếm địa điểm động qua Geocoding API linh hoạt toàn quốc
   useEffect(() => {
     const query = inputValue?.trim();
-    if (!query || query.length < 1) {
-      setSuggestions([]);
-      return;
+    if (!query || query.length < 2) {
+      const clearTimer = setTimeout(() => {
+        setSuggestions([]);
+      }, 0);
+      return () => clearTimeout(clearTimer);
     }
 
-    const cleanQ = removeVietnameseTones(query);
+    let isCancelled = false;
+    const controller = new AbortController();
 
-    // 1. Lọc từ Local Database
-    const matchedLocal = LOCAL_VIETNAM_PLACES.filter(item => {
-      const cleanMain = removeVietnameseTones(item.main);
-      const cleanSub = removeVietnameseTones(item.sub);
-      return cleanMain.includes(cleanQ) || cleanSub.includes(cleanQ);
-    });
-
-    setSuggestions(matchedLocal);
-
-    // 2. Gọi thêm Nominatim Geocoding API với debounce
-    const timer = setTimeout(async () => {
+    const apiTimer = setTimeout(async () => {
       try {
         setIsLoading(true);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
 
+        // Gọi Photon Geocoding API định vị toàn lãnh thổ Việt Nam
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=vn&limit=5&addressdetails=1`,
+          `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=21.0285&lon=105.8542&limit=8`,
           { signal: controller.signal }
         );
         clearTimeout(timeoutId);
 
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            const apiItems = data.map(item => {
-              const nameParts = (item.display_name || '').split(',');
-              const main = nameParts[0]?.trim() || item.name || query;
-              const sub = nameParts.slice(1, 4).join(',').trim();
+          if (!isCancelled && data?.features && Array.isArray(data.features)) {
+            const apiItems = data.features.map(feat => {
+              const props = feat.properties || {};
+              const coords = feat.geometry?.coordinates || [105.8542, 21.0285];
+              const main = props.name || props.street || query;
+              
+              const parts = [
+                props.housenumber ? `Số ${props.housenumber}` : '',
+                props.street && props.street !== props.name ? props.street : '',
+                props.district,
+                props.city || props.state,
+                props.country || 'Việt Nam'
+              ].filter(Boolean);
+
               return {
                 main,
-                sub,
-                lat: parseFloat(item.lat),
-                lng: parseFloat(item.lon),
-                isHistory: false
+                sub: parts.join(', '),
+                lat: coords[1],
+                lng: coords[0]
               };
             });
 
-            // Gộp kết quả, ưu tiên local match trước
-            setSuggestions(prev => {
-              const seen = new Set(prev.map(p => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`));
-              const newUnique = apiItems.filter(
-                a => !seen.has(`${a.lat.toFixed(3)},${a.lng.toFixed(3)}`)
-              );
-              return [...prev, ...newUnique].slice(0, 8);
-            });
+            // Loại bỏ các kết quả trùng lặp tọa độ
+            const seen = new Set();
+            const unique = [];
+            for (const item of apiItems) {
+              const key = `${item.lat.toFixed(3)},${item.lng.toFixed(3)}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                unique.push(item);
+              }
+            }
+
+            setSuggestions(unique);
           }
         }
-      } catch (err) {
-        // Nếu API ngoài bị lỗi mạng/timeout, dữ liệu local đã đảm bảo hoạt động tốt
+      } catch {
+        // Bỏ qua lỗi timeout/huỷ
       } finally {
-        setIsLoading(false);
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
       }
     }, 250);
 
-    return () => clearTimeout(timer);
+    return () => {
+      isCancelled = true;
+      clearTimeout(apiTimer);
+      controller.abort();
+    };
   }, [inputValue]);
 
   const handleInputChange = (e) => {
@@ -298,6 +143,21 @@ const LocationSearchInput = ({
         mainName: item.main,
         lat: item.lat,
         lng: item.lng
+      });
+    }
+  };
+
+  const handleSelectCustomAddress = () => {
+    const customText = inputValue.trim();
+    if (!customText) return;
+    setIsOpen(false);
+    if (onChange) onChange(customText);
+    if (onSelectLocation) {
+      onSelectLocation({
+        address: customText,
+        mainName: customText,
+        lat: 21.0285, // Mặc định trung tâm nếu nhập tự do chưa xác định tọa độ
+        lng: 105.8542
       });
     }
   };
@@ -323,7 +183,7 @@ const LocationSearchInput = ({
     return (
       <span>
         {before}
-        <strong className="font-extrabold text-gray-900 underline decoration-indigo-300 underline-offset-2">
+        <strong className="font-extrabold text-indigo-700 underline decoration-indigo-300 underline-offset-2">
           {match}
         </strong>
         {after}
@@ -346,7 +206,7 @@ const LocationSearchInput = ({
             {required && <span className="text-red-500 font-bold">*</span>}
           </span>
           <span className="text-[11px] font-normal text-indigo-600 flex items-center gap-1">
-            <Search size={11} /> Nhập để tìm vị trí
+            <Search size={11} /> Tìm kiếm vị trí
           </span>
         </label>
       )}
@@ -379,16 +239,16 @@ const LocationSearchInput = ({
         )}
       </div>
 
-      {/* Dropdown Gợi ý thông minh kiểu Google Maps */}
-      {isOpen && (suggestions.length > 0 || isLoading) && (
+      {/* Dropdown Gợi ý thông minh */}
+      {isOpen && (suggestions.length > 0 || isLoading || inputValue?.trim().length >= 2) && (
         <div className="absolute left-0 right-0 top-full mt-1.5 z-[2500] bg-white rounded-xl shadow-2xl border border-gray-150 overflow-hidden max-h-72 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150">
           <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
             <span className="font-semibold uppercase tracking-wider text-[10px] text-gray-400 flex items-center gap-1">
-              <Navigation size={11} className="text-indigo-600" /> Gợi ý vị trí Google Maps
+              <Navigation size={11} className="text-indigo-600" /> Kết quả tìm kiếm địa chỉ
             </span>
             {isLoading && (
               <span className="flex items-center gap-1 text-indigo-600 font-medium text-[10px]">
-                <Loader2 size={11} className="animate-spin" /> Đang định vị...
+                <Loader2 size={11} className="animate-spin" /> Đang tìm...
               </span>
             )}
           </div>
@@ -401,11 +261,7 @@ const LocationSearchInput = ({
                 className="px-3.5 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-indigo-50/70 transition-colors group"
               >
                 <div className="mt-0.5 text-gray-400 group-hover:text-indigo-600 transition-colors shrink-0">
-                  {item.isHistory ? (
-                    <Clock size={16} className="text-gray-400 group-hover:text-indigo-500" />
-                  ) : (
-                    <MapPin size={16} className="text-gray-400 group-hover:text-indigo-600" />
-                  )}
+                  <MapPin size={16} />
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -420,12 +276,25 @@ const LocationSearchInput = ({
                 </div>
               </div>
             ))}
+
+            {/* Mục cho phép chọn trực tiếp địa chỉ tự do */}
+            {inputValue?.trim().length > 0 && (
+              <div
+                onClick={handleSelectCustomAddress}
+                className="px-3.5 py-2.5 flex items-center gap-2.5 cursor-pointer bg-slate-50/80 hover:bg-indigo-50 transition-colors text-indigo-700"
+              >
+                <Check size={14} className="shrink-0 text-indigo-600" />
+                <div className="text-xs truncate font-medium">
+                  Sử dụng địa chỉ: <span className="font-bold underline">{inputValue}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {suggestions.length === 0 && isLoading && (
             <div className="p-4 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
               <Loader2 size={14} className="animate-spin text-indigo-600" />
-              <span>Đang tìm kiếm vị trí phù hợp...</span>
+              <span>Đang tra cứu cơ sở dữ liệu bản đồ...</span>
             </div>
           )}
         </div>

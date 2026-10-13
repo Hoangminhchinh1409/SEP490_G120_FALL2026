@@ -56,6 +56,11 @@ const getAllOrders = async (req, res) => {
       const isFromWeb = order.agreed_price === 0 || 
         order.notes?.some(n => n.content?.includes('Website') || n.content?.includes('Homepage'));
 
+      const noteStr = order.notes?.map(n => n.content).join(' ') || '';
+      const isBulk = noteStr.includes('Loại: BULK') || noteStr.includes('Loại hàng: BULK') || (parseFloat(order.length_cm) === 0 && parseFloat(order.width_cm) === 0);
+      const isPallet = noteStr.includes('Loại: PALLET') || noteStr.includes('Loại hàng: PALLET');
+      const detectedCargoType = isBulk ? 'BULK' : (isPallet ? 'PALLET' : 'GENERAL');
+
       return {
         key: order.id.toString(),
         id: order.id,
@@ -75,12 +80,12 @@ const getAllOrders = async (req, res) => {
         status: feStatus,
         source: isFromWeb ? 'HOMEPAGE' : 'HOTLINE',
         package_count: 1,
-        package_unit: 'Pallet',
-        cargo_name: 'Hàng bách hóa / Linh kiện',
-        cargo_type: 'GENERAL',
-        length_cm: parseFloat(order.length_cm) || 120,
-        width_cm: parseFloat(order.width_cm) || 100,
-        height_cm: parseFloat(order.height_cm) || 150,
+        package_unit: isBulk ? 'Chuyến' : 'Pallet',
+        cargo_name: isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện',
+        cargo_type: detectedCargoType,
+        length_cm: isBulk ? 0 : (parseFloat(order.length_cm) || 120),
+        width_cm: isBulk ? 0 : (parseFloat(order.width_cm) || 100),
+        height_cm: isBulk ? 0 : (parseFloat(order.height_cm) || 150),
         weight: parseFloat(order.actual_weight_kg) || 1200,
         chargeable: parseFloat(order.chargeable_weight_kg) || 1200,
         estimated_distance_km: 35.5,
@@ -112,6 +117,8 @@ const createConsultationOrder = async (req, res) => {
       delivery_address,
       delivery_coords,
       cargo_name,
+      cargo_type,
+      other_cargo_type,
       package_count,
       package_unit,
       length_cm,
@@ -138,7 +145,7 @@ const createConsultationOrder = async (req, res) => {
         .insert([{
           company_name: customer_name || 'Khách hàng trực tuyến',
           tax_code: cleanPhone.slice(-10) || '0988123456',
-          registered_address: delivery_address || 'Việt Nam',
+          registered_address: pickup_address || delivery_address || 'Việt Nam',
           email: customer_email || 'client@nexlog.vn',
           created_by: 3
         }])
@@ -156,12 +163,13 @@ const createConsultationOrder = async (req, res) => {
     }
 
     // 3. Tính toán trọng lượng
-    const l = parseFloat(length_cm) || 120;
-    const w = parseFloat(width_cm) || 100;
-    const h = parseFloat(height_cm) || 150;
+    const isBulk = cargo_type === 'BULK';
+    const l = isBulk ? 0 : (parseFloat(length_cm) || 120);
+    const w = isBulk ? 0 : (parseFloat(width_cm) || 100);
+    const h = isBulk ? 0 : (parseFloat(height_cm) || 150);
     const actualWeight = parseFloat(weight) || 1000;
-    const volWeight = (l * w * h) / 5000;
-    const chargeableWeight = Math.max(actualWeight, volWeight);
+    const volWeight = isBulk ? 0 : ((l * w * h) / 5000);
+    const chargeableWeight = isBulk ? actualWeight : Math.max(actualWeight, volWeight);
 
     const randomCode = `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
     const token = generateTrackingToken();
@@ -197,7 +205,10 @@ const createConsultationOrder = async (req, res) => {
     // 5. Thêm ghi chú nguồn đơn từ Website
     if (newOrder && newOrder.length > 0) {
       const orderId = newOrder[0].id;
-      const noteContent = notes || `Đơn hàng nhận tư vấn từ Website (SĐT: ${customer_phone}, Hàng: ${cargo_name || 'Bách hóa'}). Cần liên hệ tư vấn lộ trình và chốt giá cước.`;
+      const typeDisplay = cargo_type === 'OTHER' && other_cargo_type ? `Khác: ${other_cargo_type}` : (cargo_type || 'Bách hóa');
+      const unitDisplay = `${package_count || 1} ${package_unit || 'Kiện'}`;
+      const noteContent = notes || `Đơn hàng nhận tư vấn từ Website (SĐT: ${customer_phone}, Hàng: ${cargo_name || 'Bách hóa'}, Quy cách: ${unitDisplay}, Loại: ${typeDisplay}, Điểm lấy: ${pickup_address || 'Chưa rõ'}). Cần liên hệ tư vấn lộ trình và chốt giá cước.`;
+      
       await supabase.from('order_notes').insert([{
         order_id: orderId,
         content: noteContent,
@@ -228,6 +239,9 @@ const createDirectOrder = async (req, res) => {
       customer_name,
       customer_phone,
       customer_email,
+      customer_address,
+      is_new_customer,
+      hawb_code,
       pickup_address,
       delivery_address,
       length_cm,
@@ -237,6 +251,10 @@ const createDirectOrder = async (req, res) => {
       chargeable_weight,
       agreed_price,
       order_notes,
+      cargo_name,
+      cargo_type,
+      package_count,
+      package_unit,
       source,
       status
     } = req.body;
@@ -244,22 +262,28 @@ const createDirectOrder = async (req, res) => {
     // Tìm hoặc tạo Customer
     let customerId = 1;
     const cleanPhone = (customer_phone || '').replace(/[^0-9]/g, '');
-    const { data: existingCust } = await supabase
-      .from('customers')
-      .select('id')
-      .or(`company_name.eq.${customer_name || 'none'},tax_code.eq.${cleanPhone || 'none'}`)
-      .limit(1);
 
-    if (existingCust && existingCust.length > 0) {
-      customerId = existingCust[0].id;
-    } else {
+    if (!is_new_customer) {
+      const { data: existingCust } = await supabase
+        .from('customers')
+        .select('id')
+        .or(`company_name.eq.${customer_name || 'none'},tax_code.eq.${cleanPhone || 'none'}`)
+        .limit(1);
+
+      if (existingCust && existingCust.length > 0) {
+        customerId = existingCust[0].id;
+      }
+    }
+
+    // Nếu là khách hàng mới hoặc chưa tìm thấy trong DB thì tạo mới
+    if (is_new_customer || customerId === 1) {
       const { data: newCust } = await supabase
         .from('customers')
         .insert([{
-          company_name: customer_name || 'Khách hàng Hotline',
+          company_name: customer_name || 'Khách hàng mới',
           tax_code: cleanPhone.slice(-10) || '0988123456',
-          registered_address: delivery_address || 'Việt Nam',
-          email: customer_email || 'hotline@nexlog.vn',
+          registered_address: customer_address || delivery_address || 'Việt Nam',
+          email: customer_email || 'client@nexlog.vn',
           created_by: 3
         }])
         .select();
@@ -274,23 +298,30 @@ const createDirectOrder = async (req, res) => {
       warehouseId = whList[0].id;
     }
 
-    const randomCode = `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
+    // Mã vận đơn: nếu không nhập thì tự động sinh
+    const orderCode = hawb_code?.trim() || `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
     const token = generateTrackingToken();
     const dbStatus = (status === 'DRAFT') ? 'WAITING_FOR_DOCUMENTS' : 'READY_FOR_PLANNING';
+
+    const isBulk = cargo_type === 'BULK';
+    const l = isBulk ? 0 : (parseFloat(length_cm) || 120);
+    const w = isBulk ? 0 : (parseFloat(width_cm) || 100);
+    const h = isBulk ? 0 : (parseFloat(height_cm) || 150);
+    const actualWeight = parseFloat(weight_kg) || 1000;
 
     const { data: newOrder, error: orderErr } = await supabase
       .from('orders')
       .insert([{
-        order_code: randomCode,
+        order_code: orderCode,
         customer_id: customerId,
         tracking_email: customer_email || 'hotline@nexlog.vn',
         tracking_token: token,
-        actual_weight_kg: parseFloat(weight_kg) || 1000,
-        length_cm: parseFloat(length_cm) || 120,
-        width_cm: parseFloat(width_cm) || 100,
-        height_cm: parseFloat(height_cm) || 150,
+        actual_weight_kg: actualWeight,
+        length_cm: l,
+        width_cm: w,
+        height_cm: h,
         stackable: true,
-        chargeable_weight_kg: parseFloat(chargeable_weight) || 1000,
+        chargeable_weight_kg: isBulk ? actualWeight : (parseFloat(chargeable_weight) || actualWeight),
         agreed_price: parseInt(agreed_price) || 0,
         pickup_warehouse_id: warehouseId,
         delivery_address: delivery_address || 'Hà Nội',
@@ -306,10 +337,19 @@ const createDirectOrder = async (req, res) => {
       return res.status(500).json({ message: 'Không thể tạo đơn hàng', error: orderErr });
     }
 
-    if (order_notes && newOrder && newOrder.length > 0) {
+    // Lưu các ghi chú chi tiết về hàng hóa, quy cách, địa chỉ lấy hàng
+    const noteParts = [
+      order_notes,
+      pickup_address ? `Điểm lấy hàng: ${pickup_address}` : '',
+      customer_address ? `Địa chỉ KH: ${customer_address}` : '',
+      cargo_type ? `Loại hàng: ${cargo_type}` : '',
+      package_unit ? `Quy cách: ${package_count || 1} ${package_unit}` : ''
+    ].filter(Boolean);
+
+    if (noteParts.length > 0 && newOrder && newOrder.length > 0) {
       await supabase.from('order_notes').insert([{
         order_id: newOrder[0].id,
-        content: order_notes,
+        content: noteParts.join(' | '),
         created_by: 3
       }]);
     }

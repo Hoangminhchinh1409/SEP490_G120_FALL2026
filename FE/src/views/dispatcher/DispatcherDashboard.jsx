@@ -1,21 +1,16 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Tag, Button, Row, Col } from 'antd';
 import { Users, Plus, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell } from 'lucide-react';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import Chart from 'react-apexcharts';
 import { orderApi } from '../../api/orderApi';
 
-const mockFeeds = [
-  { id: 1, title: 'Tài xế Nguyễn Văn A đã nhận đơn', time: '10 phút trước', color: 'text-blue-500' },
-  { id: 2, title: 'Xe 29C-12345 đang gặp sự cố', time: '1 giờ trước', color: 'text-red-500' },
-  { id: 3, title: 'Đơn hàng NEX-827367 giao thành công', time: '2 giờ trước', color: 'text-green-500' },
-  { id: 4, title: 'Tạo mới 5 đơn hàng từ Samsung', time: '5 giờ trước', color: 'text-indigo-500' },
-];
+const FONT_FAMILY = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
 // --- Chart Configurations ---
 const supportChartOptions = {
-  chart: { type: 'area', height: 100, sparkline: { enabled: true } },
+  chart: { type: 'area', height: 100, sparkline: { enabled: true }, fontFamily: FONT_FAMILY },
   colors: ['#3b82f6'],
   stroke: { curve: 'smooth', width: 2 },
   fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.5, opacityTo: 0, stops: [0, 90, 100] } },
@@ -24,7 +19,7 @@ const supportChartOptions = {
 const supportChartData = [{ name: 'Tỷ lệ giao', data: [0, 20, 10, 45, 30, 55, 20, 30, 0] }];
 
 const supportChart2Options = {
-  chart: { type: 'bar', height: 100, sparkline: { enabled: true } },
+  chart: { type: 'bar', height: 100, sparkline: { enabled: true }, fontFamily: FONT_FAMILY },
   colors: ['#3b82f6'],
   plotOptions: { bar: { columnWidth: '50%', borderRadius: 2 } },
   tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: () => 'Đơn hàng' } }, marker: { show: false } }
@@ -32,50 +27,184 @@ const supportChart2Options = {
 const supportChart2Data = [{ name: 'Giao hàng', data: [25, 66, 41, 89, 63, 25, 44, 12, 36, 9, 54] }];
 
 const accountChartOptions = {
-  chart: { type: 'line', height: 350, toolbar: { show: false } },
+  chart: {
+    type: 'line',
+    height: 350,
+    toolbar: { show: false },
+    fontFamily: FONT_FAMILY
+  },
   colors: ['#3b82f6', '#00cfe8'],
   stroke: { curve: 'smooth', width: [3, 0] },
-  plotOptions: { bar: { columnWidth: '50%', borderRadius: 2 } },
-  xaxis: { categories: ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'] },
-  legend: { position: 'bottom', horizontalAlign: 'center' }
+  plotOptions: { bar: { columnWidth: '45%', borderRadius: 4 } },
+  xaxis: {
+    categories: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'],
+    labels: {
+      rotate: 0,
+      style: {
+        fontSize: '11px',
+        fontFamily: FONT_FAMILY
+      }
+    }
+  },
+  yaxis: {
+    labels: {
+      formatter: (val) => `${val} tr`,
+      style: {
+        fontSize: '11px',
+        fontFamily: FONT_FAMILY
+      }
+    }
+  },
+  tooltip: {
+    y: {
+      formatter: (val) => `${val.toLocaleString()} triệu VNĐ`
+    }
+  },
+  legend: {
+    position: 'bottom',
+    horizontalAlign: 'center',
+    fontSize: '12px',
+    fontFamily: FONT_FAMILY
+  }
 };
+
 const accountChartData = [
-  { name: 'Tổng doanh thu', type: 'line', data: [31, 25, 35, 28, 51, 35, 65, 45, 59, 36, 38, 50] },
-  { name: 'Trung bình', type: 'column', data: [22, 11, 21, 26, 12, 21, 36, 20, 44, 21, 30, 40] }
+  { name: 'Tổng doanh thu', type: 'line', data: [131, 125, 135, 128, 151, 135, 165, 145, 159, 136, 138, 150] },
+  { name: 'Trung bình', type: 'column', data: [42, 31, 41, 46, 32, 41, 56, 40, 54, 41, 50, 60] }
 ];
 
 const satisfactionChartOptions = {
-  chart: { type: 'pie', height: 300 },
+  chart: {
+    type: 'pie',
+    height: 300,
+    fontFamily: FONT_FAMILY
+  },
   labels: ['Rất hài lòng', 'Hài lòng', 'Chưa tốt'],
   colors: ['#3b82f6', '#93c5fd', '#dbeafe'],
-  legend: { show: true, position: 'right' },
-  dataLabels: { enabled: true, dropShadow: { enabled: false } }
+  legend: {
+    show: true,
+    position: 'right',
+    fontFamily: FONT_FAMILY
+  },
+  dataLabels: {
+    enabled: true,
+    dropShadow: { enabled: false },
+    style: {
+      fontFamily: FONT_FAMILY
+    }
+  }
 };
-const satisfactionChartData = [66, 26, 8];
+const satisfactionChartData = [68, 25, 7];
+
+// Rút gọn địa điểm để hiển thị gọn gàng trên 1 dòng
+const getCleanShortName = (fullText, defaultText) => {
+  if (!fullText) return defaultText;
+  const firstPart = fullText.split(/[-–,]/)[0]?.trim();
+  return firstPart || defaultText;
+};
 
 const DispatcherDashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
       const res = await orderApi.getAllOrders();
       setData(res.map(o => ({
         ...o,
-        route: `${o.pickup?.split('-')[0]?.trim() || 'Kho ALS'} -> ${o.dropoff?.split(',')[0]?.trim() || 'Điểm giao'}`
+        route: `${getCleanShortName(o.pickup, 'Kho ALS')} → ${getCleanShortName(o.dropoff, 'Điểm giao')}`
       })));
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchOrders();
+    let active = true;
+
+    const loadOrders = async () => {
+      try {
+        const res = await orderApi.getAllOrders();
+        if (active) {
+          setData(res.map(o => ({
+            ...o,
+            route: `${getCleanShortName(o.pickup, 'Kho ALS')} → ${getCleanShortName(o.dropoff, 'Điểm giao')}`
+          })));
+        }
+      } catch (err) {
+        if (active) console.error(err);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadOrders();
+    return () => {
+      active = false;
+    };
   }, []);
+
+  // Tính toán số liệu thống kê động từ cơ sở dữ liệu thật
+  const stats = useMemo(() => {
+    const totalOrders = data.length;
+    const totalRevenue = data.reduce((sum, o) => sum + (Number(o.agreed_price) || 0), 0);
+    const avgRevenue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+    const totalWeight = data.reduce((sum, o) => sum + (Number(o.weight) || Number(o.chargeable) || 0), 0);
+    const uniqueCustomers = new Set(data.map(o => o.customer).filter(Boolean)).size;
+    const deliveredCount = data.filter(o => o.status === 'DELIVERED').length;
+    const inTransitCount = data.filter(o => o.status === 'IN_TRANSIT' || o.status === 'ASSIGNED').length;
+    const deliveredRate = totalOrders > 0 ? ((deliveredCount / totalOrders) * 100).toFixed(1) : '100.0';
+
+    return {
+      totalOrders,
+      totalRevenue,
+      avgRevenue,
+      totalWeight,
+      uniqueCustomers,
+      deliveredCount,
+      inTransitCount,
+      deliveredRate
+    };
+  }, [data]);
+
+  // Danh sách hoạt động gần đây
+  const recentActivities = useMemo(() => {
+    if (data.length === 0) {
+      return [
+        { id: 1, title: 'Hệ thống kết nối cơ sở dữ liệu thành công', time: 'Vừa xong', color: 'text-indigo-500' }
+      ];
+    }
+    return data.slice(0, 5).map((o, idx) => {
+      let desc = `Đơn ${o.order_id} (${o.customer}): `;
+      let color = 'text-blue-500';
+      if (o.status === 'DELIVERED') {
+        desc += 'Giao thành công';
+        color = 'text-green-500';
+      } else if (o.status === 'IN_TRANSIT') {
+        desc += 'Đang vận chuyển';
+        color = 'text-purple-500';
+      } else if (o.status === 'ASSIGNED') {
+        desc += 'Đã gán xe';
+        color = 'text-amber-500';
+      } else if (o.status === 'READY_FOR_PLANNING') {
+        desc += 'Sẵn sàng xếp xe';
+        color = 'text-cyan-500';
+      } else {
+        desc += 'Tạo đơn mới';
+        color = 'text-indigo-500';
+      }
+      return {
+        id: o.id || idx,
+        title: desc,
+        time: o.date ? `${o.date}` : 'Gần đây',
+        color
+      };
+    });
+  }, [data]);
 
   const handleCreateOrder = async (values) => {
     try {
@@ -88,20 +217,72 @@ const DispatcherDashboard = () => {
   };
 
   const statusColors = {
-    'CREATED': 'blue', 'CONFIRMED': 'cyan', 'VEHICLE_ASSIGNED': 'orange',
-    'CARGO_PICKED_UP': 'magenta', 'IN_TRANSIT': 'purple', 'DELIVERED': 'green', 'INCIDENT': 'red'
+    'READY_FOR_PLANNING': 'cyan',
+    'ASSIGNED': 'orange',
+    'IN_TRANSIT': 'purple',
+    'DELIVERED': 'green',
+    'DRAFT': 'default',
+    'CONFIRMED': 'blue',
+    'CANCELLED': 'red'
   };
 
+  const statusLabels = {
+    'READY_FOR_PLANNING': 'Sẵn sàng',
+    'DRAFT': 'Lưu nháp',
+    'CONFIRMED': 'Đã chốt',
+    'ASSIGNED': 'Đã gán xe',
+    'IN_TRANSIT': 'Đang chuyển',
+    'DELIVERED': 'Đã giao',
+    'CANCELLED': 'Đã hủy'
+  };
+
+  // Bảng đơn giản, gọn gàng, không bị vỡ dòng
   const columns = [
-    { title: 'Mã Vận Đơn', dataIndex: 'order_id', key: 'order_id', render: (text) => <span className="font-semibold text-indigo-600">{text}</span> },
-    { title: 'Khách hàng', dataIndex: 'customer', key: 'customer' },
-    { title: 'Tuyến đường', dataIndex: 'route', key: 'route' },
-    { title: 'Trạng thái', dataIndex: 'status', key: 'status', render: (status) => <Tag color={statusColors[status] || 'default'} className="font-medium rounded-md px-2 py-1">{status}</Tag> },
-    { title: 'Hành động', key: 'action', render: () => (
-      <div className="flex gap-2">
-        <Button size="small" type="primary" className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 border-none">Phân xe</Button>
-      </div>
-    )}
+    { 
+      title: 'Mã đơn', 
+      dataIndex: 'order_id', 
+      key: 'order_id', 
+      width: 110,
+      render: (text) => <span className="font-semibold text-indigo-600 font-mono text-xs">{text}</span> 
+    },
+    { 
+      title: 'Khách hàng', 
+      dataIndex: 'customer', 
+      key: 'customer',
+      ellipsis: true,
+      render: (text) => <span className="font-medium text-gray-800 text-xs truncate block" title={text}>{text}</span>
+    },
+    { 
+      title: 'Tuyến đường', 
+      dataIndex: 'route', 
+      key: 'route',
+      ellipsis: true,
+      render: (text) => <span className="text-gray-600 text-xs truncate block" title={text}>{text}</span>
+    },
+    { 
+      title: 'Giá cước', 
+      dataIndex: 'agreed_price', 
+      key: 'agreed_price',
+      width: 125,
+      align: 'right',
+      render: (price) => (
+        <span className="font-semibold text-emerald-600 text-xs whitespace-nowrap">
+          {price ? `${Number(price).toLocaleString('vi-VN')} đ` : 'Chờ báo giá'}
+        </span>
+      )
+    },
+    { 
+      title: 'Trạng thái', 
+      dataIndex: 'status', 
+      key: 'status',
+      width: 105,
+      align: 'center',
+      render: (status) => (
+        <Tag color={statusColors[status] || 'default'} className="m-0 text-[11px] px-2 py-0.5 rounded font-medium whitespace-nowrap">
+          {statusLabels[status] || status}
+        </Tag>
+      )
+    }
   ];
 
   return (
@@ -118,21 +299,23 @@ const DispatcherDashboard = () => {
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Users size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">1000</h4>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">{stats.uniqueCustomers || data.length || 0}</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Khách hàng</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Globe size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">1252</h4>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">
+                      {stats.totalRevenue > 0 ? `${(stats.totalRevenue / 1000000).toFixed(1)} tr` : '0 đ'}
+                    </h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Doanh thu</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center hidden sm:block">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Activity size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">600%</h4>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">+18.5%</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Tăng trưởng</p>
                   </div>
                 </Col>
@@ -141,21 +324,21 @@ const DispatcherDashboard = () => {
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <RefreshCcw size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">35</h4>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">0</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Sự cố/Hoàn</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <CloudDownload size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">3550</h4>
-                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Lượt tải App</p>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">{stats.totalOrders}</h4>
+                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Tổng tiếp nhận</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center hidden sm:block">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <ShoppingCart size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">94.5%</h4>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">98.5%</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Tỷ lệ On-Time</p>
                   </div>
                 </Col>
@@ -167,7 +350,7 @@ const DispatcherDashboard = () => {
               <Col xs={24} sm={12}>
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
                   <div className="p-6 pb-2">
-                    <h2 className="text-[28px] font-bold text-gray-800 m-0 leading-tight">53.94%</h2>
+                    <h2 className="text-[28px] font-bold text-gray-800 m-0 leading-tight">{stats.deliveredRate}%</h2>
                     <span className="text-[#3b82f6] font-medium text-sm">Tỷ lệ Giao Thành Công</span>
                     <p className="text-gray-500 text-xs mt-3 mb-1 line-clamp-2">Tỷ lệ đơn hàng giao thành công trên tổng số đơn nhận.</p>
                   </div>
@@ -176,13 +359,13 @@ const DispatcherDashboard = () => {
                     <div className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white py-3 px-4">
                       <Row className="text-center">
                         <Col span={8}>
-                          <h4 className="text-base font-bold m-0 text-white">10</h4><span className="text-[#d6d5fc] text-[10px] uppercase">Tháng 10</span>
+                          <h4 className="text-base font-bold m-0 text-white">{stats.deliveredCount}</h4><span className="text-[#d6d5fc] text-[10px] uppercase">Đã giao</span>
                         </Col>
                         <Col span={8}>
-                          <h4 className="text-base font-bold m-0 text-white">15</h4><span className="text-[#d6d5fc] text-[10px] uppercase">Tháng 9</span>
+                          <h4 className="text-base font-bold m-0 text-white">{stats.inTransitCount}</h4><span className="text-[#d6d5fc] text-[10px] uppercase">Đang đi</span>
                         </Col>
                         <Col span={8}>
-                          <h4 className="text-base font-bold m-0 text-white">13</h4><span className="text-[#d6d5fc] text-[10px] uppercase">Tháng 8</span>
+                          <h4 className="text-base font-bold m-0 text-white">{stats.totalOrders}</h4><span className="text-[#d6d5fc] text-[10px] uppercase">Tổng đơn</span>
                         </Col>
                       </Row>
                     </div>
@@ -192,7 +375,7 @@ const DispatcherDashboard = () => {
               <Col xs={24} sm={12}>
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
                   <div className="p-6 pb-2">
-                    <h2 className="text-[28px] font-bold text-gray-800 m-0 leading-tight">1432</h2>
+                    <h2 className="text-[28px] font-bold text-gray-800 m-0 leading-tight">{stats.deliveredCount}</h2>
                     <span className="text-[#3b82f6] font-medium text-sm">Tổng Đơn Đã Giao</span>
                     <p className="text-gray-500 text-xs mt-3 mb-1 line-clamp-2">Tổng số lượng đơn hàng đã hoàn tất quá trình vận chuyển.</p>
                   </div>
@@ -200,13 +383,13 @@ const DispatcherDashboard = () => {
                     <div className="py-2">
                       <Row className="text-center">
                         <Col span={8}>
-                          <h4 className="text-base font-bold text-gray-800 m-0">130</h4><span className="text-gray-500 text-[10px] uppercase">T5</span>
+                          <h4 className="text-base font-bold text-gray-800 m-0">{stats.deliveredCount}</h4><span className="text-gray-500 text-[10px] uppercase">Hoàn tất</span>
                         </Col>
                         <Col span={8}>
-                          <h4 className="text-base font-bold text-gray-800 m-0">251</h4><span className="text-gray-500 text-[10px] uppercase">T6</span>
+                          <h4 className="text-base font-bold text-gray-800 m-0">{stats.inTransitCount}</h4><span className="text-gray-500 text-[10px] uppercase">Vận chuyển</span>
                         </Col>
                         <Col span={8}>
-                          <h4 className="text-base font-bold text-gray-800 m-0">235</h4><span className="text-gray-500 text-[10px] uppercase">T7</span>
+                          <h4 className="text-base font-bold text-gray-800 m-0">{stats.totalOrders}</h4><span className="text-gray-500 text-[10px] uppercase">Tổng số</span>
                         </Col>
                       </Row>
                     </div>
@@ -238,12 +421,16 @@ const DispatcherDashboard = () => {
               </div>
               <Row className="mb-2">
                 <Col className="mr-10">
-                  <h3 className="text-2xl font-bold text-gray-800 mb-0">$21,356.46</h3>
-                  <span className="text-gray-500 text-xs font-medium">Tổng doanh thu</span>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-0">
+                    {stats.totalRevenue > 0 ? `${stats.totalRevenue.toLocaleString('vi-VN')} đ` : '0 đ'}
+                  </h3>
+                  <span className="text-gray-500 text-xs font-medium">Tổng doanh thu thực tế</span>
                 </Col>
                 <Col>
-                  <h3 className="text-2xl font-bold text-gray-800 mb-0">$1935.6</h3>
-                  <span className="text-gray-500 text-xs font-medium">Trung bình</span>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-0">
+                    {stats.avgRevenue > 0 ? `${stats.avgRevenue.toLocaleString('vi-VN')} đ` : '0 đ'}
+                  </h3>
+                  <span className="text-gray-500 text-xs font-medium">Cước bình quân mỗi đơn</span>
                 </Col>
               </Row>
               <div className="mt-4">
@@ -256,10 +443,12 @@ const DispatcherDashboard = () => {
               <Col span={12}>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">
                   <div className="flex justify-between items-start mb-2">
-                    <p className="text-gray-800 text-sm font-bold mb-1">Tổng Cước Nội Địa</p>
+                    <p className="text-gray-800 text-sm font-bold mb-1">Tổng Cước Đã Chốt</p>
                     <Package size={20} className="text-[#3b82f6]" />
                   </div>
-                  <h3 className="text-[26px] font-bold text-gray-800 mt-2">$1,783</h3>
+                  <h3 className="text-[22px] font-bold text-gray-800 mt-2">
+                    {stats.totalRevenue > 0 ? `${stats.totalRevenue.toLocaleString('vi-VN')} đ` : '0 đ'}
+                  </h3>
                 </div>
               </Col>
               <Col span={12}>
@@ -268,7 +457,9 @@ const DispatcherDashboard = () => {
                     <p className="text-white text-sm font-bold mb-1">Tổng Số Đơn</p>
                     <ShoppingCart size={20} className="text-white opacity-80" />
                   </div>
-                  <h3 className="text-[26px] font-bold text-white z-10 relative mt-2">15,830</h3>
+                  <h3 className="text-[24px] font-bold text-white z-10 relative mt-2">
+                    {stats.totalOrders} đơn
+                  </h3>
                 </div>
               </Col>
               <Col span={12}>
@@ -277,16 +468,20 @@ const DispatcherDashboard = () => {
                     <p className="text-white text-sm font-bold mb-1">Giá Cước Trung Bình</p>
                     <DollarSign size={20} className="text-white opacity-80" />
                   </div>
-                  <h3 className="text-[26px] font-bold text-white z-10 relative mt-2">$6,780</h3>
+                  <h3 className="text-[22px] font-bold text-white z-10 relative mt-2">
+                    {stats.avgRevenue > 0 ? `${stats.avgRevenue.toLocaleString('vi-VN')} đ` : '0 đ'}
+                  </h3>
                 </div>
               </Col>
               <Col span={12}>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">
                   <div className="flex justify-between items-start mb-2">
                     <p className="text-gray-800 text-sm font-bold mb-1">Khối Lượng Xử Lý</p>
-                    <Tag color="cyan" className="m-0 border-none px-2 rounded font-semibold bg-[#e0f9fc] text-[#00cfe8]">Logs</Tag>
+                    <Tag color="cyan" className="m-0 border-none px-2 rounded font-semibold bg-[#e0f9fc] text-[#00cfe8]">Tải trọng</Tag>
                   </div>
-                  <h3 className="text-[26px] font-bold text-gray-800 mt-2">6,784</h3>
+                  <h3 className="text-[24px] font-bold text-gray-800 mt-2">
+                    {stats.totalWeight > 0 ? `${stats.totalWeight.toLocaleString('vi-VN')} kg` : '0 kg'}
+                  </h3>
                 </div>
               </Col>
             </Row>
@@ -299,7 +494,7 @@ const DispatcherDashboard = () => {
           <Col xs={24} xl={16}>
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
               <div className="mb-4 pb-4 border-b border-gray-100 flex justify-between items-center">
-                <h3 className="text-base font-bold text-gray-800">Danh sách Đơn hàng Gần đây</h3>
+                <h3 className="text-base font-bold text-gray-800">Đơn hàng gần đây</h3>
                 <Button type="primary" size="small" icon={<Plus size={14} />} className="bg-gradient-to-br from-blue-500 to-cyan-500 hover:bg-[#5e50ee] border-none" onClick={() => setIsModalOpen(true)}>
                   Tạo đơn hàng
                 </Button>
@@ -307,7 +502,8 @@ const DispatcherDashboard = () => {
               <Table 
                 columns={columns} 
                 dataSource={data} 
-                pagination={{ pageSize: 4 }} 
+                loading={loading}
+                pagination={{ pageSize: 5 }} 
                 className="ant-table-striped custom-table"
               />
             </div>
@@ -316,7 +512,7 @@ const DispatcherDashboard = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 h-full">
               <h3 className="text-base font-bold text-gray-800 mb-4 pb-3 border-b border-gray-100">Hoạt động Gần đây</h3>
               <div className="space-y-4">
-                {mockFeeds.map(feed => (
+                {recentActivities.map(feed => (
                   <div key={feed.id} className="flex gap-4 items-start">
                     <div className={`mt-1 ${feed.color}`}><Bell size={16} /></div>
                     <div>

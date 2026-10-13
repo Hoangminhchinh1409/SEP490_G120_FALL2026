@@ -22,20 +22,28 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
   // Tính Chargeable weight
   const chargeableWeight = useMemo(() => {
     if (!values) return '0.00';
-    const { length_cm, width_cm, height_cm, weight } = values;
+    const { length_cm, width_cm, height_cm, weight, cargo_type } = values;
+    if (cargo_type === 'BULK') {
+      return (Number(weight) || 0).toFixed(2);
+    }
     if (length_cm && width_cm && height_cm) {
       const vol = (length_cm * width_cm * height_cm) / 5000;
-      return Math.max(weight || 0, vol).toFixed(2);
+      return Math.max(Number(weight) || 0, vol).toFixed(2);
     }
-    return (weight || 0).toFixed(2);
+    return (Number(weight) || 0).toFixed(2);
   }, [values]);
 
   const handleSubmit = async () => {
     try {
       const formValues = await form.validateFields();
       setSubmitting(true);
+      const isBulk = formValues.cargo_type === 'BULK';
       const newOrder = await orderApi.createConsultationOrder({
         ...formValues,
+        length_cm: isBulk ? 0 : (formValues.length_cm || 0),
+        width_cm: isBulk ? 0 : (formValues.width_cm || 0),
+        height_cm: isBulk ? 0 : (formValues.height_cm || 0),
+        chargeable_weight: parseFloat(chargeableWeight) || (Number(formValues.weight) || 0),
         pickup_coords: pickupCoords,
         delivery_coords: deliveryCoords,
         estimated_distance_km: routeInfo.distanceKm,
@@ -107,9 +115,8 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
             form={form}
             layout="vertical"
             initialValues={{
-              package_unit: 'Pallet',
+              package_unit: '',
               package_count: 1,
-              cargo_type: 'GENERAL',
               pickup_address: '',
               delivery_address: ''
             }}
@@ -191,47 +198,88 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
             <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2.5">
                 <Form.Item label="Tên hàng hóa" name="cargo_name" rules={[{ required: true, message: 'Nhập tên hàng' }]} className="mb-0">
-                  <Input placeholder="VD: Linh kiện điện tử, Cáp quang..." className="text-xs" />
+                  <Input placeholder="VD: Linh kiện điện tử, Hàng xá..." className="text-xs" />
                 </Form.Item>
-                <Form.Item label="Loại hàng" name="cargo_type" className="mb-0">
-                  <Select className="text-xs">
+                <Form.Item label="Loại hàng" name="cargo_type" rules={[{ required: true, message: 'Vui lòng chọn loại hàng' }]} className="mb-0">
+                  <Select className="text-xs" placeholder="Chọn loại hàng...">
+                    <Option value="PALLET">Hàng Pallet (Tính kích thước &amp; trọng tải)</Option>
+                    <Option value="BULK">Hàng rời (Xếp tính theo trọng tải)</Option>
                     <Option value="GENERAL">Hàng bách hóa thông thường</Option>
                     <Option value="FRAGILE">Hàng điện tử dễ vỡ</Option>
                     <Option value="VALUABLE">Hàng giá trị cao (Niêm chì)</Option>
+                    <Option value="OTHER">Khác</Option>
                   </Select>
                 </Form.Item>
                 <div className="grid grid-cols-2 gap-2">
-                  <Form.Item label="Số lượng" name="package_count" className="mb-0">
+                  <Form.Item label="Số lượng" name="package_count" rules={[{ required: true, message: 'Nhập số lượng' }]} className="mb-0">
                     <InputNumber min={1} className="w-full" />
                   </Form.Item>
-                  <Form.Item label="Đơn vị" name="package_unit" className="mb-0">
-                    <Select className="text-xs">
-                      <Option value="Pallet">Pallet</Option>
-                      <Option value="Kiện gỗ">Kiện gỗ</Option>
-                      <Option value="Thùng carton">Thùng</Option>
-                    </Select>
+                  <Form.Item label="Đơn vị" name="package_unit" rules={[{ required: true, message: 'Nhập đơn vị' }]} className="mb-0">
+                    <Input placeholder="VD: Kiện, Pallet, Tấn..." className="text-xs" />
                   </Form.Item>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-gray-200 items-end">
-                <Form.Item label="Dài (cm)" name="length_cm" className="mb-0">
-                  <InputNumber min={1} className="w-full" />
-                </Form.Item>
-                <Form.Item label="Rộng (cm)" name="width_cm" className="mb-0">
-                  <InputNumber min={1} className="w-full" />
-                </Form.Item>
-                <Form.Item label="Cao (cm)" name="height_cm" className="mb-0">
-                  <InputNumber min={1} className="w-full" />
-                </Form.Item>
-                <Form.Item label="Trọng lượng (kg)" name="weight" className="mb-0">
-                  <InputNumber min={1} className="w-full" />
-                </Form.Item>
-              </div>
+              {values?.cargo_type === 'OTHER' && (
+                <div className="mb-2.5">
+                  <Form.Item label="Chi tiết loại hàng khác" name="other_cargo_type" rules={[{ required: true, message: 'Vui lòng mô tả loại hàng' }]} className="mb-0">
+                    <Input placeholder="VD: Hóa chất lỏng, Thép cuộn công nghiệp..." className="text-xs" />
+                  </Form.Item>
+                </div>
+              )}
 
-              <div className="mt-2 text-right text-xs text-gray-500">
-                Tải trọng tính cước ước tính: <b className="text-amber-600 font-bold">{chargeableWeight} kg</b>
-              </div>
+              {/* Chưa chọn loại hàng -> Hiển thị hướng dẫn */}
+              {!values?.cargo_type && (
+                <div className="pt-2 border-t border-gray-200">
+                  <div className="text-xs text-indigo-700 bg-indigo-50/70 p-2.5 rounded-lg border border-indigo-100 flex items-center justify-center">
+                    <span>💡 Vui lòng chọn <b>Loại hàng</b> ở trên: nếu là <b>Hàng rời</b> sẽ tính theo trọng tải; nếu là <b>Hàng Pallet</b> sẽ tính cả trọng tải và kích thước dài rộng cao.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Hàng rời -> Chỉ tính theo trọng tải xe */}
+              {values?.cargo_type === 'BULK' && (
+                <div className="pt-2 border-t border-gray-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                    <Form.Item 
+                      label="Trọng tải hàng rời (kg)" 
+                      name="weight" 
+                      rules={[{ required: true, message: 'Vui lòng nhập trọng tải' }]} 
+                      className="mb-0"
+                    >
+                      <InputNumber min={0.1} className="w-full font-semibold text-emerald-700" placeholder="VD: 5000" />
+                    </Form.Item>
+                    <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 text-xs text-emerald-800">
+                      <span>Quy cách: </span>
+                      <b className="text-emerald-700 font-bold">{values?.weight || 0} kg</b> (Hàng rời xếp tính theo trọng tải xe)
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Hàng Pallet / Đóng kiện -> Bắt buộc nhập cả Dài, Rộng, Cao & Trọng tải */}
+              {values?.cargo_type && values?.cargo_type !== 'BULK' && (
+                <div className="pt-2 border-t border-gray-200">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+                    <Form.Item label="Dài (cm)" name="length_cm" rules={[{ required: true, message: 'Bắt buộc' }]} className="mb-0">
+                      <InputNumber min={1} className="w-full" placeholder="Dài" />
+                    </Form.Item>
+                    <Form.Item label="Rộng (cm)" name="width_cm" rules={[{ required: true, message: 'Bắt buộc' }]} className="mb-0">
+                      <InputNumber min={1} className="w-full" placeholder="Rộng" />
+                    </Form.Item>
+                    <Form.Item label="Cao (cm)" name="height_cm" rules={[{ required: true, message: 'Bắt buộc' }]} className="mb-0">
+                      <InputNumber min={1} className="w-full" placeholder="Cao" />
+                    </Form.Item>
+                    <Form.Item label="Trọng lượng (kg)" name="weight" rules={[{ required: true, message: 'Bắt buộc' }]} className="mb-0">
+                      <InputNumber min={0.1} className="w-full" placeholder="Kg" />
+                    </Form.Item>
+                  </div>
+
+                  <div className="mt-2 text-right text-xs text-gray-500">
+                    Tải trọng tính cước ước tính: <b className="text-amber-600 font-bold">{chargeableWeight} kg</b>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Ghi chú thêm */}

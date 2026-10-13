@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Modal, Tabs, Tag, Button, Input, InputNumber, Space, Table, message } from 'antd';
 import { FileText, AlertTriangle, Download, Upload, ShieldCheck, PhoneCall, MessageCircle, Mail, DollarSign } from 'lucide-react';
 import { orderApi } from '../../api/orderApi';
@@ -358,15 +358,19 @@ const OrderDetailsModal = ({ open, order, onCancel, onUpdateOrder }) => {
 
                     <div className="grid grid-cols-4 gap-3 text-center">
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-                        <div className="text-[11px] text-gray-500">Số lượng</div>
-                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.package_count || 1} {order.package_unit || 'Kiện'}</div>
+                        <div className="text-[11px] text-gray-500">Số lượng / Quy cách</div>
+                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.package_count || 1} {order.package_unit || (order.cargo_type === 'BULK' ? 'Chuyến' : 'Kiện')}</div>
                       </div>
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
                         <div className="text-[11px] text-gray-500">Kích thước</div>
-                        <div className="font-bold text-gray-800 text-sm mt-0.5">{order.length_cm || 0}x{order.width_cm || 0}x{order.height_cm || 0} cm</div>
+                        <div className="font-bold text-gray-800 text-xs mt-1">
+                          {order.cargo_type === 'BULK' || (!order.length_cm && !order.width_cm && !order.height_cm)
+                            ? 'Không áp dụng (Hàng rời)'
+                            : `${order.length_cm || 0}x${order.width_cm || 0}x${order.height_cm || 0} cm`}
+                        </div>
                       </div>
                       <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-                        <div className="text-[11px] text-gray-500">Trọng lượng</div>
+                        <div className="text-[11px] text-gray-500">{order.cargo_type === 'BULK' ? 'Trọng tải hàng rời' : 'Trọng lượng thực'}</div>
                         <div className="font-bold text-gray-800 text-sm mt-0.5">{order.weight || order.weight_kg || 0} kg</div>
                       </div>
                       <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
