@@ -2,7 +2,11 @@ const jwt = require('jsonwebtoken');
 
 const requireAuth = (req, res, next) => {
     try {
-        const token = req.cookies.token;
+        let token = req.cookies?.token;
+
+        if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            token = req.headers.authorization.split(' ')[1];
+        }
 
         if (!token) {
             return res.status(401).json({
@@ -32,7 +36,11 @@ const requireRole = (roles) => {
             return res.status(403).json({ message: "Forbidden" });
         }
         
-        if (roles.includes(req.user.role) || [1, 2].includes(req.user.role_id)) {
+        const userRoleId = Number(req.user.role_id);
+        const isAllowedId = [1, 2].includes(userRoleId); // Admin or Manager
+        const isAllowedName = roles && (roles.includes(req.user.role) || (userRoleId === 2 && roles.includes("MANAGER")) || (userRoleId === 1 && roles.includes("ADMIN")));
+
+        if (isAllowedId || isAllowedName) {
             return next();
         }
         
