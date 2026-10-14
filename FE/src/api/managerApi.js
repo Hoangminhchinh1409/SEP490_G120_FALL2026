@@ -135,6 +135,19 @@ export const managerApi = {
     }
   },
 
+  updateBlog: async (blogId, blogData) => {
+    try {
+      const data = await fetchWithAuth(`/manager/blogs/${blogId}`, {
+        method: 'PUT',
+        body: JSON.stringify(blogData)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.updateBlog Error:', error);
+      throw error;
+    }
+  },
+
   approveBlog: async (blogId) => {
     try {
       const data = await fetchWithAuth(`/manager/blogs/${blogId}/approve`, {

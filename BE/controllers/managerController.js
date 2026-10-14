@@ -555,6 +555,48 @@ const deleteBlog = async (req, res) => {
     }
 };
 
+const updateBlog = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, summary, content, category, author, status, image } = req.body;
+        const initial = (author || 'Q').charAt(0).toUpperCase();
+
+        const updateResult = await pool.query(`
+            UPDATE blogs 
+            SET 
+                title = COALESCE($1, title),
+                summary = COALESCE($2, summary),
+                content = COALESCE($3, content),
+                category = COALESCE($4, category),
+                author = COALESCE($5, author),
+                author_initial = COALESCE($6, author_initial),
+                status = COALESCE($7, status),
+                status_label = CASE 
+                    WHEN $7 = 'DRAFT' THEN 'Bản nháp'
+                    WHEN $7 = 'PENDING' THEN 'Chờ duyệt xuất bản'
+                    WHEN $7 = 'PUBLISHED' THEN 'Đã xuất bản'
+                    ELSE status_label
+                END,
+                image_url = COALESCE($8, image_url),
+                updated_at = NOW()
+            WHERE id = $9
+            RETURNING id, title, category, status, TO_CHAR(published_at, 'DD/MM/YYYY') AS "publishDate"
+        `, [title, summary, content, category, author, initial, status, image, id]);
+
+        if (updateResult.rows.length === 0) {
+            return res.status(404).json({ message: "Không tìm thấy bài viết để cập nhật" });
+        }
+
+        return res.json({
+            message: "Cập nhật bài viết thành công",
+            blog: updateResult.rows[0]
+        });
+    } catch (error) {
+        console.error("Update Blog Error:", error);
+        return res.status(500).json({ message: "Lỗi cập nhật bài viết", error: error.message });
+    }
+};
+
 module.exports = {
     getDashboardStats,
     getVehicles,
@@ -567,6 +609,8 @@ module.exports = {
     decideApproval,
     getBlogs,
     createBlog,
+    updateBlog,
     approveBlog,
     deleteBlog
 };
+

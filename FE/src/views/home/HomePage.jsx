@@ -569,7 +569,7 @@ export default function HomePage() {
                                         </p>
                                     </div>
                                     <div className="pt-space-md">
-                                        <a className="font-label-md text-label-md text-secondary font-semibold group-hover:text-on-tertiary-container inline-flex items-center gap-1 transition-colors" href="#">
+                                        <a className="font-label-md text-label-md text-secondary font-semibold group-hover:text-on-tertiary-container inline-flex items-center gap-1 transition-colors" href="/blog?id=8">
                                             Tìm hiểu thêm <span className="material-symbols-outlined text-sm">arrow_forward</span>
                                         </a>
                                     </div>
@@ -594,7 +594,7 @@ export default function HomePage() {
                                         </p>
                                     </div>
                                     <div className="pt-space-md">
-                                        <a className="font-label-md text-label-md text-secondary font-semibold group-hover:text-on-tertiary-container inline-flex items-center gap-1 transition-colors" href="#">
+                                        <a className="font-label-md text-label-md text-secondary font-semibold group-hover:text-on-tertiary-container inline-flex items-center gap-1 transition-colors" href="/blog?id=1">
                                             Tìm hiểu thêm <span className="material-symbols-outlined text-sm">arrow_forward</span>
                                         </a>
                                     </div>
@@ -619,7 +619,7 @@ export default function HomePage() {
                                         </p>
                                     </div>
                                     <div className="pt-space-md">
-                                        <a className="font-label-md text-label-md text-secondary font-semibold group-hover:text-on-tertiary-container inline-flex items-center gap-1 transition-colors" href="#">
+                                        <a className="font-label-md text-label-md text-secondary font-semibold group-hover:text-on-tertiary-container inline-flex items-center gap-1 transition-colors" href="/blog?id=2">
                                             Tìm hiểu thêm <span className="material-symbols-outlined text-sm">arrow_forward</span>
                                         </a>
                                     </div>

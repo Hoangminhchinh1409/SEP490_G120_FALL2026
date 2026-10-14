@@ -11,6 +11,7 @@ const {
     decideApproval,
     getBlogs,
     createBlog,
+    updateBlog,
     approveBlog,
     deleteBlog
 } = require("../controllers/managerController");
@@ -39,6 +40,7 @@ router.post("/approvals/:id/decide", decideApproval);
 
 router.get("/blogs", getBlogs);
 router.post("/blogs", createBlog);
+router.put("/blogs/:id", updateBlog);
 router.patch("/blogs/:id/approve", approveBlog);
 router.delete("/blogs/:id", deleteBlog);
 
