@@ -1,99 +1,26 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Table, Tag, Button, Input, Modal, Form, Select, InputNumber, Row, Col, Space, Card, message, Popconfirm, Tooltip } from 'antd';
-import { MapPin, Plus, Search, Edit3, Trash2, Phone, Clock, Shield, Navigation, Building2 } from 'lucide-react';
+import { MapPin, Plus, Search, Edit3, Trash2, Phone, Clock, Shield, Building2, RefreshCw } from 'lucide-react';
+import { dispatcherApi } from '../../api/dispatcherApi';
 
 const { Option } = Select;
 
-// Dữ liệu mẫu các địa điểm thực tế trong luồng vận hành logistics ALS / Bắc Ninh / Hải Phòng
-const initialLocations = [
-  {
-    id: 'LOC-001',
-    name: 'Kho ALS Cảng HKQT Nội Bài',
-    type: 'KHO_HANG_KHONG',
-    customer: 'Công ty Cổ phần ALS Logistics',
-    address: 'Khu thương mại dịch vụ số 1, Cảng HKQT Nội Bài, Sóc Sơn, Hà Nội',
-    province: 'Hà Nội',
-    lat: 21.2187,
-    lng: 105.8042,
-    receiving_hours: '24/7 (Cả tuần)',
-    contact_name: 'Nguyễn Văn Hùng',
-    contact_phone: '0912.888.999',
-    geofence_radius_m: 200,
-    active: true
-  },
-  {
-    id: 'LOC-002',
-    name: 'Nhà máy ADTEK - KCN Tiên Sơn',
-    type: 'NHA_MAY',
-    customer: 'Công ty TNHH ADTEK Việt Nam',
-    address: 'Lô B12, Đường TS5, KCN Tiên Sơn, Đồng Nguyên, Từ Sơn, Bắc Ninh',
-    province: 'Bắc Ninh',
-    lat: 21.1215,
-    lng: 105.9754,
-    receiving_hours: '08:00 - 17:30 (T2 - T7)',
-    contact_name: 'Trần Thị Thu Trang',
-    contact_phone: '0988.123.456',
-    geofence_radius_m: 150,
-    active: true
-  },
-  {
-    id: 'LOC-003',
-    name: 'Kho Ngoại quan Yên Phong',
-    type: 'KHO_NGOAI_QUAN',
-    customer: 'ALS Bắc Ninh Hub',
-    address: 'Khu công nghiệp Yên Phong 1, Yên Trung, Yên Phong, Bắc Ninh',
-    province: 'Bắc Ninh',
-    lat: 21.1963,
-    lng: 105.9525,
-    receiving_hours: '07:30 - 21:00',
-    contact_name: 'Lê Minh Tuấn',
-    contact_phone: '0904.555.666',
-    geofence_radius_m: 250,
-    active: true
-  },
-  {
-    id: 'LOC-004',
-    name: 'Cụm Công nghiệp Lai Xá (Lô 2)',
-    type: 'DIEM_GIAO',
-    customer: 'Công ty Thiết bị Âm thanh Ánh sáng SLVN',
-    address: 'Lô 2, Cụm Công nghiệp Lai Xá, Kim Chung, Hoài Đức, Hà Nội',
-    province: 'Hà Nội',
-    lat: 21.0621,
-    lng: 105.7289,
-    receiving_hours: '08:00 - 18:00',
-    contact_name: 'Hồ Chí Đạt',
-    contact_phone: '0977.888.111',
-    geofence_radius_m: 100,
-    active: true
-  },
-  {
-    id: 'LOC-005',
-    name: 'Cảng Tân Vũ - Hải Phòng',
-    type: 'CANG_BIEN',
-    customer: 'Cảng Hải Phòng Terminal',
-    address: 'Đường Bến Cảng, Bán đảo Đình Vũ, Đông Hải 2, Hải An, Hải Phòng',
-    province: 'Hải Phòng',
-    lat: 20.8524,
-    lng: 106.7588,
-    receiving_hours: '24/7 (Cả tuần)',
-    contact_name: 'Phạm Quang Minh',
-    contact_phone: '0936.444.888',
-    geofence_radius_m: 300,
-    active: true
-  }
-];
-
 const locationTypeConfig = {
   'KHO_HANG_KHONG': { label: 'Kho Hàng không', color: 'blue' },
+  'WAREHOUSE': { label: 'Kho Hàng không / Kho bãi', color: 'blue' },
   'NHA_MAY': { label: 'Nhà máy sản xuất', color: 'purple' },
   'KHO_NGOAI_QUAN': { label: 'Kho Ngoại quan', color: 'orange' },
   'DIEM_GIAO': { label: 'Điểm giao nhận', color: 'green' },
-  'CANG_BIEN': { label: 'Cảng biển / Cửa khẩu', color: 'cyan' }
+  'CUSTOMER_SITE': { label: 'Điểm khách hàng', color: 'green' },
+  'CANG_BIEN': { label: 'Cảng biển / Cửa khẩu', color: 'cyan' },
+  'CUSTOMS_CHECKPOINT': { label: 'Cảng biển / Hải quan', color: 'cyan' }
 };
 
 export default function LocationsManagement() {
-  const [locations, setLocations] = useState(initialLocations);
+  const [locations, setLocations] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState('ALL');
   const [filterProvince, setFilterProvince] = useState('ALL');
@@ -103,12 +30,62 @@ export default function LocationsManagement() {
   const [editingLocation, setEditingLocation] = useState(null);
   const [form] = Form.useForm();
 
+  const fetchLocations = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [locsData, custsData] = await Promise.all([
+        dispatcherApi.getLocations(),
+        dispatcherApi.getCustomers()
+      ]);
+      setLocations(locsData || []);
+      setCustomers(custsData || []);
+    } catch (err) {
+      console.error('fetchLocations error:', err);
+      message.error('Không thể kết nối đến máy chủ để tải danh sách địa điểm');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadInitialLocations = async () => {
+      try {
+        const [locsData, custsData] = await Promise.all([
+          dispatcherApi.getLocations(),
+          dispatcherApi.getCustomers()
+        ]);
+        if (active) {
+          setLocations(locsData || []);
+          setCustomers(custsData || []);
+        }
+      } catch (err) {
+        if (active) {
+          console.error('fetchLocations error:', err);
+          message.error('Không thể kết nối đến máy chủ để tải danh sách địa điểm');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadInitialLocations();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleOpenCreate = () => {
     setEditingLocation(null);
     form.resetFields();
     form.setFieldsValue({
+      type: 'DIEM_GIAO',
+      province: 'Hà Nội',
       geofence_radius_m: 150,
-      active: true,
       receiving_hours: '08:00 - 17:30 (T2 - T7)'
     });
     setIsModalOpen(true);
@@ -116,36 +93,53 @@ export default function LocationsManagement() {
 
   const handleOpenEdit = (record) => {
     setEditingLocation(record);
-    form.setFieldsValue(record);
+    form.setFieldsValue({
+      ...record,
+      customer_id: record.customer_id
+    });
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id) => {
-    setLocations(prev => prev.filter(item => item.id !== id));
-    message.success('Đã xóa địa điểm thành công!');
+  const handleDelete = async (record) => {
+    try {
+      setLoading(true);
+      await dispatcherApi.deleteLocation(record.raw_id || record.id);
+      message.success(`Đã xóa địa điểm [${record.name}] khỏi cơ sở dữ liệu!`);
+      await fetchLocations();
+    } catch (err) {
+      console.error('Delete location error:', err);
+      message.error(err.message || 'Lỗi khi xóa địa điểm trên cơ sở dữ liệu');
+      setLoading(false);
+    }
   };
 
   const handleSubmit = () => {
-    form.validateFields().then(values => {
-      if (editingLocation) {
-        setLocations(prev => prev.map(item => item.id === editingLocation.id ? { ...item, ...values } : item));
-        message.success(`Cập nhật địa điểm [${values.name}] thành công!`);
-      } else {
-        const newId = `LOC-${String(locations.length + 1).padStart(3, '0')}`;
-        const newLocation = { id: newId, ...values };
-        setLocations(prev => [newLocation, ...prev]);
-        message.success(`Đã thêm địa điểm mới [${values.name}]!`);
+    form.validateFields().then(async (values) => {
+      try {
+        setLoading(true);
+        if (editingLocation) {
+          await dispatcherApi.updateLocation(editingLocation.raw_id || editingLocation.id, values);
+          message.success(`Cập nhật địa điểm [${values.name}] thành công!`);
+        } else {
+          await dispatcherApi.createLocation(values);
+          message.success(`Đã lưu địa điểm mới [${values.name}] vào cơ sở dữ liệu!`);
+        }
+        setIsModalOpen(false);
+        form.resetFields();
+        await fetchLocations();
+      } catch (err) {
+        console.error('Submit location error:', err);
+        message.error(err.message || 'Lỗi khi lưu địa điểm');
+        setLoading(false);
       }
-      setIsModalOpen(false);
-      form.resetFields();
     });
   };
 
   const filteredData = locations.filter(item => {
     const matchSearch = searchText === '' ||
-      item.name.toLowerCase().includes(searchText.toLowerCase()) ||
-      item.address.toLowerCase().includes(searchText.toLowerCase()) ||
-      item.customer.toLowerCase().includes(searchText.toLowerCase());
+      (item.name && item.name.toLowerCase().includes(searchText.toLowerCase())) ||
+      (item.address && item.address.toLowerCase().includes(searchText.toLowerCase())) ||
+      (item.customer && item.customer.toLowerCase().includes(searchText.toLowerCase()));
     const matchType = filterType === 'ALL' || item.type === filterType;
     const matchProvince = filterProvince === 'ALL' || item.province === filterProvince;
     return matchSearch && matchType && matchProvince;
@@ -208,10 +202,10 @@ export default function LocationsManagement() {
       width: '16%',
       render: (_, r) => (
         <div className="text-xs">
-          <div className="font-medium text-gray-700">{r.contact_name}</div>
+          <div className="font-medium text-gray-700">{r.contact_name || 'Bộ phận Giao nhận'}</div>
           <div className="text-gray-400 text-[11px] font-mono flex items-center gap-1 mt-0.5">
             <Phone size={11} className="text-emerald-500" />
-            <span>{r.contact_phone}</span>
+            <span>{r.contact_phone || '0988.123.456'}</span>
           </div>
         </div>
       )
@@ -224,7 +218,7 @@ export default function LocationsManagement() {
       render: val => (
         <div className="flex items-center gap-1">
           <Shield size={13} className="text-indigo-500" />
-          <span className="font-semibold text-xs text-gray-700 font-mono">{val} m</span>
+          <span className="font-semibold text-xs text-gray-700 font-mono">{val || 200} m</span>
         </div>
       )
     },
@@ -237,7 +231,7 @@ export default function LocationsManagement() {
           <Tooltip title="Chỉnh sửa">
             <Button size="small" type="text" icon={<Edit3 size={15} className="text-[#7367f0]" />} onClick={() => handleOpenEdit(record)} />
           </Tooltip>
-          <Popconfirm title="Xóa địa điểm này?" onConfirm={() => handleDelete(record.id)} okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }}>
+          <Popconfirm title="Xóa địa điểm này khỏi cơ sở dữ liệu?" onConfirm={() => handleDelete(record)} okText="Xóa" cancelText="Hủy" okButtonProps={{ danger: true }}>
             <Button size="small" type="text" danger icon={<Trash2 size={15} />} />
           </Popconfirm>
         </Space>
@@ -255,17 +249,27 @@ export default function LocationsManagement() {
             Quản lý Điểm giao nhận
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Danh mục kho bãi, điểm tiếp nhận hàng hóa, tọa độ GPS và thiết lập bán kính nhận diện tự động.
+            Danh mục kho bãi, tọa độ GPS được đồng bộ trực tiếp với Supabase Database.
           </p>
         </div>
-        <Button
-          type="primary"
-          icon={<Plus size={16} />}
-          onClick={handleOpenCreate}
-          className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs h-9 shadow-sm"
-        >
-          Thêm địa điểm mới
-        </Button>
+        <Space>
+          <Button 
+            icon={<RefreshCw size={14} className={loading ? "animate-spin" : ""} />} 
+            onClick={fetchLocations}
+            loading={loading}
+            className="rounded-lg text-xs"
+          >
+            Làm mới
+          </Button>
+          <Button
+            type="primary"
+            icon={<Plus size={16} />}
+            onClick={handleOpenCreate}
+            className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs h-9 shadow-sm"
+          >
+            Thêm địa điểm mới
+          </Button>
+        </Space>
       </div>
 
       {/* Filter Bar */}
@@ -318,12 +322,13 @@ export default function LocationsManagement() {
           columns={columns}
           dataSource={filteredData}
           rowKey="id"
+          loading={loading}
           pagination={{ pageSize: 8, showTotal: (total) => `Tổng số ${total} địa điểm` }}
           size="middle"
         />
       </Card>
 
-      {/* Modal Thêm / Chỉnh sửa Địa điểm (Screen 38) */}
+      {/* Modal Thêm / Chỉnh sửa Địa điểm */}
       <Modal
         title={
           <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
@@ -334,7 +339,7 @@ export default function LocationsManagement() {
               <h3 className="text-base font-bold text-gray-800">
                 {editingLocation ? `Cập nhật địa điểm: ${editingLocation.name}` : 'Thêm địa điểm tiếp nhận mới'}
               </h3>
-              <p className="text-xs text-gray-500 font-normal">Thiết lập thông tin vị trí, giờ tiếp nhận và bán kính Geofence</p>
+              <p className="text-xs text-gray-500 font-normal">Thiết lập thông tin vị trí, giờ tiếp nhận và bán kính Geofence lưu vào cơ sở dữ liệu</p>
             </div>
           </div>
         }
@@ -344,7 +349,7 @@ export default function LocationsManagement() {
         okText={editingLocation ? 'Lưu thay đổi' : 'Thêm địa điểm'}
         cancelText="Hủy"
         width={750}
-        okButtonProps={{ className: 'bg-[#7367f0] hover:bg-[#5e50ee]' }}
+        okButtonProps={{ className: 'bg-[#7367f0] hover:bg-[#5e50ee]', loading }}
       >
         <Form form={form} layout="vertical" className="pt-3">
           <Row gutter={16}>
@@ -368,8 +373,12 @@ export default function LocationsManagement() {
 
           <Row gutter={16}>
             <Col span={14}>
-              <Form.Item name="customer" label={<span className="text-xs font-bold text-gray-700">Khách hàng sở hữu / Quản lý</span>} rules={[{ required: true, message: 'Vui lòng nhập đơn vị quản lý' }]}>
-                <Input placeholder="Tên công ty hoặc kho nội bộ..." className="text-xs" />
+              <Form.Item name="customer_id" label={<span className="text-xs font-bold text-gray-700">Khách hàng / Doanh nghiệp</span>}>
+                <Select placeholder="Chọn doanh nghiệp liên kết" allowClear className="text-xs">
+                  {customers.map(c => (
+                    <Option key={c.id} value={c.id}>{c.company_name}</Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
             <Col span={10}>
@@ -409,7 +418,7 @@ export default function LocationsManagement() {
 
           <Row gutter={16}>
             <Col span={10}>
-              <Form.Item name="receiving_hours" label={<span className="text-xs font-bold text-gray-700">Khung giờ tiếp nhận hàng</span>} rules={[{ required: true, message: 'Nhập khung giờ tiếp nhận' }]}>
+              <Form.Item name="receiving_hours" label={<span className="text-xs font-bold text-gray-700">Khung giờ tiếp nhận hàng</span>}>
                 <Input placeholder="08:00 - 17:30 (T2 - T7)" className="text-xs" />
               </Form.Item>
             </Col>

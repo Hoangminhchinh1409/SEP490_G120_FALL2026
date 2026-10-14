@@ -1,8 +1,8 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Route, Clock } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { calculateRouteEstimate } from '../../data/dispatcherPresets';
+import { calculateRouteEstimate, getCoordsFromAddress } from '../../data/dispatcherPresets';
 
 // Dynamic import component Leaflet bản đồ để tránh lỗi SSR trong Next.js
 const InnerRouteMap = dynamic(
@@ -28,9 +28,22 @@ const RouteMapPicker = ({
   const [routePolyline, setRoutePolyline] = useState([]);
   const [routeInfo, setRouteInfo] = useState({ distanceKm: 0, durationMins: 0 });
 
+  // Tự động suy luận tọa độ hiệu lực nếu chưa có tọa độ nhưng đã có địa chỉ
+  const effectivePickupCoords = useMemo(() => {
+    if (pickupCoords?.lat && pickupCoords?.lng) return pickupCoords;
+    if (pickupAddress) return getCoordsFromAddress(pickupAddress, 'A');
+    return null;
+  }, [pickupCoords, pickupAddress]);
+
+  const effectiveDeliveryCoords = useMemo(() => {
+    if (deliveryCoords?.lat && deliveryCoords?.lng) return deliveryCoords;
+    if (deliveryAddress) return getCoordsFromAddress(deliveryAddress, 'B');
+    return null;
+  }, [deliveryCoords, deliveryAddress]);
+
   // Tự động tính toán lộ trình thực tế qua OSRM Driving API khi có đủ tọa độ 2 điểm
   useEffect(() => {
-    if (!pickupCoords?.lat || !pickupCoords?.lng || !deliveryCoords?.lat || !deliveryCoords?.lng) {
+    if (!effectivePickupCoords?.lat || !effectivePickupCoords?.lng || !effectiveDeliveryCoords?.lat || !effectiveDeliveryCoords?.lng) {
       const clearTimer = setTimeout(() => {
         setRoutePolyline([]);
         setRouteInfo({ distanceKm: 0, durationMins: 0 });
@@ -45,7 +58,7 @@ const RouteMapPicker = ({
     const fetchRoute = async () => {
       try {
         const timeoutId = setTimeout(() => controller.abort(), 4000);
-        const url = `https://router.project-osrm.org/route/v1/driving/${pickupCoords.lng},${pickupCoords.lat};${deliveryCoords.lng},${deliveryCoords.lat}?overview=full&geometries=geojson`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${effectivePickupCoords.lng},${effectivePickupCoords.lat};${effectiveDeliveryCoords.lng},${effectiveDeliveryCoords.lat}?overview=full&geometries=geojson`;
 
         const res = await fetch(url, { signal: controller.signal });
         clearTimeout(timeoutId);
@@ -72,14 +85,14 @@ const RouteMapPicker = ({
 
       if (!isCancelled) {
         const fallback = calculateRouteEstimate(
-          pickupCoords.lat,
-          pickupCoords.lng,
-          deliveryCoords.lat,
-          deliveryCoords.lng
+          effectivePickupCoords.lat,
+          effectivePickupCoords.lng,
+          effectiveDeliveryCoords.lat,
+          effectiveDeliveryCoords.lng
         );
         setRoutePolyline([
-          [pickupCoords.lat, pickupCoords.lng],
-          [deliveryCoords.lat, deliveryCoords.lng]
+          [effectivePickupCoords.lat, effectivePickupCoords.lng],
+          [effectiveDeliveryCoords.lat, effectiveDeliveryCoords.lng]
         ]);
         setRouteInfo(fallback);
         if (onRouteChange) onRouteChange(fallback);
@@ -92,9 +105,15 @@ const RouteMapPicker = ({
       isCancelled = true;
       controller.abort();
     };
-  }, [pickupCoords?.lat, pickupCoords?.lng, deliveryCoords?.lat, deliveryCoords?.lng, onRouteChange]);
+  }, [
+    effectivePickupCoords?.lat, 
+    effectivePickupCoords?.lng, 
+    effectiveDeliveryCoords?.lat, 
+    effectiveDeliveryCoords?.lng, 
+    onRouteChange
+  ]);
 
-  const hasBoth = Boolean(pickupCoords?.lat && deliveryCoords?.lat);
+  const hasBoth = Boolean(effectivePickupCoords?.lat && effectiveDeliveryCoords?.lat);
 
   return (
     <div className="w-full space-y-2">
@@ -104,8 +123,8 @@ const RouteMapPicker = ({
         style={{ height: `${height}px` }}
       >
         <InnerRouteMap
-          pickupCoords={pickupCoords}
-          deliveryCoords={deliveryCoords}
+          pickupCoords={effectivePickupCoords}
+          deliveryCoords={effectiveDeliveryCoords}
           pickupAddress={pickupAddress}
           deliveryAddress={deliveryAddress}
           routePolyline={routePolyline}
@@ -126,7 +145,28 @@ const RouteMapPicker = ({
           </div>
         ) : (
           <div className="absolute top-2.5 right-2.5 z-[1000] bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] text-gray-500 border border-gray-100 shadow-xs">
-            {pickupCoords?.lat ? 'Chọn tiếp điểm giao hàng' : 'Nhập địa chỉ để định vị'}
+            {effectivePickupCoords?.lat ? 'Chọn tiếp điểm giao hàng' : 'Nhập địa chỉ để định vị'}
+          </div>
+        )}
+
+        {/* Thanh địa chỉ cố định trực quan ngay trên bản đồ */}
+        {(pickupAddress || deliveryAddress) && (
+          <div className="absolute bottom-2 left-2 right-2 z-[1000] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-md border border-gray-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pointer-events-auto">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">A</span>
+              <span className="text-gray-500 text-[11px] shrink-0 font-medium">Lấy:</span>
+              <span className="font-semibold text-gray-800 text-[11px] truncate" title={pickupAddress}>
+                {pickupAddress || 'Chưa nhập điểm lấy'}
+              </span>
+            </div>
+            <span className="hidden sm:inline text-gray-300 font-bold shrink-0">➔</span>
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">B</span>
+              <span className="text-gray-500 text-[11px] shrink-0 font-medium">Giao:</span>
+              <span className="font-semibold text-gray-800 text-[11px] truncate" title={deliveryAddress}>
+                {deliveryAddress || 'Chưa nhập điểm giao'}
+              </span>
+            </div>
           </div>
         )}
       </div>

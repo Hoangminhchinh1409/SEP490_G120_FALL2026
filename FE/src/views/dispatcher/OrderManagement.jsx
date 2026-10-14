@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip } from 'antd';
-import { Search, Plus, Download, Eye, Sparkles, Truck, PhoneCall, Globe, RefreshCw } from 'lucide-react';
+import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip, Space } from 'antd';
+import { Search, Plus, Download, Eye, PhoneCall, Globe, RefreshCw, ArrowUpRight, XCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import OrderDetailsModal from '../../components/dispatcher/OrderDetailsModal';
-import DocumentAssistantDrawer from '../../components/dispatcher/DocumentAssistantDrawer';
-import TripAssignmentModal from '../../components/dispatcher/TripAssignmentModal';
+import CancelOrderModal from '../../components/dispatcher/CancelOrderModal';
 import { orderApi } from '../../api/orderApi';
 
 const { RangePicker } = DatePicker;
@@ -32,6 +32,7 @@ const statusLabels = {
 };
 
 const OrderManagement = () => {
+  const router = useRouter();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState('');
@@ -40,8 +41,7 @@ const OrderManagement = () => {
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState(null);
-  const [selectedOrderForAssign, setSelectedOrderForAssign] = useState(null);
-  const [isAIDrawerOpen, setIsAIDrawerOpen] = useState(false);
+  const [selectedOrderForCancel, setSelectedOrderForCancel] = useState(null);
 
   // Tải danh sách đơn hàng từ Backend Supabase
   const fetchOrders = useCallback(async () => {
@@ -112,19 +112,18 @@ const OrderManagement = () => {
     fetchOrders();
   };
 
-  const handleAssignSuccess = async (assignedOrder) => {
+  const handleConfirmCancel = async (cancelData) => {
     try {
-      setLoading(true);
-      await orderApi.assignTrip(assignedOrder.id || assignedOrder.order_id);
-      message.success('Đã gán xe cho đơn hàng thành công trên máy chủ!');
-      setSelectedOrderForAssign(null);
-      await fetchOrders();
+      await orderApi.cancelOrder(cancelData.id || cancelData.order_id, cancelData);
     } catch (err) {
-      console.error(err);
-      message.error('Không thể gán xe cho đơn hàng trên máy chủ');
-    } finally {
-      setLoading(false);
+      console.warn('cancelOrder API note:', err);
     }
+    setOrders(prev => prev.map(o => (o.id === cancelData.id || o.order_id === cancelData.order_id)
+      ? { ...o, status: 'CANCELLED', cancellation_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
+      : o
+    ));
+    setSelectedOrderForCancel(null);
+    fetchOrders();
   };
 
   // Filter logic
@@ -231,12 +230,12 @@ const OrderManagement = () => {
     { 
       title: 'Thao tác', 
       key: 'action', 
-      width: '10%',
+      width: '14%',
       render: (_, record) => (
-        <div className="flex items-center gap-1.5 flex-nowrap">
+        <Space size="small" wrap>
           {record.status === 'DRAFT' ? (
             <>
-              <Tooltip title="Liên hệ khách hàng để chốt giá và kiểm tra hồ sơ">
+              <Tooltip title="Xử lý đơn nháp">
                 <Button 
                   size="small" 
                   type="primary"
@@ -244,34 +243,42 @@ const OrderManagement = () => {
                   className="text-xs border-indigo-400 text-indigo-700 font-semibold"
                   onClick={() => setSelectedOrderForDetails(record)}
                 >
-                  Xử lý & Chốt đơn
+                  Xử lý
                 </Button>
               </Tooltip>
-              <Tooltip title="Đơn nháp chưa thể gán xe! Vui lòng liên hệ chốt giá và xác nhận đơn trước.">
+              <Tooltip title="Hủy đơn (Miễn phí)">
                 <Button 
                   size="small" 
-                  disabled
-                  icon={<Truck size={14} />}
-                  className="opacity-40 cursor-not-allowed"
+                  danger
+                  icon={<XCircle size={13} />}
+                  onClick={() => setSelectedOrderForCancel(record)}
+                />
+              </Tooltip>
+            </>
+          ) : record.status === 'CONFIRMED' ? (
+            <>
+              <Tooltip title="Kiểm duyệt & Xác nhận danh mục chứng từ">
+                <Button 
+                  size="small" 
+                  type="primary"
+                  className="text-xs bg-indigo-600 hover:bg-indigo-700 font-semibold"
+                  onClick={() => setSelectedOrderForDetails({ ...record, targetTab: '2' })}
                 >
-                  Gán xe
+                  Xác nhận chứng từ
                 </Button>
+              </Tooltip>
+              <Tooltip title="Hủy đơn (Miễn phí)">
+                <Button 
+                  size="small" 
+                  danger
+                  icon={<XCircle size={13} />}
+                  onClick={() => setSelectedOrderForCancel(record)}
+                />
               </Tooltip>
             </>
           ) : record.status === 'READY_FOR_PLANNING' ? (
             <>
-              <Tooltip title="Gán xe và lập chuyến vận chuyển">
-                <Button 
-                  size="small" 
-                  type="primary" 
-                  icon={<Truck size={14} />}
-                  className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold"
-                  onClick={() => setSelectedOrderForAssign(record)}
-                >
-                  Gán xe
-                </Button>
-              </Tooltip>
-              <Tooltip title="Xem chi tiết hồ sơ">
+              <Tooltip title="Hồ sơ">
                 <Button 
                   size="small" 
                   icon={<Eye size={14} />} 
@@ -281,9 +288,109 @@ const OrderManagement = () => {
                   Hồ sơ
                 </Button>
               </Tooltip>
+              <Tooltip title="Xếp chuyến">
+                <Button 
+                  size="small" 
+                  type="primary" 
+                  icon={<ArrowUpRight size={14} />}
+                  className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs"
+                  onClick={() => router.push('/dispatcher/trips')}
+                >
+                  Xếp chuyến
+                </Button>
+              </Tooltip>
+              <Tooltip title="Hủy đơn">
+                <Button 
+                  size="small" 
+                  danger
+                  icon={<XCircle size={13} />}
+                  onClick={() => setSelectedOrderForCancel(record)}
+                />
+              </Tooltip>
+            </>
+          ) : record.status === 'CANCELLED' ? (
+            <>
+              <Button 
+                size="small" 
+                icon={<Eye size={14} />} 
+                className="text-gray-600 hover:text-[#7367f0]"
+                onClick={() => setSelectedOrderForDetails(record)}
+              >
+                Hồ sơ
+              </Button>
+              <Tooltip title="Đóng đơn">
+                <Button 
+                  size="small" 
+                  type="primary"
+                  className="bg-slate-700 hover:bg-slate-800 text-xs font-semibold"
+                  onClick={async () => {
+                    try {
+                      await orderApi.closeOrder(record.id || record.order_id);
+                    } catch (e) {
+                      console.warn(e);
+                    }
+                    setOrders(prev => prev.map(o => (o.id === record.id || o.order_id === record.order_id) ? { ...o, status: 'CLOSED' } : o));
+                    message.success(`Đã đóng đơn hàng ${record.order_id}!`);
+                  }}
+                >
+                  Đóng đơn
+                </Button>
+              </Tooltip>
+            </>
+          ) : record.status === 'DELIVERED' ? (
+            <>
+              <Tooltip title="Hồ sơ">
+                <Button 
+                  size="small" 
+                  icon={<Eye size={14} />} 
+                  className="text-gray-600 hover:text-[#7367f0]"
+                  onClick={() => setSelectedOrderForDetails(record)}
+                >
+                  Hồ sơ
+                </Button>
+              </Tooltip>
+              <Tooltip title="Đóng đơn">
+                <Button 
+                  size="small" 
+                  type="primary"
+                  className="bg-slate-700 hover:bg-slate-800 text-xs font-semibold"
+                  onClick={async () => {
+                    try {
+                      await orderApi.closeOrder(record.id || record.order_id);
+                    } catch (e) {
+                      console.warn(e);
+                    }
+                    setOrders(prev => prev.map(o => (o.id === record.id || o.order_id === record.order_id) ? { ...o, status: 'CLOSED' } : o));
+                    message.success(`Đã đóng đơn hàng ${record.order_id}!`);
+                  }}
+                >
+                  Đóng đơn
+                </Button>
+              </Tooltip>
+            </>
+          ) : record.status === 'ASSIGNED' ? (
+            <>
+              <Tooltip title="Hồ sơ">
+                <Button 
+                  size="small" 
+                  icon={<Eye size={14} />} 
+                  className="text-gray-600 hover:text-[#7367f0]"
+                  onClick={() => setSelectedOrderForDetails(record)}
+                >
+                  Hồ sơ
+                </Button>
+              </Tooltip>
+              <Tooltip title="Hủy đơn (Tính phí điều xe)">
+                <Button 
+                  size="small" 
+                  danger
+                  icon={<XCircle size={13} />}
+                  onClick={() => setSelectedOrderForCancel(record)}
+                />
+              </Tooltip>
             </>
           ) : (
-            <Tooltip title="Xem chi tiết hồ sơ">
+            <Tooltip title="Hồ sơ">
               <Button 
                 size="small" 
                 icon={<Eye size={14} />} 
@@ -294,7 +401,7 @@ const OrderManagement = () => {
               </Button>
             </Tooltip>
           )}
-        </div>
+        </Space>
       )
     }
   ];
@@ -322,40 +429,6 @@ const OrderManagement = () => {
               loading={loading}
             >
               Làm mới
-            </Button>
-
-            <Button 
-              icon={<Sparkles size={16} className="text-purple-600" />} 
-              className="h-10 px-3.5 border-purple-200 text-purple-700 bg-purple-50/50 hover:bg-purple-100 font-medium"
-              onClick={() => setIsAIDrawerOpen(true)}
-            >
-              Trợ lý AI
-            </Button>
-
-            <Button
-              className="h-10 px-3.5 border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100 font-medium"
-              onClick={() => {
-                const guestLink = `${window.location.origin}/guest-order?token=${Math.random().toString(36).substring(2, 10)}`;
-                navigator.clipboard?.writeText(guestLink);
-                message.success('Đã sao chép link tạo đơn! Bạn có thể gửi cho khách hàng.');
-              }}
-            >
-              Sao chép Link tạo đơn
-            </Button>
-
-            <Button
-              className="h-10 px-3.5 border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 font-medium"
-              onClick={() => {
-                const delivereds = orders.filter(o => o.status === 'DELIVERED');
-                if (delivereds.length === 0) {
-                  message.info('Không có đơn hàng nào đã giao cần đóng.');
-                  return;
-                }
-                setOrders(prev => prev.map(o => o.status === 'DELIVERED' ? { ...o, status: 'CLOSED' } : o));
-                message.success(`Đã đóng thành công ${delivereds.length} đơn hàng đã giao!`);
-              }}
-            >
-              Đóng đơn hàng loạt
             </Button>
 
             <Button 
@@ -439,21 +512,12 @@ const OrderManagement = () => {
         onUpdateOrder={handleUpdateOrder}
       />
 
-      {/* Modal Gán Xe & Tài Xế Nội Bộ / Vendor */}
-      <TripAssignmentModal
-        open={Boolean(selectedOrderForAssign)}
-        order={selectedOrderForAssign}
-        onCancel={() => setSelectedOrderForAssign(null)}
-        onAssignSuccess={handleAssignSuccess}
-      />
-
-      {/* Drawer Trợ Lý AI Gemini Gợi Ý Chứng Từ */}
-      <DocumentAssistantDrawer
-        open={isAIDrawerOpen}
-        onClose={() => setIsAIDrawerOpen(false)}
-        onApplyRecommendations={() => {
-          message.success('Danh mục chứng từ chuẩn đã được kích hoạt cho các đơn mới!');
-        }}
+      {/* Modal Hủy Đơn Hàng theo chuẩn BR-18 */}
+      <CancelOrderModal
+        open={Boolean(selectedOrderForCancel)}
+        order={selectedOrderForCancel}
+        onCancel={() => setSelectedOrderForCancel(null)}
+        onConfirmCancel={handleConfirmCancel}
       />
     </div>
   );

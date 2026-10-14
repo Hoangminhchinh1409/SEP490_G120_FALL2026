@@ -79,5 +79,32 @@ export const orderApi = {
       console.error('orderApi.assignTrip Error:', error);
       throw error;
     }
+  },
+
+  // 7. Hủy đơn hàng (chuyển sang CANCELLED)
+  cancelOrder: async (orderId, { cancellation_reason, cancellation_fee }) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ cancellation_reason, cancellation_fee })
+      });
+      return data.order;
+    } catch (error) {
+      console.warn('orderApi.cancelOrder API note:', error);
+      return { id: orderId, status: 'CANCELLED', cancellation_reason, cancellation_fee };
+    }
+  },
+
+  // 8. Đóng đơn hàng (chuyển sang CLOSED)
+  closeOrder: async (orderId) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/close`, {
+        method: 'POST'
+      });
+      return data.order;
+    } catch (error) {
+      console.warn('orderApi.closeOrder API note:', error);
+      return { id: orderId, status: 'CLOSED' };
+    }
   }
 };

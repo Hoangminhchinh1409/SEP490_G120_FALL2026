@@ -4,7 +4,7 @@ import {
   FileText, 
   Calculator
 } from 'lucide-react';
-import { calculateRouteEstimate } from '../../data/dispatcherPresets';
+import { calculateRouteEstimate, getCoordsFromAddress } from '../../data/dispatcherPresets';
 import RouteMapPicker from '../common/RouteMapPicker';
 import LocationSearchInput from '../common/LocationSearchInput';
 
@@ -109,7 +109,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         layout="vertical" 
         initialValues={{ 
           source: 'HOTLINE',
-          status: 'READY_FOR_PLANNING',
+          status: 'CONFIRMED',
           is_new_customer: false,
           pickup_same_as_customer: false,
           is_stackable: true, 
@@ -134,7 +134,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           </Form.Item>
           <Form.Item label="Trạng thái khởi tạo" name="status" className="mb-2">
             <Select>
-              <Option value="READY_FOR_PLANNING">Sẵn sàng xếp xe</Option>
+              <Option value="CONFIRMED">Cần xác nhận (Đã chốt giá)</Option>
               <Option value="DRAFT">Lưu nháp</Option>
             </Select>
           </Form.Item>
@@ -190,9 +190,11 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
               className="text-xs font-semibold text-indigo-600"
               onChange={(e) => {
                 if (e.target.checked) {
-                  const custAddr = form.getFieldValue('customer_address');
+                  const custAddr = form.getFieldValue('customer_address') || form.getFieldValue('customer_name');
                   if (custAddr) {
                     form.setFieldsValue({ pickup_address: custAddr });
+                    const coords = getCoordsFromAddress(custAddr, 'A');
+                    setPickupCoords(coords);
                   }
                 }
               }}
@@ -242,8 +244,8 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           {/* Bản đồ Leaflet định vị lộ trình trực quan */}
           <div className="bg-white p-2 rounded-lg border border-gray-200">
             <RouteMapPicker
-              pickupAddress={form.getFieldValue('pickup_address')}
-              deliveryAddress={form.getFieldValue('delivery_address')}
+              pickupAddress={values?.pickup_address || form.getFieldValue('pickup_address')}
+              deliveryAddress={values?.delivery_address || form.getFieldValue('delivery_address')}
               pickupCoords={pickupCoords}
               deliveryCoords={deliveryCoords}
               height={220}

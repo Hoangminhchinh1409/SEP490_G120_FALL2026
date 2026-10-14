@@ -181,8 +181,8 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               {/* Bản đồ tương tác trực quan */}
               <div className="bg-white p-2 rounded-lg border border-gray-200">
                 <RouteMapPicker
-                  pickupAddress={form.getFieldValue('pickup_address')}
-                  deliveryAddress={form.getFieldValue('delivery_address')}
+                  pickupAddress={values?.pickup_address || form.getFieldValue('pickup_address')}
+                  deliveryAddress={values?.delivery_address || form.getFieldValue('delivery_address')}
                   pickupCoords={pickupCoords}
                   deliveryCoords={deliveryCoords}
                   onRouteChange={setRouteInfo}

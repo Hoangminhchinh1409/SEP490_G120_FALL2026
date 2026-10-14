@@ -1,17 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { MapPin, Search, Loader2, X, Navigation, Check } from 'lucide-react';
-
-// Hàm loại bỏ dấu tiếng Việt để so sánh tìm kiếm mềm dẻo
-const removeVietnameseTones = (str) => {
-  if (!str) return '';
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase();
-};
+import { searchVietnamLocations, lookupLocationCoords, removeVietnameseTones } from '../../data/vietnamLocationsData';
 
 const LocationSearchInput = ({
   value = '',
@@ -46,27 +36,30 @@ const LocationSearchInput = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Tìm kiếm địa điểm động qua Geocoding API linh hoạt toàn quốc
+  // Tìm kiếm địa điểm: Ưu tiên dữ liệu chuẩn 63 tỉnh thành, cảng biển, KCN Việt Nam
   useEffect(() => {
     const query = inputValue?.trim();
-    if (!query || query.length < 2) {
+    if (!query || query.length < 1) {
       const clearTimer = setTimeout(() => {
         setSuggestions([]);
       }, 0);
       return () => clearTimeout(clearTimer);
     }
 
+    // 1. Tìm kiếm tức thì trong cơ sở dữ liệu quốc gia (offline, zero delay, chính xác 100%)
+    const localMatches = searchVietnamLocations(query);
+    setSuggestions(localMatches);
+
+    // 2. Tra cứu thêm qua API nếu cần bổ sung kết quả chi tiết
     let isCancelled = false;
     const controller = new AbortController();
 
     const apiTimer = setTimeout(async () => {
       try {
         setIsLoading(true);
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-        // Gọi Photon Geocoding API định vị toàn lãnh thổ Việt Nam
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
         const res = await fetch(
-          `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=21.0285&lon=105.8542&limit=8`,
+          `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=21.0285&lon=105.8542&limit=5`,
           { signal: controller.signal }
         );
         clearTimeout(timeoutId);
@@ -78,7 +71,6 @@ const LocationSearchInput = ({
               const props = feat.properties || {};
               const coords = feat.geometry?.coordinates || [105.8542, 21.0285];
               const main = props.name || props.street || query;
-              
               const parts = [
                 props.housenumber ? `Số ${props.housenumber}` : '',
                 props.street && props.street !== props.name ? props.street : '',
@@ -95,28 +87,29 @@ const LocationSearchInput = ({
               };
             });
 
-            // Loại bỏ các kết quả trùng lặp tọa độ
-            const seen = new Set();
-            const unique = [];
-            for (const item of apiItems) {
-              const key = `${item.lat.toFixed(3)},${item.lng.toFixed(3)}`;
-              if (!seen.has(key)) {
-                seen.add(key);
-                unique.push(item);
+            // Kết hợp kết quả cục bộ và kết quả API
+            setSuggestions(prev => {
+              const seen = new Set(prev.map(p => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`));
+              const merged = [...prev];
+              for (const item of apiItems) {
+                const key = `${item.lat.toFixed(3)},${item.lng.toFixed(3)}`;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  merged.push(item);
+                }
               }
-            }
-
-            setSuggestions(unique);
+              return merged.slice(0, 8);
+            });
           }
         }
       } catch {
-        // Bỏ qua lỗi timeout/huỷ
+        // Fallback tự nhiên trên kết quả cục bộ
       } finally {
         if (!isCancelled) {
           setIsLoading(false);
         }
       }
-    }, 250);
+    }, 200);
 
     return () => {
       isCancelled = true;
@@ -148,16 +141,49 @@ const LocationSearchInput = ({
   };
 
   const handleSelectCustomAddress = () => {
-    const customText = inputValue.trim();
+    const customText = inputValue?.trim();
     if (!customText) return;
     setIsOpen(false);
     if (onChange) onChange(customText);
+    const coords = lookupLocationCoords(customText, markerLetter);
     if (onSelectLocation) {
       onSelectLocation({
         address: customText,
         mainName: customText,
-        lat: 21.0285, // Mặc định trung tâm nếu nhập tự do chưa xác định tọa độ
-        lng: 105.8542
+        lat: coords.lat,
+        lng: coords.lng
+      });
+    }
+  };
+
+  const handleBlur = () => {
+    const text = inputValue?.trim();
+    if (!text) return;
+    
+    // Nếu có danh sách gợi ý và chưa được chọn, kiểm tra xem có gợi ý nào khớp tốt
+    const localMatches = searchVietnamLocations(text);
+    if (localMatches.length > 0) {
+      const top = localMatches[0];
+      const fullAddress = top.sub ? `${top.main}, ${top.sub}` : top.main;
+      if (onSelectLocation) {
+        onSelectLocation({
+          address: fullAddress,
+          mainName: top.main,
+          lat: top.lat,
+          lng: top.lng
+        });
+      }
+      return;
+    }
+
+    // Tra cứu chính xác tọa độ qua lookupLocationCoords
+    const coords = lookupLocationCoords(text, markerLetter);
+    if (onSelectLocation) {
+      onSelectLocation({
+        address: text,
+        mainName: text,
+        lat: coords.lat,
+        lng: coords.lng
       });
     }
   };
@@ -223,6 +249,14 @@ const LocationSearchInput = ({
           onChange={handleInputChange}
           onFocus={() => {
             if (inputValue?.trim()) setIsOpen(true);
+          }}
+          onBlur={handleBlur}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              handleBlur();
+              setIsOpen(false);
+            }
           }}
           placeholder={placeholder}
           className="w-full pl-9 pr-8 py-2.5 bg-white text-gray-800 text-xs rounded-lg border border-gray-200 hover:border-indigo-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition-all shadow-inner placeholder:text-gray-400"

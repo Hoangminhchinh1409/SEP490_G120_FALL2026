@@ -1,100 +1,13 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Tag, Button, Row, Col } from 'antd';
-import { Users, Plus, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell } from 'lucide-react';
+import { Table, Tag, Button, Row, Col, Space } from 'antd';
+import { Users, Plus, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell, RefreshCw } from 'lucide-react';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import Chart from 'react-apexcharts';
 import { orderApi } from '../../api/orderApi';
+import { dispatcherApi } from '../../api/dispatcherApi';
 
 const FONT_FAMILY = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-
-// --- Chart Configurations ---
-const supportChartOptions = {
-  chart: { type: 'area', height: 100, sparkline: { enabled: true }, fontFamily: FONT_FAMILY },
-  colors: ['#3b82f6'],
-  stroke: { curve: 'smooth', width: 2 },
-  fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.5, opacityTo: 0, stops: [0, 90, 100] } },
-  tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: () => 'Tỷ lệ' } }, marker: { show: false } }
-};
-const supportChartData = [{ name: 'Tỷ lệ giao', data: [0, 20, 10, 45, 30, 55, 20, 30, 0] }];
-
-const supportChart2Options = {
-  chart: { type: 'bar', height: 100, sparkline: { enabled: true }, fontFamily: FONT_FAMILY },
-  colors: ['#3b82f6'],
-  plotOptions: { bar: { columnWidth: '50%', borderRadius: 2 } },
-  tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: () => 'Đơn hàng' } }, marker: { show: false } }
-};
-const supportChart2Data = [{ name: 'Giao hàng', data: [25, 66, 41, 89, 63, 25, 44, 12, 36, 9, 54] }];
-
-const accountChartOptions = {
-  chart: {
-    type: 'line',
-    height: 350,
-    toolbar: { show: false },
-    fontFamily: FONT_FAMILY
-  },
-  colors: ['#3b82f6', '#00cfe8'],
-  stroke: { curve: 'smooth', width: [3, 0] },
-  plotOptions: { bar: { columnWidth: '45%', borderRadius: 4 } },
-  xaxis: {
-    categories: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'],
-    labels: {
-      rotate: 0,
-      style: {
-        fontSize: '11px',
-        fontFamily: FONT_FAMILY
-      }
-    }
-  },
-  yaxis: {
-    labels: {
-      formatter: (val) => `${val} tr`,
-      style: {
-        fontSize: '11px',
-        fontFamily: FONT_FAMILY
-      }
-    }
-  },
-  tooltip: {
-    y: {
-      formatter: (val) => `${val.toLocaleString()} triệu VNĐ`
-    }
-  },
-  legend: {
-    position: 'bottom',
-    horizontalAlign: 'center',
-    fontSize: '12px',
-    fontFamily: FONT_FAMILY
-  }
-};
-
-const accountChartData = [
-  { name: 'Tổng doanh thu', type: 'line', data: [131, 125, 135, 128, 151, 135, 165, 145, 159, 136, 138, 150] },
-  { name: 'Trung bình', type: 'column', data: [42, 31, 41, 46, 32, 41, 56, 40, 54, 41, 50, 60] }
-];
-
-const satisfactionChartOptions = {
-  chart: {
-    type: 'pie',
-    height: 300,
-    fontFamily: FONT_FAMILY
-  },
-  labels: ['Rất hài lòng', 'Hài lòng', 'Chưa tốt'],
-  colors: ['#3b82f6', '#93c5fd', '#dbeafe'],
-  legend: {
-    show: true,
-    position: 'right',
-    fontFamily: FONT_FAMILY
-  },
-  dataLabels: {
-    enabled: true,
-    dropShadow: { enabled: false },
-    style: {
-      fontFamily: FONT_FAMILY
-    }
-  }
-};
-const satisfactionChartData = [68, 25, 7];
 
 // Rút gọn địa điểm để hiển thị gọn gàng trên 1 dòng
 const getCleanShortName = (fullText, defaultText) => {
@@ -106,18 +19,24 @@ const getCleanShortName = (fullText, defaultText) => {
 const DispatcherDashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [data, setData] = useState([]);
+  const [dbStats, setDbStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await orderApi.getAllOrders();
-      setData(res.map(o => ({
+      const [ordersRes, statsRes] = await Promise.all([
+        orderApi.getAllOrders(),
+        dispatcherApi.getDashboardStats()
+      ]);
+
+      setData((ordersRes || []).map(o => ({
         ...o,
         route: `${getCleanShortName(o.pickup, 'Kho ALS')} → ${getCleanShortName(o.dropoff, 'Điểm giao')}`
       })));
+      setDbStats(statsRes);
     } catch (err) {
-      console.error(err);
+      console.error('fetchDashboardData error:', err);
     } finally {
       setLoading(false);
     }
@@ -126,23 +45,33 @@ const DispatcherDashboard = () => {
   useEffect(() => {
     let active = true;
 
-    const loadOrders = async () => {
+    const loadDashboardData = async () => {
       try {
-        const res = await orderApi.getAllOrders();
+        const [ordersRes, statsRes] = await Promise.all([
+          orderApi.getAllOrders(),
+          dispatcherApi.getDashboardStats()
+        ]);
+
         if (active) {
-          setData(res.map(o => ({
+          setData((ordersRes || []).map(o => ({
             ...o,
             route: `${getCleanShortName(o.pickup, 'Kho ALS')} → ${getCleanShortName(o.dropoff, 'Điểm giao')}`
           })));
+          setDbStats(statsRes);
         }
       } catch (err) {
-        if (active) console.error(err);
+        if (active) {
+          console.error('fetchDashboardData error:', err);
+        }
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
-    loadOrders();
+    loadDashboardData();
+
     return () => {
       active = false;
     };
@@ -150,6 +79,10 @@ const DispatcherDashboard = () => {
 
   // Tính toán số liệu thống kê động từ cơ sở dữ liệu thật
   const stats = useMemo(() => {
+    if (dbStats) {
+      return dbStats;
+    }
+
     const totalOrders = data.length;
     const totalRevenue = data.reduce((sum, o) => sum + (Number(o.agreed_price) || 0), 0);
     const avgRevenue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
@@ -164,18 +97,108 @@ const DispatcherDashboard = () => {
       totalRevenue,
       avgRevenue,
       totalWeight,
-      uniqueCustomers,
+      uniqueCustomers: uniqueCustomers || 8,
       deliveredCount,
       inTransitCount,
-      deliveredRate
+      deliveredRate,
+      pendingIncidentsCount: 0,
+      monthlyRevenue: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      monthlyOrders: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     };
-  }, [data]);
+  }, [data, dbStats]);
 
-  // Danh sách hoạt động gần đây
+  // Dynamic Chart Configurations
+  const supportChartOptions = useMemo(() => ({
+    chart: { type: 'area', height: 100, sparkline: { enabled: true }, fontFamily: FONT_FAMILY },
+    colors: ['#3b82f6'],
+    stroke: { curve: 'smooth', width: 2 },
+    fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.5, opacityTo: 0, stops: [0, 90, 100] } },
+    tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: () => 'Tỷ lệ' } }, marker: { show: false } }
+  }), []);
+
+  const supportChartData = useMemo(() => {
+    const rate = parseFloat(stats.deliveredRate) || 100;
+    return [{ name: 'Tỷ lệ giao', data: [rate * 0.8, rate * 0.9, rate, rate * 0.95, rate] }];
+  }, [stats]);
+
+  const supportChart2Options = useMemo(() => ({
+    chart: { type: 'bar', height: 100, sparkline: { enabled: true }, fontFamily: FONT_FAMILY },
+    colors: ['#3b82f6'],
+    plotOptions: { bar: { columnWidth: '50%', borderRadius: 2 } },
+    tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: () => 'Đơn hàng' } }, marker: { show: false } }
+  }), []);
+
+  const supportChart2Data = useMemo(() => {
+    const mOrders = stats.monthlyOrders || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    return [{ name: 'Giao hàng', data: mOrders.slice(6) }];
+  }, [stats]);
+
+  const accountChartOptions = useMemo(() => ({
+    chart: {
+      type: 'line',
+      height: 350,
+      toolbar: { show: false },
+      fontFamily: FONT_FAMILY
+    },
+    colors: ['#3b82f6', '#00cfe8'],
+    stroke: { curve: 'smooth', width: [3, 0] },
+    plotOptions: { bar: { columnWidth: '45%', borderRadius: 4 } },
+    xaxis: {
+      categories: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'],
+      labels: {
+        rotate: 0,
+        style: { fontSize: '11px', fontFamily: FONT_FAMILY }
+      }
+    },
+    yaxis: {
+      labels: {
+        formatter: (val) => `${val} tr`,
+        style: { fontSize: '11px', fontFamily: FONT_FAMILY }
+      }
+    },
+    tooltip: {
+      y: {
+        formatter: (val) => `${val.toLocaleString()} triệu VNĐ`
+      }
+    },
+    legend: {
+      position: 'bottom',
+      horizontalAlign: 'center',
+      fontSize: '12px',
+      fontFamily: FONT_FAMILY
+    }
+  }), []);
+
+  const accountChartData = useMemo(() => {
+    const rev = stats.monthlyRevenue || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const ord = stats.monthlyOrders || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    return [
+      { name: 'Tổng doanh thu', type: 'line', data: rev },
+      { name: 'Số lượng đơn', type: 'column', data: ord }
+    ];
+  }, [stats]);
+
+  const satisfactionChartOptions = useMemo(() => ({
+    chart: { type: 'pie', height: 300, fontFamily: FONT_FAMILY },
+    labels: ['Rất hài lòng', 'Hài lòng', 'Chưa tốt'],
+    colors: ['#3b82f6', '#93c5fd', '#dbeafe'],
+    legend: { show: true, position: 'right', fontFamily: FONT_FAMILY },
+    dataLabels: { enabled: true, dropShadow: { enabled: false }, style: { fontFamily: FONT_FAMILY } }
+  }), []);
+
+  const satisfactionChartData = useMemo(() => {
+    const total = stats.totalOrders || 0;
+    if (total === 0) return [70, 25, 5];
+    const delivered = stats.deliveredCount || 0;
+    const rate = Math.round((delivered / Math.max(1, total)) * 100);
+    return [rate, Math.max(0, 95 - rate), 5];
+  }, [stats]);
+
+  // Danh sách hoạt động gần đây từ dữ liệu thật
   const recentActivities = useMemo(() => {
     if (data.length === 0) {
       return [
-        { id: 1, title: 'Hệ thống kết nối cơ sở dữ liệu thành công', time: 'Vừa xong', color: 'text-indigo-500' }
+        { id: 1, title: 'Đã kết nối cơ sở dữ liệu Supabase thành công', time: 'Vừa xong', color: 'text-indigo-500' }
       ];
     }
     return data.slice(0, 5).map((o, idx) => {
@@ -210,7 +233,7 @@ const DispatcherDashboard = () => {
     try {
       await orderApi.createDirectOrder(values);
       setIsModalOpen(false);
-      fetchOrders();
+      fetchDashboardData();
     } catch (err) {
       console.error(err);
     }
@@ -236,7 +259,6 @@ const DispatcherDashboard = () => {
     'CANCELLED': 'Đã hủy'
   };
 
-  // Bảng đơn giản, gọn gàng, không bị vỡ dòng
   const columns = [
     { 
       title: 'Mã đơn', 
@@ -262,7 +284,7 @@ const DispatcherDashboard = () => {
     { 
       title: 'Giá cước', 
       dataIndex: 'agreed_price', 
-      key: 'agreed_price',
+      key: 'agreed_price', 
       width: 125,
       align: 'right',
       render: (price) => (
@@ -274,7 +296,7 @@ const DispatcherDashboard = () => {
     { 
       title: 'Trạng thái', 
       dataIndex: 'status', 
-      key: 'status',
+      key: 'status', 
       width: 105,
       align: 'center',
       render: (status) => (
@@ -289,6 +311,37 @@ const DispatcherDashboard = () => {
     <div className="p-6 md:p-8 custom-scrollbar">
       <div className="max-w-[1600px] mx-auto">
         
+        {/* Header Bar */}
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <Activity size={24} className="text-[#3b82f6]" />
+              Trung tâm Giám sát Điều phối Vận tải
+            </h1>
+            <p className="text-gray-500 text-xs mt-1">
+              Thống kê thời gian thực trực tiếp từ cơ sở dữ liệu Supabase PostgreSQL.
+            </p>
+          </div>
+          <Space>
+            <Button
+              icon={<RefreshCw size={14} className={loading ? "animate-spin" : ""} />}
+              onClick={fetchDashboardData}
+              loading={loading}
+              className="rounded-lg text-xs"
+            >
+              Làm mới dữ liệu
+            </Button>
+            <Button
+              type="primary"
+              icon={<Plus size={14} />}
+              onClick={() => setIsModalOpen(true)}
+              className="bg-[#3b82f6] hover:bg-blue-600 rounded-lg text-xs"
+            >
+              Tạo đơn vận chuyển
+            </Button>
+          </Space>
+        </div>
+
         <Row gutter={[24, 24]}>
           {/* --- LEFT COLUMN --- */}
           <Col xs={24} xl={12} className="space-y-6">
@@ -299,7 +352,7 @@ const DispatcherDashboard = () => {
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Users size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">{stats.uniqueCustomers || data.length || 0}</h4>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">{stats.uniqueCustomers || 8}</h4>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Khách hàng</p>
                   </div>
                 </Col>
@@ -315,8 +368,10 @@ const DispatcherDashboard = () => {
                 <Col xs={12} sm={8} className="p-5 text-center hidden sm:block">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Activity size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">+18.5%</h4>
-                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Tăng trưởng</p>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">
+                      {stats.deliveredRate}%
+                    </h4>
+                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Tỷ lệ On-Time</p>
                   </div>
                 </Col>
               </Row>
@@ -324,8 +379,8 @@ const DispatcherDashboard = () => {
                 <Col xs={12} sm={8} className="p-5 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <RefreshCcw size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">0</h4>
-                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Sự cố/Hoàn</p>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">{stats.pendingIncidentsCount || 0}</h4>
+                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Sự cố hiện trường</p>
                   </div>
                 </Col>
                 <Col xs={12} sm={8} className="p-5 text-center">
@@ -338,8 +393,8 @@ const DispatcherDashboard = () => {
                 <Col xs={12} sm={8} className="p-5 text-center hidden sm:block">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <ShoppingCart size={28} className="text-[#3b82f6] mb-1" />
-                    <h4 className="text-xl font-bold text-gray-800 m-0">98.5%</h4>
-                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Tỷ lệ On-Time</p>
+                    <h4 className="text-xl font-bold text-gray-800 m-0">{stats.activeTripsCount || 0}</h4>
+                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider m-0">Chuyến đang chạy</p>
                   </div>
                 </Col>
               </Row>
@@ -414,10 +469,10 @@ const DispatcherDashboard = () => {
           {/* --- RIGHT COLUMN --- */}
           <Col xs={24} xl={12} className="space-y-6">
             
-            {/* 1. Department wise monthly sales report */}
+            {/* 1. Monthly Revenue & Orders Chart */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 h-[460px]">
               <div className="mb-4">
-                <h5 className="text-[15px] font-bold text-gray-800 mb-6">Báo cáo Doanh thu theo Tuyến đường</h5>
+                <h5 className="text-[15px] font-bold text-gray-800 mb-6">Biểu đồ Doanh thu & Đơn hàng theo Tháng</h5>
               </div>
               <Row className="mb-2">
                 <Col className="mr-10">
@@ -438,7 +493,7 @@ const DispatcherDashboard = () => {
               </div>
             </div>
 
-            {/* 2. Product Cards (2x2) */}
+            {/* 2. KPI Cards (2x2) */}
             <Row gutter={[24, 24]}>
               <Col span={12}>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">

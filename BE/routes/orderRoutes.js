@@ -5,7 +5,9 @@ const {
   createDirectOrder,
   updateAgreedPrice,
   confirmOrder,
-  assignTrip
+  assignTrip,
+  cancelOrder,
+  closeOrder
 } = require('../controllers/orderController');
 
 const router = express.Router();
@@ -27,5 +29,11 @@ router.patch('/:id/confirm', confirmOrder);
 
 // 6. Gán xe & lập chuyến (chuyển sang ASSIGNED)
 router.post('/:id/assign', assignTrip);
+
+// 7. Hủy đơn hàng (chuyển sang CANCELLED)
+router.post('/:id/cancel', cancelOrder);
+
+// 8. Đóng đơn hàng (chuyển sang CLOSED)
+router.post('/:id/close', closeOrder);
 
 module.exports = router;

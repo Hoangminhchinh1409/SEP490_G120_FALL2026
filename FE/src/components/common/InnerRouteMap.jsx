@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -129,6 +129,12 @@ const InnerRouteMap = ({
 
       {pickupCoords?.lat && (
         <Marker position={[pickupCoords.lat, pickupCoords.lng]} icon={pickupIcon}>
+          <Tooltip permanent direction="top" offset={[0, -14]} opacity={0.95}>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={pickupAddress}>
+              <span style={{ color: '#2563eb', fontWeight: 800 }}>A: </span>
+              <span>{(pickupAddress || 'Điểm lấy').split(',')[0]}</span>
+            </div>
+          </Tooltip>
           <Popup>
             <div className="text-xs">
               <b className="text-blue-600">Điểm lấy hàng (A):</b>
@@ -140,6 +146,12 @@ const InnerRouteMap = ({
 
       {deliveryCoords?.lat && (
         <Marker position={[deliveryCoords.lat, deliveryCoords.lng]} icon={deliveryIcon}>
+          <Tooltip permanent direction="top" offset={[0, -14]} opacity={0.95}>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={deliveryAddress}>
+              <span style={{ color: '#059669', fontWeight: 800 }}>B: </span>
+              <span>{(deliveryAddress || 'Điểm giao').split(',')[0]}</span>
+            </div>
+          </Tooltip>
           <Popup>
             <div className="text-xs">
               <b className="text-emerald-600">Điểm giao hàng (B):</b>

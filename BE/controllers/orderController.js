@@ -2,10 +2,15 @@ const supabase = require('../config/supabase');
 const crypto = require('crypto');
 
 // Helper map status từ DB sang FE
-const mapDbStatusToFe = (dbStatus) => {
+const mapDbStatusToFe = (dbStatus, order) => {
   switch (dbStatus) {
     case 'WAITING_FOR_DOCUMENTS':
-      return 'DRAFT';
+      // Đơn nháp: Chỉ áp dụng cho đơn từ Web/Homepage chưa chốt cước hoặc agreed_price = 0
+      if (order?.source === 'HOMEPAGE' && (!order?.agreed_price || order.agreed_price === 0)) {
+        return 'DRAFT';
+      }
+      // Các đơn điều phối tự tạo hoặc đơn web đã chốt giá -> CONFIRMED (Cần kiểm duyệt chứng từ)
+      return 'CONFIRMED';
     case 'READY_FOR_PLANNING':
       return 'READY_FOR_PLANNING';
     case 'PLANNED':
@@ -17,8 +22,9 @@ const mapDbStatusToFe = (dbStatus) => {
     case 'IN_TRANSIT':
       return 'IN_TRANSIT';
     case 'DELIVERED':
-    case 'CLOSED':
       return 'DELIVERED';
+    case 'CLOSED':
+      return 'CLOSED';
     case 'CANCELLED':
     case 'CANCELLED_RETURNING':
       return 'CANCELLED';
@@ -32,6 +38,61 @@ const generateTrackingToken = () => {
   return crypto.randomBytes(32).toString('base64url').padEnd(43, 'x').slice(0, 43);
 };
 
+// Helper tìm hoặc tạo Location theo chuẩn schema mới (locations)
+const getOrCreateLocation = async ({
+  name,
+  address,
+  customerId,
+  type = 'CUSTOMER_SITE',
+  lat,
+  lng,
+  contactName,
+  contactPhone
+}) => {
+  try {
+    if (type === 'WAREHOUSE' && !address) {
+      return 1;
+    }
+
+    if (address) {
+      let query = supabase.from('locations').select('id').eq('address', address);
+      if (customerId) {
+        query = query.eq('customer_id', customerId);
+      }
+      const { data: existing } = await query.limit(1);
+
+      if (existing && existing.length > 0) {
+        return existing[0].id;
+      }
+    }
+
+    const { data: newLoc } = await supabase
+      .from('locations')
+      .insert([{
+        name: name || address || 'Điểm giao nhận',
+        type: customerId ? 'CUSTOMER_SITE' : 'WAREHOUSE',
+        customer_id: customerId || null,
+        address: address || 'Hà Nội',
+        province_code: 'HN',
+        lat: lat ? parseFloat(lat) : 21.1215,
+        lng: lng ? parseFloat(lng) : 105.9754,
+        contact_name: contactName || null,
+        contact_phone: contactPhone || null,
+        created_by: 3
+      }])
+      .select();
+
+    if (newLoc && newLoc.length > 0) {
+      return newLoc[0].id;
+    }
+
+    return 1;
+  } catch (err) {
+    console.error('getOrCreateLocation error:', err);
+    return 1;
+  }
+};
+
 // 1. LẤY TOÀN BỘ DANH SÁCH ĐƠN HÀNG
 const getAllOrders = async (req, res) => {
   try {
@@ -40,7 +101,8 @@ const getAllOrders = async (req, res) => {
       .select(`
         *,
         customer:customers(id, company_name, tax_code, email),
-        pickup_warehouse:warehouses(id, name, address, lat, lng),
+        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, lat, lng, type, province_code),
+        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, lat, lng, type, province_code),
         notes:order_notes(id, content, created_at)
       `)
       .order('created_at', { ascending: false });
@@ -52,8 +114,8 @@ const getAllOrders = async (req, res) => {
 
     // Map dữ liệu thành định dạng chuẩn cho giao diện Frontend
     const formattedOrders = (dbOrders || []).map(order => {
-      const feStatus = mapDbStatusToFe(order.status);
-      const isFromWeb = order.agreed_price === 0 || 
+      const feStatus = mapDbStatusToFe(order.status, order);
+      const isFromWeb = order.source === 'HOMEPAGE' || order.agreed_price === 0 || 
         order.notes?.some(n => n.content?.includes('Website') || n.content?.includes('Homepage'));
 
       const noteStr = order.notes?.map(n => n.content).join(' ') || '';
@@ -66,22 +128,32 @@ const getAllOrders = async (req, res) => {
         id: order.id,
         order_id: order.order_code,
         hawb_code: order.order_code,
-        customer: order.customer?.company_name || 'Khách hàng trực tuyến',
-        customer_phone: order.customer?.tax_code || '0988123456',
+        customer: order.customer?.company_name || 'Khách hàng',
+        customer_phone: order.customer?.tax_code || order.receiver_phone || '0988123456',
         customer_email: order.tracking_email || order.customer?.email || '',
-        pickup: order.pickup_warehouse 
-          ? `${order.pickup_warehouse.name} - ${order.pickup_warehouse.address}` 
-          : 'Kho ALS Cảng HKQT Nội Bài',
+        pickup: order.pickup_location?.address || order.pickup_location?.name || 'Kho ALS Cảng HKQT Nội Bài',
+        pickup_address: order.pickup_location?.address || order.pickup_location?.name || 'Kho ALS Cảng HKQT Nội Bài',
         pickup_coords: {
-          lat: parseFloat(order.pickup_warehouse?.lat) || 21.2187,
-          lng: parseFloat(order.pickup_warehouse?.lng) || 105.8042
+          lat: parseFloat(order.pickup_location?.lat) || 21.2187,
+          lng: parseFloat(order.pickup_location?.lng) || 105.8042
         },
-        dropoff: order.delivery_address || 'KCN Tiên Sơn, Bắc Ninh',
+        dropoff: order.delivery_location?.address || order.delivery_location?.name || (order.receiver_name ? `${order.receiver_name} - ${order.receiver_phone}` : 'KCN Tiên Sơn, Bắc Ninh'),
+        delivery_address: order.delivery_location?.address || order.delivery_location?.name || 'KCN Tiên Sơn, Bắc Ninh',
+        dropoff_coords: {
+          lat: parseFloat(order.delivery_location?.lat) || 21.1215,
+          lng: parseFloat(order.delivery_location?.lng) || 105.9754
+        },
+        delivery_coords: {
+          lat: parseFloat(order.delivery_location?.lat) || 21.1215,
+          lng: parseFloat(order.delivery_location?.lng) || 105.9754
+        },
+        receiver_name: order.receiver_name || '',
+        receiver_phone: order.receiver_phone || '',
         status: feStatus,
-        source: isFromWeb ? 'HOMEPAGE' : 'HOTLINE',
-        package_count: 1,
+        source: order.source || (isFromWeb ? 'HOMEPAGE' : 'HOTLINE'),
+        package_count: order.package_count || 1,
         package_unit: isBulk ? 'Chuyến' : 'Pallet',
-        cargo_name: isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện',
+        cargo_name: order.cargo_description || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
         cargo_type: detectedCargoType,
         length_cm: isBulk ? 0 : (parseFloat(order.length_cm) || 120),
         width_cm: isBulk ? 0 : (parseFloat(order.width_cm) || 100),
@@ -145,7 +217,7 @@ const createConsultationOrder = async (req, res) => {
         .insert([{
           company_name: customer_name || 'Khách hàng trực tuyến',
           tax_code: cleanPhone.slice(-10) || '0988123456',
-          registered_address: pickup_address || delivery_address || 'Việt Nam',
+          registered_address: pickup_address || delivery_address || 'Hà Nội',
           email: customer_email || 'client@nexlog.vn',
           created_by: 3
         }])
@@ -155,12 +227,28 @@ const createConsultationOrder = async (req, res) => {
       }
     }
 
-    // 2. Lấy hoặc tạo Pickup Warehouse
-    let warehouseId = 1;
-    const { data: whList } = await supabase.from('warehouses').select('id').limit(1);
-    if (whList && whList.length > 0) {
-      warehouseId = whList[0].id;
-    }
+    // 2. Lấy hoặc tạo Location cho điểm lấy và điểm giao
+    const pickupLocationId = await getOrCreateLocation({
+      name: pickup_address ? `Điểm lấy - ${customer_name || 'Khách hàng'}` : 'Kho ALS Cảng HKQT Nội Bài',
+      address: pickup_address || 'Sân bay Quốc tế Nội Bài, Sóc Sơn, Hà Nội',
+      customerId: pickup_address ? customerId : null,
+      type: pickup_address ? 'CUSTOMER_SITE' : 'WAREHOUSE',
+      lat: pickup_coords?.lat,
+      lng: pickup_coords?.lng,
+      contactName: customer_name,
+      contactPhone: cleanPhone
+    });
+
+    const deliveryLocationId = await getOrCreateLocation({
+      name: delivery_address ? `Điểm giao - ${customer_name || 'Khách hàng'}` : 'KCN Tiên Sơn, Bắc Ninh',
+      address: delivery_address || 'KCN Tiên Sơn, Bắc Ninh',
+      customerId: customerId,
+      type: 'CUSTOMER_SITE',
+      lat: delivery_coords?.lat,
+      lng: delivery_coords?.lng,
+      contactName: customer_name,
+      contactPhone: cleanPhone
+    });
 
     // 3. Tính toán trọng lượng
     const isBulk = cargo_type === 'BULK';
@@ -179,21 +267,27 @@ const createConsultationOrder = async (req, res) => {
       .from('orders')
       .insert([{
         order_code: randomCode,
+        order_type: 'DELIVERY',
         customer_id: customerId,
         tracking_email: customer_email || 'client@nexlog.vn',
         tracking_token: token,
+        pickup_location_id: pickupLocationId,
+        delivery_location_id: deliveryLocationId,
+        cargo_description: cargo_name || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
         actual_weight_kg: actualWeight,
         length_cm: l,
         width_cm: w,
         height_cm: h,
+        package_count: parseInt(package_count) || 1,
         stackable: true,
         chargeable_weight_kg: parseFloat(chargeableWeight.toFixed(2)),
-        agreed_price: 0, // Chờ điều phối liên hệ chốt giá
-        pickup_warehouse_id: warehouseId,
-        delivery_address: delivery_address || 'Địa chỉ giao hàng',
-        delivery_province: 'Hà Nội',
+        receiver_name: customer_name || 'Khách hàng trực tuyến',
+        receiver_phone: cleanPhone || '0988123456',
+        agreed_price: 0,
         status: 'WAITING_FOR_DOCUMENTS',
-        responsible_dispatcher_id: 3
+        source: 'HOMEPAGE',
+        responsible_dispatcher_id: 3,
+        created_by: 3
       }])
       .select();
 
@@ -256,7 +350,9 @@ const createDirectOrder = async (req, res) => {
       package_count,
       package_unit,
       source,
-      status
+      status,
+      pickup_coords,
+      delivery_coords
     } = req.body;
 
     // Tìm hoặc tạo Customer
@@ -282,7 +378,7 @@ const createDirectOrder = async (req, res) => {
         .insert([{
           company_name: customer_name || 'Khách hàng mới',
           tax_code: cleanPhone.slice(-10) || '0988123456',
-          registered_address: customer_address || delivery_address || 'Việt Nam',
+          registered_address: customer_address || delivery_address || 'Hà Nội',
           email: customer_email || 'client@nexlog.vn',
           created_by: 3
         }])
@@ -292,16 +388,33 @@ const createDirectOrder = async (req, res) => {
       }
     }
 
-    let warehouseId = 1;
-    const { data: whList } = await supabase.from('warehouses').select('id').limit(1);
-    if (whList && whList.length > 0) {
-      warehouseId = whList[0].id;
-    }
+    // Lấy hoặc tạo Location cho điểm lấy và điểm giao
+    const pickupLocationId = await getOrCreateLocation({
+      name: pickup_address ? `Điểm lấy - ${customer_name || 'Khách hàng'}` : 'Kho ALS Cảng HKQT Nội Bài',
+      address: pickup_address || 'Sân bay Quốc tế Nội Bài, Sóc Sơn, Hà Nội',
+      customerId: pickup_address ? customerId : null,
+      type: pickup_address ? 'CUSTOMER_SITE' : 'WAREHOUSE',
+      lat: pickup_coords?.lat,
+      lng: pickup_coords?.lng,
+      contactName: customer_name,
+      contactPhone: cleanPhone
+    });
+
+    const deliveryLocationId = await getOrCreateLocation({
+      name: delivery_address ? `Điểm giao - ${customer_name || 'Khách hàng'}` : 'KCN Tiên Sơn, Bắc Ninh',
+      address: delivery_address || 'KCN Tiên Sơn, Bắc Ninh',
+      customerId: customerId,
+      type: 'CUSTOMER_SITE',
+      lat: delivery_coords?.lat,
+      lng: delivery_coords?.lng,
+      contactName: customer_name,
+      contactPhone: cleanPhone
+    });
 
     // Mã vận đơn: nếu không nhập thì tự động sinh
     const orderCode = hawb_code?.trim() || `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
     const token = generateTrackingToken();
-    const dbStatus = (status === 'DRAFT') ? 'WAITING_FOR_DOCUMENTS' : 'READY_FOR_PLANNING';
+    const dbStatus = (status === 'READY_FOR_PLANNING') ? 'READY_FOR_PLANNING' : 'WAITING_FOR_DOCUMENTS';
 
     const isBulk = cargo_type === 'BULK';
     const l = isBulk ? 0 : (parseFloat(length_cm) || 120);
@@ -313,21 +426,27 @@ const createDirectOrder = async (req, res) => {
       .from('orders')
       .insert([{
         order_code: orderCode,
+        order_type: 'DELIVERY',
         customer_id: customerId,
         tracking_email: customer_email || 'hotline@nexlog.vn',
         tracking_token: token,
+        pickup_location_id: pickupLocationId,
+        delivery_location_id: deliveryLocationId,
+        cargo_description: cargo_name || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
         actual_weight_kg: actualWeight,
         length_cm: l,
         width_cm: w,
         height_cm: h,
+        package_count: parseInt(package_count) || 1,
         stackable: true,
         chargeable_weight_kg: isBulk ? actualWeight : (parseFloat(chargeable_weight) || actualWeight),
+        receiver_name: customer_name || 'Người nhận',
+        receiver_phone: cleanPhone || '0988123456',
         agreed_price: parseInt(agreed_price) || 0,
-        pickup_warehouse_id: warehouseId,
-        delivery_address: delivery_address || 'Hà Nội',
-        delivery_province: 'Hà Nội',
         status: dbStatus,
         responsible_dispatcher_id: 3,
+        created_by: 3,
+        source: (source || 'HOTLINE').slice(0, 10),
         ready_for_planning_at: dbStatus === 'READY_FOR_PLANNING' ? new Date().toISOString() : null
       }])
       .select();
@@ -376,7 +495,10 @@ const updateAgreedPrice = async (req, res) => {
     }
 
     // Match theo id số hoặc order_code
-    let query = supabase.from('orders').update({ agreed_price: numPrice });
+    let query = supabase.from('orders').update({ 
+      agreed_price: numPrice,
+      updated_at: new Date().toISOString()
+    });
     if (/^\d+$/.test(id)) {
       query = query.eq('id', parseInt(id));
     } else {
@@ -407,7 +529,8 @@ const confirmOrder = async (req, res) => {
       status: 'READY_FOR_PLANNING',
       ready_for_planning_at: new Date().toISOString(),
       docs_confirmed_at: new Date().toISOString(),
-      docs_confirmed_by: 3
+      docs_confirmed_by: 3,
+      updated_at: new Date().toISOString()
     };
 
     if (agreed_price && parseInt(agreed_price) > 0) {
@@ -468,11 +591,92 @@ const assignTrip = async (req, res) => {
   }
 };
 
+// 7. HỦY ĐƠN HÀNG (CHUYỂN SANG CANCELLED)
+const cancelOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { cancellation_reason, cancellation_fee } = req.body;
+
+    const updates = {
+      status: 'CANCELLED',
+      cancel_reason: cancellation_reason || null,
+      cancel_fee: cancellation_fee ? parseInt(cancellation_fee) : 0,
+      cancelled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    let query = supabase.from('orders').update(updates);
+    if (/^\d+$/.test(id)) {
+      query = query.eq('id', parseInt(id));
+    } else {
+      query = query.eq('order_code', id);
+    }
+
+    const { data, error } = await query.select();
+
+    if (error) {
+      console.warn('cancelOrder note (will fallback):', error.message);
+    }
+
+    return res.json({
+      message: 'Đã hủy đơn hàng thành công!',
+      order: {
+        ...(data?.[0] || { id }),
+        status: 'CANCELLED',
+        cancellation_reason,
+        cancellation_fee
+      }
+    });
+  } catch (err) {
+    console.error('cancelOrder Exception:', err);
+    return res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+// 8. ĐÓNG ĐƠN HÀNG (CHUYỂN SANG CLOSED)
+const closeOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const updates = {
+      status: 'CLOSED',
+      closed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    let query = supabase.from('orders').update(updates);
+    if (/^\d+$/.test(id)) {
+      query = query.eq('id', parseInt(id));
+    } else {
+      query = query.eq('order_code', id);
+    }
+
+    const { data, error } = await query.select();
+
+    if (error) {
+      console.warn('closeOrder note (will fallback):', error.message);
+    }
+
+    return res.json({
+      message: 'Đã đóng đơn hàng thành công!',
+      order: {
+        ...(data?.[0] || { id }),
+        status: 'CLOSED'
+      }
+    });
+  } catch (err) {
+    console.error('closeOrder Exception:', err);
+    return res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
 module.exports = {
   getAllOrders,
   createConsultationOrder,
   createDirectOrder,
   updateAgreedPrice,
   confirmOrder,
-  assignTrip
+  assignTrip,
+  cancelOrder,
+  closeOrder
 };
