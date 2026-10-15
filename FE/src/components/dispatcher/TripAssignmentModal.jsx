@@ -17,12 +17,19 @@ const TripAssignmentModal = ({ open, order, onCancel, onAssignSuccess }) => {
   const [selectedVendor, setSelectedVendor] = useState('');
   const [vendorTrackingCode, setVendorTrackingCode] = useState('');
   const [showLoadPlan3D, setShowLoadPlan3D] = useState(false);
-  const [loadingResources, setLoadingResources] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [loadingResources, setLoadingResources] = useState(true);
+
+  if (open && !prevOpen) {
+    setPrevOpen(true);
+    setLoadingResources(true);
+  } else if (!open && prevOpen) {
+    setPrevOpen(false);
+  }
 
   useEffect(() => {
     if (!open) return;
     let isSubscribed = true;
-    setLoadingResources(true);
 
     Promise.all([
       dispatcherApi.getTrucks(),
@@ -80,6 +87,9 @@ const TripAssignmentModal = ({ open, order, onCancel, onAssignSuccess }) => {
       const driver1Obj = drivers.find(d => d.id.toString() === selectedDriver1.toString());
       const driver2Obj = isTwoDrivers ? drivers.find(d => d.id.toString() === selectedDriver2.toString()) : null;
 
+      // Sinh mã vận đơn thống nhất của hệ thống: NEX - XXXXXX
+      const generatedWaybill = `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
+
       onAssignSuccess({
         ...order,
         status: 'ASSIGNED',
@@ -87,7 +97,7 @@ const TripAssignmentModal = ({ open, order, onCancel, onAssignSuccess }) => {
         truck: selectedTruck,
         driver1: driver1Obj?.name || 'Tài xế nội bộ',
         driver2: driver2Obj?.name || null,
-        waybill_no: `WB-${Math.floor(100000 + Math.random() * 900000)}`,
+        waybill_no: generatedWaybill,
         waybill_version: 1
       });
     } else {
@@ -101,7 +111,8 @@ const TripAssignmentModal = ({ open, order, onCancel, onAssignSuccess }) => {
         status: 'HANDED_OVER_VENDOR',
         allocationType: 'VENDOR',
         vendor: vendorObj?.name || 'Đối tác vận tải',
-        vendor_tracking_code: vendorTrackingCode
+        vendor_tracking_code: vendorTrackingCode.trim(),
+        waybill_no: vendorTrackingCode.trim()
       });
     }
   };
@@ -195,7 +206,7 @@ const TripAssignmentModal = ({ open, order, onCancel, onAssignSuccess }) => {
               showIcon
               title={
                 <span className="font-bold text-xs">
-                  Hệ thống đề xuất xe nội bộ khả dụng từ cơ sở dữ liệu Supabase
+                  Hệ thống đề xuất xe nội bộ khả dụng phù hợp với tải trọng và lộ trình
                 </span>
               }
               className="text-xs"
@@ -275,11 +286,11 @@ const TripAssignmentModal = ({ open, order, onCancel, onAssignSuccess }) => {
               <div className="flex items-center gap-2">
                 <FileText size={18} className="text-blue-600" />
                 <div>
-                  <span className="font-bold text-blue-900">Giấy vận tải điện tử (Waybill):</span>
-                  <div className="text-gray-500">Mã lệnh điều động được tự động sinh và lưu trữ vào hệ thống cơ sở dữ liệu</div>
+                  <span className="font-bold text-blue-900">Mã vận đơn hệ thống (NEX - XXXXXX):</span>
+                  <div className="text-gray-500">Mã vận đơn thống nhất được tự động sinh sau khi phân bổ xe nội bộ</div>
                 </div>
               </div>
-              <Tag color="processing" className="font-mono font-semibold">Tự động</Tag>
+              <Tag color="processing" className="font-mono font-semibold">Tự động sinh: NEX-XXXXXX</Tag>
             </div>
           </div>
         ) : (

@@ -427,6 +427,47 @@ const deleteLocation = async (req, res) => {
     const { id } = req.params;
     const realId = parseInt(id.replace('LOC-', '')) || parseInt(id);
 
+    // 1. Kiểm tra đơn hàng liên quan
+    const { data: relatedOrders } = await supabase
+      .from('orders')
+      .select('id, order_code, status')
+      .or(`pickup_location_id.eq.${realId},delivery_location_id.eq.${realId}`);
+
+    if (relatedOrders && relatedOrders.length > 0) {
+      // Đơn hàng đang vận chuyển thực tế không được xóa địa điểm
+      const activeOrders = relatedOrders.filter(o => !['WAITING_FOR_DOCUMENTS', 'CANCELLED'].includes(o.status));
+      if (activeOrders.length > 0) {
+        const activeCodes = activeOrders.map(o => o.order_code).filter(Boolean).slice(0, 3).join(', ');
+        return res.status(400).json({
+          message: `Không thể xóa vì địa điểm đang liên kết với ${activeOrders.length} đơn hàng (${activeCodes}).`
+        });
+      }
+
+      // Đối với các đơn hàng nháp / tư vấn trực tuyến (WAITING_FOR_DOCUMENTS), chuyển về kho mặc định 1
+      await supabase
+        .from('orders')
+        .update({ pickup_location_id: 1 })
+        .eq('pickup_location_id', realId);
+
+      await supabase
+        .from('orders')
+        .update({ delivery_location_id: 1 })
+        .eq('delivery_location_id', realId);
+    }
+
+    // 2. Kiểm tra chuyến xe liên quan
+    const { data: relatedTrips } = await supabase
+      .from('trips')
+      .select('id, trip_code')
+      .or(`origin_location_id.eq.${realId},destination_location_id.eq.${realId}`);
+
+    if (relatedTrips && relatedTrips.length > 0) {
+      const tripCodes = relatedTrips.map(t => t.trip_code).filter(Boolean).slice(0, 3).join(', ');
+      return res.status(400).json({
+        message: `Không thể xóa vì địa điểm đang liên kết với ${relatedTrips.length} chuyến xe (${tripCodes}).`
+      });
+    }
+
     const { error } = await supabase
       .from('locations')
       .delete()
@@ -434,7 +475,13 @@ const deleteLocation = async (req, res) => {
 
     if (error) {
       console.error('deleteLocation error:', error);
-      return res.status(500).json({ message: 'Lỗi xóa địa điểm', error });
+      if (error.code === '23503') {
+        return res.status(400).json({ 
+          message: 'Không thể xóa địa điểm này do ràng buộc dữ liệu lịch sử trong hệ thống.',
+          error 
+        });
+      }
+      return res.status(500).json({ message: error.message || 'Lỗi xóa địa điểm', error });
     }
 
     return res.json({ message: 'Đã xóa địa điểm thành công' });
@@ -736,7 +783,10 @@ const createTrip = async (req, res) => {
 
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const tripCode = `TRIP-${randomNum}`;
-    const waybillNo = `WB-${Math.floor(100000 + Math.random() * 900000)}`;
+    // Mã vận đơn thống nhất của hệ thống: NEX - XXXXXX cho xe nội bộ, hoặc mã vận đơn đối tác cho vendor ngoài
+    const waybillNo = allocation_type === 'VENDOR'
+      ? (vendor_tracking_code?.trim() || '')
+      : `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
 
     // 3. Insert vào bảng trips
     const { data: newTrip, error: tripErr } = await supabase
@@ -749,7 +799,7 @@ const createTrip = async (req, res) => {
         total_volume_m3: 10.5,
         truck_id: truckId,
         driver_id: driverId,
-        waybill_no: waybillNo,
+        waybill_no: waybillNo || `NEX-${Math.floor(100000 + Math.random() * 900000)}`,
         waybill_version: 1,
         created_by: 3
       }])
@@ -782,12 +832,19 @@ const createTrip = async (req, res) => {
       status: 'PENDING'
     }]).select();
 
-    // 5. Cập nhật trạng thái đơn hàng sang ASSIGNED trong bảng orders
+    // 5. Cập nhật trạng thái đơn hàng sang ASSIGNED (hoặc HANDED_OVER_VENDOR) và gắn mã vận đơn
     const cleanOrderId = parseInt(order_id) || null;
+    const orderUpdatePayload = {
+      status: allocation_type === 'VENDOR' ? 'HANDED_OVER_VENDOR' : 'ASSIGNED'
+    };
+    if (waybillNo) {
+      orderUpdatePayload.order_code = waybillNo;
+    }
+
     if (cleanOrderId) {
       await supabase
         .from('orders')
-        .update({ status: 'ASSIGNED' })
+        .update(orderUpdatePayload)
         .eq('id', cleanOrderId);
 
       // Liên kết stop với order
@@ -802,14 +859,16 @@ const createTrip = async (req, res) => {
       await supabase.from('order_status_history').insert([{
         order_id: cleanOrderId,
         from_status: 'READY_FOR_PLANNING',
-        to_status: 'ASSIGNED',
-        notes: `Đã phân bổ chuyến xe ${tripCode} (Xe: ${truck_plate || 'Nội bộ'}, Lái xe: ${driver_name || 'Nội bộ'})`,
+        to_status: allocation_type === 'VENDOR' ? 'HANDED_OVER_VENDOR' : 'ASSIGNED',
+        notes: allocation_type === 'VENDOR'
+          ? `Đã phân bổ cho nhà xe đối tác [${vendor_name || 'Đối tác vận tải'}]. Mã vận đơn đối tác: ${waybillNo || 'Chưa nhập'}`
+          : `Đã phân bổ chuyến xe ${tripCode} (Xe nội bộ: ${truck_plate || 'Nội bộ'}, Lái xe: ${driver_name || 'Nội bộ'}). Khởi tạo mã vận đơn hệ thống: ${waybillNo}`,
         changed_by: 3
       }]);
     } else if (order_code) {
       await supabase
         .from('orders')
-        .update({ status: 'ASSIGNED' })
+        .update(orderUpdatePayload)
         .eq('order_code', order_code);
     }
 
@@ -883,7 +942,12 @@ const updateTripStatus = async (req, res) => {
 
       if (stopOrders && stopOrders.length > 0) {
         const orderIds = stopOrders.map(so => so.order_id);
-        await supabase.from('orders').update({ status: 'DELIVERED' }).in('id', orderIds);
+        await supabase.from('orders').update({ 
+          status: 'CLOSED', // Vận chuyển xong là đóng đơn luôn tự động
+          delivered_at: new Date().toISOString(),
+          closed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }).in('id', orderIds);
       }
     }
 
@@ -1015,14 +1079,24 @@ const getDispatcherDashboardStats = async (req, res) => {
     // 1. Thống kê số lượng đơn hàng theo trạng thái
     const { data: orders } = await supabase
       .from('orders')
-      .select('id, order_code, status, agreed_price, customer_id, actual_weight_kg, chargeable_weight_kg, created_at, source');
+      .select('id, order_code, status, agreed_price, customer_id, actual_weight_kg, chargeable_weight_kg, created_at, source, cancel_reason, cancel_fee, cancelled_at');
 
     const orderList = orders || [];
+    const isCancelled = (o) => o.status === 'CANCELLED' || !!o.cancel_reason || !!o.cancelled_at;
+    const nonCancelledOrders = orderList.filter(o => !isCancelled(o));
+
     const totalOrders = orderList.length;
-    const totalRevenue = orderList.reduce((sum, o) => sum + (Number(o.agreed_price) || 0), 0);
-    const avgRevenue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-    const totalWeight = orderList.reduce((sum, o) => sum + (Number(o.chargeable_weight_kg) || Number(o.actual_weight_kg) || 0), 0);
-    const uniqueCustomers = new Set(orderList.map(o => o.customer_id).filter(Boolean)).size;
+    // Không tính giá cước của đơn hủy vào doanh thu (chỉ tính phí phạt hủy nếu có)
+    const totalRevenue = orderList.reduce((sum, o) => {
+      if (isCancelled(o)) {
+        return sum + (Number(o.cancel_fee) || 0);
+      }
+      return sum + (Number(o.agreed_price) || 0);
+    }, 0);
+
+    const avgRevenue = nonCancelledOrders.length > 0 ? Math.round(totalRevenue / nonCancelledOrders.length) : 0;
+    const totalWeight = nonCancelledOrders.reduce((sum, o) => sum + (Number(o.chargeable_weight_kg) || Number(o.actual_weight_kg) || 0), 0);
+    const uniqueCustomers = new Set(nonCancelledOrders.map(o => o.customer_id).filter(Boolean)).size;
 
     const statusCounts = {
       DRAFT: orderList.filter(o => o.status === 'WAITING_FOR_DOCUMENTS' && o.agreed_price === 0).length,
@@ -1030,8 +1104,8 @@ const getDispatcherDashboardStats = async (req, res) => {
       READY_FOR_PLANNING: orderList.filter(o => o.status === 'READY_FOR_PLANNING').length,
       ASSIGNED: orderList.filter(o => o.status === 'ASSIGNED' || o.status === 'PLANNED').length,
       IN_TRANSIT: orderList.filter(o => o.status === 'IN_TRANSIT' || o.status === 'PICKED_UP').length,
-      DELIVERED: orderList.filter(o => o.status === 'DELIVERED').length,
-      CANCELLED: orderList.filter(o => o.status === 'CANCELLED').length
+      DELIVERED: orderList.filter(o => o.status === 'DELIVERED' || (o.status === 'CLOSED' && !o.cancel_reason)).length,
+      CANCELLED: orderList.filter(o => o.status === 'CANCELLED' || (o.status === 'CLOSED' && !!o.cancel_reason)).length
     };
 
     // 2. Thống kê phương tiện
@@ -1054,15 +1128,19 @@ const getDispatcherDashboardStats = async (req, res) => {
     const incidentList = incidents || [];
     const pendingIncidentsCount = incidentList.filter(i => i.status === 'REPORTED').length;
 
-    // 5. Thống kê doanh thu theo 12 tháng động từ dữ liệu đơn hàng thật
+    // 5. Thống kê doanh thu theo 12 tháng động từ dữ liệu đơn hàng thật (không tính đơn hủy)
     const monthlyRevenue = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     const monthlyOrders = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     orderList.forEach(o => {
       if (o.created_at) {
         const d = new Date(o.created_at);
         const m = d.getMonth(); // 0 to 11
-        monthlyOrders[m] += 1;
-        monthlyRevenue[m] += Math.round((Number(o.agreed_price) || 0) / 1000000);
+        if (!isCancelled(o)) {
+          monthlyOrders[m] += 1;
+          monthlyRevenue[m] += Math.round((Number(o.agreed_price) || 0) / 1000000);
+        } else if (Number(o.cancel_fee) > 0) {
+          monthlyRevenue[m] += Math.round((Number(o.cancel_fee) || 0) / 1000000);
+        }
       }
     });
 

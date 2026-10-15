@@ -83,11 +83,18 @@ const DispatcherDashboard = () => {
       return dbStats;
     }
 
+    const isCancelledOrder = (o) => o.status === 'CANCELLED' || !!o.cancel_reason || !!o.cancellation_reason;
+    const nonCancelledOrders = data.filter(o => !isCancelledOrder(o));
     const totalOrders = data.length;
-    const totalRevenue = data.reduce((sum, o) => sum + (Number(o.agreed_price) || 0), 0);
-    const avgRevenue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-    const totalWeight = data.reduce((sum, o) => sum + (Number(o.weight) || Number(o.chargeable) || 0), 0);
-    const uniqueCustomers = new Set(data.map(o => o.customer).filter(Boolean)).size;
+    const totalRevenue = data.reduce((sum, o) => {
+      if (isCancelledOrder(o)) {
+        return sum + (Number(o.cancel_fee) || 0);
+      }
+      return sum + (Number(o.agreed_price) || 0);
+    }, 0);
+    const avgRevenue = nonCancelledOrders.length > 0 ? Math.round(totalRevenue / nonCancelledOrders.length) : 0;
+    const totalWeight = nonCancelledOrders.reduce((sum, o) => sum + (Number(o.weight) || Number(o.chargeable) || 0), 0);
+    const uniqueCustomers = new Set(nonCancelledOrders.map(o => o.customer).filter(Boolean)).size;
     const deliveredCount = data.filter(o => o.status === 'DELIVERED').length;
     const inTransitCount = data.filter(o => o.status === 'IN_TRANSIT' || o.status === 'ASSIGNED').length;
     const deliveredRate = totalOrders > 0 ? ((deliveredCount / totalOrders) * 100).toFixed(1) : '100.0';
@@ -198,7 +205,7 @@ const DispatcherDashboard = () => {
   const recentActivities = useMemo(() => {
     if (data.length === 0) {
       return [
-        { id: 1, title: 'Đã kết nối cơ sở dữ liệu Supabase thành công', time: 'Vừa xong', color: 'text-indigo-500' }
+        { id: 1, title: 'Hệ thống sẵn sàng tiếp nhận vận đơn', time: 'Vừa xong', color: 'text-indigo-500' }
       ];
     }
     return data.slice(0, 5).map((o, idx) => {
@@ -318,9 +325,6 @@ const DispatcherDashboard = () => {
               <Activity size={24} className="text-[#3b82f6]" />
               Trung tâm Giám sát Điều phối Vận tải
             </h1>
-            <p className="text-gray-500 text-xs mt-1">
-              Thống kê thời gian thực trực tiếp từ cơ sở dữ liệu Supabase PostgreSQL.
-            </p>
           </div>
           <Space>
             <Button

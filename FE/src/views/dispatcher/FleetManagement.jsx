@@ -287,9 +287,6 @@ export default function FleetManagement() {
               <Truck size={24} className="text-[#7367f0]" />
               Tình trạng Đội xe & Tài xế
             </h1>
-            <p className="text-gray-500 text-xs mt-1">
-              Dữ liệu phương tiện và tài xế kết nối trực tiếp cơ sở dữ liệu Supabase.
-            </p>
           </div>
           <Button 
             icon={<RefreshCw size={14} className={loading ? "animate-spin" : ""} />} 

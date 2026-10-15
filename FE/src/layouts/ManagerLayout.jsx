@@ -35,15 +35,25 @@ export default function ManagerLayout({ children }) {
     <div className="bg-background font-body-md text-on-surface antialiased min-h-screen">
       {/* Executive Sidebar */}
       <aside className="fixed left-0 top-0 h-full w-64 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50 flex flex-col">
-        {/* Logo Section */}
-        <div className="h-16 px-space-lg flex items-center gap-space-sm">
-          <Link href="/manager" className="flex items-center gap-space-sm">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-on-primary font-headline-sm font-bold shadow-sm">
-              <span className="material-symbols-outlined text-[20px] text-on-primary">local_shipping</span>
+        {/* Logo Section: Trái là logo, Phải là thiết kế tên dự án */}
+        <div className="h-16 px-space-md flex items-center">
+          <Link href="/manager" className="flex items-center gap-2.5 overflow-hidden">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
+              <img 
+                src="/logo-icon.png" 
+                alt="Logo" 
+                className="w-full h-full object-contain drop-shadow-sm" 
+              />
             </div>
-            <div className="flex flex-col">
-              <span className="font-headline-sm text-headline-sm tracking-tight text-primary font-bold">NEXLOG</span>
-              <span className="font-label-sm text-label-sm text-outline tracking-wider uppercase font-semibold">Logistics OS</span>
+            <div className="flex flex-col justify-center min-w-0">
+              <img 
+                src="/logo-text.png" 
+                alt="NEXLOG" 
+                className="h-6 w-auto object-contain object-left" 
+              />
+              <span className="text-[9px] text-outline font-bold tracking-wider uppercase leading-none mt-0.5">
+                LOGISTICS OS
+              </span>
             </div>
           </Link>
         </div>

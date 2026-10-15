@@ -31,13 +31,17 @@ const RouteMapPicker = ({
   // Tự động suy luận tọa độ hiệu lực nếu chưa có tọa độ nhưng đã có địa chỉ
   const effectivePickupCoords = useMemo(() => {
     if (pickupCoords?.lat && pickupCoords?.lng) return pickupCoords;
-    if (pickupAddress) return getCoordsFromAddress(pickupAddress, 'A');
+    if (pickupAddress && pickupAddress.trim().length >= 3) {
+      return getCoordsFromAddress(pickupAddress, 'A');
+    }
     return null;
   }, [pickupCoords, pickupAddress]);
 
   const effectiveDeliveryCoords = useMemo(() => {
     if (deliveryCoords?.lat && deliveryCoords?.lng) return deliveryCoords;
-    if (deliveryAddress) return getCoordsFromAddress(deliveryAddress, 'B');
+    if (deliveryAddress && deliveryAddress.trim().length >= 3) {
+      return getCoordsFromAddress(deliveryAddress, 'B');
+    }
     return null;
   }, [deliveryCoords, deliveryAddress]);
 

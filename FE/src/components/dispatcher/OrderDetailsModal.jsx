@@ -600,41 +600,48 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
                 <div>
                   <div className="text-xs font-bold text-gray-800">Giá cước thỏa thuận:</div>
                   <div className="text-[11px] text-gray-400">
-                    Cước phí chốt với khách sau khi tư vấn (Giá gợi ý hệ thống: <b className="text-indigo-600">{estimatedBaselineRate.toLocaleString()} đ</b>)
+                    {order.status === 'DRAFT' ? (
+                      <>Cước phí chốt với khách sau khi tư vấn (Giá gợi ý hệ thống: <b className="text-indigo-600">{estimatedBaselineRate.toLocaleString()} đ</b>)</>
+                    ) : (
+                      <>Giá cước cố định đã chốt với khách hàng và ghi nhận vào hợp đồng</>
+                    )}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <InputNumber 
-                  className="w-44 font-bold text-blue-700"
-                  value={currentAgreedPrice}
-                  onChange={val => setCurrentAgreedPrice(val || 0)}
-                  formatter={val => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={val => val.replace(/\$\s?|(,*)/g, '')}
-                  placeholder="Nhập giá cước..."
-                  min={0}
-                />
-                <span className="text-xs text-gray-500 font-medium">VNĐ</span>
                 {order.status === 'DRAFT' ? (
-                  <Button 
-                    type="primary" 
-                    size="middle" 
-                    loading={savingPrice}
-                    className="bg-indigo-600 hover:bg-indigo-700 font-semibold text-xs shadow-xs"
-                    onClick={handleConfirmPriceAndOrder}
-                  >
-                    Chốt giá &amp; Xác nhận đơn
-                  </Button>
+                  <>
+                    <InputNumber 
+                      className="w-44 font-bold text-blue-700"
+                      value={currentAgreedPrice}
+                      onChange={val => setCurrentAgreedPrice(val || 0)}
+                      formatter={val => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                      parser={val => val.replace(/\$\s?|(,*)/g, '')}
+                      placeholder="Nhập giá cước..."
+                      min={0}
+                    />
+                    <span className="text-xs text-gray-500 font-medium">VNĐ</span>
+                    <Button 
+                      type="primary" 
+                      size="middle" 
+                      loading={savingPrice}
+                      className="bg-indigo-600 hover:bg-indigo-700 font-semibold text-xs shadow-xs"
+                      onClick={handleConfirmPriceAndOrder}
+                    >
+                      Chốt giá &amp; Xác nhận đơn
+                    </Button>
+                  </>
                 ) : (
-                  <Button 
-                    type="primary" 
-                    size="middle" 
-                    loading={savingPrice}
-                    className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs"
-                    onClick={handleConfirmPriceAndOrder}
-                  >
-                    Cập nhật giá
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-blue-700 font-mono bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-200">
+                      {currentAgreedPrice > 0 ? `${currentAgreedPrice.toLocaleString()} VNĐ` : 'Chưa nhập'}
+                    </span>
+                    {(order.status === 'CANCELLED' || order.status === 'CLOSED') && (order.cancel_reason || order.cancellation_reason) ? (
+                      <Tag color="red" className="font-medium text-xs py-0.5 px-2">Đơn đã hủy</Tag>
+                    ) : (
+                      <Tag color="blue" className="font-medium text-xs py-0.5 px-2">Đã chốt giá</Tag>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1139,25 +1146,6 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
               }}
             >
               Chuyển sang Xếp chuyến &amp; Điều xe
-            </Button>
-          ),
-          ['DELIVERED', 'CANCELLED'].includes(order.status) && (
-            <Button 
-              key="closeOrder" 
-              type="primary" 
-              className="bg-slate-700 hover:bg-slate-800 font-semibold" 
-              onClick={async () => {
-                try {
-                  await orderApi.closeOrder(order.id || order.order_id);
-                } catch (err) {
-                  console.warn('closeOrder API note:', err);
-                }
-                onUpdateOrder?.({ ...order, status: 'CLOSED' });
-                message.success('Đã hoàn tất đóng đơn hàng!');
-                onCancel();
-              }}
-            >
-              Đóng đơn hàng
             </Button>
           ),
           // Chỉ cho phép hủy đơn nếu chưa lăn bánh (không hủy đơn IN_TRANSIT)

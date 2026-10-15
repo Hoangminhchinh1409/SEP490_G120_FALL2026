@@ -248,9 +248,6 @@ export default function LocationsManagement() {
             <MapPin size={22} className="text-[#7367f0]" />
             Quản lý Điểm giao nhận
           </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Danh mục kho bãi, tọa độ GPS được đồng bộ trực tiếp với Supabase Database.
-          </p>
         </div>
         <Space>
           <Button 
@@ -410,8 +407,15 @@ export default function LocationsManagement() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="geofence_radius_m" label={<span className="text-xs font-bold text-gray-700">Bán kính Geofence (mét)</span>} rules={[{ required: true, message: 'Nhập bán kính' }]}>
-                <InputNumber className="w-full text-xs font-mono" min={50} max={1000} step={50} placeholder="150" addonAfter="m" />
+              <Form.Item label={<span className="text-xs font-bold text-gray-700">Bán kính Geofence (mét)</span>}>
+                <Space.Compact className="w-full">
+                  <Form.Item name="geofence_radius_m" noStyle rules={[{ required: true, message: 'Nhập bán kính' }]}>
+                    <InputNumber className="w-full text-xs font-mono" min={50} max={1000} step={50} placeholder="150" />
+                  </Form.Item>
+                  <Button disabled className="!bg-gray-50 !text-gray-500 !border-[#d9d9d9] text-xs font-mono cursor-default pointer-events-none">
+                    m
+                  </Button>
+                </Space.Compact>
               </Form.Item>
             </Col>
           </Row>

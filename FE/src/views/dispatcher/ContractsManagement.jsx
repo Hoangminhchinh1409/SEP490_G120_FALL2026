@@ -370,18 +370,31 @@ export default function ContractsManagement() {
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="free_waiting_mins" label={<span className="text-xs font-bold text-gray-700">Thời gian chờ bốc dỡ miễn phí</span>} rules={[{ required: true }]}>
-                <InputNumber className="w-full text-xs" min={0} max={240} step={15} addonAfter="phút" />
+              <Form.Item label={<span className="text-xs font-bold text-gray-700">Thời gian chờ bốc dỡ miễn phí</span>}>
+                <Space.Compact className="w-full">
+                  <Form.Item name="free_waiting_mins" noStyle rules={[{ required: true, message: 'Nhập số phút' }]}>
+                    <InputNumber className="w-full text-xs" min={0} max={240} step={15} />
+                  </Form.Item>
+                  <Button disabled className="!bg-gray-50 !text-gray-500 !border-[#d9d9d9] text-xs cursor-default pointer-events-none">
+                    phút
+                  </Button>
+                </Space.Compact>
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="waiting_fee_per_hour" label={<span className="text-xs font-bold text-gray-700">Đơn giá phạt chờ quá giờ</span>} rules={[{ required: true }]}>
-                <InputNumber 
-                  className="w-full text-xs" 
-                  step={50000} 
-                  formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  addonAfter="VNĐ / giờ" 
-                />
+              <Form.Item label={<span className="text-xs font-bold text-gray-700">Đơn giá phạt chờ quá giờ</span>}>
+                <Space.Compact className="w-full">
+                  <Form.Item name="waiting_fee_per_hour" noStyle rules={[{ required: true, message: 'Nhập đơn giá' }]}>
+                    <InputNumber 
+                      className="w-full text-xs" 
+                      step={50000} 
+                      formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    />
+                  </Form.Item>
+                  <Button disabled className="!bg-gray-50 !text-gray-500 !border-[#d9d9d9] text-xs cursor-default pointer-events-none">
+                    VNĐ / giờ
+                  </Button>
+                </Space.Compact>
               </Form.Item>
             </Col>
           </Row>
@@ -392,13 +405,19 @@ export default function ContractsManagement() {
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="liability_cap_vnd" label={<span className="text-xs font-bold text-gray-700">Hạn mức bồi thường tối đa</span>} rules={[{ required: true }]}>
-                <InputNumber 
-                  className="w-full text-xs font-bold text-emerald-600" 
-                  step={50000000} 
-                  formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  addonAfter="VNĐ" 
-                />
+              <Form.Item label={<span className="text-xs font-bold text-gray-700">Hạn mức bồi thường tối đa</span>}>
+                <Space.Compact className="w-full">
+                  <Form.Item name="liability_cap_vnd" noStyle rules={[{ required: true, message: 'Nhập hạn mức bồi thường' }]}>
+                    <InputNumber 
+                      className="w-full text-xs font-bold text-emerald-600" 
+                      step={50000000} 
+                      formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    />
+                  </Form.Item>
+                  <Button disabled className="!bg-gray-50 !text-gray-500 !border-[#d9d9d9] text-xs cursor-default pointer-events-none">
+                    VNĐ
+                  </Button>
+                </Space.Compact>
               </Form.Item>
             </Col>
             <Col span={12}>

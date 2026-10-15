@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Modal, Form, Input, InputNumber, Switch, Select, Checkbox } from 'antd';
+import { Modal, Form, Input, InputNumber, Switch, Select, Checkbox, Tag } from 'antd';
 import { 
   FileText, 
   Calculator
@@ -109,7 +109,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         layout="vertical" 
         initialValues={{ 
           source: 'HOTLINE',
-          status: 'CONFIRMED',
+          status: 'READY_FOR_PLANNING',
           is_new_customer: false,
           pickup_same_as_customer: false,
           is_stackable: true, 
@@ -121,10 +121,15 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         }}
       >
         {/* Phân vùng 1: Thông tin Khách hàng */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider">
-          1. Thông tin khách hàng & Vận đơn
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+            1. Thông tin khách hàng &amp; Tiếp nhận
+          </div>
+          <Tag color="green" className="text-[11px] font-semibold m-0">
+            Đã chốt giá với khách (Sẵn sàng xếp xe)
+          </Tag>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
           <Form.Item label="Nguồn tiếp nhận" name="source" className="mb-2">
             <Select>
               <Option value="HOTLINE">Hotline / Cuộc gọi</Option>
@@ -132,31 +137,27 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
               <Option value="DIRECT">Trực tiếp tại văn phòng</Option>
             </Select>
           </Form.Item>
-          <Form.Item label="Trạng thái khởi tạo" name="status" className="mb-2">
-            <Select>
-              <Option value="CONFIRMED">Cần xác nhận (Đã chốt giá)</Option>
-              <Option value="DRAFT">Lưu nháp</Option>
-            </Select>
-          </Form.Item>
-          
-          {/* Mã vận đơn HAWB: Không bắt buộc */}
-          <Form.Item label="Mã vận đơn HAWB" name="hawb_code" className="mb-2">
-            <Input placeholder="Tự sinh nếu để trống" className="font-mono text-indigo-700 font-semibold" />
-          </Form.Item>
           
           <Form.Item label="Mã số thuế" name="customer_tax_code" className="mb-2">
             <Input placeholder="Mã số thuế" />
           </Form.Item>
 
-          <Form.Item label="Khách hàng" name="customer_name" rules={[{ required: true, message: 'Nhập tên khách hàng' }]} className="lg:col-span-2 mb-2">
+          <Form.Item label="Khách hàng" name="customer_name" rules={[{ required: true, message: 'Nhập tên khách hàng' }]} className="mb-2">
             <Input placeholder="Tên công ty hoặc doanh nghiệp" />
           </Form.Item>
+
           <Form.Item label="Số điện thoại" name="customer_phone" rules={[{ required: true, message: 'Nhập SĐT' }]} className="mb-2">
             <Input placeholder="Số điện thoại liên hệ" />
           </Form.Item>
+
           <Form.Item label="Email" name="customer_email" rules={[{ required: true, type: 'email', message: 'Email hợp lệ' }]} className="mb-2">
             <Input placeholder="Email liên hệ" />
           </Form.Item>
+
+          <div className="p-2.5 bg-indigo-50/60 rounded-lg border border-indigo-100 flex flex-col justify-center text-xs mb-2">
+            <span className="text-[11px] text-indigo-700 font-bold">Mã vận đơn (NEX - XXXXXX):</span>
+            <span className="text-[10px] text-gray-500 mt-0.5">Sinh tự động sau khi xếp xe nội bộ, hoặc điền mã khi giao vendor ngoài</span>
+          </div>
 
           {/* Địa chỉ khách hàng */}
           <Form.Item label="Địa chỉ" name="customer_address" className="lg:col-span-4 mb-2">
@@ -214,10 +215,18 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
                 markerColor="#2563eb"
                 placeholder="Gõ tìm địa chỉ lấy hàng (VD: Thái Hà, Nội Bài...)..."
                 value={form.getFieldValue('pickup_address')}
-                onChange={(val) => form.setFieldsValue({ pickup_address: val })}
+                onChange={(val) => {
+                  form.setFieldsValue({ pickup_address: val });
+                  if (!val || val.trim().length === 0) setPickupCoords(null);
+                }}
                 onSelectLocation={(loc) => {
-                  setPickupCoords({ lat: loc.lat, lng: loc.lng });
-                  form.setFieldsValue({ pickup_address: loc.address });
+                  if (loc && loc.lat && loc.lng) {
+                    setPickupCoords({ lat: loc.lat, lng: loc.lng });
+                    form.setFieldsValue({ pickup_address: loc.address });
+                  } else {
+                    setPickupCoords(null);
+                    if (loc?.address) form.setFieldsValue({ pickup_address: loc.address });
+                  }
                 }}
                 required
               />
@@ -231,10 +240,18 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
                 markerColor="#10b981"
                 placeholder="Gõ tìm địa chỉ giao hàng (VD: Láng Hạ, Tiên Sơn...)..."
                 value={form.getFieldValue('delivery_address')}
-                onChange={(val) => form.setFieldsValue({ delivery_address: val })}
+                onChange={(val) => {
+                  form.setFieldsValue({ delivery_address: val });
+                  if (!val || val.trim().length === 0) setDeliveryCoords(null);
+                }}
                 onSelectLocation={(loc) => {
-                  setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
-                  form.setFieldsValue({ delivery_address: loc.address });
+                  if (loc && loc.lat && loc.lng) {
+                    setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
+                    form.setFieldsValue({ delivery_address: loc.address });
+                  } else {
+                    setDeliveryCoords(null);
+                    if (loc?.address) form.setFieldsValue({ delivery_address: loc.address });
+                  }
                 }}
                 required
               />

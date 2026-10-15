@@ -150,7 +150,7 @@ export default function TripPlanningAndMonitoring() {
     }
     setPendingOrders(prev => prev.filter(o => (o.id || o.order_id) !== (cancelData.id || cancelData.order_id)));
     setSelectedOrderForCancel(null);
-    message.success(`Đã hủy đơn ${cancelData.order_id} thành công!`);
+    message.success(`Đã hủy và tự động đóng đơn ${cancelData.order_id || cancelData.id} thành công!`);
     fetchData();
   };
 
@@ -182,7 +182,7 @@ export default function TripPlanningAndMonitoring() {
     try {
       setLoading(true);
       await dispatcherApi.updateTripStatus(trip.raw_id || trip.id, 'COMPLETED');
-      message.success(`Chuyến xe ${trip.id} đã hoàn tất giao hàng! Phương tiện đã được trả về trạng thái Sẵn sàng.`);
+      message.success(`Chuyến xe ${trip.id} đã hoàn tất giao hàng! Phương tiện được giải phóng và đơn hàng tự động đóng.`);
       await fetchData();
     } catch (err) {
       console.error(err);

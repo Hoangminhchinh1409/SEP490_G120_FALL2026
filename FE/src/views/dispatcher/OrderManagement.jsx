@@ -26,8 +26,8 @@ const statusLabels = {
   'READY_FOR_PLANNING': 'Sẵn sàng xếp xe',
   'ASSIGNED': 'Đã gán xe',
   'IN_TRANSIT': 'Đang vận chuyển',
-  'DELIVERED': 'Đã giao hàng',
-  'CANCELLED': 'Đã hủy',
+  'DELIVERED': 'Đã giao (Đóng)',
+  'CANCELLED': 'Đã hủy (Đóng)',
   'CLOSED': 'Đã đóng'
 };
 
@@ -119,10 +119,11 @@ const OrderManagement = () => {
       console.warn('cancelOrder API note:', err);
     }
     setOrders(prev => prev.map(o => (o.id === cancelData.id || o.order_id === cancelData.order_id)
-      ? { ...o, status: 'CANCELLED', cancellation_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
+      ? { ...o, status: 'CLOSED', cancel_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
       : o
     ));
     setSelectedOrderForCancel(null);
+    message.success(`Đơn hàng ${cancelData.order_id || cancelData.id} đã được hủy và tự động đóng!`);
     fetchOrders();
   };
 
@@ -132,7 +133,19 @@ const OrderManagement = () => {
       item.order_id.toLowerCase().includes(filterText.toLowerCase()) ||
       item.customer.toLowerCase().includes(filterText.toLowerCase()) ||
       (item.hawb_code && item.hawb_code.toLowerCase().includes(filterText.toLowerCase()));
-    const matchStatus = filterStatus === 'all' || item.status === filterStatus;
+    
+    let matchStatus = true;
+    if (filterStatus !== 'all') {
+      if (filterStatus === 'CLOSED') {
+        matchStatus = item.status === 'CLOSED' || item.status === 'DELIVERED' || item.status === 'CANCELLED';
+      } else if (filterStatus === 'DELIVERED') {
+        matchStatus = (item.status === 'DELIVERED' || item.status === 'CLOSED') && !item.cancel_reason && !item.cancellation_reason;
+      } else if (filterStatus === 'CANCELLED') {
+        matchStatus = item.status === 'CANCELLED' || (item.status === 'CLOSED' && (item.cancel_reason || item.cancellation_reason));
+      } else {
+        matchStatus = item.status === filterStatus;
+      }
+    }
     return matchSearch && matchStatus;
   });
 
@@ -155,7 +168,7 @@ const OrderManagement = () => {
             </span>
             {record.source === 'HOMEPAGE' ? (
               <Tag color="orange" className="text-[10px] px-1.5 py-0 rounded font-semibold border-amber-300 bg-amber-50 text-amber-700 inline-flex items-center gap-1">
-                <Globe size={10} /> Web - Chờ tư vấn
+                <Globe size={10} /> Đơn Web
               </Tag>
             ) : (
               <Tag color="processing" className="text-[10px] px-1.5 py-0 rounded font-semibold border-blue-200 bg-blue-50 text-blue-700 inline-flex items-center gap-1">
@@ -221,11 +234,27 @@ const OrderManagement = () => {
       dataIndex: 'status', 
       key: 'status', 
       width: '10%',
-      render: (status) => (
-        <Tag color={statusColors[status] || 'default'} className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
-          {statusLabels[status] || status}
-        </Tag>
-      )
+      render: (status, record) => {
+        if (status === 'CLOSED' || status === 'CANCELLED' || status === 'DELIVERED') {
+          if (record.cancel_reason || record.cancellation_reason || status === 'CANCELLED') {
+            return (
+              <Tag color="red" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                Đã hủy (Đã đóng)
+              </Tag>
+            );
+          }
+          return (
+            <Tag color="green" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+              Đã giao (Đã đóng)
+            </Tag>
+          );
+        }
+        return (
+          <Tag color={statusColors[status] || 'default'} className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+            {statusLabels[status] || status}
+          </Tag>
+        );
+      }
     },
     { 
       title: 'Thao tác', 
@@ -308,8 +337,8 @@ const OrderManagement = () => {
                 />
               </Tooltip>
             </>
-          ) : record.status === 'CANCELLED' ? (
-            <>
+          ) : (record.status === 'CANCELLED' || record.status === 'DELIVERED' || record.status === 'CLOSED') ? (
+            <Tooltip title="Xem chi tiết hồ sơ">
               <Button 
                 size="small" 
                 icon={<Eye size={14} />} 
@@ -318,56 +347,7 @@ const OrderManagement = () => {
               >
                 Hồ sơ
               </Button>
-              <Tooltip title="Đóng đơn">
-                <Button 
-                  size="small" 
-                  type="primary"
-                  className="bg-slate-700 hover:bg-slate-800 text-xs font-semibold"
-                  onClick={async () => {
-                    try {
-                      await orderApi.closeOrder(record.id || record.order_id);
-                    } catch (e) {
-                      console.warn(e);
-                    }
-                    setOrders(prev => prev.map(o => (o.id === record.id || o.order_id === record.order_id) ? { ...o, status: 'CLOSED' } : o));
-                    message.success(`Đã đóng đơn hàng ${record.order_id}!`);
-                  }}
-                >
-                  Đóng đơn
-                </Button>
-              </Tooltip>
-            </>
-          ) : record.status === 'DELIVERED' ? (
-            <>
-              <Tooltip title="Hồ sơ">
-                <Button 
-                  size="small" 
-                  icon={<Eye size={14} />} 
-                  className="text-gray-600 hover:text-[#7367f0]"
-                  onClick={() => setSelectedOrderForDetails(record)}
-                >
-                  Hồ sơ
-                </Button>
-              </Tooltip>
-              <Tooltip title="Đóng đơn">
-                <Button 
-                  size="small" 
-                  type="primary"
-                  className="bg-slate-700 hover:bg-slate-800 text-xs font-semibold"
-                  onClick={async () => {
-                    try {
-                      await orderApi.closeOrder(record.id || record.order_id);
-                    } catch (e) {
-                      console.warn(e);
-                    }
-                    setOrders(prev => prev.map(o => (o.id === record.id || o.order_id === record.order_id) ? { ...o, status: 'CLOSED' } : o));
-                    message.success(`Đã đóng đơn hàng ${record.order_id}!`);
-                  }}
-                >
-                  Đóng đơn
-                </Button>
-              </Tooltip>
-            </>
+            </Tooltip>
           ) : record.status === 'ASSIGNED' ? (
             <>
               <Tooltip title="Hồ sơ">
@@ -468,7 +448,8 @@ const OrderManagement = () => {
                   { value: 'READY_FOR_PLANNING', label: 'Sẵn sàng xếp xe' },
                   { value: 'ASSIGNED', label: 'Đã gán xe' },
                   { value: 'IN_TRANSIT', label: 'Đang vận chuyển' },
-                  { value: 'DELIVERED', label: 'Đã giao hàng' },
+                  { value: 'DELIVERED', label: 'Đã giao (Đã đóng)' },
+                  { value: 'CANCELLED', label: 'Đã hủy (Đã đóng)' }
                 ]} 
               />
             </Col>

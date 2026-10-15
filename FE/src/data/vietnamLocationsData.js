@@ -624,8 +624,8 @@ export const searchVietnamLocations = (query = '') => {
 
 // Hàm tra cứu tọa độ tốt nhất từ chuỗi địa chỉ bất kỳ
 export const lookupLocationCoords = (addressStr = '', markerType = 'A') => {
-  if (!addressStr || typeof addressStr !== 'string') {
-    return markerType === 'A' ? { lat: 21.0285, lng: 105.8542 } : { lat: 20.8651, lng: 106.6838 };
+  if (!addressStr || typeof addressStr !== 'string' || addressStr.trim().length < 2) {
+    return null;
   }
 
   const clean = removeVietnameseTones(addressStr);
@@ -638,8 +638,8 @@ export const lookupLocationCoords = (addressStr = '', markerType = 'A') => {
 
   // 2. Tra cứu từ khóa đặc biệt phổ biến trong logistics
   if (clean.includes('ha giang')) return { lat: 22.8233, lng: 104.9839 };
-  if (clean.includes('cang') || clean.includes('bien') || clean.includes('port')) {
-    return { lat: 20.8651, lng: 106.6838 }; // Cảng biển Hải Phòng
+  if (clean.includes('cang hai phong') || clean.includes('cang bien hai phong') || clean.includes('dinh vu')) {
+    return { lat: 20.8651, lng: 106.6838 };
   }
   if (clean.includes('lao cai') || clean.includes('sa pa')) return { lat: 22.4856, lng: 103.9707 };
   if (clean.includes('cao bang')) return { lat: 22.6667, lng: 106.2500 };
@@ -654,8 +654,6 @@ export const lookupLocationCoords = (addressStr = '', markerType = 'A') => {
   if (clean.includes('sai gon') || clean.includes('ho chi minh') || clean.includes('hcm')) return { lat: 10.8231, lng: 106.6297 };
   if (clean.includes('ha noi')) return { lat: 21.0285, lng: 105.8542 };
 
-  // Fallback phân tách giữa A và B nếu hoàn toàn không có thông tin
-  return markerType === 'A' 
-    ? { lat: 21.0285, lng: 105.8542 } 
-    : { lat: 20.8651, lng: 106.6838 };
+  // Tuyệt đối không tự động gán tọa độ Hải Phòng khi người dùng chưa chọn địa điểm hợp lệ
+  return null;
 };

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { MapPin, Search, Loader2, X, Navigation, Check } from 'lucide-react';
 import { searchVietnamLocations, lookupLocationCoords, removeVietnameseTones } from '../../data/vietnamLocationsData';
 
@@ -16,7 +16,7 @@ const LocationSearchInput = ({
   const [prevValue, setPrevValue] = useState(value);
   const [inputValue, setInputValue] = useState(value);
   const [isOpen, setIsOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState([]);
+  const [apiSuggestions, setApiSuggestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef(null);
 
@@ -36,21 +36,20 @@ const LocationSearchInput = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Tìm kiếm địa điểm: Ưu tiên dữ liệu chuẩn 63 tỉnh thành, cảng biển, KCN Việt Nam
+  // 1. Tìm kiếm tức thì trong danh mục địa điểm Việt Nam (offline, 0ms, không cascading render)
+  const localMatches = useMemo(() => {
+    const query = inputValue?.trim();
+    if (!query || query.length < 1) return [];
+    return searchVietnamLocations(query);
+  }, [inputValue]);
+
+  // 2. Tra cứu thêm qua API trực tuyến nếu cần bổ sung kết quả chi tiết
   useEffect(() => {
     const query = inputValue?.trim();
-    if (!query || query.length < 1) {
-      const clearTimer = setTimeout(() => {
-        setSuggestions([]);
-      }, 0);
-      return () => clearTimeout(clearTimer);
+    if (!query || query.length < 2) {
+      return;
     }
 
-    // 1. Tìm kiếm tức thì trong cơ sở dữ liệu quốc gia (offline, zero delay, chính xác 100%)
-    const localMatches = searchVietnamLocations(query);
-    setSuggestions(localMatches);
-
-    // 2. Tra cứu thêm qua API nếu cần bổ sung kết quả chi tiết
     let isCancelled = false;
     const controller = new AbortController();
 
@@ -87,29 +86,17 @@ const LocationSearchInput = ({
               };
             });
 
-            // Kết hợp kết quả cục bộ và kết quả API
-            setSuggestions(prev => {
-              const seen = new Set(prev.map(p => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`));
-              const merged = [...prev];
-              for (const item of apiItems) {
-                const key = `${item.lat.toFixed(3)},${item.lng.toFixed(3)}`;
-                if (!seen.has(key)) {
-                  seen.add(key);
-                  merged.push(item);
-                }
-              }
-              return merged.slice(0, 8);
-            });
+            setApiSuggestions(apiItems);
           }
         }
       } catch {
-        // Fallback tự nhiên trên kết quả cục bộ
+        // Fallback an toàn trên danh mục nội bộ
       } finally {
         if (!isCancelled) {
           setIsLoading(false);
         }
       }
-    }, 200);
+    }, 250);
 
     return () => {
       isCancelled = true;
@@ -118,9 +105,37 @@ const LocationSearchInput = ({
     };
   }, [inputValue]);
 
+  // Kết hợp kết quả gợi ý chuẩn xác nhất
+  const suggestions = useMemo(() => {
+    if (!inputValue?.trim()) return [];
+    const seen = new Set();
+    const merged = [];
+
+    for (const item of localMatches) {
+      const key = `${item.lat?.toFixed(3)},${item.lng?.toFixed(3)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(item);
+      }
+    }
+
+    for (const item of apiSuggestions) {
+      const key = `${item.lat?.toFixed(3)},${item.lng?.toFixed(3)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(item);
+      }
+    }
+
+    return merged.slice(0, 8);
+  }, [inputValue, localMatches, apiSuggestions]);
+
   const handleInputChange = (e) => {
     const val = e.target.value;
     setInputValue(val);
+    if (!val.trim()) {
+      setApiSuggestions([]);
+    }
     if (onChange) onChange(val);
     setIsOpen(true);
   };
@@ -150,48 +165,26 @@ const LocationSearchInput = ({
       onSelectLocation({
         address: customText,
         mainName: customText,
-        lat: coords.lat,
-        lng: coords.lng
+        lat: coords?.lat || null,
+        lng: coords?.lng || null
       });
     }
   };
 
   const handleBlur = () => {
-    const text = inputValue?.trim();
-    if (!text) return;
-    
-    // Nếu có danh sách gợi ý và chưa được chọn, kiểm tra xem có gợi ý nào khớp tốt
-    const localMatches = searchVietnamLocations(text);
-    if (localMatches.length > 0) {
-      const top = localMatches[0];
-      const fullAddress = top.sub ? `${top.main}, ${top.sub}` : top.main;
-      if (onSelectLocation) {
-        onSelectLocation({
-          address: fullAddress,
-          mainName: top.main,
-          lat: top.lat,
-          lng: top.lng
-        });
-      }
-      return;
-    }
-
-    // Tra cứu chính xác tọa độ qua lookupLocationCoords
-    const coords = lookupLocationCoords(text, markerLetter);
-    if (onSelectLocation) {
-      onSelectLocation({
-        address: text,
-        mainName: text,
-        lat: coords.lat,
-        lng: coords.lng
-      });
-    }
+    // Đóng dropdown sau khi xử lý click/mousedown, tuyệt đối không tự ý đè kết quả gợi ý thứ nhất
+    setTimeout(() => {
+      setIsOpen(false);
+    }, 200);
   };
 
   const handleClear = () => {
     setInputValue('');
+    setApiSuggestions([]);
     if (onChange) onChange('');
-    setSuggestions([]);
+    if (onSelectLocation) {
+      onSelectLocation(null);
+    }
   };
 
   // Làm nổi bật từ khóa trong kết quả gợi ý
@@ -291,7 +284,10 @@ const LocationSearchInput = ({
             {suggestions.map((item, index) => (
               <div
                 key={index}
-                onClick={() => handleSelect(item)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleSelect(item);
+                }}
                 className="px-3.5 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-indigo-50/70 transition-colors group"
               >
                 <div className="mt-0.5 text-gray-400 group-hover:text-indigo-600 transition-colors shrink-0">
@@ -314,7 +310,10 @@ const LocationSearchInput = ({
             {/* Mục cho phép chọn trực tiếp địa chỉ tự do */}
             {inputValue?.trim().length > 0 && (
               <div
-                onClick={handleSelectCustomAddress}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleSelectCustomAddress();
+                }}
                 className="px-3.5 py-2.5 flex items-center gap-2.5 cursor-pointer bg-slate-50/80 hover:bg-indigo-50 transition-colors text-indigo-700"
               >
                 <Check size={14} className="shrink-0 text-indigo-600" />

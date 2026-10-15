@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Drawer, Button, Input, Tag, Spin, message, Divider, Space, Card, Radio } from 'antd';
-import { Sparkles, Bot, CheckCircle2, ShieldCheck, FileText, Info, HelpCircle } from 'lucide-react';
+import { Drawer, Button, Input, Tag, Spin, message, Divider } from 'antd';
+import { Sparkles, Bot, CheckCircle2, ShieldCheck, FileText } from 'lucide-react';
 import { BASIC_CUSTOMS_DOCUMENTS, SPECIALIZED_CARGO_CATEGORIES } from '../../data/dispatcherPresets';
 
 export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommendations, currentCargo = '' }) {
@@ -96,7 +96,7 @@ export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommen
         </div>
       }
       placement="right"
-      width={560}
+      size={560}
       onClose={onClose}
       open={open}
     >

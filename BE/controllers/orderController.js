@@ -165,6 +165,11 @@ const getAllOrders = async (req, res) => {
         agreed_price: parseInt(order.agreed_price) || 0,
         extra_fees_surcharge: 0,
         extra_fees_collection: 0,
+        cancel_reason: order.cancel_reason || '',
+        cancellation_reason: order.cancel_reason || '',
+        cancel_fee: order.cancel_fee || 0,
+        cancelled_at: order.cancelled_at || null,
+        closed_at: order.closed_at || null,
         order_notes: order.notes?.[0]?.content || '',
         date: order.created_at ? new Date(order.created_at).toISOString().slice(0, 16).replace('T', ' ') : ''
       };
@@ -411,10 +416,11 @@ const createDirectOrder = async (req, res) => {
       contactPhone: cleanPhone
     });
 
-    // Mã vận đơn: nếu không nhập thì tự động sinh
-    const orderCode = hawb_code?.trim() || `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
+    // Điều phối viên tạo đơn luôn luôn là đã xác nhận chốt giá với khách (READY_FOR_PLANNING)
+    // Mã đơn ban đầu: ORD-XXXXXX. Mã vận đơn thống nhất hệ thống NEX-XXXXXX chỉ sinh ra sau khi đã xếp xe nội bộ
+    const orderCode = hawb_code?.trim() || `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
     const token = generateTrackingToken();
-    const dbStatus = (status === 'READY_FOR_PLANNING') ? 'READY_FOR_PLANNING' : 'WAITING_FOR_DOCUMENTS';
+    const dbStatus = 'READY_FOR_PLANNING';
 
     const isBulk = cargo_type === 'BULK';
     const l = isBulk ? 0 : (parseFloat(length_cm) || 120);
@@ -483,15 +489,37 @@ const createDirectOrder = async (req, res) => {
   }
 };
 
-// 4. CẬP NHẬT GIÁ CƯỚC THỎA THUẬN
+// 4. CẬP NHẬT GIÁ CƯỚC THỎA THUẬN (Chỉ cho phép khi chưa xác nhận đơn / DRAFT)
 const updateAgreedPrice = async (req, res) => {
   try {
     const { id } = req.params;
     const { agreed_price } = req.body;
 
     const numPrice = parseInt(agreed_price);
-    if (isNaN(numPrice) || numPrice < 0) {
-      return res.status(400).json({ message: 'Giá cước không hợp lệ' });
+    if (isNaN(numPrice) || numPrice <= 0) {
+      return res.status(400).json({ message: 'Giá cước không hợp lệ (phải > 0 VNĐ)' });
+    }
+
+    // Kiểm tra đơn hàng hiện tại
+    let findQuery = supabase.from('orders').select('id, status, agreed_price, cancel_reason');
+    if (/^\d+$/.test(id)) {
+      findQuery = findQuery.eq('id', parseInt(id));
+    } else {
+      findQuery = findQuery.eq('order_code', id);
+    }
+    const { data: currentOrderList } = await findQuery;
+    const currentOrder = currentOrderList?.[0];
+
+    if (!currentOrder) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    }
+
+    if (currentOrder.status === 'CLOSED' || currentOrder.status === 'CANCELLED' || currentOrder.cancel_reason) {
+      return res.status(400).json({ message: 'Đơn hàng đã bị hủy hoặc đã đóng, không thể sửa giá cước!' });
+    }
+
+    if (!['WAITING_FOR_DOCUMENTS'].includes(currentOrder.status)) {
+      return res.status(400).json({ message: 'Đơn hàng đã được xác nhận và chốt giá, không thể sửa lại giá cước!' });
     }
 
     // Match theo id số hoặc order_code
@@ -598,10 +626,11 @@ const cancelOrder = async (req, res) => {
     const { cancellation_reason, cancellation_fee } = req.body;
 
     const updates = {
-      status: 'CANCELLED',
+      status: 'CLOSED', // Hủy đơn là tự động đóng đơn luôn
       cancel_reason: cancellation_reason || null,
       cancel_fee: cancellation_fee ? parseInt(cancellation_fee) : 0,
       cancelled_at: new Date().toISOString(),
+      closed_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
@@ -619,10 +648,10 @@ const cancelOrder = async (req, res) => {
     }
 
     return res.json({
-      message: 'Đã hủy đơn hàng thành công!',
+      message: 'Đã hủy và tự động đóng đơn hàng thành công!',
       order: {
         ...(data?.[0] || { id }),
-        status: 'CANCELLED',
+        status: 'CLOSED',
         cancellation_reason,
         cancellation_fee
       }

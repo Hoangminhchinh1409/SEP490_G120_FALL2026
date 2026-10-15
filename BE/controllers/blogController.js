@@ -1,47 +1,60 @@
-const pool = require("../config/db");
+const supabase = require("../config/supabase");
 
 // Lấy danh sách bài viết đã xuất bản công khai
 const getPublicBlogs = async (req, res) => {
     try {
         const { category, search } = req.query;
-        let query = `
-            SELECT 
+        let query = supabase
+            .from('blogs')
+            .select(`
                 id, 
                 title, 
                 summary, 
                 content, 
                 category, 
                 author, 
-                author_initial AS "authorInitial", 
-                author_color AS "authorColor", 
+                author_initial, 
+                author_color, 
                 views, 
-                TO_CHAR(published_at, 'DD.MM.YYYY') AS "publishDate", 
+                published_at, 
                 status, 
-                status_label AS "statusLabel", 
-                image_url AS image
-            FROM blogs 
-            WHERE status = 'PUBLISHED'
-        `;
-        const params = [];
+                status_label, 
+                image_url
+            `)
+            .eq('status', 'PUBLISHED')
+            .order('id', { ascending: false });
 
         if (category && category !== 'ALL' && category !== 'Tất cả') {
-            params.push(category);
-            query += ` AND category = $${params.length}`;
+            query = query.eq('category', category);
         }
 
         if (search) {
-            params.push(`%${search.toLowerCase()}%`);
-            query += ` AND (LOWER(title) LIKE $${params.length} OR LOWER(summary) LIKE $${params.length} OR LOWER(author) LIKE $${params.length})`;
+            query = query.or(`title.ilike.%${search}%,summary.ilike.%${search}%,author.ilike.%${search}%`);
         }
 
-        query += ` ORDER BY id DESC`;
+        const { data: blogs, error } = await query;
+        if (error) throw error;
 
-        const result = await pool.query(query, params);
+        const formatted = (blogs || []).map(b => ({
+            id: b.id,
+            title: b.title,
+            summary: b.summary,
+            content: b.content,
+            category: b.category,
+            author: b.author,
+            authorInitial: b.author_initial,
+            authorColor: b.author_color,
+            views: b.views,
+            publishDate: b.published_at ? new Date(b.published_at).toLocaleDateString('vi-VN') : null,
+            status: b.status,
+            statusLabel: b.status_label,
+            image: b.image_url
+        }));
 
         return res.json({
             success: true,
-            total: result.rows.length,
-            blogs: result.rows
+            total: formatted.length,
+            blogs: formatted
         });
     } catch (error) {
         console.error("Get Public Blogs Error:", error);
@@ -54,57 +67,42 @@ const getPublicBlogById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Tăng view
-        await pool.query(`UPDATE blogs SET views = views + 1 WHERE id = $1`, [id]);
+        const { data: currentBlog, error: fetchErr } = await supabase
+            .from('blogs')
+            .select('*')
+            .eq('id', id)
+            .single();
 
-        const result = await pool.query(`
-            SELECT 
-                id, 
-                title, 
-                summary, 
-                content, 
-                category, 
-                author, 
-                author_initial AS "authorInitial", 
-                author_color AS "authorColor", 
-                views, 
-                TO_CHAR(published_at, 'DD.MM.YYYY') AS "publishDate", 
-                status, 
-                status_label AS "statusLabel", 
-                image_url AS image
-            FROM blogs 
-            WHERE id = $1
-        `, [id]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy bài viết" });
+        if (fetchErr || !currentBlog) {
+            return res.status(404).json({ success: false, message: "Bài viết không tồn tại" });
         }
 
-        // Lấy bài viết liên quan (cùng chuyên mục hoặc mới nhất khác id này)
-        const currentBlog = result.rows[0];
-        const relatedResult = await pool.query(`
-            SELECT 
-                id, 
-                title, 
-                summary, 
-                category, 
-                author, 
-                views, 
-                TO_CHAR(published_at, 'DD.MM.YYYY') AS "publishDate", 
-                image_url AS image
-            FROM blogs 
-            WHERE status = 'PUBLISHED' AND id != $1
-            ORDER BY (category = $2) DESC, id DESC
-            LIMIT 3
-        `, [id, currentBlog.category]);
+        // Tăng view
+        await supabase
+            .from('blogs')
+            .update({ views: (currentBlog.views || 0) + 1 })
+            .eq('id', id);
 
         return res.json({
             success: true,
-            blog: currentBlog,
-            related: relatedResult.rows
+            blog: {
+                id: currentBlog.id,
+                title: currentBlog.title,
+                summary: currentBlog.summary,
+                content: currentBlog.content,
+                category: currentBlog.category,
+                author: currentBlog.author,
+                authorInitial: currentBlog.author_initial,
+                authorColor: currentBlog.author_color,
+                views: (currentBlog.views || 0) + 1,
+                publishDate: currentBlog.published_at ? new Date(currentBlog.published_at).toLocaleDateString('vi-VN') : null,
+                status: currentBlog.status,
+                statusLabel: currentBlog.status_label,
+                image: currentBlog.image_url
+            }
         });
     } catch (error) {
-        console.error("Get Public Blog By ID Error:", error);
+        console.error("Get Public Blog Details Error:", error);
         return res.status(500).json({ success: false, message: "Internal server error", error: error.message });
     }
 };

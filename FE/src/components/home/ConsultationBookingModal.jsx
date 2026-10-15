@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import { Modal, Form, Input, InputNumber, Select, Button, message, Result } from 'antd';
 import { Send, MapPin, Package, User } from 'lucide-react';
-import RouteMapPicker from '../common/RouteMapPicker';
 import LocationSearchInput from '../common/LocationSearchInput';
 import { orderApi } from '../../api/orderApi';
+import { calculateRouteEstimate } from '../../data/dispatcherPresets';
 
 const { Option } = Select;
 
@@ -15,7 +15,14 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
   // Tọa độ định vị lộ trình
   const [pickupCoords, setPickupCoords] = useState(null);
   const [deliveryCoords, setDeliveryCoords] = useState(null);
-  const [routeInfo, setRouteInfo] = useState({ distanceKm: 0, durationMins: 0 });
+
+  // Ước tính cự ly ngầm khi có tọa độ (không cần hiển thị bản đồ cho khách)
+  const routeInfo = useMemo(() => {
+    if (pickupCoords?.lat && pickupCoords?.lng && deliveryCoords?.lat && deliveryCoords?.lng) {
+      return calculateRouteEstimate(pickupCoords.lat, pickupCoords.lng, deliveryCoords.lat, deliveryCoords.lng);
+    }
+    return { distanceKm: 0, durationMins: 0 };
+  }, [pickupCoords, deliveryCoords]);
 
   const values = Form.useWatch([], form);
 
@@ -83,9 +90,6 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
             title={<span className="text-xl font-bold text-gray-800">Gửi Yêu Cầu Vận Chuyển Thành Công!</span>}
             subTitle={
               <div className="text-sm text-gray-600 max-w-md mx-auto space-y-2 mt-2">
-                <p>
-                  Mã đơn nháp đã khởi tạo: <b className="text-indigo-600 font-mono text-base">{submittedOrder.order_id}</b>
-                </p>
                 <p className="bg-indigo-50 p-3 rounded-lg text-indigo-900 text-xs">
                   Yêu cầu của bạn đã được chuyển tới Điều phối viên NEXLOG. Chúng tôi sẽ liên hệ lại qua SĐT <b>{submittedOrder.customer_phone}</b> để tư vấn lộ trình và chốt giá cước trong ít phút!
                 </p>
@@ -107,7 +111,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               Đăng ký nhận tư vấn &amp; Báo giá vận chuyển
             </h3>
             <p className="text-xs text-gray-500 mt-1">
-              Điền thông tin lô hàng để hệ thống tính khoảng cách và điều phối viên liên hệ báo giá ưu đãi
+              Điền thông tin lô hàng để điều phối viên liên hệ tư vấn lộ trình và báo giá ưu đãi
             </p>
           </div>
 
@@ -137,11 +141,11 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               </Form.Item>
             </div>
 
-            {/* 2. Địa điểm giao nhận & Bản đồ */}
+            {/* 2. Địa điểm lấy hàng & Giao hàng */}
             <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
               <MapPin size={14} className="text-blue-600" /> 2. Địa điểm lấy hàng &amp; Giao hàng
             </div>
-            <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-100 mb-4 space-y-3">
+            <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-100 mb-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Điểm lấy hàng */}
                 <Form.Item name="pickup_address" rules={[{ required: true, message: 'Vui lòng nhập địa điểm lấy hàng' }]} className="mb-0">
@@ -176,18 +180,6 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                     required
                   />
                 </Form.Item>
-              </div>
-
-              {/* Bản đồ tương tác trực quan */}
-              <div className="bg-white p-2 rounded-lg border border-gray-200">
-                <RouteMapPicker
-                  pickupAddress={values?.pickup_address || form.getFieldValue('pickup_address')}
-                  deliveryAddress={values?.delivery_address || form.getFieldValue('delivery_address')}
-                  pickupCoords={pickupCoords}
-                  deliveryCoords={deliveryCoords}
-                  onRouteChange={setRouteInfo}
-                  height={190}
-                />
               </div>
             </div>
 
