@@ -144,6 +144,7 @@ const getVehicles = async (req, res) => {
             .select(`
                 id, 
                 user_id, 
+                license_number,
                 license_class, 
                 license_expiry, 
                 status,
@@ -157,8 +158,11 @@ const getVehicles = async (req, res) => {
             id: dp.id,
             user_id: dp.user_id,
             name: dp.user?.full_name || 'Tài xế',
+            full_name: dp.user?.full_name || 'Tài xế',
             phone: dp.user?.phone || '',
             license: dp.license_class,
+            license_number: dp.license_number,
+            license_class: dp.license_class,
             expiry: dp.license_expiry,
             status: dp.status
         }));
@@ -261,6 +265,7 @@ const getOrders = async (req, res) => {
         const formattedOrders = (ordersData || []).map(o => ({
             id: o.id,
             order_code: o.order_code,
+            code: o.order_code,
             status: o.status,
             responsible_dispatcher_id: o.responsible_dispatcher_id,
             agreed_price: o.agreed_price,

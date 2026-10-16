@@ -279,7 +279,7 @@ const BlogPage = () => {
     return (
         <div className="bg-surface font-body-md text-body-md text-on-surface antialiased min-h-screen flex flex-col justify-between">
             {/* Header chung */}
-            <header className="fixed top-0 w-full z-50 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(15,43,92,0.06)]">
+            <header className="fixed top-0 w-full z-50 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(15,43,92,0.06)] border-b border-surface-container/60">
                 <div className="h-20 w-full px-margin-lg flex items-center justify-between">
                     <div className="flex items-center gap-space-lg">
                         <Link className="flex items-center gap-space-xs group" data-path="trang-chu" href="/">
