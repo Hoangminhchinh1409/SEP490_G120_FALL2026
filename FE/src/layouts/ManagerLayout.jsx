@@ -12,6 +12,7 @@ export default function ManagerLayout({ children }) {
 
   const navItems = [
     { href: '/manager', icon: 'insights', name: 'Tổng quan Hiệu suất' },
+    { href: '/manager/accounts', icon: 'manage_accounts', name: 'Tài khoản nhân viên' },
     { href: '/manager/orders', icon: 'package_2', name: 'Quản lý Đơn hàng' },
     { href: '/manager/fleet', icon: 'local_shipping', name: 'Quản lý Đội xe' },
     { href: '/manager/vendors', icon: 'handshake', name: 'Quản lý Đối tác' },

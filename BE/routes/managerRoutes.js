@@ -23,6 +23,8 @@ const router = express.Router();
 router.use(requireAuth);
 router.use(requireRole(["MANAGER", "ADMINISTRATOR", "ADMIN"]));
 
+const staffAccountController = require("../controllers/staffAccountController");
+
 // API Routes
 router.get("/dashboard/stats", getDashboardStats);
 
@@ -43,5 +45,12 @@ router.post("/blogs", createBlog);
 router.put("/blogs/:id", updateBlog);
 router.patch("/blogs/:id/approve", approveBlog);
 router.delete("/blogs/:id", deleteBlog);
+
+// NHÓM 1: ACCOUNTS (Manage Dispatcher & Driver Accounts - Screen 26 & Screen 27)
+router.get("/accounts", staffAccountController.getStaffAccounts);
+router.get("/accounts/:id", staffAccountController.getStaffAccountDetail);
+router.post("/accounts", staffAccountController.createStaffAccount);
+router.put("/accounts/:id", staffAccountController.updateStaffAccount);
+router.patch("/accounts/:id/status", staffAccountController.updateAccountStatus);
 
 module.exports = router;

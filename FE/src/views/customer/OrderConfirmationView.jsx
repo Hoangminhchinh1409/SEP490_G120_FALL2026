@@ -259,7 +259,7 @@ export default function OrderConfirmationView() {
           {!agreedSuccess ? (
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100">
               <div className="text-xs text-slate-500 text-center sm:text-left">
-                Nhấn <b>"Đồng ý chốt đơn hàng &amp; Giá cước"</b> để chuyển sang bước tải lên chứng từ.
+                Nhấn <b>&quot;Đồng ý chốt đơn hàng &amp; Giá cước&quot;</b> để chuyển sang bước tải lên chứng từ.
               </div>
               <Button
                 type="primary"

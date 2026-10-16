@@ -11,7 +11,9 @@ const login = async (identifier, password) => {
     }
 
     if (user.status !== "ACTIVE") {
-        throw new Error("Account is not active");
+        const error = new Error("[MSG06] Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        error.code = "MSG06";
+        throw error;
     }
 
     const isPasswordValid = await bcrypt.compare(
