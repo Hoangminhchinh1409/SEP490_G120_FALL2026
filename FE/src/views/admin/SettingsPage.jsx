@@ -1,76 +1,154 @@
 "use client";
-import React, { useState } from 'react';
-import { Form, InputNumber, Button, Switch, Divider, message } from 'antd';
-import { Save } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Form, InputNumber, Input, Button, Switch, Divider, message, Card } from 'antd';
+import { Save, Settings, ShieldAlert, Database, Clock, Truck } from 'lucide-react';
+import { adminApi } from '../../api/adminApi';
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
   const [form] = Form.useForm();
 
-  const handleSave = () => {
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const settingsList = await adminApi.getSystemSettings();
+        const settingsMap = {};
+        if (Array.isArray(settingsList)) {
+          settingsList.forEach(s => {
+            let val = s.value;
+            // Parse numbers if applicable
+            if (/^\d+$/.test(val)) val = Number(val);
+            else if (val === 'true') val = true;
+            else if (val === 'false') val = false;
+            settingsMap[s.key] = val;
+          });
+        }
+
+        form.setFieldsValue({
+          company_name: settingsMap.company_name || 'NEXLOG Logistics',
+          order_code_prefix: settingsMap.order_code_prefix || 'ALS',
+          default_geofence_radius_meters: settingsMap.default_geofence_radius_meters || 200,
+          document_retention_days: settingsMap.document_retention_days || 730,
+          gps_track_retention_days: settingsMap.gps_track_retention_days || 90,
+          file_size_limit_mb: settingsMap.file_size_limit_mb || 10,
+          password_reset_expiry_minutes: settingsMap.password_reset_expiry_minutes || 30,
+          document_assistant_enabled: settingsMap.document_assistant_enabled ?? true
+        });
+      } catch (error) {
+        console.error('Lỗi khi tải cấu hình hệ thống:', error);
+        message.error('Không thể tải cấu hình hệ thống');
+      } finally {
+        setFetching(false);
+      }
+    };
+
+    fetchSettings();
+  }, [form]);
+
+  const handleSave = async (values) => {
     setLoading(true);
-    setTimeout(() => {
+    try {
+      // Lưu từng cấu hình
+      for (const [key, val] of Object.entries(values)) {
+        await adminApi.updateSystemSetting({
+          key,
+          value: String(val)
+        });
+      }
+      message.success('Đã lưu toàn bộ cấu hình hệ thống thành công!');
+    } catch (error) {
+      console.error('Lỗi khi lưu cấu hình:', error);
+      message.error(error.message || 'Lưu cấu hình thất bại');
+    } finally {
       setLoading(false);
-      message.success('Đã lưu cấu hình thành công!');
-    }, 1000);
+    }
   };
 
   return (
-    <div className="p-6 max-w-4xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Cấu hình Tham số Hệ thống</h1>
-        <p className="text-gray-500">Thay đổi các tham số vận hành động mà không cần khởi động lại hệ thống.</p>
+    <div className="p-6 max-w-4xl space-y-6">
+      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+            <Settings size={22} />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Cấu hình Tham số Hệ thống (System Settings)</h1>
+        </div>
+        <p className="text-slate-500 text-sm mt-1.5">
+          Điều chỉnh các tham số vận hành, thời gian lưu trữ dữ liệu và bảo mật thời gian thực theo đặc tả SRS (UC-36).
+        </p>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm p-6">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
         <Form 
           form={form} 
           layout="horizontal" 
           labelCol={{ span: 10 }} 
           wrapperCol={{ span: 14 }}
-          initialValues={{
-            file_retention_days: 60,
-            waiting_limit_minutes: 30,
-            min_rest_minutes: 120,
-            max_file_size_mb: 10,
-            assign_window_hours: 24,
-            daily_operating_hours: 14,
-            maintenance_mode: false
-          }}
+          disabled={fetching}
           onFinish={handleSave}
+          className="space-y-4"
         >
-          <h3 className="font-semibold text-lg text-[#0056a0] mb-4">Lưu trữ & Dữ liệu</h3>
-          <Form.Item name="file_retention_days" label="Thời hạn tự động xóa tệp chứng từ/POD (ngày)" extra="Quy định 60-90 ngày theo Nghị định 13/2023/NĐ-CP">
-            <InputNumber min={30} max={365} className="w-32" />
+          {/* Thông tin chung */}
+          <div className="flex items-center gap-2 text-blue-600 font-bold text-base mb-4 border-b border-slate-100 pb-2">
+            <Settings size={18} /> Cài đặt Doanh nghiệp & Vận hành chung
+          </div>
+
+          <Form.Item name="company_name" label="Tên doanh nghiệp vận hành">
+            <Input className="h-10 rounded-lg max-w-md" />
           </Form.Item>
-          <Form.Item name="max_file_size_mb" label="Dung lượng tệp tải lên tối đa (MB)">
-            <InputNumber min={1} max={50} className="w-32" />
+
+          <Form.Item name="order_code_prefix" label="Tiền tố mã đơn hàng (Order Code Prefix)" extra="Mặc định là ALS (ví dụ: ALS260930-0001)">
+            <Input className="h-10 rounded-lg w-40 font-mono font-bold" />
+          </Form.Item>
+
+          <Form.Item name="default_geofence_radius_meters" label="Bán kính hàng rào địa lý kho (mét)" extra="Khoảng cách cho phép để tài xế bấm xác nhận Đến kho (BR-36)">
+            <InputNumber min={50} max={2000} className="w-36 h-10 rounded-lg" />
           </Form.Item>
 
           <Divider />
-          <h3 className="font-semibold text-lg text-[#0056a0] mb-4">Vận hành Điều phối & Đội xe</h3>
-          <Form.Item name="waiting_limit_minutes" label="Giới hạn thời gian đơn bị nghẽn (phút)" extra="Thời gian cảnh báo khi đơn hàng ở trạng thái 'Ready for Planning' quá lâu">
-            <InputNumber min={5} max={1440} className="w-32" />
+
+          {/* Lưu trữ & Dữ liệu */}
+          <div className="flex items-center gap-2 text-indigo-600 font-bold text-base mb-4 border-b border-slate-100 pb-2">
+            <Database size={18} /> Lưu trữ Dữ liệu & Tệp tin (Data Retention)
+          </div>
+
+          <Form.Item name="document_retention_days" label="Thời hạn lưu trữ chứng từ/POD (ngày)" extra="Lưu trữ tối thiểu 2 năm (730 ngày) theo quy định BR-22">
+            <InputNumber min={60} max={1825} className="w-36 h-10 rounded-lg" />
           </Form.Item>
-          <Form.Item name="min_rest_minutes" label="Thời gian nghỉ tối thiểu của tài xế (phút)" extra="Giữa 2 chuyến làm việc liên tiếp">
-            <InputNumber min={30} max={720} className="w-32" />
+
+          <Form.Item name="gps_track_retention_days" label="Thời hạn lưu vết hành trình GPS (ngày)" extra="Vết tọa độ di chuyển của xe tải (JOB-01)">
+            <InputNumber min={30} max={365} className="w-36 h-10 rounded-lg" />
           </Form.Item>
-          <Form.Item name="assign_window_hours" label="Khung giờ gán chuyến tối đa (giờ)">
-            <InputNumber min={1} max={72} className="w-32" />
-          </Form.Item>
-          <Form.Item name="daily_operating_hours" label="Số giờ hoạt động tối đa trong ngày (giờ)/tài xế">
-            <InputNumber min={4} max={16} className="w-32" />
+
+          <Form.Item name="file_size_limit_mb" label="Dung lượng tệp tải lên tối đa (MB)">
+            <InputNumber min={1} max={50} className="w-36 h-10 rounded-lg" />
           </Form.Item>
 
           <Divider />
-          <h3 className="font-semibold text-lg text-red-600 mb-4">Bảo trì</h3>
-          <Form.Item name="maintenance_mode" label="Chế độ bảo trì hệ thống" valuePropName="checked" extra="Ngăn người dùng đăng nhập khi hệ thống đang cập nhật">
+
+          {/* Bảo mật & Tiện ích */}
+          <div className="flex items-center gap-2 text-emerald-600 font-bold text-base mb-4 border-b border-slate-100 pb-2">
+            <Clock size={18} /> Bảo mật & Tiện ích AI
+          </div>
+
+          <Form.Item name="password_reset_expiry_minutes" label="Thời hạn hiệu lực link đặt lại mật khẩu (phút)">
+            <InputNumber min={5} max={120} className="w-36 h-10 rounded-lg" />
+          </Form.Item>
+
+          <Form.Item name="document_assistant_enabled" label="Bật Trợ lý AI OCR bóc tách chứng từ" valuePropName="checked">
             <Switch checkedChildren="BẬT" unCheckedChildren="TẮT" />
           </Form.Item>
 
-          <div className="flex justify-end mt-8">
-            <Button type="primary" htmlType="submit" icon={<Save size={16} />} loading={loading} size="large" className="bg-[#0056a0]">
-              Lưu thay đổi
+          <div className="flex justify-end pt-6 border-t border-slate-100">
+            <Button
+              type="primary"
+              htmlType="submit"
+              icon={<Save size={16} />}
+              loading={loading}
+              className="h-11 px-6 font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-600/20"
+            >
+              Lưu thay đổi cấu hình
             </Button>
           </div>
         </Form>
