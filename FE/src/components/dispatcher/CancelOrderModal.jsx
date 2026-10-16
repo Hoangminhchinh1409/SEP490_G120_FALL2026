@@ -38,8 +38,6 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
   const isAssigned = order?.status === 'ASSIGNED' || order?.status === 'READY_FOR_PLANNING';
 
   const defaultDriverFee = 500000; // Tiền công điều xe & tài xế đến lấy hàng
-  const fee30 = Math.round(agreedPrice * 0.3);
-  const fee70 = Math.round(agreedPrice * 0.7);
 
   const [selectedTier, setSelectedTier] = useState(
     isFreeCancel ? 'TIER_0' : 'DRIVER_LABOR'
@@ -55,8 +53,9 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
     setSelectedTier(tier);
     if (tier === 'TIER_0') setCustomFee(0);
     else if (tier === 'DRIVER_LABOR') setCustomFee(defaultDriverFee);
-    else if (tier === 'TIER_30') setCustomFee(fee30);
-    else if (tier === 'TIER_70') setCustomFee(fee70);
+    else if (tier === 'CUSTOM') {
+      // Giữ nguyên số tiền hiện tại hoặc cho phép tự do nhập
+    }
   };
 
   const handleExecute = async () => {
@@ -192,66 +191,38 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
                 </label>
 
                 <Radio.Group 
-                  className="w-full space-y-2" 
+                  className="w-full space-y-2.5" 
                   value={selectedTier} 
                   onChange={handleTierChange}
                 >
                   <div 
-                    className={`p-3 rounded-xl border cursor-pointer transition-all ${selectedTier === 'DRIVER_LABOR' ? 'bg-amber-50/70 border-amber-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${selectedTier === 'DRIVER_LABOR' ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
                     onClick={() => handleTierChange({ target: { value: 'DRIVER_LABOR' } })}
                   >
                     <Radio value="DRIVER_LABOR" className="w-full">
                       <div className="flex justify-between items-center w-full pr-4 text-xs">
                         <div>
-                          <span className="font-bold text-gray-800 flex items-center gap-1">
-                            <Truck size={14} className="text-amber-600" /> Tiền công điều xe &amp; tài xế đến lấy hàng
+                          <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                            <Truck size={15} className="text-amber-600" /> Tiền công điều xe &amp; tài xế đến lấy hàng
                           </span>
-                          <p className="text-[11px] text-gray-500 m-0">Xe đã xuất phát đến kho lấy hàng nhưng chưa bốc xếp lên xe</p>
+                          <p className="text-[11px] text-gray-500 m-0 mt-0.5">Xe đã xuất phát đến kho lấy hàng nhưng chưa bốc xếp lên xe</p>
                         </div>
-                        <span className="font-mono font-bold text-amber-600 text-sm">{defaultDriverFee.toLocaleString()} VNĐ</span>
+                        <span className="font-mono font-bold text-amber-600 text-sm whitespace-nowrap">{defaultDriverFee.toLocaleString()} VNĐ</span>
                       </div>
                     </Radio>
                   </div>
 
                   <div 
-                    className={`p-3 rounded-xl border cursor-pointer transition-all ${selectedTier === 'TIER_30' ? 'bg-amber-50/60 border-amber-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
-                    onClick={() => handleTierChange({ target: { value: 'TIER_30' } })}
-                  >
-                    <Radio value="TIER_30" className="w-full">
-                      <div className="flex justify-between items-center w-full pr-4 text-xs">
-                        <div>
-                          <span className="font-bold text-gray-800">Bậc 2: Phạt 30% giá cước thỏa thuận</span>
-                          <p className="text-[11px] text-gray-500 m-0">Áp dụng hủy từ 4h - 24h trước giờ xuất phát theo hợp đồng</p>
-                        </div>
-                        <span className="font-mono font-bold text-amber-600 text-sm">{fee30.toLocaleString()} VNĐ</span>
-                      </div>
-                    </Radio>
-                  </div>
-
-                  <div 
-                    className={`p-3 rounded-xl border cursor-pointer transition-all ${selectedTier === 'TIER_70' ? 'bg-red-50/60 border-red-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
-                    onClick={() => handleTierChange({ target: { value: 'TIER_70' } })}
-                  >
-                    <Radio value="TIER_70" className="w-full">
-                      <div className="flex justify-between items-center w-full pr-4 text-xs">
-                        <div>
-                          <span className="font-bold text-gray-800">Bậc 3: Phạt 70% giá cước thỏa thuận</span>
-                          <p className="text-[11px] text-gray-500 m-0">Áp dụng hủy sát giờ (&lt; 4 giờ) sau khi đã phát lệnh điều động</p>
-                        </div>
-                        <span className="font-mono font-bold text-red-600 text-sm">{fee70.toLocaleString()} VNĐ</span>
-                      </div>
-                    </Radio>
-                  </div>
-
-                  <div 
-                    className={`p-3 rounded-xl border cursor-pointer transition-all ${selectedTier === 'CUSTOM' ? 'bg-indigo-50/60 border-indigo-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${selectedTier === 'CUSTOM' ? 'bg-indigo-50/60 border-indigo-300 ring-1 ring-indigo-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
                     onClick={() => handleTierChange({ target: { value: 'CUSTOM' } })}
                   >
                     <Radio value="CUSTOM" className="w-full">
                       <div className="flex justify-between items-center w-full pr-4 text-xs">
                         <div>
-                          <span className="font-bold text-gray-800">Mức tiền công / phí phạt thỏa thuận riêng:</span>
-                          <p className="text-[11px] text-gray-500 m-0">Nhập số tiền thực tế cần chi trả sau khi trao đổi với khách &amp; tài xế</p>
+                          <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                            <DollarSign size={15} className="text-indigo-600" /> Mức tiền công / phí phạt thỏa thuận riêng:
+                          </span>
+                          <p className="text-[11px] text-gray-500 m-0 mt-0.5">Nhập số tiền thực tế cần chi trả sau khi trao đổi với khách &amp; tài xế</p>
                         </div>
                       </div>
                     </Radio>

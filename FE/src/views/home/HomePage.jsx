@@ -1279,10 +1279,12 @@ export default function HomePage() {
           <span className="material-symbols-outlined text-2xl">chat</span>
         </button>
       </div>
-      <ConsultationBookingModal
-        open={isConsultationOpen}
-        onCancel={() => setIsConsultationOpen(false)}
-      />
+      {isConsultationOpen && (
+        <ConsultationBookingModal
+          open={isConsultationOpen}
+          onCancel={() => setIsConsultationOpen(false)}
+        />
+      )}
     </>
   );
 }

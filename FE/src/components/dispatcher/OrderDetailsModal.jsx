@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Modal, Tabs, Tag, Button, Input, InputNumber, Space, Table, message, Select, Popconfirm, Tooltip, Alert } from 'antd';
+import { Modal, Tabs, Tag, Button, Input, InputNumber, Space, Table, message, Select, Popconfirm, Tooltip, Alert, Popover } from 'antd';
 import { 
   FileText, 
   AlertTriangle, 
@@ -22,7 +22,11 @@ import {
   Navigation,
   FileCheck,
   Building,
-  Sparkles
+  Sparkles,
+  HelpCircle,
+  Calculator,
+  Info,
+  Package
 } from 'lucide-react';
 import CancelOrderModal from './CancelOrderModal';
 import RouteMapPicker from '../common/RouteMapPicker';
@@ -81,6 +85,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   const [currentAgreedPrice, setCurrentAgreedPrice] = useState(order.agreed_price || 0);
   const [contractUploaded, setContractUploaded] = useState(order.contract_uploaded || false);
   const [contractFile, setContractFile] = useState(order.contract_file || null);
+  const [contractFileData, setContractFileData] = useState(order.contract_file_data || null);
+  const [contractUploadedAt, setContractUploadedAt] = useState(order.contract_uploaded_at || null);
+  const [uploadingContract, setUploadingContract] = useState(false);
 
   // State Tuyến đường & Ước tính
   const [routeInfo, setRouteInfo] = useState({
@@ -137,14 +144,27 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   const [newMessageText, setNewMessageText] = useState('');
 
   // Tính giá cước sàn gợi ý theo cước khoảng cách và tải trọng để điều phối dễ chốt với khách
-  const estimatedBaselineRate = useMemo(() => {
-    const dist = routeInfo.distanceKm || 35.5;
+  const pricingBreakdown = useMemo(() => {
+    const dist = parseFloat(routeInfo.distanceKm) || 35.5;
     const weight = parseFloat(order.chargeable || order.chargeable_weight || order.weight || 1000);
-    const baseFare = 1500000;
-    const distanceFee = dist * 45000;
-    const weightFee = weight * 850;
-    return Math.round((baseFare + distanceFee + weightFee) / 50000) * 50000;
+    const baseFare = 1500000; // Cước xuất bến / chuyến cơ bản
+    const distanceFee = Math.round(dist * 45000); // 45.000 VNĐ / km
+    const weightFee = Math.round(weight * 850); // 850 VNĐ / kg tải trọng tính cước
+    const totalRaw = baseFare + distanceFee + weightFee;
+    const totalRounded = Math.round(totalRaw / 50000) * 50000;
+
+    return {
+      dist,
+      weight,
+      baseFare,
+      distanceFee,
+      weightFee,
+      totalRaw,
+      totalRounded
+    };
   }, [routeInfo, order]);
+
+  const estimatedBaselineRate = pricingBreakdown.totalRounded;
 
   // Tổng các khoản phụ phí phát sinh
   const totalExtraFees = useMemo(() => {
@@ -223,25 +243,89 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
       ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
       : `${Math.round(file.size / 1024)} KB`;
 
-    const nowFormatted = new Date().toLocaleString('vi-VN', { 
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' 
-    });
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const base64Data = uploadEvent.target?.result;
 
-    setDocuments(prev => prev.map(d => {
-      if (d.key === uploadingDocKey) {
-        return {
-          ...d,
-          file: file.name,
-          size: sizeFormatted,
-          uploadDate: nowFormatted,
-          status: 'PENDING_REVIEW'
-        };
-      }
-      return d;
-    }));
+      setDocuments(prev => prev.map(d => {
+        if (d.key === uploadingDocKey) {
+          return {
+            ...d,
+            file: file.name,
+            file_data: base64Data,
+            size: sizeFormatted,
+            uploadDate: nowFormatted,
+            status: 'PENDING_REVIEW'
+          };
+        }
+        return d;
+      }));
 
-    message.success(`Đã tải lên tệp chứng từ: ${file.name}`);
-    setUploadingDocKey(null);
+      message.success(`Đã tải lên tệp chứng từ: ${file.name}`);
+      setUploadingDocKey(null);
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  // 2b. Xử lý Tải lên tệp hợp đồng đã ký THẬT vào cơ sở dữ liệu
+  const handleContractFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const sizeFormatted = file.size > 1024 * 1024 
+      ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
+      : `${Math.round(file.size / 1024)} KB`;
+
+    try {
+      setUploadingContract(true);
+
+      // Đọc file thành base64 để lưu và cho phép tải xuống/mở xem lại
+      const reader = new FileReader();
+      reader.onload = async (uploadEvent) => {
+        const base64Data = uploadEvent.target?.result;
+
+        try {
+          const res = await orderApi.uploadContractFile(order.id || order.order_id, {
+            file_name: file.name,
+            file_data: base64Data,
+            file_size: sizeFormatted
+          });
+
+          setContractUploaded(true);
+          setContractFile(file.name);
+          setContractFileData(base64Data);
+          setContractUploadedAt(res.contract_uploaded_at || new Date().toISOString());
+
+          const updatedOrder = {
+            ...order,
+            contract_uploaded: true,
+            contract_file: file.name,
+            contract_file_data: base64Data,
+            contract_uploaded_at: res.contract_uploaded_at || new Date().toISOString()
+          };
+
+          onUpdateOrder?.(updatedOrder);
+          message.success(`Đã lưu tệp hợp đồng [${file.name}] thật vào cơ sở dữ liệu!`);
+        } catch (apiErr) {
+          console.error('Upload contract api error:', apiErr);
+          message.error(apiErr.message || 'Lỗi khi lưu tệp hợp đồng lên máy chủ');
+        } finally {
+          setUploadingContract(false);
+        }
+      };
+
+      reader.onerror = () => {
+        message.error('Không thể đọc dữ liệu tệp hợp đồng');
+        setUploadingContract(false);
+      };
+
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Upload error:', err);
+      message.error('Lỗi khi tải tệp');
+      setUploadingContract(false);
+    }
   };
 
   // 3. Duyệt và Từ chối từng chứng từ
@@ -327,7 +411,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     message.info('Đã xóa mục chứng từ.');
   };
 
-  // 5. Xác nhận toàn bộ chứng từ -> Bước vào công đoạn xếp chuyến (READY_FOR_PLANNING)
+  // 5. Xác nhận toàn bộ chứng từ:
+  // - Nếu là ĐƠN WEB: Điều phối viên duyệt chứng từ -> Hệ thống tự động gửi email hợp đồng PDF và link ký chữ ký số
+  // - Nếu là ĐƠN NỘI BỘ: Xác nhận hợp đồng và chuyển thẳng sang READY_FOR_PLANNING (Xếp xe)
   const handleConfirmAllDocuments = async () => {
     const unuploaded = documents.filter(d => d.file === 'Chờ tải lên' || d.status === 'WAITING_UPLOAD');
     if (unuploaded.length > 0) {
@@ -335,22 +421,42 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
       return;
     }
 
+    const isWebOrder = order.source === 'HOMEPAGE';
+
     try {
       setConfirmingDocs(true);
-      await orderApi.confirmOrder(order.id || order.order_id, currentAgreedPrice);
-
       const approvedDocs = documents.map(d => ({ ...d, status: 'APPROVED' }));
       setDocuments(approvedDocs);
 
-      const updatedOrder = {
-        ...order,
-        status: 'READY_FOR_PLANNING',
-        documents: approvedDocs,
-        contract_uploaded: true
-      };
+      if (isWebOrder) {
+        // Gọi API duyệt chứng từ đơn web và gửi email hợp đồng + link ký số
+        const res = await orderApi.approveWebOrderDocuments(order.id || order.order_id, approvedDocs);
+        
+        const updatedOrder = {
+          ...order,
+          documents: approvedDocs,
+          web_workflow: {
+            ...(order.web_workflow || {}),
+            stage: 'DOCS_APPROVED',
+            approved_documents: approvedDocs
+          }
+        };
 
-      onUpdateOrder?.(updatedOrder);
-      message.success('Đã xác nhận toàn bộ chứng từ! Đơn hàng đã sẵn sàng để xếp xe.');
+        onUpdateOrder?.(updatedOrder);
+        message.success('Đã duyệt hồ sơ chứng từ! Hệ thống đã tự động gửi email kèm hợp đồng PDF và link chữ ký số tới khách hàng.');
+        setActiveTab('3'); // Chuyển sang tab hợp đồng
+      } else {
+        // Đơn nội bộ
+        await orderApi.confirmOrder(order.id || order.order_id, currentAgreedPrice);
+        const updatedOrder = {
+          ...order,
+          status: 'READY_FOR_PLANNING',
+          documents: approvedDocs,
+          contract_uploaded: true
+        };
+        onUpdateOrder?.(updatedOrder);
+        message.success('Đã xác nhận toàn bộ chứng từ! Đơn hàng đã sẵn sàng để xếp xe.');
+      }
     } catch (err) {
       console.error(err);
       message.error(err.message || 'Lỗi khi xác nhận chứng từ trên máy chủ');
@@ -454,7 +560,25 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         ) : (
           <div className="flex items-center gap-1.5 font-mono text-xs text-blue-600">
             <FileText size={14} className="shrink-0" />
-            <span className="truncate max-w-[130px] font-semibold underline cursor-pointer" title={text}>{text}</span>
+            <span 
+              className="truncate max-w-[130px] font-semibold underline cursor-pointer hover:text-blue-800" 
+              title="Bấm để tải về / xem tệp"
+              onClick={() => {
+                if (record.file_data) {
+                  const a = document.createElement('a');
+                  a.href = record.file_data;
+                  a.download = record.file;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  message.success(`Đang mở / tải xuống: ${record.file}`);
+                } else {
+                  message.info(`Tệp: ${record.file}`);
+                }
+              }}
+            >
+              {text}
+            </span>
             <span className="text-gray-400 font-sans text-[11px] shrink-0">({record.size})</span>
             <Tooltip title="Tải lại tệp khác">
               <Button 
@@ -601,7 +725,61 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
                   <div className="text-xs font-bold text-gray-800">Giá cước thỏa thuận:</div>
                   <div className="text-[11px] text-gray-400">
                     {order.status === 'DRAFT' ? (
-                      <>Cước phí chốt với khách sau khi tư vấn (Giá gợi ý hệ thống: <b className="text-indigo-600">{estimatedBaselineRate.toLocaleString()} đ</b>)</>
+                      <span className="flex items-center gap-1 flex-wrap">
+                        <span>Cước phí chốt với khách sau khi tư vấn (Giá gợi ý hệ thống:</span>
+                        <Popover
+                          title={
+                            <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-700 py-0.5 border-b border-indigo-50">
+                              <Calculator size={14} /> Chi tiết công thức tính giá gợi ý hệ thống
+                            </div>
+                          }
+                          content={
+                            <div className="text-xs space-y-2.5 p-1 w-72">
+                              <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-100 space-y-1.5 font-mono text-[11px]">
+                                <div className="flex justify-between items-center text-gray-600">
+                                  <span>1. Cước xuất bến / mở chuyến:</span>
+                                  <span className="font-semibold text-gray-800">{pricingBreakdown.baseFare.toLocaleString()} đ</span>
+                                </div>
+                                <div className="flex justify-between items-center text-gray-600">
+                                  <span>2. Cước cự ly ({pricingBreakdown.dist} km × 45.000đ):</span>
+                                  <span className="font-semibold text-gray-800">{pricingBreakdown.distanceFee.toLocaleString()} đ</span>
+                                </div>
+                                <div className="flex justify-between items-center text-gray-600">
+                                  <span>3. Cước tải trọng ({pricingBreakdown.weight} kg × 850đ):</span>
+                                  <span className="font-semibold text-gray-800">{pricingBreakdown.weightFee.toLocaleString()} đ</span>
+                                </div>
+                                <div className="border-t border-gray-200 pt-1.5 mt-1 flex justify-between items-center text-gray-500 text-[10px]">
+                                  <span>Tổng thô chưa làm tròn:</span>
+                                  <span>{pricingBreakdown.totalRaw.toLocaleString()} đ</span>
+                                </div>
+                              </div>
+
+                              <div className="p-2 bg-indigo-50/70 border border-indigo-100 rounded-lg flex items-center justify-between">
+                                <span className="font-semibold text-indigo-900 text-xs">Giá gợi ý (làm tròn 50k):</span>
+                                <span className="font-bold text-sm text-indigo-700 font-mono">
+                                  {estimatedBaselineRate.toLocaleString()} VNĐ
+                                </span>
+                              </div>
+
+                              <div className="text-[10px] text-gray-400 italic">
+                                * Điều phối viên có thể dựa vào mức giá sàn này để thương lượng và chốt giá cuối cùng phù hợp với khách hàng.
+                              </div>
+                            </div>
+                          }
+                          trigger="click"
+                          placement="bottomLeft"
+                        >
+                          <button 
+                            type="button"
+                            className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer bg-indigo-50/70 hover:bg-indigo-100/70 px-1.5 py-0.5 rounded transition-all"
+                            title="Bấm để xem công thức tính chi tiết"
+                          >
+                            <span>{estimatedBaselineRate.toLocaleString()} đ</span>
+                            <Calculator size={12} className="text-indigo-500" />
+                          </button>
+                        </Popover>
+                        <span>)</span>
+                      </span>
                     ) : (
                       <>Giá cước cố định đã chốt với khách hàng và ghi nhận vào hợp đồng</>
                     )}
@@ -632,12 +810,19 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
                     </Button>
                   </>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
                     <span className="font-bold text-sm text-blue-700 font-mono bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-200">
                       {currentAgreedPrice > 0 ? `${currentAgreedPrice.toLocaleString()} VNĐ` : 'Chưa nhập'}
                     </span>
                     {(order.status === 'CANCELLED' || order.status === 'CLOSED') && (order.cancel_reason || order.cancellation_reason) ? (
-                      <Tag color="red" className="font-medium text-xs py-0.5 px-2">Đơn đã hủy</Tag>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <Tag color="red" className="font-semibold text-xs py-0.5 px-2 m-0">
+                          Đơn đã hủy
+                        </Tag>
+                        <span className="text-[11px] text-red-600 font-medium max-w-[260px] text-right truncate" title={order.cancel_reason || order.cancellation_reason}>
+                          Lý do: <span className="italic">{order.cancel_reason || order.cancellation_reason}</span>
+                        </span>
+                      </div>
                     ) : (
                       <Tag color="blue" className="font-medium text-xs py-0.5 px-2">Đã chốt giá</Tag>
                     )}
@@ -719,7 +904,37 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
             </div>
           </div>
 
-          {order.order_notes && (
+          {/* Bảng danh sách mặt hàng nếu có nhiều loại hàng */}
+          {order.items && Array.isArray(order.items) && order.items.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
+              <div className="px-3.5 py-2 bg-indigo-50/70 border-b border-indigo-150 flex items-center justify-between">
+                <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                  <Package size={14} className="text-indigo-600" /> Danh mục các loại hàng trong đơn ({order.items.length} loại)
+                </span>
+              </div>
+              <div className="divide-y divide-gray-100 text-xs">
+                {order.items.map((it, idx) => (
+                  <div key={idx} className="p-2.5 flex items-center justify-between hover:bg-gray-50">
+                    <div>
+                      <span className="font-bold text-gray-800">{idx + 1}. {it.cargo_name}</span>
+                      <span className="ml-2 text-gray-500 font-mono">({it.cargo_type})</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-gray-600">
+                      <span>SL: <b>{it.package_count} {it.package_unit}</b></span>
+                      <span>Kích thước: <b>{it.length_cm}x{it.width_cm}x{it.height_cm} cm</b></span>
+                      <span>Trọng lượng: <b className="text-indigo-600">{it.weight} kg</b></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* CHỈ HIỂN THỊ GHI CHÚ YÊU CẦU CỦA KHÁCH NẾU CÓ GHI CHÚ THẬT (KHÔNG HIỆN TEXT TỔNG HỢP GIẢ MẠO) */}
+          {order.order_notes && 
+           order.order_notes.trim().length > 0 && 
+           !order.order_notes.includes('Đơn hàng nhận tư vấn từ Website') && 
+           !order.order_notes.includes('Cần liên hệ tư vấn lộ trình') && (
             <div className="p-3 bg-yellow-50/80 rounded-xl border border-yellow-200 text-xs text-yellow-900">
               <div className="font-bold flex items-center gap-1 mb-1">
                 <AlertTriangle size={14} /> Ghi chú yêu cầu của khách:
@@ -832,6 +1047,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     });
 
     // TAB 3: HỢP ĐỒNG VẬN TẢI
+    const isWebOrder = order.source === 'HOMEPAGE';
+    const signedContractData = order.web_workflow?.signed_contract;
+
     tabItems.push({
       key: '3',
       label: <span className="font-semibold text-xs">Hợp đồng vận tải</span>,
@@ -840,31 +1058,141 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
             <div className="flex justify-between items-center mb-3">
               <h4 className="font-bold text-gray-800 text-sm m-0">Ký kết &amp; Quản lý Hợp đồng Vận chuyển</h4>
-              {contractUploaded ? (
-                <Tag color="success" className="font-bold text-xs py-0.5 px-2.5">ĐÃ KÝ HỢP ĐỒNG</Tag>
+              {signedContractData ? (
+                <Tag color="success" className="font-bold text-xs py-0.5 px-2.5 flex items-center gap-1">
+                  <CheckCircle2 size={12} /> ĐÃ KÝ CHỮ KÝ SỐ ĐIỆN TỬ
+                </Tag>
+              ) : contractUploaded ? (
+                <Tag color="success" className="font-bold text-xs py-0.5 px-2.5 flex items-center gap-1">
+                  <CheckCircle2 size={12} /> ĐÃ NỘP HỢP ĐỒNG ĐÃ KÝ
+                </Tag>
+              ) : isWebOrder ? (
+                <Tag color="processing" className="font-bold text-xs py-0.5 px-2.5">
+                  CHỜ KHÁCH HÀNG KÝ SỐ TRỰC TUYẾN
+                </Tag>
               ) : (
-                <Tag color="warning" className="font-bold text-xs py-0.5 px-2.5">CHƯA TẢI HỢP ĐỒNG</Tag>
+                <Tag color="warning" className="font-bold text-xs py-0.5 px-2.5">CHƯA TẢI TỆP HỢP ĐỒNG</Tag>
               )}
             </div>
 
-            <div className="flex flex-wrap gap-2.5">
-              <Button icon={<Download size={15} />} onClick={() => message.success('Đang tải về mẫu hợp đồng vận tải chuẩn...')}>
-                Tải mẫu hợp đồng PDF
-              </Button>
-              <Button 
-                type={contractUploaded ? "default" : "primary"}
-                icon={<Upload size={15} />} 
-                className={!contractUploaded ? "bg-[#7367f0]" : ""}
-                onClick={() => {
-                  if (contractInputRef.current) {
-                    contractInputRef.current.value = '';
-                    contractInputRef.current.click();
-                  }
-                }}
-              >
-                {contractUploaded ? (contractFile || 'Thay thế hợp đồng đã ký') : 'Tải lên hợp đồng đã ký'}
-              </Button>
-            </div>
+            {/* ĐỐI VỚI ĐƠN WEB: HIỂN THỊ TRẠNG THÁI KÝ SỐ VÀ CHỮ KÝ TRỰC TIẾP */}
+            {isWebOrder ? (
+              <div className="p-3.5 bg-white rounded-xl border border-indigo-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-gray-800 block">Hợp đồng điện tử ký số tự động (Đơn Web):</span>
+                    <span className="text-[11px] text-gray-500">
+                      Hợp đồng được hệ thống sinh tự động và gửi cho khách ký số qua email sau khi điều phối viên duyệt chứng từ.
+                    </span>
+                  </div>
+                  {signedContractData ? (
+                    <Tag color="cyan" className="font-mono text-xs">
+                      {signedContractData.contract_file || `HD-${order.order_id}-SIGNED.pdf`}
+                    </Tag>
+                  ) : (
+                    <Tag color="gold" className="text-xs">Đang chờ khách ký qua link mail</Tag>
+                  )}
+                </div>
+
+                {signedContractData && (
+                  <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-xs">
+                    <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1.5">
+                      <CheckCircle2 size={14} className="text-emerald-600" />
+                      Chữ ký số đã được ghi nhận vào hồ sơ:
+                    </div>
+                    <div className="text-emerald-900">
+                      Người ký: <b>{signedContractData.signer_name}</b> | Thời gian ký: <b>{new Date(signedContractData.signed_at).toLocaleString('vi-VN')}</b>
+                    </div>
+                    {signedContractData.signature_data && (
+                      <div className="mt-2 bg-white p-2 rounded border border-emerald-200 inline-block">
+                        <img 
+                          src={signedContractData.signature_data} 
+                          alt="Chữ ký điện tử của khách hàng" 
+                          className="h-14 object-contain"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* ĐƠN NỘI BỘ / HOTLINE: NÚT TẢI MẪU VÀ TẢI TỆP HỢP ĐỒNG THẬT LÊN CƠ SỞ DỮ LIỆU */
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <Button 
+                    icon={<Download size={15} />} 
+                    onClick={() => {
+                      // Tạo file hợp đồng mẫu giả lập để tải về
+                      const element = document.createElement('a');
+                      const file = new Blob([
+                        `CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\nĐộc lập - Tự do - Hạnh phúc\n\nHỢP ĐỒNG VẬN CHUYỂN HÀNG HÓA\nSố: HD-${order.order_id || '2026'}\n\nBÊN A: CÔNG TY CỔ PHẦN LOGISTICS NEXLOG\nBÊN B: ${order.customer || 'Khách hàng'}\n\nCước phí thỏa thuận: ${currentAgreedPrice?.toLocaleString()} VNĐ\nĐiểm lấy: ${pickupAddress}\nĐiểm giao: ${deliveryAddress}`
+                      ], { type: 'text/plain;charset=utf-8' });
+                      element.href = URL.createObjectURL(file);
+                      element.download = `Mau_Hop_Dong_Van_Chuyen_${order.order_id || 'NEXLOG'}.txt`;
+                      document.body.appendChild(element);
+                      element.click();
+                      document.body.removeChild(element);
+                      message.success('Đã tải xuống tệp mẫu hợp đồng vận chuyển!');
+                    }}
+                  >
+                    Tải mẫu hợp đồng
+                  </Button>
+                  <Button 
+                    type={contractUploaded ? "default" : "primary"}
+                    icon={<Upload size={15} />} 
+                    loading={uploadingContract}
+                    className={!contractUploaded ? "bg-[#7367f0] hover:bg-[#5e50ee]" : ""}
+                    onClick={() => {
+                      if (contractInputRef.current) {
+                        contractInputRef.current.value = '';
+                        contractInputRef.current.click();
+                      }
+                    }}
+                  >
+                    {contractUploaded ? 'Tải lên tệp thay thế' : 'Tải lên tệp hợp đồng đã ký'}
+                  </Button>
+                </div>
+
+                {/* Hộp hiển thị thông tin tệp hợp đồng thật đã tải lên */}
+                {contractUploaded && contractFile && (
+                  <div className="p-3 bg-white rounded-lg border border-emerald-200 flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                        <FileCheck size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-gray-800 flex items-center gap-2">
+                          <span className="truncate">{contractFile}</span>
+                          <Tag color="green" className="text-[10px] m-0 px-1.5 py-0 font-medium">Đã lưu trữ vào CSDL</Tag>
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">
+                          Thời gian nộp: {contractUploadedAt ? new Date(contractUploadedAt).toLocaleString('vi-VN') : 'Vừa xong'}
+                        </div>
+                      </div>
+                    </div>
+                    {contractFileData && (
+                      <Button 
+                        size="small" 
+                        type="link" 
+                        icon={<Download size={13} />}
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = contractFileData;
+                          a.download = contractFile;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          message.success(`Đang mở / tải xuống tệp: ${contractFile}`);
+                        }}
+                        className="text-indigo-600 font-semibold text-xs"
+                      >
+                        Tải tệp về
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-4 p-3.5 bg-white rounded-lg border border-gray-200">
               <div className="text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
@@ -1056,20 +1384,13 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
       />
 
-      {/* Hidden File Input để tải lên hợp đồng */}
+      {/* Hidden File Input để tải lên hợp đồng THẬT */}
       <input 
         type="file" 
         ref={contractInputRef} 
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            setContractUploaded(true);
-            setContractFile(file.name);
-            message.success(`Đã tải lên tệp hợp đồng đã ký: ${file.name}`);
-          }
-        }} 
+        onChange={handleContractFileChange} 
         className="hidden" 
-        accept=".pdf,.png,.jpg,.doc,.docx"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
       />
 
       <Modal
@@ -1131,7 +1452,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
               className="bg-emerald-600 hover:bg-emerald-700 font-semibold" 
               onClick={handleConfirmAllDocuments}
             >
-              Xác nhận chứng từ &amp; Xếp chuyến
+              {order.source === 'HOMEPAGE' 
+                ? 'Duyệt chứng từ & Gửi hợp đồng ký số' 
+                : 'Xác nhận chứng từ & Xếp chuyến'}
             </Button>
           ),
           order.status === 'READY_FOR_PLANNING' && (

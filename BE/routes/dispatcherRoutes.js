@@ -34,4 +34,7 @@ router.patch('/incidents/:id/status', dispatcherController.updateIncidentStatus)
 // Dashboard
 router.get('/dashboard-stats', dispatcherController.getDispatcherDashboardStats);
 
+// Routing
+router.get('/routing/road-route', dispatcherController.calculateRoadRoute);
+
 module.exports = router;

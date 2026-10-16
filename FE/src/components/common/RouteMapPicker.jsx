@@ -61,19 +61,41 @@ const RouteMapPicker = ({
 
     const fetchRoute = async () => {
       try {
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
-        const url = `https://router.project-osrm.org/route/v1/driving/${effectivePickupCoords.lng},${effectivePickupCoords.lat};${effectiveDeliveryCoords.lng},${effectiveDeliveryCoords.lat}?overview=full&geometries=geojson`;
-
-        const res = await fetch(url, { signal: controller.signal });
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        
+        // 1. Ưu tiên gọi qua Backend Proxy chuyên dụng (Không bị lỗi SSL/CORS trình duyệt, luôn lấy tuyến đường bộ ngắn nhất)
+        const beUrl = `http://localhost:9999/api/routing/road-route?startLng=${effectivePickupCoords.lng}&startLat=${effectivePickupCoords.lat}&endLng=${effectiveDeliveryCoords.lng}&endLat=${effectiveDeliveryCoords.lat}`;
+        
+        const res = await fetch(beUrl, { signal: controller.signal });
         clearTimeout(timeoutId);
 
         if (res.ok) {
           const data = await res.json();
-          if (!isCancelled && data?.routes?.[0]) {
-            const route = data.routes[0];
-            const distKm = parseFloat((route.distance / 1000).toFixed(1));
-            const durMins = Math.max(5, Math.round(route.duration / 60));
-            const poly = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+          if (!isCancelled && data?.success && Array.isArray(data.polyline) && data.polyline.length > 0) {
+            setRoutePolyline(data.polyline);
+            setRouteInfo({ distanceKm: data.distanceKm, durationMins: data.durationMins });
+            if (onRouteChange) {
+              onRouteChange({ distanceKm: data.distanceKm, durationMins: data.durationMins });
+            }
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend Routing Proxy warning:', err.message);
+      }
+
+      // 2. Thử gọi trực tiếp OpenStreetMap Routing Server nếu backend bận
+      try {
+        const directUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${effectivePickupCoords.lng},${effectivePickupCoords.lat};${effectiveDeliveryCoords.lng},${effectiveDeliveryCoords.lat}?overview=full&geometries=geojson&alternatives=true`;
+        const directRes = await fetch(directUrl);
+        if (directRes.ok) {
+          const directData = await directRes.json();
+          if (!isCancelled && directData?.routes?.length > 0) {
+            const sortedRoutes = [...directData.routes].sort((a, b) => a.distance - b.distance);
+            const shortestRoute = sortedRoutes[0];
+            const distKm = parseFloat((shortestRoute.distance / 1000).toFixed(1));
+            const durMins = Math.max(5, Math.round(shortestRoute.duration / 60));
+            const poly = shortestRoute.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
 
             setRoutePolyline(poly);
             setRouteInfo({ distanceKm: distKm, durationMins: durMins });
@@ -83,8 +105,8 @@ const RouteMapPicker = ({
             return;
           }
         }
-      } catch {
-        // Fallback Haversine nếu OSRM timeout hoặc mạng bận
+      } catch (directErr) {
+        console.warn('Direct routing warning:', directErr.message);
       }
 
       if (!isCancelled) {
@@ -127,6 +149,7 @@ const RouteMapPicker = ({
         style={{ height: `${height}px` }}
       >
         <InnerRouteMap
+          key={`route-map-${effectivePickupCoords?.lat || 0}-${effectiveDeliveryCoords?.lat || 0}`}
           pickupCoords={effectivePickupCoords}
           deliveryCoords={effectiveDeliveryCoords}
           pickupAddress={pickupAddress}

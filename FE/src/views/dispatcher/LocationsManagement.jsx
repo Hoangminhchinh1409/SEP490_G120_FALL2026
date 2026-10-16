@@ -81,23 +81,27 @@ export default function LocationsManagement() {
 
   const handleOpenCreate = () => {
     setEditingLocation(null);
-    form.resetFields();
-    form.setFieldsValue({
-      type: 'DIEM_GIAO',
-      province: 'Hà Nội',
-      geofence_radius_m: 150,
-      receiving_hours: '08:00 - 17:30 (T2 - T7)'
-    });
     setIsModalOpen(true);
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        type: 'DIEM_GIAO',
+        province: 'Hà Nội',
+        geofence_radius_m: 150,
+        receiving_hours: '08:00 - 17:30 (T2 - T7)'
+      });
+    }, 0);
   };
 
   const handleOpenEdit = (record) => {
     setEditingLocation(record);
-    form.setFieldsValue({
-      ...record,
-      customer_id: record.customer_id
-    });
     setIsModalOpen(true);
+    setTimeout(() => {
+      form.setFieldsValue({
+        ...record,
+        customer_id: record.customer_id
+      });
+    }, 0);
   };
 
   const handleDelete = async (record) => {
@@ -147,78 +151,70 @@ export default function LocationsManagement() {
 
   const columns = [
     {
-      title: 'Mã & Tên địa điểm',
+      title: 'Tên địa điểm',
+      dataIndex: 'name',
       key: 'name',
-      width: '26%',
-      render: (_, r) => (
+      width: '24%',
+      render: (text, r) => (
         <div>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-gray-800 text-xs hover:text-[#7367f0] cursor-pointer" onClick={() => handleOpenEdit(r)}>
-              {r.name}
-            </span>
-            <Tag color={locationTypeConfig[r.type]?.color || 'default'} className="text-[10px] m-0 px-1.5 py-0.2">
-              {locationTypeConfig[r.type]?.label || r.type}
-            </Tag>
-          </div>
-          <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1 font-mono">
-            <Building2 size={11} className="text-gray-400" />
-            <span>{r.customer} ({r.id})</span>
+          <span className="font-bold text-gray-800 text-xs hover:text-[#7367f0] cursor-pointer" onClick={() => handleOpenEdit(r)}>
+            {text}
+          </span>
+          <div className="text-[11px] text-gray-400 font-mono mt-0.5">
+            Mã: {r.id}
           </div>
         </div>
       )
     },
     {
-      title: 'Địa chỉ cụ thể',
+      title: 'Loại địa điểm',
+      dataIndex: 'type',
+      key: 'type',
+      width: '15%',
+      render: (type) => (
+        <Tag color={locationTypeConfig[type]?.color || 'default'} className="text-[11px] font-medium m-0 px-2 py-0.5">
+          {locationTypeConfig[type]?.label || type}
+        </Tag>
+      )
+    },
+    {
+      title: 'Địa chỉ',
       dataIndex: 'address',
       key: 'address',
       width: '28%',
-      render: (text, r) => (
-        <div>
-          <div className="text-xs text-gray-700 flex items-start gap-1">
-            <MapPin size={13} className="text-[#7367f0] mt-0.5 shrink-0" />
-            <span>{text}</span>
-          </div>
-          <div className="text-[11px] text-gray-400 mt-1 pl-4 font-mono">
-            Tọa độ: {r.lat?.toFixed(4)}, {r.lng?.toFixed(4)}
-          </div>
-        </div>
-      )
-    },
-    {
-      title: 'Khung giờ tiếp nhận',
-      dataIndex: 'receiving_hours',
-      key: 'receiving_hours',
-      width: '16%',
-      render: text => (
-        <div className="text-xs text-gray-600 flex items-center gap-1">
-          <Clock size={13} className="text-amber-500 shrink-0" />
+      render: (text) => (
+        <div className="text-xs text-gray-700 flex items-start gap-1.5">
+          <MapPin size={13} className="text-[#7367f0] mt-0.5 shrink-0" />
           <span>{text}</span>
         </div>
       )
     },
     {
-      title: 'Liên hệ tại kho',
-      key: 'contact',
-      width: '16%',
+      title: 'Chủ sở hữu',
+      key: 'owner',
+      width: '18%',
       render: (_, r) => (
         <div className="text-xs">
-          <div className="font-medium text-gray-700">{r.contact_name || 'Bộ phận Giao nhận'}</div>
-          <div className="text-gray-400 text-[11px] font-mono flex items-center gap-1 mt-0.5">
-            <Phone size={11} className="text-emerald-500" />
-            <span>{r.contact_phone || '0988.123.456'}</span>
-          </div>
+          {r.customer_id ? (
+            <div className="flex items-center gap-1.5 text-gray-700 font-medium">
+              <Building2 size={13} className="text-indigo-500 shrink-0" />
+              <span>{r.customer}</span>
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold text-[11px]">
+              Hệ thống ALS / Nội bộ
+            </span>
+          )}
         </div>
       )
     },
     {
-      title: 'Bán kính Geofence',
-      dataIndex: 'geofence_radius_m',
-      key: 'geofence',
-      width: '14%',
-      render: val => (
-        <div className="flex items-center gap-1">
-          <Shield size={13} className="text-indigo-500" />
-          <span className="font-semibold text-xs text-gray-700 font-mono">{val || 200} m</span>
+      title: 'Tọa độ',
+      key: 'coords',
+      width: '15%',
+      render: (_, r) => (
+        <div className="text-xs font-mono text-gray-600 bg-gray-50/80 px-2 py-1 rounded border border-gray-100 inline-block">
+          {r.lat?.toFixed(4)}, {r.lng?.toFixed(4)}
         </div>
       )
     },
