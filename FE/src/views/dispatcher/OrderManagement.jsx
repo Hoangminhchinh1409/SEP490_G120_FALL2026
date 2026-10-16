@@ -479,11 +479,13 @@ const OrderManagement = () => {
       </div>
 
       {/* Modal Tạo Đơn Hàng Mới */}
-      <OrderFormModal 
-        open={isCreateModalOpen} 
-        onCancel={() => setIsCreateModalOpen(false)} 
-        onSubmit={handleCreateOrder} 
-      />
+      {isCreateModalOpen && (
+        <OrderFormModal 
+          open={isCreateModalOpen} 
+          onCancel={() => setIsCreateModalOpen(false)} 
+          onSubmit={handleCreateOrder} 
+        />
+      )}
 
       {/* Modal Chi Tiết Hồ Sơ Đơn Hàng & Duyệt Chứng Từ */}
       <OrderDetailsModal

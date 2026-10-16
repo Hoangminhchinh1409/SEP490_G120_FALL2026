@@ -73,27 +73,31 @@ export default function ContractsManagement() {
 
   const handleOpenCreate = () => {
     setEditingContract(null);
-    form.resetFields();
-    form.setFieldsValue({
-      party_type: 'CUSTOMER',
-      partner_id: customers[0]?.id || 1,
-      free_waiting_mins: 60,
-      waiting_fee_per_hour: 150000,
-      cancellation_tiers: 'Hủy trước 4h: Phạt 30% | Sau khi điều xe: Phạt 70%',
-      liability_cap_vnd: 200000000,
-      status: 'ACTIVE',
-      date_range: [dayjs('2026-01-01'), dayjs('2026-12-31')]
-    });
     setIsModalOpen(true);
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        party_type: 'CUSTOMER',
+        partner_id: customers[0]?.id || 1,
+        free_waiting_mins: 60,
+        waiting_fee_per_hour: 150000,
+        cancellation_tiers: 'Hủy trước 4h: Phạt 30% | Sau khi điều xe: Phạt 70%',
+        liability_cap_vnd: 200000000,
+        status: 'ACTIVE',
+        date_range: [dayjs('2026-01-01'), dayjs('2026-12-31')]
+      });
+    }, 0);
   };
 
   const handleOpenEdit = (record) => {
     setEditingContract(record);
-    form.setFieldsValue({
-      ...record,
-      date_range: [dayjs(record.start_date || '2026-01-01'), dayjs(record.end_date || '2026-12-31')]
-    });
     setIsModalOpen(true);
+    setTimeout(() => {
+      form.setFieldsValue({
+        ...record,
+        date_range: [dayjs(record.start_date || '2026-01-01'), dayjs(record.end_date || '2026-12-31')]
+      });
+    }, 0);
   };
 
   const handleExportContract = (record) => {

@@ -106,5 +106,87 @@ export const orderApi = {
       console.warn('orderApi.closeOrder API note:', error);
       return { id: orderId, status: 'CLOSED' };
     }
+  },
+
+  // 9. Khách hàng: Lấy chi tiết đơn hàng qua Token bí mật gửi qua Gmail
+  getOrderByToken: async (token) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/customer-view/${token}`);
+      return data.order;
+    } catch (error) {
+      console.error('orderApi.getOrderByToken Error:', error);
+      throw error;
+    }
+  },
+
+  // 10. Khách hàng: Đồng ý chốt giá cước thỏa thuận
+  customerAgreeOrderPrice: async (token) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/customer-agree/${token}`, {
+        method: 'POST',
+        body: JSON.stringify({ agreed: true })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.customerAgreeOrderPrice Error:', error);
+      throw error;
+    }
+  },
+
+  // 11. Khách hàng: Tải lên hồ sơ chứng từ liên quan
+  customerUploadDocuments: async (token, documents) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/customer-upload-docs/${token}`, {
+        method: 'POST',
+        body: JSON.stringify({ documents })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.customerUploadDocuments Error:', error);
+      throw error;
+    }
+  },
+
+  // 12. Điều phối viên: Kiểm duyệt chứng từ cho đơn web & Tự động gửi email kèm hợp đồng điện tử & Link ký số
+  approveWebOrderDocuments: async (orderId, approvedDocuments) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/approve-web-docs`, {
+        method: 'POST',
+        body: JSON.stringify({ approved_documents: approvedDocuments })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.approveWebOrderDocuments Error:', error);
+      throw error;
+    }
+  },
+
+  // 13. Khách hàng: Ký chữ ký số hợp đồng điện tử
+  customerSignContract: async (token, { signature_data, signer_name }) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/customer-sign/${token}`, {
+        method: 'POST',
+        body: JSON.stringify({ signature_data, signer_name })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.customerSignContract Error:', error);
+      throw error;
+    }
+  },
+
+  // 14. Điều phối viên: Tải lên tệp hợp đồng đã ký thật
+  uploadContractFile: async (orderId, { file_name, file_data, file_size }) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/contract-file`, {
+        method: 'POST',
+        body: JSON.stringify({ file_name, file_data, file_size })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.uploadContractFile Error:', error);
+      throw error;
+    }
   }
 };
+

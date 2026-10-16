@@ -4,47 +4,44 @@ import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, useMap } fro
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Component tự động pan, fitBounds & invalidateSize để bản đồ không bao giờ bị xám (grey tiles)
+// Component tự động pan, fitBounds & invalidateSize an toàn
 function MapBoundsUpdater({ pickupCoords, deliveryCoords }) {
   const map = useMap();
 
-  // Khắc phục lỗi Leaflet bị xám khi render trong Ant Design Modal
   useEffect(() => {
+    if (!map) return;
+    
+    // Đợi container bản đồ sẵn sàng trong DOM trước khi resize hoặc fitBounds
     const timer = setTimeout(() => {
-      map.invalidateSize();
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [map]);
-
-  useEffect(() => {
-    map.invalidateSize();
-    if (pickupCoords?.lat && deliveryCoords?.lat) {
       try {
-        const bounds = [
-          [pickupCoords.lat, pickupCoords.lng],
-          [deliveryCoords.lat, deliveryCoords.lng]
-        ];
-        map.fitBounds(bounds, {
-          padding: [45, 45],
-          maxZoom: 16,
-          animate: true,
-          duration: 0.8
-        });
+        const container = map.getContainer();
+        if (!container || !container.offsetParent) return;
+        map.invalidateSize();
+
+        if (pickupCoords?.lat && deliveryCoords?.lat) {
+          const bounds = L.latLngBounds([
+            [pickupCoords.lat, pickupCoords.lng],
+            [deliveryCoords.lat, deliveryCoords.lng]
+          ]);
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, {
+              padding: [45, 45],
+              maxZoom: 16,
+              animate: false
+            });
+          }
+        } else if (pickupCoords?.lat) {
+          map.setView([pickupCoords.lat, pickupCoords.lng], 14, { animate: false });
+        } else if (deliveryCoords?.lat) {
+          map.setView([deliveryCoords.lat, deliveryCoords.lng], 14, { animate: false });
+        }
       } catch (err) {
-        console.error('Fit bounds error:', err);
+        // Tránh unhandled exception khi DOM unmount
       }
-    } else if (pickupCoords?.lat) {
-      map.flyTo([pickupCoords.lat, pickupCoords.lng], 14, {
-        animate: true,
-        duration: 0.8
-      });
-    } else if (deliveryCoords?.lat) {
-      map.flyTo([deliveryCoords.lat, deliveryCoords.lng], 14, {
-        animate: true,
-        duration: 0.8
-      });
-    }
-  }, [pickupCoords, deliveryCoords, map]);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [pickupCoords?.lat, pickupCoords?.lng, deliveryCoords?.lat, deliveryCoords?.lng, map]);
 
   return null;
 }

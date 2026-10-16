@@ -7,7 +7,13 @@ const {
   confirmOrder,
   assignTrip,
   cancelOrder,
-  closeOrder
+  closeOrder,
+  getOrderByToken,
+  customerAgreeOrderPrice,
+  customerUploadDocuments,
+  approveWebOrderDocuments,
+  customerSignContract,
+  uploadContractFile
 } = require('../controllers/orderController');
 
 const router = express.Router();
@@ -18,22 +24,41 @@ router.get('/', getAllOrders);
 // 2. Khách hàng gửi tư vấn từ Homepage (Public)
 router.post('/consultation', createConsultationOrder);
 
-// 3. Điều phối viên tạo đơn trực tiếp
+// 3. Khách hàng: Lấy chi tiết đơn hàng qua Token bí mật gửi qua Gmail (Public)
+router.get('/customer-view/:token', getOrderByToken);
+
+// 4. Khách hàng: Đồng ý chốt giá cước đơn hàng (Public)
+router.post('/customer-agree/:token', customerAgreeOrderPrice);
+
+// 5. Khách hàng: Upload hồ sơ chứng từ liên quan (Public)
+router.post('/customer-upload-docs/:token', customerUploadDocuments);
+
+// 6. Điều phối viên: Kiểm duyệt chứng từ cho đơn web & Tự động gửi email kèm hợp đồng điện tử & Link ký số
+router.post('/:id/approve-web-docs', approveWebOrderDocuments);
+
+// 7. Khách hàng: Ký chữ ký số lên hợp đồng & Lưu trực tiếp vào hồ sơ (Public)
+router.post('/customer-sign/:token', customerSignContract);
+
+// 8. Điều phối viên tạo đơn trực tiếp
 router.post('/', createDirectOrder);
 
-// 4. Chốt giá cước thỏa thuận
+// 9. Chốt giá cước thỏa thuận (Điều phối viên)
 router.patch('/:id/price', updateAgreedPrice);
 
-// 5. Xác nhận đơn hàng (chuyển sang READY_FOR_PLANNING)
+// 9b. Điều phối viên tải lên tệp hợp đồng đã ký thật
+router.post('/:id/contract-file', uploadContractFile);
+
+// 10. Xác nhận đơn hàng trực tiếp (chuyển sang READY_FOR_PLANNING)
 router.patch('/:id/confirm', confirmOrder);
 
-// 6. Gán xe & lập chuyến (chuyển sang ASSIGNED)
+// 11. Gán xe & lập chuyến (chuyển sang ASSIGNED)
 router.post('/:id/assign', assignTrip);
 
-// 7. Hủy đơn hàng (chuyển sang CANCELLED)
+// 12. Hủy đơn hàng (chuyển sang CANCELLED)
 router.post('/:id/cancel', cancelOrder);
 
-// 8. Đóng đơn hàng (chuyển sang CLOSED)
+// 13. Đóng đơn hàng (chuyển sang CLOSED)
 router.post('/:id/close', closeOrder);
 
 module.exports = router;
+

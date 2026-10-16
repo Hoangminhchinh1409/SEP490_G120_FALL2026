@@ -642,10 +642,12 @@ export default function HomePage() {
         </button>
       </div>
 
-      <ConsultationBookingModal 
-        open={isConsultationOpen} 
-        onCancel={() => setIsConsultationOpen(false)} 
-      />
+      {isConsultationOpen && (
+        <ConsultationBookingModal 
+          open={isConsultationOpen} 
+          onCancel={() => setIsConsultationOpen(false)} 
+        />
+      )}
     </>
   );
 }

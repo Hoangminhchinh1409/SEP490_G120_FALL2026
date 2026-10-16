@@ -303,7 +303,10 @@ const getAllLocations = async (req, res) => {
         customer: loc.customer?.company_name || 'Khách hàng NEXLOG',
         customer_id: loc.customer_id,
         address: loc.address || '',
-        province: loc.province_code === 'HN' ? 'Hà Nội' : (loc.province_code === 'HP' ? 'Hải Phòng' : 'Bắc Ninh'),
+        province: loc.province_code === 'HN' ? 'Hà Nội' : 
+                  (loc.province_code === 'HP' ? 'Hải Phòng' : 
+                  (loc.province_code === 'BN' ? 'Bắc Ninh' : 
+                  (loc.province_code === 'TN' ? 'Thái Nguyên' : 'Khác'))),
         lat: parseFloat(loc.lat) || 21.0285,
         lng: parseFloat(loc.lng) || 105.8542,
         receiving_hours: (loc.receive_from && loc.receive_to) ? `${loc.receive_from} - ${loc.receive_to}` : '24/7 (Cả tuần)',
@@ -1168,6 +1171,113 @@ const getDispatcherDashboardStats = async (req, res) => {
   }
 };
 
+// 7. ROUTING PROXY (TÍNH TOÁN ĐƯỜNG BỘ THỰC TẾ QUA OSRM - LUÔN CHỌN ĐƯỜNG BỘ NGẮN NHẤT)
+const calculateRoadRoute = async (req, res) => {
+  try {
+    const { startLng, startLat, endLng, endLat } = req.query;
+
+    if (!startLng || !startLat || !endLng || !endLat) {
+      return res.status(400).json({ message: 'Thiếu tham số tọa độ điểm đầu hoặc điểm cuối' });
+    }
+
+    const https = require('https');
+    const geoapifyKey = process.env.GEOAPIFY_API_KEY || '5a7ccf56c9694e229e9621648227937a';
+
+    const fetchJson = (url) => {
+      return new Promise((resolve, reject) => {
+        const req = https.get(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NEXLOG-Logistics'
+          },
+          timeout: 7000
+        }, (response) => {
+          let data = '';
+          response.on('data', chunk => data += chunk);
+          response.on('end', () => {
+            try {
+              const parsed = JSON.parse(data);
+              resolve(parsed);
+            } catch (err) {
+              reject(err);
+            }
+          });
+        });
+
+        req.on('error', reject);
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error('Timeout'));
+        });
+      });
+    };
+
+    // 1. Ưu tiên Geoapify Routing API chuyên dụng (Đường bộ chính xác cao)
+    try {
+      const geoapifyUrl = `https://api.geoapify.com/v1/routing?waypoints=${startLat},${startLng}|${endLat},${endLng}&mode=drive&apiKey=${geoapifyKey}`;
+      const geoData = await fetchJson(geoapifyUrl);
+      const feature = geoData?.features?.[0];
+
+      if (feature && feature.properties) {
+        const distMeters = feature.properties.distance || 0;
+        const timeSecs = feature.properties.time || 0;
+        const geom = feature.geometry;
+
+        // Geoapify MultiLineString [[ [lng, lat], ... ]] hoặc LineString [ [lng, lat], ... ]
+        let coordsList = [];
+        if (geom.type === 'MultiLineString') {
+          coordsList = geom.coordinates.flat(1);
+        } else if (geom.type === 'LineString') {
+          coordsList = geom.coordinates;
+        }
+
+        if (coordsList.length > 0) {
+          const polyline = coordsList.map(([lng, lat]) => [lat, lng]);
+          return res.json({
+            success: true,
+            distanceKm: parseFloat((distMeters / 1000).toFixed(1)),
+            durationMins: Math.max(5, Math.round(timeSecs / 60)),
+            polyline
+          });
+        }
+      }
+    } catch (gErr) {
+      console.warn('Geoapify Routing failed, fallback to OSM:', gErr.message);
+    }
+
+    // 2. Fallback: OpenStreetMap routed-car với alternatives=true
+    const targetUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&alternatives=true`;
+    
+    let osmData;
+    try {
+      osmData = await fetchJson(targetUrl);
+    } catch {
+      const fallbackUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+      osmData = await fetchJson(fallbackUrl).catch(() => null);
+    }
+
+    if (osmData && osmData.routes && osmData.routes.length > 0) {
+      const sortedRoutes = [...osmData.routes].sort((a, b) => a.distance - b.distance);
+      const shortestRoute = sortedRoutes[0];
+
+      const distanceKm = parseFloat((shortestRoute.distance / 1000).toFixed(1));
+      const durationMins = Math.max(5, Math.round(shortestRoute.duration / 60));
+      const polyline = shortestRoute.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+
+      return res.json({
+        success: true,
+        distanceKm,
+        durationMins,
+        polyline
+      });
+    }
+
+    return res.status(404).json({ message: 'Không tìm thấy đường bộ nối 2 điểm' });
+  } catch (err) {
+    console.error('calculateRoadRoute exception:', err);
+    return res.status(500).json({ message: 'Lỗi tính toán tuyến đường' });
+  }
+};
+
 module.exports = {
   // Fleet
   getFleetTrucks,
@@ -1193,5 +1303,7 @@ module.exports = {
   createIncident,
   updateIncidentStatus,
   // Dashboard
-  getDispatcherDashboardStats
+  getDispatcherDashboardStats,
+  // Routing
+  calculateRoadRoute
 };

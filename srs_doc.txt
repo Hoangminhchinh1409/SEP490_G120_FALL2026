@@ -1,0 +1,3687 @@
+﻿CAPSTONE PROJECT REPORT
+Report 3 – Software Requirement Specification
+NEXLOG - Smart Logistics Tracking and Dispatch System
+
+
+INSTRUCTOR: Trần Thu Thủy
+CLASS: SEP490_G120
+
+
+Team Members:
+1. Hoàng Minh Chính                            HE171181
+2. Trần Quỳnh Chi                        HE171032
+3. Nguyễn Hoàng Sơn                HE171238
+4. Nguyễn Tuấn Minh                           HE181912
+5. Vũ Đức Trung                                     HE161769
+
+
+
+
+– Hanoi, Oct 2026 –
+Table of Contents
+Change Log        4
+Definition and Acronyms        5
+I. Overall Requirements        6
+1. Context Diagram        6
+2. Main Business Flow        6
+3. Conceptual Data Model        8
+4. User Requirements        20
+5. System Functionalities        32
+II. Use Case Specifications        38
+1. Order Management        38
+2. Trip Planning        43
+3. Driver PWA        44
+4. Order Tracking        47
+5. Trip Monitoring & Incidents        47
+6. News & Accounts        48
+III. Functional Requirements        50
+1. Authentication        50
+2. Order Intake        53
+3. Trip Planning        65
+4. Trip Monitoring & Incidents        70
+5. Website        76
+6. Driver PWA        78
+7. Manager Oversight        83
+8. Fleet & Driver Management        90
+9. Vendors & Contracts        91
+10. System Administration        91
+11. Background Job Inventory        92
+12. External API Inventory        95
+IV. Non-Functional Requirements        96
+1. External Interfaces        96
+2. Quality Attributes        97
+V. Requirement Appendix        99
+1. Business Rules        99
+2. System Messages        109
+3. Other Requirements        113
+________________
+
+
+Change Log
+Date
+	A*
+M, D
+	In charge
+	Change Description
+	24/09/2026
+	A
+	Nguyễn Tuấn Minh
+	Added Context Diagram and Use Case Diagrams. 
+	25/09/2026
+	A
+	Trần Quỳnh Chi
+	Added an explanation for the Context Diagram and added the Actors and Use Cases tables.
+	25/09/2026
+	M
+	Nguyễn Tuấn Minh
+	Updated Use Case Diagrams.
+	26/09/2026
+	A
+	Trần Quỳnh Chi
+	Added Use Case Specifications.
+	27/09/2026
+	A
+	Nguyễn Tuấn Minh
+	Added the Main Business, Conceptual Data Model: ERD, entity descriptions and data business rules. 
+	28/09/2026
+	A
+	Nguyễn Tuấn Minh
+	Added the Permission Matrix, Screen Flow, Screen List, External API and Background Job inventories.
+	29/09/2026
+	A
+	Nguyễn Tuấn Minh
+	Added Functional Requirements, Non-Functional Requirements and Requirement Appendix. 
+	29/09/2026
+	M
+	Nguyễn Tuấn Minh
+	Fixed the business flow names and triggers, figure numbers, UC references, the Customer and Trip entity descriptions and the Rationale of BR-14 and BR-25.
+	03/10/2026
+	M
+	Nguyễn Tuấn Minh
+	Updated the Context Diagram and the Actors table. Added Routes API, Geocoding API, the AI service and JOB-06.
+	03/10/2026
+	M
+	Nguyễn Tuấn Minh
+	Added UC-37 to UC-43. Updated the 5 diagrams and the Permission Matrix.
+	06/10/2026
+	M
+	Trần Quỳnh Chi
+	Update Permission Matrix
+	07/10/2026
+	M 
+	Trần Quỳnh Chi
+	Updated ERD and Entity Descriptions (Order Draft status, emergency replacement relations for TripTruck/TripDriver, Manager approval for Vendor, and document retention rules. 
+	08/10/2026
+	M
+	Trần Quỳnh Chi
+	Revised Data Business Rules (added Agreed Price rule, no-manual-swap rule on assigned trips, approved vendor restriction, and differentiated document retention periods. 
+	14/10/2026
+	M
+	Nguyễn Tuấn Minh
+	Removed fuel, order type, appointment window, refrigerated trucks and unused fields. Cargo type has 6 values; added cargo name, quantity, unit, specification and special request note. Added News (UC-44, UC-45, News Post entity) and Reset Forgotten Password (UC-46). Rebuilt the ERD, Context Diagram, UC diagrams and Screen Flow. Rewrote Part III by feature, sub-feature and screen. Added maps to the Order Form, Location List and Location Details, and route planning with a map to Trip Assignment.
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	*A - Added M - Modified D - Deleted
+________________
+
+
+Definition and Acronyms
+Acronym
+	Definition
+	ALS
+	ALS Logistics – The logistics enterprise serving as the case study and domain reference for designing and evaluating the system's operational workflow. 
+	ALS-LTDS
+	Project code of the system
+	NEXLOG
+	Product name of the system
+	SRS
+	Software Requirement Specification
+	BF
+	Business Flow
+	UC
+	Use Case
+	BR
+	Business Rule
+	MSG
+	System Message
+	FE / LI
+	Feature ID / Limitation ID from Report 1
+	PWA
+	Progressive Web App. The driver app runs in the phone browser and also works offline
+	POD
+	Proof of Delivery. A paper delivery note signed by the receiver. The driver takes a photo of it. It is not a digital signature
+	ETA
+	Estimated Time of Arrival. It is only an estimate, shown only to staff
+	HAWB
+	House Air Waybill. The air transport document of one shipment, issued by the forwarder. Its number is entered on the order. It is not the waybill (the road transport document of a trip).
+	GPS
+	Global Positioning System. Each ALS truck has a GPS black box that reports its location
+	API
+	Application Programming Interface
+	LTL
+	Less-Than-Truckload. Several small orders share one truck
+	B2B
+	Business-to-Business
+	SLA
+	Service Level Agreement. Here, Dispatcher SLA is the time from Ready for Planning to truck assignment
+	VND
+	Vietnamese Dong
+	OrderID
+	The unique code of an order. Notes, photos, POD and documents are linked to it
+	Tracking link
+	A public link to one order. It uses a random token. Customers open it without an account
+	Chargeable weight
+	The weight used to choose the truck size: the larger of the actual weight and L × W × H (cm) / 5000
+	Transit warehouse
+	An ALS warehouse where the truck stops between pickup and drop-off, for example the My Dinh customs checkpoint
+	Extra fee
+	A fee added in the field after the price was agreed, for example for waiting time or extra loading work
+	Collection-on-behalf fee
+	Money that ALS pays to a third party for the customer and gets back later. It is not ALS revenue and has no VAT
+	Vendor tracking code
+	The tracking code that a truck rental company gives when ALS hands an order to it
+	Major incident
+	An incident that the Dispatcher must send to the Manager: damaged or lost cargo, a traffic accident, or cargo held by authorities
+	
+
+I. Overall Requirements
+1. Context Diagram
+The Context Diagram provides an overview of the NEXLOG system and shows how the system interacts with external actors and services.
+The main actors are Manager, Dispatcher, Driver, Administrator, and Guest. The system also interacts with external services such as Google Maps Platform, Cloudinary, the Vehicle GPS System, the AI service (Google Gemini) and the email service to support logistics tracking and delivery operations.
+  
+
+Figure 1. Context Diagram of NEXLOG System
+2. Main Business Flow
+The five business flows below follow an order from intake to closing. They also cover vendor trucks, incidents and cancellations. Grey rounded boxes are actor steps. Yellow italic boxes are system steps. Orange diamonds are decisions. Dashed boxes are steps done outside the system. Dotted arrows are requests to the system and its answers.
+2.1 Order Intake (BF-01)
+Trigger: A customer fills in the order form on the website.
+End condition: The order is Ready for Planning: the customer is confirmed and the documents are verified (go to BF-02).
+  
+
+Figure 2. Order Intake and Customs Documents (BF-01)
+2.2 Trip Planning and Assignment (BF-02) 
+Trigger: An order is Ready for Planning.
+End condition: The trip is created and sent to the driver (go to BF-03).
+  
+
+Figure 3. Order Grouping and Truck Allocation (BF-02)
+2.3 Trip Execution, Delivery and Closing (BF-03)
+Trigger: The driver gets a new trip with its trip documents (end of BF-02).
+End condition: The driver records any extra fees. The system sets the trip Completed and the truck driver available.  
+Figure 4. Trip Execution, Delivery and Closing (BF-03)
+2.4 Incident and Compensation Handling (BF-04)
+Trigger: A driver reports an incident during trip (BF-03).
+End condition: The trip goes on with the same truck, or with another truck or driver on the same trip, or the Manager closes the claim.
+  
+
+Figure 5. Incident and Compensation Handling (BF-04)
+2.5 Order Cancellation (BF-05)
+Trigger: A customer asks the Dispatcher to cancel an order.
+End condition: If the cargo is already loaded, the order is locked and goes on to delivery (BF-03). Otherwise the truck is rerouted if it is already on its way, the Dispatcher agrees the cancellation fee with the customer and enters it, and the trip ends and its truck and drivers are released.
+  
+
+Figure 6. Order Cancellation and Compensation (BF-05)
+3. Conceptual Data Model
+3.1 Entity Relationship Diagram
+The ERD uses Crow’s Foot notation to illustrate the relationships between the system entities. Each box shows the entity and its main attributes.        
+  
+
+Figure 7. Entity Relationship Diagram of NEXLOG System
+3.2 Entity Descriptions
+Entity: Order
+Field
+	Value
+	Purpose
+	Represents one transportation order of one customer, from pickup to delivery. 
+	Key business attributes
+	OrderID, HAWB number, Customer, Pickup Location, Delivery Location, Receiver name and phone, Source (Web, Hotline), Agreed price, Customer agrees to grouping, Responsible Dispatcher, Contract, Signed order contract file, Vendor, Vendor tracking code, Tracking token, Tracking token expiry, Document status, Cancellation reason, Cancellation fee, Is closed, Created by, Created time, Status.
+	Business identity
+	OrderID is unique. The tracking token is unique and unpredictable. The HAWB number comes from the documents of the customer (it is not generated by the system) and is not unique, because two forwarders may use the same number.
+	Status / lifecycle
+	Draft → Confirmed → Ready for Planning → Assigned → Accepted → Picked Up → In Transit → Delivered. A Draft is Confirmed only when it has the agreed price, the signed order contract and the HAWB number. While the order is Confirmed, its customer documents go Pending Documents → Documents Uploaded → Documents Verified. Other paths: Draft → Cancelled; Confirmed, Ready for Planning, Assigned or Accepted → Cancelled, until the driver records Loading Started at the pickup stop; Ready for Planning → Handed Over to Vendor. Closing is not a status: when an order becomes Delivered, Handed Over to Vendor or Cancelled, the system sets Is closed to Yes and the order is locked; its status stays the same (BR-19).
+	Entity: Order Cargo
+Field
+	Value
+	Purpose
+	Stores the cargo of one order: what is carried, how much and how big. One cargo line for each order.
+	Key business attributes
+	OrderID, Cargo type (Pallet, Bulk cargo, General goods, Fragile electronics, High-value goods, Other), Cargo name, Quantity, Unit, Weight, Length, Width, Height, Specification, Stackability, Declared value, Special request note. Length, width and height are required for Pallet; Bulk cargo has only the weight and the specification (for example “40 cartons”). The cargo type is a classification only; it does not limit which truck is chosen.
+	Business identity
+	OrderID is unique: one cargo line for each order.
+	Status / lifecycle
+	No status. The cargo cannot be edited after the pickup (BR-32).
+	Entity: Customer
+Field
+	Value
+	Purpose
+	Represents a company that requests transportation services. 
+	Key business attributes
+	CustomerID, Company name, Tax code, Registered address, Contact person, Email, Phone 
+	Business identity
+	Tax code is unique.
+	Status / lifecycle
+	None.
+	Entity: Location
+Field
+	Value
+	Purpose
+	Represents a saved physical location used for pickup, transit or delivery. 
+	Key business attributes
+	LocationID, Name, Type (Company location, Customs checkpoint, Customer site), Address, Province, Latitude, Longitude, Contact name, Contact phone, Receiving hours, Geofence radius, CustomerID
+	Business identity
+	LocationID is unique.
+	Status / lifecycle
+	None. A Location used by an Order or Trip cannot be deleted. 
+	Entity: Customer Document
+Field
+	Value
+	Purpose
+	Stores a customer document of an order, for example the customs declaration, the invoice or the sales contract, and the document types the order requires. The customer or the Dispatcher uploads the file.
+	Key business attributes
+	DocumentID, OrderID, Document type, Is required, File link (empty until a file is uploaded), Required by, Uploaded by, Uploaded time, Checked by, Checked time, Reject reason.
+	Business identity
+	DocumentID is unique.
+	Status / lifecycle
+	Required (no file yet) → Uploaded → Confirmed, or Rejected (with a reason) and uploaded again. A file added for a type that is not required is Uploaded with Is required = No. Files are purged after the retention period counted from the upload time (JOB-01). A wrong file may be deleted before it is confirmed.
+	Entity: OrderNote
+Field
+	Value
+	Purpose
+	A message between the Dispatcher and the driver on one order.
+	Key business attributes
+	NoteID, OrderID, Content, Created by, Created time 
+	Business identity
+	NoteID is unique. 
+	Status / lifecycle
+	None. 
+	Entity: Extra Fee
+Field
+	Value
+	Purpose
+	Records an extra charge on an order after the price was agreed: a surcharge, a waiting fee or a collection-on-behalf fee.
+	Key business attributes
+	ExtraFeeID, OrderID, TripID (optional), Fee type (Surcharge, Waiting fee, Collection-on-behalf), Amount, Reason, Suggested by system (yes / no), Recorded by, Confirmed by, Confirmed time.
+	Business identity
+	ExtraFeeID is unique.
+	Status / lifecycle
+	None. A waiting fee suggested by the system becomes a fee only when the Dispatcher confirms it (BR-40).
+	Entity: Trip
+Field
+	Value
+	Purpose
+	Represents one planned transportation run that carries one or more Orders.
+	Key business attributes
+	TripID, Trip code, Planned start, Planned distance, Planned duration, Actual distance, Actual duration, Status. The number of drivers (1 or 2) is chosen at assignment and is the number of its Trip Driver records.
+	Business identity
+	Trip code is unique.
+	Status / lifecycle
+	Assigned → Dispatched → Accepted → In Progress → Completed. Other path: Cancelled, only when all its orders are cancelled before the truck starts.
+	Entity: Trip Truck
+Field
+	Value
+	Purpose
+	Records truck assignments to a Trip, including replacement trucks. 
+	Key business attributes
+	TripTruckID, TripID, TruckID, Assignment type (Original, Replacement), IncidentID, Assigned time, Released time, Replacement reason. 
+	Business identity
+	TripTruckID is unique.
+	Status / lifecycle
+	Active → Released 
+	Entity: Trip Driver
+Field
+	Value
+	Purpose
+	Records driver assignments to a Trip.
+	Key business attributes
+	TripDriverID, TripID, DriverID, Driver role (Primary, Secondary), Assignment type (Original, Replacement), IncidentID, Replacement reason, Assigned time, Released time.
+	Business identity
+	TripDriverID is unique. 
+	Status / lifecycle
+	Active → Released 
+	Entity: Trip Stop
+Field
+	Value
+	Purpose
+	Represents one planned stop in the visiting sequence of a Trip.
+	Key business attributes
+	TripStopID, TripID, OrderID, Sequence, Stop type (Start, Pickup, Transit, Drop-off, Break), LocationID, Planned arrival, Actual arrival, Distance from previous stop, Loaded quantity, Loaded weight, Delivered quantity, Delivered weight, Status. OrderID tells which order is picked up or dropped off at the stop; the orders of a trip are the orders of its stops. A Start or Break stop has no order, and a Break stop has no Location.
+	Business identity
+	TripID + Sequence is unique. 
+	Status / lifecycle
+	Pending → Arrived → Done 
+	Entity: Trip Event
+Field
+	Value
+	Purpose
+	Records an actual event of a Trip. Most events happen at a Trip Stop.
+	Key business attributes
+	TripEventID, TripID, TripStopID (empty for a break away from a stop), Event type (Arrived, Loading Started, Loading Done, Left, Break Start, Break End), Phone time, Received time, Latitude, Longitude, Outside-radius flag, Client action ID.
+	Business identity
+	Client action ID is unique for each event sent from a device.
+	Status / lifecycle
+	None. Events are append-only.
+	Entity: Trip Track Point
+Field
+	Value
+	Purpose
+	Stores one GPS position of the truck of a trip. The points make the track shown in Trip Replay.
+	Key business attributes
+	TrackPointID, TripID, Latitude, Longitude, Recorded time.
+	Business identity
+	TrackPointID is unique.
+	Status / lifecycle
+	None. Points are deleted after the GPS track retention period (JOB-01).
+	Entity: Waybill
+Field
+	Value
+	Purpose
+	Represents the transport document generated for a Trip after truck and driver assignment.
+	Key business attributes
+	WaybillID, TripID, Waybill number, Issue time, Issued by, Status (Valid, Replaced), Trip data snapshot (Customer, HAWB numbers of the orders, Truck plate, Driver names, Start point, End point, Cargo name and type, Cargo weight, Contract number and date), File link.
+	Business identity
+	Waybill number is unique. One Trip has one valid Waybill at a time.
+	Status / lifecycle
+	Valid → Replaced. Kept for 3 years (BR-22).
+	Entity: Truck
+Field
+	Value
+	Purpose
+	Represents a truck belonging to the company's fleet.
+	Key business attributes
+	TruckID, Plate number, Model, Allowed payload, Box length, Box width, Box height, Required license class, Inspection expiry, Insurance expiry, GPS device ID, Status.
+	Business identity
+	Plate number is unique. 
+	Status / lifecycle
+	Available → On Trip → Available. Other states: Maintenance, Inactive.
+	Entity: Driver Profile
+Field
+	Value
+	Purpose
+	Stores the professional information of a driver and links it to a Driver User Account.
+	Key business attributes
+	DriverProfileID, UserAccountID, License number, License class, License expiry, Status
+	Business identity
+	The license number is unique.
+	Status / lifecycle
+	Active / Inactive 
+	Entity: Driver Shift
+Field
+	Value
+	Purpose
+	Represents one working shift of one driver on one day.
+	Key business attributes
+	DriverShiftID, DriverID, Date, Start time, End time 
+	Business identity
+	A driver cannot have overlapping shifts. 
+	Status / lifecycle
+	None.
+	Entity: Delivery Evidence
+Field
+	Value
+	Purpose
+	Stores delivery-related evidence captured by the Driver. 
+	Key business attributes
+	EvidenceID, TripStopID, OrderID, Type (Seal_and_Plate, POD), File link, File type, File size, Seal number, Receiver name, Captured time, Latitude, Longitude 
+	Business identity
+	One POD is allowed per Order. 
+	Status / lifecycle
+	Stored → Purged (after 2 years, JOB-01). Kept while a claim is Pending.
+	Entity: Incident
+Field
+	Value
+	Purpose
+	Records an operational problem that happens during transportation.
+	Key business attributes
+	IncidentID, TripID, TripStopID, Type (Damaged/lost cargo, Traffic accident, Cargo held by authorities, Truck breakdown, Road ban, Other), Description, Photos, Fault, Status, Reported by, Reported time, Escalated by, Escalated time, Escalation reason, Resolution note, Resolved by, Resolved time.
+	Business identity
+	IncidentID is unique.
+	Status / lifecycle
+	Reported → Resolved, or Reported → Escalated → Resolved (by the Manager)
+	Entity: Compensation Claim
+Field
+	Value
+	Purpose
+	Records a compensation request resulting from an incident or cancellation and supports Manager review.
+	Key business attributes
+	ClaimID, OrderID, IncidentID (empty for a cancellation claim), Amount, Reason, Evidence, Status, Created by, Created time, Reviewed by, Reviewed time, Review comment. The contract rules come from the contract linked to the order.
+	Business identity
+	ClaimID is unique.
+	Status / lifecycle
+	Pending → Approved / Rejected.
+	Entity: Vendor
+Field
+	Value
+	Purpose
+	Represents an external truck rental company used when the internal fleet cannot provide a suitable truck.
+	Key business attributes
+	VendorID, Company name, Contact person, Phone, Truck types, Approval status, Approved by, Approved time, Approval notes.
+	Business identity
+	Company name is unique. 
+	Status / lifecycle
+	Pending → Approved → Suspended 
+	Entity: Transport Contract
+Field
+	Value
+	Purpose
+	Represents a transportation contract between the company and exactly one Customer or Vendor. 
+	Key business attributes
+	ContractID, Contract number, Contract type (Customer / Vendor), CustomerID or VendorID, Terms and responsibilities, Pricing conditions, Free waiting time, Waiting fee rate, Liability cap, Compensation terms, Valid from, Valid to, Attachment, Created by, Status.
+	Business identity
+	Contract number is unique. A customer has one Active contract at a time.
+	Status / lifecycle
+	Draft → Active → Expired 
+	Entity: Contract Cancellation Tier
+Field
+	Value
+	Purpose
+	Stores one cancellation fee tier of a contract: the fee for a cancellation made within a range of hours before the planned start.
+	Key business attributes
+	TierID, ContractID, Hours before planned start (from, to), Fee percent of the agreed price.
+	Business identity
+	TierID is unique. The ranges of one contract do not overlap.
+	Status / lifecycle
+	None.
+	Entity: User Account
+Field
+	Value
+	Purpose
+	Represents a staff account used to access the system.
+	Key business attributes
+	UserAccountID, Username, Full name, Email (required), Phone, Password hash, RoleID, Status, Order form token (Dispatcher only), Password reset token, Password reset expiry.
+	Business identity
+	Username and email are unique.
+	Status / lifecycle
+	Active / Locked
+	Entity: Notification
+Field
+	Value
+	Purpose
+	Stores one alert shown to a staff user, for example a trip alert for a driver, a new draft order for the Dispatcher or an expiry reminder for the Manager.
+	Key business attributes
+	NotificationID, UserAccountID, Target type and Target ID (the order, trip or incident it is about), Message, Created time, Read time.
+	Business identity
+	NotificationID is unique.
+	Status / lifecycle
+	Unread → Read. Deleted after 90 days (JOB-05).
+	Entity: Role
+Field
+	Value
+	Purpose
+	Defines a set of permissions that can be assigned to User Accounts.
+	Key business attributes
+	RoleID, Role name, Permissions
+	Business identity
+	Role name is unique.
+	Status / lifecycle
+	None.
+	 
+Entity: Activity Log
+Field
+	Value
+	Purpose
+	Records who performed an action, on which record and when.
+	Key business attributes
+	ActivityLogID, ActorID, Actor type, Action, Target type, Target ID, Changes, Reason, IP address, Created time
+	Business identity
+	ActivityLogID is unique. 
+	Status / lifecycle
+	Append-only. Records are not updated or deleted through the application.
+	Entity: System Setting
+Field
+	Value
+	Purpose
+	Stores configurable system parameters that can be changed by the Administrator without releasing a new version.
+	Key business attributes
+	Setting key, Setting value (customer document retention period, evidence retention period, waiting-too-long limit, minimum driver rest, file size limit, stop time, default depot, operating hours, default geofence radius, order code prefix, password reset link lifetime), Updated by, Updated time.
+	Business identity
+	 Setting key is unique.
+	Status / lifecycle
+	None.
+	Entity: News Post
+Field
+	Value
+	Purpose
+	Stores one news article that the Manager writes and publishes on the public News page of the NEXLOG website.
+	Key business attributes
+	NewsPostID, AuthorID (User Account), Title, Category (Market & Operations, Technology & AI, Air Cargo Terminals, Policy & Customs, Company News), Summary, Content, Cover image link, Is featured, View count, Published time, Status.
+	Business identity
+	 NewsPostID is unique.
+	Status / lifecycle
+	Draft → Published → Unpublished (can be published again). Only Published posts are shown to Guests.
+	
+
+3.3 Data Business Rules
+Rule
+	Description
+	Enforced On
+	Unique username and email
+	Two user accounts cannot have the same username or email address.
+	Creating or updating a user account
+	Unique customer tax code
+	Two customers cannot have the same tax code in the system.
+	Adding or updating a Customer
+	Random tracking token
+	Each order is assigned a cryptographically random, unguessable tracking token. The public tracking link never exposes the plain OrderID.
+	Creating an order
+	Price, contract and HAWB before confirming
+	An order from the order form or entered by the Dispatcher can be Confirmed only when it has the agreed price, the signed order contract and the HAWB number.
+	Updating Order to Ready for Planning
+	Documents are not edited
+	Uploaded customer files can be deleted before they are confirmed, but cannot be modified once uploaded or confirmed.
+	Uploading / Confirming Customer Documents
+	Differentiated document retention
+	Customer documents (declarations, D/O) are permanently purged 60–90 days after order closure. Operational proofs (lead-seal photos, signed PODs, trip events) must be archived for at least 2 years, unless held by an active compensation claim.
+	Purging Expired Documents & Background Jobs
+	No manual swap on assigned trips
+	Once a Trip is Assigned, the truck or the driver cannot be changed by hand. Any change must be linked to an Incident with a reason (UC-15).
+	Assigning / Replacing Truck & Driver
+	One order, one truck per trip
+	An order must be transported entirely on a single truck per trip; order payload cannot be split across multiple vehicles.
+	Trip Planning
+	One unfinished trip per truck and driver
+	An internal truck or driver can be assigned to only one unfinished trip (Assigned, Dispatched, Accepted or In Progress) at any given time.
+	Assign Truck & Driver
+	Approved vendor selection only
+	Dispatchers can only assign orders or trips to external Vendors that have been formally reviewed and marked as "Approved" by a Manager. 
+	Handing Over to Vendor/ Assigning Vendor Trip
+	Vendor orders keep only the tracking code
+	An order handed over to an external 3PL vendor only stores the vendor identity and vendor tracking code; driver apps, live seal verification, and internal GPS tracking are omitted.
+	Hand Over to Vendor
+	One contract party
+	Each transport contract must link to exactly one Customer or exactly one Vendor entity.
+	Manage Transport Contracts
+	4. User Requirements
+4.1 Actors
+#
+	Actor
+	Description
+	1
+	Administrator
+	Manages user accounts, user roles, and activity logs. 
+	2
+	Manager
+	Manages Dispatcher and Driver accounts, trucks, driver profiles and shifts, order workload, vendors and contracts. Resolves major incidents, approves compensation claims, monitors performance and publishes news posts on the website.
+	3
+	Dispatcher
+	Creates and manages transport orders, assigns vehicles and drivers, monitors deliveries, and manages operational information.
+	4
+	Driver
+	Receives assigned orders, updates transport status, captures delivery evidence, and works with the PWA in offline areas.
+	5
+	Guest
+	Anyone who uses the NEXLOG website without signing in, usually the staff of a customer. The Guest sends orders through the order form link, follows an order from its tracking link and uploads the customer documents, and reads the published news.
+	Table 1. System Actors and Their Descriptions
+
+
+4.2 Use Cases (UC)
+ID
+	Use Case
+	Feature
+	Use Case Description
+	01
+	Track Order
+	Order Tracking
+	Allows Guests to follow the status of an order, see its HAWB number and the Dispatcher contact. Guests do not see the ETA, the seal photo or the POD (BR-13).
+	02
+	Upload Customer Documents
+	Order Tracking
+	Allows Guests to upload the customer documents through the tracking page.
+	03
+	Manage Orders
+	Order Intake
+	Allows Dispatchers to review draft orders, set the required documents, agree the price and the order contract with the customer and confirm orders. A Dispatcher can also enter an order for the customer.
+	04
+	Cancel Order
+	Order Intake
+	Allows Dispatchers to cancel orders and record the reason and the fee.
+	05
+	Manage Customer Documents
+	Order Intake
+	Allows Dispatchers to set the required documents of an order, and to check, confirm and delete its documents.
+	06
+	Group Order into Trip
+	Trip Planning
+	Allows Dispatchers to add a new order to an open trip of the same customer. The system checks payload and driving hours.
+	07
+	Calculate Route Distance & Time
+	Trip Planning
+	Calculates the route distance and the trip time, and says if the trip needs 1 or more drivers.
+	08
+	Submit Order Form
+	Order Intake
+	Allows Guests to send one or more orders through the order form link of a Dispatcher, without an account.
+	09
+	Assign Truck & Driver to Trip
+	Trip Planning
+	Allows Dispatchers to choose a truck and the drivers for an order that is Ready for Planning. The system creates the trip and the trip documents and sends the trip to the driver.
+	10
+	Hand Over to Vendor
+	Trip Planning
+	Allows Dispatchers to hand over an order to a vendor when no fleet truck or driver is free.
+	11
+	Monitor Trip Progress
+	Trip Monitoring & Incidents
+	Allows Dispatchers to monitor trips: planned and actual times, late-risk orders, and alerts for position and driving hours.
+	12
+	Record Extra Fees
+	Order Intake
+	Allows Dispatchers to record additional charges, and to confirm the waiting fees that the system suggests.
+	13
+	Communicate on Order
+	Order Intake
+	Allows Dispatchers and Drivers to communicate with each other on an order. Each message keeps its sender and time.
+	14
+	Resolve Incident
+	Trip Monitoring & Incidents
+	Allows Dispatchers to handle incidents and record what was done.
+	15
+	Dispatch Replacement Truck
+	Trip Monitoring & Incidents
+	Allows Dispatchers to change the truck or the driver on the same trip when the truck breaks down or the truck or driver cannot go. A reason is required.
+	16
+	Escalate Incident to Manager
+	Trip Monitoring & Incidents
+	Allows Dispatchers to send major incidents to the Manager.
+	17
+	Manage Dispatcher & Driver Accounts
+	Fleet & Driver Management
+	Allows Managers to manage Dispatcher and Driver accounts.
+	18
+	Manage Trucks
+	Fleet & Driver Management
+	Allows Managers to manage trucks: plate, model, allowed payload, box size, inspection and insurance dates and GPS device. The Manager also sets a truck to Maintenance, Inactive or Available.
+	19
+	Manage Driver Profiles
+	Fleet & Driver Management
+	Allows Managers to manage driver profiles, license class and license expiry.
+	20
+	Schedule Driver Shifts
+	Fleet & Driver Management
+	Allows Managers to schedule driver shifts. The system warns when a shift is over the legal driving hours.
+	21
+	Monitor Order Workload
+	Manager Oversight
+	Allows Managers to monitor the orders and the workload of each Dispatcher, including drafts waiting too long, overdue documents and late-risk orders.
+	22
+	Reassign Order
+	Manager Oversight
+	Allows Managers to move an order to another Dispatcher.
+	23
+	Manage Vendors
+	Vendors & Contracts
+	Allows managers to add, update and approve partner vendors. The Manager can only view them.
+	24
+	Manage Transport Contracts
+	Vendors & Contracts
+	Allows Dispatchers to create and manage transport contracts with customers and vendors. A contract holds the free waiting time, the cancellation fee tiers and the liability cap. The Dispatcher can export a contract as a file for the Finance department. The Manager can only view them.
+	25
+	Resolve Major Incident
+	Manager Oversight
+	Allows Managers to resolve major incidents. The Manager can replay the trip as evidence.
+	26
+	Approve Compensation Claim
+	Manager Oversight
+	Allows Managers to approve or reject compensation claims from incidents and cancellations. The system warns when the amount is over the limit.
+	27
+	View Performance Dashboard
+	Manager Oversight
+	Allows Managers to view revenue, truck use, Dispatcher SLA and incidents.
+	28
+	View & Accept Assigned Trips
+	Driver PWA
+	Allows Drivers to view and accept their trips, and to open the trip documents. The order is Accepted when the driver accepts the trip.
+	29
+	Record Cargo Pickup
+	Driver PWA
+	Allows Drivers to record cargo pickup: the seal photo, and the packages and weight loaded.
+	30
+	Update Trip Status
+	Driver PWA
+	Allows Drivers to record the events of each stop: arrived, loading started, left, and breaks. The trip is In Progress from the first event at the pickup stop. An order is In Transit when the driver records Left at its pickup stop.
+	31
+	Record Delivery
+	Driver PWA
+	Allows Drivers to record delivery with the POD.
+	32
+	Report Incident
+	Driver PWA
+	Allows Drivers to report incidents during a trip.
+	33
+	Manage User Accounts
+	System Administration
+	Allows Administrators to manage user accounts.
+	34
+	Manage Roles & Permissions
+	System Administration
+	Allows Administrators to manage user roles and permissions.
+	35
+	View Activity Logs
+	System Administration
+	Allows Administrators to view activity logs, including the reasons for truck and driver changes.
+	36
+	Manage System Settings
+	System Administration
+	Allows Administrators to change the system settings.
+	37
+	Login/logout
+	Authentication
+	Allows the Administrator, Manager, Dispatcher and Driver to sign in and out.
+	38
+	Change Password
+	Authentication
+	Allows a signed-in user to change their own password.
+	39
+	Ask Document Assistant
+	Order Intake
+	Allows Dispatchers to ask the AI service which customer documents an order needs. It returns a list with a short reason for each. The Dispatcher decides.
+	40
+	Manage Locations
+	Order Intake
+	Allows Dispatchers to manage customer and company locations: address, map position, receiving hours and contact.
+	41
+	View Trip Documents
+	Trip Planning
+	Allows Dispatchers and Drivers to view the trip documents (waybill and customer documents) and export the waybill as a PDF.
+	42
+	Replay Trip
+	Trip Monitoring & Incidents
+	Allows Dispatchers and Managers to replay a trip: the GPS track, the events, and the plan against the actual times.
+	43
+	View Driver Performance
+	Manager Oversight
+	Allows Managers to see the trips, on-time rate (arrival by the planned arrival time plus 30 minutes) and out-of-radius events of each driver.
+	44
+	Manage News Posts
+	Manager Oversight
+	Allows Managers to write, edit, publish, unpublish and delete news posts shown on the NEXLOG website.
+	45
+	Read News
+	Website
+	Allows Guests to read the news posts published on the NEXLOG website, search them and filter them by category.
+	46
+	Reset Forgotten Password
+	Authentication
+	Allows a staff user who forgot the password to get a one-time reset link by email and set a new password.
+	Table 2. Use Cases of the NEXLOG System
+UC-46 Reset Forgotten Password is a small use case of Authentication and is not drawn on the use case diagrams.
+4.3 Use Case Diagrams
+The following diagrams show the relationships between actors and use cases in the NEXLOG system. Each diagram focuses on one main human actor.
+
+
+
+
+
+
+
+
+  
+
+Figure 8. Use Case Diagram for Guest
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+Figure 9. Use Case Diagram for Dispatcher
+
+
+  
+
+Figure 10. Use Case Diagram for Manager
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+Figure 11. Use Case Diagram for Driver
+  
+
+Figure 12. Use Case Diagram for Administrator
+4.4 Permission Matrix
+Full = unrestricted  ·  Restricted = conditions apply (see footnotes)  ·  No = denied
+Entity
+	Action
+	Admin
+	Manager
+	Dispatcher
+	Driver
+	Guest
+	User account
+	Create / Edit / Lock
+	Full
+	Restricted¹
+	No
+	No
+	No
+	User account
+	Assign role & permissions
+	Full
+	No
+	No
+	No
+	No
+	User account
+	Change own password
+	Restricted⁵
+	Restricted⁵
+	Restricted⁵
+	Restricted⁵
+	No
+	User account
+	Reset forgotten password
+	Restricted⁵
+	Restricted⁵
+	Restricted⁵
+	Restricted⁵
+	No
+	Activity log
+	View
+	Full
+	No
+	No
+	No
+	No
+	Order
+	Submit order form
+	No
+	No
+	No
+	No
+	Restricted⁴
+	Order
+	Create / Edit / Confirm
+	No
+	No
+	Full
+	No
+	No
+	Order
+	View
+	No
+	Full
+	Full
+	Restricted²
+	Restricted³
+	Order
+	Cancel
+	No
+	No
+	Full
+	No
+	No
+	Order
+	Reassign to another Dispatcher
+	No
+	Full
+	No
+	No
+	No
+	Order form link
+	Copy / Send
+	No
+	No
+	Full
+	No
+	No
+	Tracking link
+	Revoke
+	No
+	No
+	Full
+	No
+	No
+	Order message
+	Send
+	No
+	No
+	Full
+	Restricted²
+	No
+	Order message
+	View
+	No
+	Full
+	Full
+	Restricted²
+	No
+	Location
+	Create / Edit / Delete
+	No
+	No
+	Full
+	No
+	No
+	Location
+	View
+	No
+	Full
+	Full
+	No
+	No
+	Document Assistant
+	Ask
+	No
+	No
+	Full
+	No
+	No
+	Customer document
+	Set required types
+	No
+	No
+	Full
+	No
+	No
+	Customer document
+	Upload
+	No
+	No
+	Full
+	No
+	Restricted³
+	Customer document
+	View
+	No
+	Full
+	Full
+	Restricted²
+	Restricted³
+	Customer document
+	Confirm / Delete
+	No
+	No
+	Full
+	No
+	No
+	Trip
+	Create / Assign truck & driver
+	No
+	No
+	Full
+	No
+	No
+	Trip
+	Add order to open trip
+	No
+	No
+	Full
+	No
+	No
+	Trip
+	Change truck / driver (through an incident, UC-15)
+	No
+	No
+	Full
+	No
+	No
+	Trip
+	Hand over to vendor
+	No
+	No
+	Full
+	No
+	No
+	Trip
+	Accept / Update status
+	No
+	No
+	No
+	Restricted²
+	No
+	Trip
+	View progress & truck location
+	No
+	No
+	Full
+	No
+	No
+	Load plan
+	View 3D load plan
+	No
+	No
+	Full
+	Restricted²
+	No
+	Trip event
+	Record (arrived, loading, left, break)
+	No
+	No
+	No
+	Restricted²
+	No
+	Trip event
+	View / Replay trip
+	No
+	Full
+	Full
+	No
+	No
+	Trip documents
+	View / Export waybill PDF
+	No
+	No
+	Full
+	Restricted²
+	No
+	Seal photo / POD
+	Upload
+	No
+	No
+	No
+	Restricted²
+	No
+	Seal photo / POD
+	View / Download
+	No
+	Full
+	Full
+	Restricted²
+	No
+	Delivery result
+	Record
+	No
+	No
+	No
+	Restricted²
+	No
+	Extra fee
+	Record
+	No
+	No
+	Full
+	Restricted²
+	No
+	Extra fee
+	Confirm
+	No
+	No
+	Full
+	No
+	No
+	Incident
+	Report
+	No
+	No
+	No
+	Restricted²
+	No
+	Incident
+	Resolve / Dispatch replacement / Escalate
+	No
+	No
+	Full
+	No
+	No
+	Incident
+	Resolve major incident
+	No
+	Full
+	No
+	No
+	No
+	Compensation claim
+	Create
+	No
+	Full
+	Full
+	No
+	No
+	Compensation claim
+	Approve / Reject
+	No
+	Full
+	No
+	No
+	No
+	Truck
+	Create / Edit / Delete
+	No
+	Full
+	No
+	No
+	No
+	Truck
+	Update status
+	No
+	Full
+	No
+	No
+	No
+	Driver profile
+	Create / Edit
+	No
+	Full
+	No
+	No
+	No
+	Driver shift
+	Schedule
+	No
+	Full
+	No
+	No
+	No
+	Driver shift
+	View
+	No
+	Full
+	Full
+	Restricted²
+	No
+	Vendor
+	Create / Edit / Approve
+	No
+	Full
+	No
+	No
+	No
+	Vendor
+	View
+	No
+	Full
+	Full
+	No
+	No
+	Transport contract
+	Create / Edit
+	No
+	No
+	Full
+	No
+	No
+	Transport contract
+	Export
+	No
+	No
+	Full
+	No
+	No
+	Transport contract
+	View
+	No
+	Full
+	Full
+	No
+	No
+	Order workload
+	View
+	No
+	Full
+	No
+	No
+	No
+	Dashboard
+	View
+	No
+	Full
+	No
+	No
+	No
+	News post
+	Create / Edit / Publish / Unpublish / Delete
+	No
+	Full
+	No
+	No
+	No
+	News post
+	View published
+	Full
+	Full
+	Full
+	Full
+	Full
+	¹ Dispatcher and Driver accounts only. Only the Administrator manages Manager accounts and assigns roles.
+² Only the trips assigned to this driver and the orders on them. Only the driver's own shifts.
+³ Only the order opened from its own tracking link, without login, while the link works. Upload only while the order is Confirmed. The Guest never sees the seal photo, the POD or the ETA.
+⁴ Only through a valid order form link of a Dispatcher, without login.
+⁵ Only the user's own account.
+ 
+5. System Functionalities
+5.1 Screen Inventory
+a. Screen Flow
+  
+
+Figure 13. Screen Flow of NEXLOG System
+b. Screen List
+#
+	Screen Name
+	Feature
+	Description
+	1
+	Login
+	Authentication
+	The Administrator, Manager, Dispatcher and Driver sign in and go to the home screen of their role.
+	2
+	Order Form
+	Order Intake
+	The form to send or edit orders. The Guest opens it from the order form link without login and sends one or more orders. The Dispatcher opens the same form to enter an order for a customer or to edit a draft. Fields: company details, addresses, HAWB number, cargo type and details (name, quantity, unit, weight, size or specification), receiver and special request note. There is no price field.
+	3
+	Order Tracking Page
+	Order Tracking
+	Public page, opened from the tracking link without login. Shows the OrderID, the HAWB number and the milestones of the order. Shows the required documents and lets Guests upload customer documents. For vendor orders it shows the vendor code. It also shows the Dispatcher contact. It never shows the ETA, the seal photo or the POD.
+	4
+	User Account List
+	System Administration
+	Home screen of the Administrator. Lists all user accounts, including Managers, with search and filters.
+	5
+	User Account Details
+	System Administration
+	The Administrator creates, updates or deactivates a user account and gives it a role.
+	6
+	Roles & Permissions
+	System Administration
+	The Administrator views the roles and changes the permissions of each role.
+	7
+	Activity Logs
+	System Administration
+	The Administrator sees who did what and when. Filters by user, action and date.
+	8
+	Order List
+	Order Intake
+	Home screen of the Dispatcher. Lists orders, new drafts first, with their status and responsible Dispatcher, search and status filters..
+	9
+	Order Details
+	Order Intake
+	Manages the complete lifecycle of a single order. For draft orders, the Dispatcher verifies estimated route distance, records grouping consent, sets agreed rates and required documents, and confirms the order with an attached contract. Once confirmed, the Dispatcher verifies submitted customer documents, tracks linked trip execution, delivery evidence (lead seal, POD), and surcharges via dedicated tabs, and can cancel, close, or revoke the order's tracking link. Access from Manager's Order Workload is read-only. 
+	10
+	Document Assistant
+	Order Intake
+	A panel on Order Details. The Dispatcher asks which documents the order needs. The AI service returns a list with a short reason for each. The Dispatcher adds the chosen ones to the required documents.
+	11
+	Trip Assignment
+	Trip Planning
+	Opens from Order Details when the order is Ready for Planning. Shows the trip time, the number of drivers, the free and suitable trucks and drivers, and the open trips of the same customer. The Dispatcher assigns a truck and drivers, and the system creates the trip and sends it to the driver. The Dispatcher can also hand the order to a vendor.
+	12
+	Trip Monitoring
+	Trip Monitoring & Incidents
+	Shows active trips with the planned and actual times, late-risk marks and truck location from GPS. New incident reports and position alerts appear at the top.
+	13
+	Trip Details
+	Trip Monitoring & Incidents
+	Shows one trip: the stops with planned and actual times, the events of each stop and the status history. It also shows the evidence, the incidents, and the truck and drivers. It opens the trip documents and the trip replay.
+	14
+	Incident Details
+	Trip Monitoring & Incidents
+	Shows one incident. The Dispatcher records what was done, sends a replacement truck, or escalates it. The Manager resolves escalated major incidents here.
+	15
+	Truck Status List
+	Trip Monitoring & Incidents
+	The Dispatcher views trucks with their inspection and insurance dates and status. The Manager sets a truck to Maintenance, Inactive or Available.
+	16
+	Performance Dashboard
+	Manager Oversight
+	Home screen of the Manager. Shows revenue, truck use, Dispatcher SLA and incident numbers by period. It opens Driver Performance.
+	17
+	Major Incident List
+	Manager Oversight
+	Lists major incidents escalated by Dispatchers. Opens Incident Details.
+	18
+	Order Workload
+	Manager Oversight
+	Shows the drafts that wait too long, the orders with overdue documents, and how many orders each Dispatcher has. The Manager moves an order to another Dispatcher here, or opens Order Details read only.
+	19
+	Compensation Claim List
+	Manager Oversight
+	Lists compensation claims from incidents.
+	20
+	Claim Details
+	Manager Oversight
+	The Manager checks a claim with its evidence, the contract terms and the liability limit, then approves or rejects it.
+	21
+	Truck List
+	Fleet & Driver Management
+	Lists trucks with their model, allowed payload, expiry dates and status.
+	22
+	Truck Details
+	Fleet & Driver Management
+	The Manager adds, updates or removes a truck. Fields: plate, model, allowed payload, box size, inspection and insurance dates and GPS device.
+	23
+	Driver Profile List
+	Fleet & Driver Management
+	Lists driver profiles.
+	24
+	Driver Profile Details
+	Fleet & Driver Management
+	The Manager creates or updates a driver profile: license number, class and expiry. It links the profile to a Driver account.
+	25
+	Driver Shift Schedule
+	Fleet & Driver Management
+	The Manager sets driver shifts by day. The screen warns when a shift is longer than the driving limits.
+	26
+	Staff Account List
+	Fleet & Driver Management
+	Lists Dispatcher and Driver accounts.
+	27
+	Staff Account Details
+	Fleet & Driver Management
+	The Manager creates, updates or locks a Dispatcher or Driver account.
+	28
+	Vendor List
+	Vendors & Contracts
+	Lists truck rental vendors and their approval status. The Manager opens it read only.
+	29
+	Vendor Details
+	Vendors & Contracts
+	The Manager adds, updates and approves a vendor.
+	30
+	Transport Contract List
+	Vendors & Contracts
+	Lists contracts with customers and vendors. The Manager opens it read only. The Dispatcher can export a contract as a file.
+	31
+	Transport Contract Details
+	Vendors & Contracts
+	The Dispatcher creates or updates a contract. Fields: terms, responsibilities and pricing conditions. Also the free waiting time, waiting fee, cancellation fee tiers, liability cap, validity and compensation rules. The Dispatcher exports the contract as a file for the Finance department.
+	32
+	My Trips
+	Driver PWA
+	Home screen of the Driver PWA. Lists the trips of the driver with the driving hours left. The driver accepts a new trip here and opens its trip documents.
+	33
+	Notifications
+	Driver PWA
+	Shows trip alerts and changes sent to the driver.
+	34
+	Trip Execution
+	Driver PWA
+	Shows the stops in order and the trip documents. The driver records the events of each stop. At pickup the driver records the packages, the weight and the seal & plate photo. At drop-off the driver records the delivery with the POD. Works offline.
+	35
+	Report Incident
+	Driver PWA
+	The driver reports an incident with type, description and photos.
+	36
+	System Settings
+	System Administration
+	The Administrator changes the system settings.
+	37
+	Location List
+	Order Intake
+	The Dispatcher and the Manager search the saved Locations by name, type, province or customer.
+	38
+	Location Details
+	Order Intake
+	The Dispatcher adds, updates or deletes a Location: name, type, address, map position, receiving hours, contact and geofence radius.
+	39
+	Trip Documents 
+	Trip Planning
+	Displays the complete trip documentation dossier for viewing and export, including the generated Trip Manifest, Dispatch Order, and linked customer waybills/customs forms. The Dispatcher and Driver open it. 
+	40
+	Trip Replay
+	Trip Monitoring & Incidents
+	The Dispatcher and the Manager replay a trip: the GPS track, the events, and the plan against the actual times.
+	41
+	Driver Performance
+	Manager Oversight
+	A tab of the Performance Dashboard. The Manager sees the trips, the on-time rate and the out-of-radius events of each driver, by period.
+	42
+	Change Password
+	Authentication
+	Every staff user changes their own password here. It opens from the account menu.
+	43
+	3D Load Plan
+	Trip Planning
+	Shows how the orders of one trip sit in the truck box, in 3D and in top, side and front views. The Dispatcher opens it from Trip Assignment and the Driver from Trip Execution. View only.
+	44
+	Forgot Password
+	Authentication
+	Opens from the Login screen. The staff user enters the account email and gets a one-time link to set a new password.
+	45
+	News Page
+	Website
+	Public page of the NEXLOG website. Shows the published news posts, newest first, with search, category filter and a featured post.
+	46
+	News Post List
+	Manager Oversight
+	Lists the news posts with their status. The Manager opens a post, writes a new one, publishes, unpublishes or deletes it.
+	47
+	News Post Editor
+	Manager Oversight
+	The Manager writes or edits a news post: title, category, summary, content, cover image and featured flag, then saves it as a draft or publishes it.
+	
+
+5.2 External API Inventory
+#
+	API Name
+	Calling Path
+	Description
+	1
+	Google Maps Routes (API-01)
+	NEXLOG → Google Maps Platform
+	Gives the driving distance and travel time between several places. Used for the route distance and trip time in Calculate Route Distance & Time, and for the ETA.
+	2
+	Cloudinary Upload (API-02)
+	NEXLOG → Cloudinary
+	Stores seal & plate photos, POD photos and customer documents. Returns the file link that is saved on the order.
+	3
+	Cloudinary Delete (API-03)
+	NEXLOG → Cloudinary
+	Deletes files after their retention period, and wrong documents that the Dispatcher deletes.
+	4
+	Vehicle GPS Location (API-04)
+	NEXLOG → Vehicle GPS System
+	Gives the current location of each truck by truck ID, for Trip Monitoring.
+	5
+	Google Maps Geocoding (API-05)
+	NEXLOG → Google Maps Platform
+	Gives the latitude and longitude of an address. Used when a Location is saved and when an order form arrives with new addresses.
+	6
+	AI Document Assistant (API-06)
+	NEXLOG → Google Gemini
+	Answers which customer documents an order needs, from its cargo name and type, HAWB number and route. Returns the cargo class, a risk level and each document with a short reason. A setting can turn it off.
+	
+
+
+
+5.3 Background Job Inventory
+#
+	Job Name
+	Group
+	Description
+	1
+	Purge Expired Files and Data (JOB-01)
+	Scheduled
+	every day at 2:00 AM. Deletes files and GPS tracks when the retention period of their type, counted from the upload or record time, is over.
+	2
+	Pull Truck Locations from GPS (JOB-02)
+	Scheduled
+	every 1 minute. Also adds each position to the track of the trip.
+	3
+	Flag Orders Waiting Too Long (JOB-03)
+	Scheduled
+	every 15 minutes
+	4
+	Recalculate ETA (JOB-04)
+	On event
+	After pickup, and after each leg update or stop event. Keeps the internal ETA for staff, sets the late-risk flag and the driving hours left.
+	5
+	Clean Up Sessions and Notifications (JOB-05)
+	Scheduled
+	every day at 3:00 AM
+	6
+	Remind Expiry Dates (JOB-06)
+	Scheduled
+	every day at 6:00 AM. Warns before a truck inspection, a truck insurance or a driver licence expires.
+	
+
+II. Use Case Specifications
+1. Order Management
+1.1 Submit Order Form
+Primary Actors
+	Guest
+	Secondary Actors
+	Google Maps Platform
+	Description
+	As a customer, I want to send my orders through a link without an account, so that ALS gets the full order data at once.
+	Preconditions
+	The Guest has a valid order form link of a Dispatcher (BR-44).
+	Normal Flow
+	1. Guest opens the order form link.
+2. System shows the Order Form with one empty order.
+3. Guest enters the company details: company name, contact person, phone and email. The tax code and the registered address are optional here; the Dispatcher completes them before confirming.
+4. Guest enters the order: pickup address, delivery address, cargo type, cargo name, quantity, unit, weight, stackability, receiver name and phone. For Pallet the Guest also enters the length, width and height; for Bulk cargo the specification. The Guest can add the HAWB number, the declared value and a special request note.
+5. Guest clicks Add Order to enter another order, or goes to step 6.
+6. Guest clicks Send.
+7. System checks each field and the cargo rules: weight from 1 to 4,000 kg and no dangerous cargo (BR-38).
+8. System matches the customer by tax code, or by email when no tax code is given. Otherwise it creates a customer (BR-44).
+9. System finds the map position of each address (API-05) and matches it with the saved Locations.
+10. System saves each order as Draft, gives it to the Dispatcher of the link (BR-20) and notifies that Dispatcher.
+11. System shows MSG52.
+	Alternative Flows
+	Step 7a – Wrong data
+System shows MSG02, MSG03 or MSG04 under the field. The form keeps the data.
+Step 7b – Cargo not accepted
+The weight is over 4,000 kg or the cargo is dangerous. System shows MSG04 and asks the Guest to call the Dispatcher.
+Step 9a – Address not found
+The order is still saved. The Dispatcher fixes the Location in UC-40 (MSG54).
+Step 10a – Too many sends
+System shows MSG37 (BR-44).
+	Postconditions
+	• The orders are Draft and linked to the customer and the Dispatcher.
+• They have no price, no trip and no tracking link yet.
+	 
+1.2 Manage Orders
+Primary Actors
+	Dispatcher
+	Secondary Actors
+	Google Maps Platform
+	Description
+	As a Dispatcher, I want to check a draft order, agree the price and the order contract with the customer, and confirm the order, so that the customer can send the documents and the order can be planned.
+	Preconditions
+	• Dispatcher has logged in.
+• A Draft order exists (sent by the customer on the website, or entered by the Dispatcher).
+	Normal Flow
+	1. Dispatcher opens a Draft order from the Order List.
+2. System shows Order Details with the order data.
+3. Dispatcher checks the data and the Locations, and edits them if needed. If the customer data is wrong, the customer corrects it on the form.
+4. System runs UC-07 Calculate Route Distance & Time. It gets the route distance and driving time from Google Maps, adds the loading time and the breaks, and shows the trip time and the number of drivers (BR-04). For a trip over 8 hours the system suggests 2 drivers; the number of drivers is chosen at assignment (UC-09).
+5. Dispatcher sets the required customer document types (BR-06). The Dispatcher completes the tax code, the registered address and the HAWB number if they are missing. Then the Dispatcher quotes the price to the customer by Zalo or Hotline, outside the system. In the same talk the Dispatcher asks if the order may join an open trip of the same customer (BR-05), and offers the document service: ALS prepares the customer documents for a fee (BR-30).
+6. The customer agrees to the quote, says yes or no to the grouping, and chooses the document service or not, outside the system. If the customer agrees to grouping, the Dispatcher ticks Customer agrees to grouping.
+7. Dispatcher enters the agreed price (BR-01). If the customer chose the document service, the Dispatcher adds its fee as an extra fee (BR-30).
+8. Dispatcher clicks Create Contract. System makes the order contract from the order data and the agreed price (BR-45). The Dispatcher sends it to the customer, who signs it outside the system.
+9. Dispatcher uploads the signed contract and clicks Confirm Order. System checks the agreed price, the signed contract and the HAWB number (BR-50) and asks to confirm (MSG57).
+10. System sets the order to Confirmed, links it to the Active transport contract of the customer (BR-47) and creates the tracking token (BR-21). It emails the tracking link and the required document list to the customer and shows MSG08.
+11. The customer uploads the customer documents (UC-02). If the customer chose the document service, the Dispatcher prepares and uploads them in UC-05. The Dispatcher then checks them in UC-05 Manage Customer Documents.
+	Alternative Flows
+	Step 1a – Order by phone
+Dispatcher clicks New Order on the Order List, fills the Order Form for the customer and continues at step 2.
+Step 4a – Distance service not available
+System shows MSG34. The order stays Draft. The Dispatcher tries again later.
+Step 5a – Documents not known (extension point)
+UC-39 Ask Document Assistant. The Dispatcher adds the chosen documents to the list.
+Step 5b – No document needed
+The Dispatcher leaves the list empty. At step 10 the order becomes Ready for Planning at once.
+Step 6a – The customer does not agree
+Dispatcher clicks Cancel Draft. The order becomes Cancelled with no fee (BR-18).
+Step 9a – Price, documents, signed contract or HAWB missing
+System shows MSG02, MSG43, MSG67 or MSG68.
+Step 10a – Email not sent
+The order is still saved. System shows MSG32 with the tracking link. The Dispatcher sends it by Zalo.
+	Postconditions
+	• The order is Confirmed (or Ready for Planning when no document is needed), with its price, signed contract, HAWB number, linked transport contract and tracking link.
+	 
+1.3 Manage Customer Documents
+Primary Actors
+	Dispatcher
+	Secondary Actors
+	Cloudinary
+	Description
+	As a Dispatcher, I want to check and verify the customer documents, so that the order is ready for planning.
+	Preconditions
+	• Dispatcher has logged in.
+• The order is Confirmed.
+	Normal Flow
+	1. Dispatcher opens Order Details and selects the Customer Documents tab.
+2. System shows the required document types, the document status (Pending Documents, Documents Uploaded or Documents Verified) and the uploaded files with type, uploader and upload time.
+3. Dispatcher opens and checks each file.
+4. Dispatcher clicks Confirm Documents.
+5. System checks that each required type has a file (BR-06).
+6. System sets the documents to Documents Verified and the order to Ready for Planning, and shows MSG12. The Dispatcher then assigns the truck and drivers (UC-09).
+	Alternative Flows
+	Step 2a – Required list changes
+Dispatcher adds or removes a type, and can use UC-39. System emails the new list to the customer.
+Step 3a – Upload for the customer
+The customer sent a file by Zalo. Dispatcher clicks Upload on behalf and selects the type and the file. System checks the file (MSG09) and stores it. Go back to step 2.
+Step 3b – Wrong file
+Dispatcher clicks Delete and confirms. System removes the document and deletes the file from Cloudinary. Documents cannot be edited (BR-06).
+Step 5a – Document type missing
+System shows MSG11. The status does not change.
+Document deadline passed
+JOB-03 flags the order and alerts the Dispatcher (BR-25, MSG41). The Dispatcher reminds the customer, or cancels the order in UC-04 (BF-05).
+	Postconditions
+	• The documents are Documents Verified and can no longer be deleted.
+• The order is Ready for Planning.
+	 
+1.4 Cancel Order
+Primary Actors
+	Dispatcher
+	Secondary Actors
+	None
+	Description
+	As a Dispatcher, I want to cancel an order that the customer no longer wants, so that the truck and drivers are free again and the customer pays the right fee.
+	Preconditions
+	• Dispatcher has logged in.
+• The order is Confirmed, Ready for Planning or Assigned. A Draft is cancelled with Cancel Draft in UC-03.
+	Normal Flow
+	1. The customer asks to cancel by Zalo or Hotline, outside the system.
+2. Dispatcher opens Order Details and clicks Cancel Order.
+3. Dispatcher enters the cancellation reason.
+4. System checks that the cargo is not loaded yet (BR-32, BR-18).
+5. System suggests the cancellation fee from the tiers of the contract linked to the order, by the hours before the planned start (BR-18).
+6. Dispatcher agrees the fee with the customer, outside the system. Dispatcher changes the amount if needed and confirms.
+7. System sets the order to Cancelled, closes it (BR-19) and tells the driver. A trip with no orders left becomes Cancelled and its truck and drivers are free (BR-24). The tracking page shows Cancelled.
+8. The customer pays the fee outside the system.
+	Alternative Flows
+	Step 3a – Reason missing
+System shows MSG02.
+Step 4a – Cargo already loaded
+The order cannot be cancelled. It is locked and goes on to delivery (BF-03).
+Step 4b – Truck already on its way
+The Dispatcher reroutes the truck to a location the Dispatcher sets, and the driver drives there. The system also suggests the cost of the finished leg (order price × share of distance driven). The Dispatcher agrees this cost with the customer outside the system before confirming the fee. When the truck arrives, the trip ends Completed and its truck and drivers are free (BR-18, BR-24).
+	Postconditions
+	• The order is Cancelled with its reason and fee.
+• The truck and the drivers are free again.
+	 
+2. Trip Planning
+Primary Actors
+	Dispatcher
+	Secondary Actors
+	None
+	Description
+	As a Dispatcher, I want to choose a truck and the drivers for an order that is ready, so that the trip is created and the driver gets it.
+	Preconditions
+	• Dispatcher has logged in.
+• The order is Ready for Planning: the customer documents are verified, or none are needed.
+	Normal Flow
+	1. Dispatcher opens Order Details of the order and clicks Choose Truck & Driver.
+2. System opens Trip Assignment with the Draft data (stops, cargo, trip time and grouping) and the free trucks and drivers (BR-46, BR-03, BR-08). The nearest truck to the pickup comes first.
+3. If the customer agreed to grouping and there is an open trip of the same customer, the Dispatcher can choose that trip (BR-05).
+4. Dispatcher selects a truck and the number of drivers: 1 or 2. The system suggests 2 drivers when the trip time is over 8 hours (BR-04). Only drivers with enough driving hours are listed (BR-34). An order goes whole on one truck (BR-29).
+5. Dispatcher plans the route: the stop order, loading time, breaks and rest stops added to the trip time of the Draft (BR-04).
+6. Using the stop order, the system draws the 3D load plan from the packing list: the loading order in the truck box (the last drop is loaded deepest), with the weight and volume per stop (BR-43). Bulk cargo has no size, so it is not drawn and is listed under the plan with its weight. The Dispatcher can move the cargo and change the loading order.
+7. Dispatcher confirms the plan and clicks Assign.
+8. System creates the trip (Assigned) with its stops and the trip documents (BR-35). The order is Assigned and the tracking page shows Truck assigned (BR-14).
+9. System sends the trip and the trip documents to the driver PWA. The trip is Dispatched (BR-23).
+	Alternative Flows
+	Step 3a – Open trip of the same customer (extension point)
+UC-06 Group Order into Trip. Only if the customer agreed to grouping (BR-05). The system adds the order to the chosen trip.
+	Postconditions
+	• The order is Assigned and the trip is Dispatched, with its trip documents.
+• The truck and the drivers are reserved for the trip (BR-24).
+	 
+3. Driver PWA
+Primary Actors
+	Driver
+	Secondary Actors
+	Cloudinary, Google Maps Platform
+	Description
+	As a driver, I want to record what I loaded and the seal at pickup, so that the company and the customer have proof of the cargo and that it left sealed.
+	Preconditions
+	• Driver has logged in to the Driver PWA.
+• The trip is Accepted.
+• The cargo is loaded and the cargo box is sealed.
+	Normal Flow
+	1. The driver opens the trip. The current stop is the pickup stop.
+2. The driver enters the number of packages and the weight loaded at this stop.
+3. The driver takes one photo that clearly shows the seal number and the truck plate.
+4. The driver enters the seal number.
+5. Driver clicks Save Pickup.
+6. The system checks that the photo, the seal number, the packages and the weight are there (BR-11). The system checks that the weight is not more than the allowed payload of the truck (BR-33).
+7. System uploads the photo. It saves the seal number, the packages, the weight, the time and the phone position. The orders of this pickup become Picked Up.
+8. The system calculates the first ETA of each order with Google Maps for Trip Monitoring (BR-13). The customer does not see it.
+	Alternative Flows
+	Step 6a – Photo or seal number missing
+The system shows MSG18. The driver takes the photo again.
+Step 6b – Packages or weight missing
+The system shows MSG02.
+Step 6c – Weight is more than the payload
+The system shows MSG45 and does not save the pickup. The driver calls the Dispatcher. The Dispatcher reports an incident and changes the truck in UC-15 (BR-10).
+Step 7a – Far from the stop
+The phone position is outside the geofence radius. The system saves the pickup, marks it “outside radius” and alerts the Dispatcher (MSG50). It does not block the driver (BR-36).
+Step 7b – No signal
+The system saves the pickup on the phone and shows MSG19. It sends the data when the signal comes back. The ETA is calculated after that (BR-27).
+Step 7c – File storage not available
+The photo cannot be uploaded. The system shows MSG31 and keeps the pickup on the phone. The driver can save it again later (BR-27).
+Step 7d – The trip changed while the phone was offline
+The system keeps the pickup, does not change the trip and alerts the Dispatcher (MSG38, BR-27).
+Step 8a – Distance service not available
+Google Maps does not answer. The pickup is still saved. The system leaves the ETA empty and calculates it at the next update (BR-13).
+	Postconditions
+	• The orders are Picked Up.
+• The seal & plate photo, the packages and the weight are stored.
+	 
+3.2 Record Delivery
+Primary Actors
+	Driver
+	Secondary Actors
+	Cloudinary
+	Description
+	As a driver, I want to record how each delivery ended, so that the company and the customer know what happened and no cargo is lost.
+	Preconditions
+	• Driver has logged in to the Driver PWA.
+• The driver is at a drop-off stop.
+	Normal Flow
+	1. Driver opens the current drop-off stop.
+2. Driver takes a photo of the paper POD that the receiver signed.
+3. Driver enters the receiver name, if someone receives the cargo.
+4. Driver clicks Save Delivery.
+5. System checks that the POD photo is there (BR-12).
+6. System saves the POD with the time and the phone position. The orders of this stop become Delivered (BR-39). The POD is shown only to staff, never on the tracking page (BR-13).
+7. If this is not the last stop, System shows the next stop.
+8. If this is the last stop, the driver records any extra fees, such as tolls or waiting time (BR-30, BR-40). The system suggests the waiting fee from the waiting time.
+9. System sets the trip to Completed and the truck to Available (BR-24). The Dispatcher confirms the fees in UC-12. 
+	Alternative Flows
+	Step 1a – Cargo cannot be handed over
+The receiver is not there or does not take the cargo. The driver reports an incident (UC-32) and the Dispatcher handles it in UC-14. The order stays In Transit until the driver saves the delivery with the POD.
+Step 5a – POD photo missing
+System shows MSG20.
+Step 6a – Far from the stop
+The phone position is outside the geofence radius. System saves the delivery, marks it "outside radius" and alerts the Dispatcher (MSG50). It does not block the driver (BR-36).
+Step 6b – No signal
+System saves the delivery on the phone and sends it when the signal comes back (BR-27).
+Step 6c – File storage not available
+The photo cannot be uploaded. System shows MSG31 and keeps the delivery on the phone. The driver can save it again later (BR-27).
+Step 6d – The trip changed while the phone was offline
+System keeps the delivery, does not change the trip and alerts the Dispatcher (MSG38, BR-27). 
+	Postconditions
+	The order is Delivered and its POD is stored. If it was the last stop, the trip is Completed. 
+	 
+
+
+
+
+
+
+
+
+4. Order Tracking
+Primary Actors
+	Guest
+	Secondary Actors
+	None
+	Description
+	As a Guest, I want to follow my order from a link without an account, so that I know the status of my cargo and what I must send.
+	Preconditions
+	• The order is confirmed and its tracking link was sent to the customer.
+	Normal Flow
+	1. Guest opens the tracking link.
+2. System checks the tracking token (BR-21).
+3. System shows the OrderID, the HAWB number, the customer name and the milestones, with the time each one was reached (BR-14).
+4. System shows the name, hotline and Zalo link of the responsible Dispatcher (BR-20).
+5. While the order is Confirmed, System shows the required documents and the upload box (UC-02).
+6. System never shows the ETA, the seal & plate photo or the POD to the Guest (BR-13).
+	Alternative Flows
+	Step 2a – Link not valid
+The token is wrong, has expired or was revoked. System shows MSG28 and no order data (BR-21).
+Step 6a – Order given to a vendor
+System shows the vendor name and the vendor tracking code. It shows no photos (BR-15).
+Step 6b – Order cancelled
+System shows the status Cancelled and the Dispatcher contact.
+	Postconditions
+	• No data changes, except the documents the Guest uploads.
+	 
+5. Trip Monitoring & Incidents
+Primary Actors
+	Dispatcher
+	Secondary Actors
+	None
+	Description
+	As a Dispatcher, I want to handle an incident and record what was done, so that the order history shows what happened.
+	Preconditions
+	• Dispatcher has logged in.
+• An incident is reported.
+	Normal Flow
+	1. Dispatcher opens Incident Details from the alert on Trip Monitoring.
+2. Dispatcher calls the driver (outside the system) and checks the report and the photos.
+3. Dispatcher enters what was done.
+4. Dispatcher clicks Mark Resolved.
+5. System sets the incident to Resolved and adds the note to the order history.
+	Alternative Flows
+	Step 3a – Truck breakdown, or truck or driver cannot go (extension point)
+UC-15 Dispatch Replacement Truck. Dispatcher selects another Available truck and a free on-shift driver by the rules of UC-09. System changes the truck or the driver on the same trip, makes a new waybill (BR-35) and notifies the driver. The old waybill is kept. After the cargo is moved, the driver uploads a new seal & plate photo (BR-11), the Dispatcher confirms the handover, and the system saves the handover record and releases the old truck (it becomes Maintenance). If no truck is free, the Dispatcher hands the orders to a vendor (UC-10). If the replacement costs extra, the Dispatcher agrees the extra cost with the customer outside the system and records it in UC-12.
+Step 3b – Major incident (extension point)
+UC-16 Escalate Incident to Manager. The incident is major (BR-16). Dispatcher clicks Escalate to Manager and enters the reason. System sets the incident to Escalated and notifies the Manager.
+Step 3c – Cargo cannot be handed over
+The Dispatcher calls the customer and agrees the next step outside the system. The Dispatcher enters what was agreed and clicks Mark Resolved. The order stays open until the driver saves the delivery.
+Step 4a – Major incident
+Mark Resolved is not offered. The incident is escalated in UC-16 and resolved by the Manager.
+	Postconditions
+	• The incident is Resolved, the truck or driver is changed on the same trip, or the incident is Escalated.
+	 
+
+
+
+
+6. News & Accounts
+6.1 Manage News Posts
+Primary Actors
+	Manager
+	Secondary Actors
+	None
+	Description
+	As a Manager, I want to write and publish news posts, so that customers and partners see the news of the company on the website.
+	Preconditions
+	• Manager has logged in.
+	Normal Flow
+	1. Manager opens News Post List and clicks Viết bài (New post).
+2. System opens an empty News Post Editor.
+3. Manager enters the title, category, summary and content, and adds a cover image if needed (API-02).
+4. Manager clicks Lưu nháp (Save draft) or Đăng bài (Publish).
+5. System checks the required fields.
+6. System saves the post as Draft, or as Published with the author and the published time. A Published post is shown on the News Page, newest first (BR-48).
+	Alternative Flows
+	Step 4a – Preview
+Manager clicks Xem trước (Preview). System shows the post as the Guest will see it. Nothing is published.
+Step 5a – Required field empty
+System shows MSG69 and does not publish the post.
+Step 6a – Edit or unpublish a post
+Manager opens a post from News Post List. Sửa (Edit) opens it in the editor. Gỡ (Unpublish) sets a Published post to Unpublished and hides it from the News Page at once (BR-48). Đăng lại (Publish again) shows it again.
+Step 6b – Delete a post
+Manager clicks Xóa (Delete) on a post in News Post List. System asks to confirm (MSG24). After the Manager confirms, the system deletes the post, shows MSG25 and removes it from the News Page (BR-48).
+	Postconditions
+	• The post is Draft, Published or Unpublished, with its author and published time.
+	6.2 Reset Forgotten Password
+Primary Actors
+	Administrator, Manager, Dispatcher, Driver
+	Secondary Actors
+	Email Service
+	Description
+	As a staff user, I want to reset my password by email when I forget it, so that I can sign in again without asking the Administrator.
+	Preconditions
+	• The user has an account with an email.
+	Normal Flow
+	1. User clicks Quên mật khẩu (Forgot password) on the Login screen.
+2. User enters the account email and clicks Gửi link đặt lại (Send reset link).
+3. System shows MSG70, whether the email exists or not (BR-49).
+4. If the email belongs to an active account, System sends a one-time reset link through the Email Service. The link works for 30 minutes (BR-49).
+5. User opens the link and enters the new password twice.
+6. System saves the new password, signs out all other sessions of the account and opens the Login screen (BR-49).
+	Alternative Flows
+	Step 4a – Locked or unknown account
+No link is sent. The screen still shows MSG70.
+Step 5a – Link expired or used
+System shows MSG61. The user asks for a new link.
+Step 5b – Passwords do not match
+System shows MSG04 and keeps the screen open.
+	Postconditions
+	• The account has the new password, the other sessions are signed out and the link cannot be used again.
+	III. Functional Requirements
+1. Authentication
+1.1 Sign In
+1.1.1 Login
+  
+
+Figure 14. Login
+Related use cases: Login (precondition of all other staff use cases)
+This screen allows the Administrator, Manager, Dispatcher and Driver to:
+* Sign in with the username or the account email.
+* Go to the home screen of the role after sign-in: Order List for the Dispatcher, Performance Dashboard for the Manager, User Account List for the Administrator and My Trips for the Driver.
+Field Description
+Field Name
+	Description
+	(1) Email / Tên đăng nhập (Email or username)
+	Text, required, 100 characters or less. The user can type the username or the account email.
+	(2) Mật khẩu (Password)
+	Hidden text, required.
+	(3) Thông báo lỗi (Error message)
+	Shown in red when a field is empty or the sign-in fails. It does not say if the username or the password was wrong (BR-26). A locked account cannot sign in.
+	(4) Ghi nhớ đăng nhập (Remember me)
+	Tick box, off by default. When ticked, the session stays signed in on this device until the user signs out.
+	(5) Quên mật khẩu? (Forgot password)
+	Link. Opens the Forgot Password screen (UC-46).
+	(6) Đăng nhập (Sign In)
+	Checks the account. A wrong username or password shows MSG05; a locked account shows MSG06. On success, opens the home screen of the role.
+	1.1.2 Forgot Password
+  
+
+Figure 15. Forgot Password
+Related use cases: Reset Forgotten Password
+This screen allows a staff user (Administrator, Manager, Dispatcher or Driver) to:
+* Request a reset link: enter the account email to get a one-time link by email.
+* Set a new password: open the link and enter the new password twice.
+On the screen, s/he can also:
+* Go back to the Login screen.
+Field Description
+Field Name
+	Description
+	(1) Email
+	Text, required, a valid email address.
+	(2) Thông báo (Message)
+	The same message always shows, whether the email exists or not (BR-49, MSG70).
+	(3) Gửi link đặt lại (Send reset link)
+	Sends a one-time link to the email of the account through the Email Service. The link works for 30 minutes (System Setting) and only once (BR-49).
+	(4) Quay lại đăng nhập (Back to sign in)
+	Link. Opens the Login screen.
+	(5) Mật khẩu mới (New password)
+	Hidden text, required, at least 8 characters.
+	(6) Nhập lại mật khẩu mới (Confirm new password)
+	Hidden text, required. Must be the same as (5).
+	(7) Link hết hạn (Expired link)
+	Shown when the link is older than 30 minutes or was already used (MSG61). The user asks for a new link.
+	(8) Đặt mật khẩu (Set password)
+	Saves the new password, signs out all other sessions and opens the Login screen.
+	1.2 Account
+1.2.1 Change Password
+  
+
+Figure 16. Change Password
+Related use cases: Change Password
+This screen allows every staff user to:
+* Change their own password, from the account menu.
+* Sign in again on the other devices afterwards.
+Field Description
+Field Name
+	Description
+	(1) Mật khẩu hiện tại (Current password)
+	Hidden text, required. A wrong password shows MSG58.
+	(2) Mật khẩu mới (New password)
+	Hidden text, required. At least 8 characters and different from the current password (MSG59).
+	(3) Nhập lại mật khẩu mới (Confirm new password)
+	Hidden text, required. It must be the same as the new password (MSG04).
+	(4) Đổi mật khẩu (Change Password)
+	Checks the three fields. If they are right, saves the new password and signs out other devices (MSG60).
+	(5) Hủy (Cancel)
+	Goes back to the previous screen. Nothing is saved.
+	2. Order Intake
+2.1 Orders
+2.1.1 Order List
+  
+
+Figure 17. Order List
+Related use cases: Manage Orders
+This screen allows the Dispatcher to:
+* See the orders, with the new drafts from the order form first.
+* Search for an order and open it.
+* Copy the order form link.
+* Enter a new order.
+Field Description
+Field Name
+	Description
+	(1) Tìm kiếm (Search)
+	Text. Finds orders by OrderID, HAWB number, customer name or tax code.
+	(2) Trạng thái (Status)
+	Dropdown. All statuses (default) or one status. Draft shows the new orders that wait for a quote.
+	(3) Phụ trách (Responsible)
+	Dropdown. My orders (default) or All orders.
+	(4) Tạo đơn (New Order)
+	Opens the Order Form to enter an order for a customer, for example an order taken by phone.
+	(5) Bảng đơn hàng (Order table)
+	10 rows per page, newest first. Columns: OrderID, HAWB, customer, pickup → delivery, weight, status, flags and responsible Dispatcher. Each row has a tick box and the flags: waiting too long, documents overdue, late risk. Click a row to open Order Details.
+	(6) Địa điểm (Locations)
+	Opens the Location List.
+	(7) Sao chép link đặt đơn (Copy Form Link)
+	Copies the order form link of this Dispatcher, to send to a customer by Zalo or email (BR-44).
+	2.1.2 Order Form
+  
+
+Figure 18. Order Form
+Related use cases: Submit Order Form, Manage Orders
+This screen allows the Guest (from the order form link, without login and without a menu, as in the figure) and the Dispatcher (inside the Dispatcher menu) to:
+* Enter the company details once, then one or more orders.
+* Enter the pickup and delivery addresses and check them on the map.
+* Enter the cargo. The fields follow the cargo type: Pallet needs the size; Bulk cargo needs the specification and has no size.
+* Send the orders. Every saved order is a Draft.
+On the screen, s/he can also:
+* Enter the HAWB number if it is already known. It is required before the order is confirmed.
+* Dispatcher only: use the registered address of the customer as the pickup address, and edit an order.
+The form has no price: the Dispatcher enters the agreed price on Order Details. After pickup, cargo and Locations cannot be edited (BR-32, MSG33).
+Field Description
+Field Name
+	Description
+	Company details (entered once for all orders)
+	(1) Thông tin công ty (Company details)
+	Company name (required, 255 characters or less), contact person (required, 100 characters or less), phone (required) and email (required, it receives the tracking link). Tax code (10 or 13 digits) and registered address are optional for the Guest; the Dispatcher completes them before confirming. The system matches the customer by tax code, or by email (BR-44).
+	(2) Điểm lấy hàng (Pickup address)
+	Text, required, 255 characters or less, with address search (Tìm vị trí): typing shows suggested addresses (API-05), and choosing one puts pin A on the map (19). The Dispatcher can also pick a saved Location, or "+ Thêm địa điểm mới" to add one.
+	(3) Điểm giao hàng (Delivery address)
+	Same as (2), with pin B. Used for the route distance and trip time.
+	(4) Mã vận đơn HAWB (HAWB number)
+	Text, optional here, 20 characters or less. The House Air Waybill number from the documents of the customer. It is required before the order is confirmed (MSG68).
+	(5) Loại hàng (Cargo type)
+	Dropdown, required: Pallet, Hàng rời (Bulk cargo), Bách hóa thông thường (General goods), Điện tử dễ vỡ (Fragile electronics), Giá trị cao (High-value goods), Khác (Other). A classification only; it does not limit the truck. Dangerous cargo is not accepted (BR-38).
+	(6) Tên hàng hóa (Cargo name)
+	Text, required, 255 characters or less. It is shown on the waybill.
+	(7) Số lượng (Quantity)
+	Whole number, required, 1 or more.
+	(8) Đơn vị (Unit)
+	Dropdown, required: Pallet, Kiện (package), Thùng (carton), Bao (bag), Khác.
+	(9) Khối lượng (Weight)
+	Number in kg, required, from 1 to 4,000. For Bulk cargo the label reads "Trọng tải hàng rời (kg)".
+	(10) Kích thước (Dimensions)
+	Three numbers in cm (length × width × height), required for Pallet and the other packed types. Hidden for Bulk cargo.
+	(11) KL tính cước & thể tích (Chargeable weight and volume)
+	Read only. With a size: chargeable weight = max(weight, L × W × H / 5000) and volume = L × W × H in m³. Bulk cargo: chargeable weight = weight, no volume (BR-02).
+	(12) Xếp chồng được (Stackable)
+	Yes / No, required.
+	(13) Giá trị khai báo (Declared value)
+	Number in VND, optional. It sets the liability limit of a claim (BR-37).
+	(14) Người nhận (Receiver)
+	Name (required, 100 characters or less) and phone (required) of the person at the delivery address. The driver sees it.
+	(15) Ghi chú yêu cầu đặc biệt (Special request note)
+	Text, optional, 500 characters or less. For example the wanted pickup time or a forklift need.
+	(16) Quy cách (Specification)
+	Text, required for Bulk cargo, 255 characters or less. How the cargo is packed, for example "40 cartons". Bulk cargo is not drawn in the 3D load plan (BR-43).
+	(17) Thêm đơn (Add Order)
+	Guest only. Adds one more order block with fields (2) to (16). The company details are entered once.
+	(18) Gửi đơn (Send)
+	Guest: checks the form, saves each order as Draft for the Dispatcher of the link and notifies that Dispatcher (BR-44). Shows MSG52. Too many sends show MSG37. Dispatcher: the button reads Lưu đơn (Save Order) and saves the Draft.
+	(19) Bản đồ (Map)
+	Google Maps with pin A at the pickup address and pin B at the delivery address. The user can drag a pin to correct the position. If an address is not found, its pin is missing and the order is still saved (MSG54).
+	(20) Điểm lấy hàng trùng địa chỉ khách (Pickup at customer address)
+	Checkbox, Dispatcher only, unticked by default. When ticked, (2) is filled with the registered address of the customer from (1).
+	2.1.3 Order Details
+  
+
+Figure 19. Order Details
+Related use cases: Manage Orders, Calculate Route Distance & Time, Assign Truck & Driver to Trip, Ask Document Assistant, Manage Customer Documents, Communicate on Order, Record Extra Fees, Cancel Order
+This screen allows the Dispatcher to:
+* See one order with its route data, order contract, customer documents, notes, extra fees and trips.
+* For a Draft: see the route distance, trip time and number of drivers, record if the customer agrees to grouping, and set the required documents.
+* For a Draft: enter the agreed price (and the document service fee if the customer chose it), make the order contract, upload the signed contract and confirm the order.
+* Check and confirm the customer documents. Then the order becomes Ready for Planning.
+* Choose the truck and drivers of a Ready for Planning order.
+* Edit or cancel the order, and revoke the tracking link.
+This screen allows the Manager to:
+* Open the order read only.
+Field Description
+Field Name
+	Description
+	(1) Trạng thái (Status)
+	The current order status and its flags. Read only. Each status change is saved with the user (or the system) and the time (BR-51).
+	(2) Hủy nháp / Hủy đơn (Cancel Draft / Cancel Order)
+	Cancel Draft is for a Draft: the order becomes Cancelled with no fee (BR-18). Cancel Order asks to confirm (MSG22) and opens a popup for the reason, fee and compensation; it is allowed until the driver records Loading Started at the pickup (BR-18), and a delivered or closed order shows MSG23.
+	(3) Thông tin đơn (Order summary)
+	Read only. Customer (company and tax code), source (Web or Hotline), HAWB number, Locations, receiver, cargo (type, name, quantity and unit, weight, size or specification, stackable, declared value, special request note), agreed price, contract number, Dispatcher and tracking link. A Draft has no link and no contract number yet: they are set when the order is confirmed (BR-47).
+	(4) Quãng đường & thời gian (Distance & time)
+	Route distance (km), driving time, trip time and the suggested number of drivers (BR-04), read only. The number of drivers is chosen at assignment. It shows the open trip of the same customer if there is one (BR-05), and a tick box Khách đồng ý ghép chuyến (Customer agrees to grouping) that the Dispatcher ticks after asking the customer. Tính lại (Recalculate) runs the calculation again. If the distance service fails, MSG34 shows. The distance is for reference only: the system does not calculate a price (BR-01).
+	(5) Giá đã chốt (Agreed price)
+	Number in VND, required to confirm. The price agreed with the customer outside the system (BR-01). It can change only before pickup (BR-32).
+	(6) Chứng từ cần nộp (Required documents)
+	Multi-select of document types: customs declaration, authorization letter, delivery order, bill of lading, sales contract, invoice, packing list, other. “Không cần chứng từ” (No document needed) is a tick box. One of them is required to confirm (MSG43). Hỏi trợ lý (Ask Assistant) opens the Document Assistant panel (BR-06).
+	(7) Xác nhận đơn (Confirm Order)
+	For a Draft. Works when the price, the HAWB number, the required documents and the signed contract are all there (BR-50; MSG02, MSG68, MSG43, MSG67) and asks to confirm (MSG57). The order becomes Confirmed. The system creates the tracking token and emails the tracking link and the required documents (MSG08). With no required documents, the order becomes Ready for Planning at once.
+	(8) Các tab (Tabs)
+	Customer Documents (default), Messages, Extra Fees, Trips & Evidence.
+	(9) Bảng chứng từ khách hàng (Customer document table)
+	The required types and the uploaded files: type, file, uploaded by, upload time and status (Uploaded, Confirmed or Rejected). View opens the file. Xác nhận (Confirm) accepts one file; Từ chối (Reject) asks for a reason and the customer sees it on the tracking page and uploads again. Delete removes a wrong file before confirmation. Files cannot be edited (BR-06). A Draft has no files yet: the customer uploads after the order is confirmed. The document deadline shows here after confirmation. Past it, the order is flagged (MSG41).
+	(10) Tải lên thay khách (Upload on behalf)
+	Works after the order is confirmed, for example when ALS prepares the documents for the customer. Opens a popup to choose the document type and a PDF, JPG, PNG, Excel or Word file of 10 MB or less (MSG09).
+	(11) Xác nhận chứng từ (Confirm Documents)
+	Works when each required type has a file (MSG11). Sets the documents to Documents Verified and the order to Ready for Planning (MSG12). The Dispatcher then assigns the truck and drivers.
+	(12) Sửa đơn (Edit Order)
+	Opens the Order Form. Cargo, price, HAWB and Locations can change only before pickup (BR-32, MSG33). A change that affects the trip runs the calculation again.
+	(13) Thu hồi link (Revoke Link)
+	Works after the order is confirmed (a Draft has no link). Asks to confirm (MSG63). Stops the old link, makes a new one and emails it. If the email fails, MSG32 shows the new link.
+	(14) Bảng phí phát sinh (Extra fee table)
+	Extra Fees tab. Adds a surcharge (including the document service fee) or a collection-on-behalf fee with amount and reason (BR-30). A suggested waiting fee becomes a fee only when the Dispatcher confirms it (BR-40).
+	(15) Tab Chuyến & bằng chứng (Trips & Evidence)
+	Read only. For each trip: the truck, the drivers, the stops, the events with time, the seal & plate photo, and the POD photo with the receiver name.
+	(16) Tạo hợp đồng (Create Contract)
+	For a Draft with an agreed price. Makes the order contract file from the order data and the agreed price. The Dispatcher sends it to the customer and the customer signs it, both outside the system. It is the contract of this order only, not the transport contract of the customer (BR-45).
+	(17) Hợp đồng đã ký (Signed contract)
+	File field. The Dispatcher uploads the signed order contract: a PDF, JPG or PNG file of 10 MB or less (MSG09). It is required to confirm the order (MSG67). It stays on the order.
+	(18) Chọn xe & tài xế (Choose Truck & Driver)
+	Button. Works only when the order is Ready for Planning. Opens Trip Assignment (BR-46).
+	2.2 Customer Documents
+2.2.1 Document Assistant
+  
+
+Figure 20. Document Assistant
+Related use cases: Ask Document Assistant
+This screen allows the Dispatcher to:
+* Ask, in a side panel on Order Details, which customer documents the order needs.
+* Use the answer as a suggestion only. Nothing from the question or the answer is stored (BR-42).
+Field Description
+Field Name
+	Description
+	(1) Thông tin gửi đi (Order context)
+	Read only. Cargo type, cargo name, HAWB number and the provinces of pickup and delivery. These are the only order data sent. No customer name, tax code, phone, email or receiver data is sent.
+	(2) Câu hỏi (Question)
+	Text, optional, 500 characters or less (MSG03). For example: “Hàng nhập khẩu lấy tại cảng Cát Lái cần giấy gì?”
+	(3) Hỏi (Ask)
+	Sends the context and the question to the AI service. The answer shows within 10 seconds. If the service fails or is off, MSG42 shows.
+	(4) Gợi ý (Suggestions)
+	A list of document types, each with a short reason and a tick box.
+	(5) Thêm vào chứng từ cần nộp (Add to Required Documents)
+	Adds the ticked types to (6) of Order Details. The Dispatcher can still change the list.
+	2.3 Locations
+2.3.1 Location List
+ loclist 
+
+Figure 21. Location List
+Related use cases: Manage Locations
+This screen allows the Dispatcher to:
+* Search and filter the saved Locations: company warehouses, customs checkpoints and customer sites.
+* See them in the table and as pins on the map.
+* Open a Location, or add a new one.
+On the screen, s/he can also:
+* See which Locations have no map position: “Thiếu” in the table and no pin on the map.
+The Manager opens this screen read only.
+Field Description
+Field Name
+	Description
+	(1) Tìm kiếm (Search)
+	Text. Finds Locations by name or address.
+	(2) Loại (Type)
+	Dropdown. All types (default), Company warehouse, Customs checkpoint or Customer site.
+	(3) Tỉnh/thành (Province)
+	Dropdown of the provinces of the saved Locations.
+	(4) Khách hàng (Customer)
+	Dropdown with search. Shows the customer sites of one customer.
+	(5) Thêm địa điểm (Add Location)
+	Opens Location Details to add a Location. Shown to the Dispatcher only.
+	(6) Bảng địa điểm (Location table)
+	10 rows per page. Columns: name, type, address, province, owner, map position (found or missing) and receiving hours. Click a row to open Location Details. No result shows MSG01.
+	(7) Bản đồ địa điểm (Location map)
+	Read only. Google Maps with one pin for each Location of the table, using the same filters. A Location with no map position has no pin. Click a pin to open Location Details.
+	
+
+
+
+
+
+
+
+
+
+
+
+2.3.2 Location Details
+  
+
+Figure 22. Location Details
+Related use cases: Manage Locations
+This screen allows the Dispatcher to:
+* Add, update or delete a Location.
+* Check the position of the Location on the map and correct it by dragging the pin.
+On the screen, s/he can also:
+* See the geofence radius as a circle on the map.
+On save, the system finds the map position from the address (API-05).
+Field Description
+Field Name
+	Description
+	(1) Tên (Name)
+	Text, required, 100 characters or less.
+	(2) Loại (Type)
+	Dropdown, required: Company warehouse, Customs checkpoint or Customer site.
+	(3) Khách hàng (Customer)
+	Dropdown with search. Required for a Customer site. Empty for the other types, because the company owns them.
+	(4) Địa chỉ (Address)
+	Text, required, 255 characters or less. The address must be unique for one owner (MSG53).
+	(5) Tỉnh/thành (Province)
+	Dropdown, required.
+	(6) Tọa độ (Latitude and longitude)
+	Two numbers. The system fills them from the address when saving (API-05). The Dispatcher can type them. If the address is not found, the Location is saved and MSG54 shows.
+	(7) Người liên hệ (Contact)
+	Name and phone, both text, optional.
+	(8) Giờ nhận hàng (Receiving hours)
+	Two times, from and to, optional.
+	(9) Bán kính geofence (Geofence radius)
+	Number in meters, optional. If empty, the default radius of the settings is used (BR-36).
+	(10) Lưu (Save)
+	Checks the form and saves the Location. Shows MSG07.
+	(11) Xóa (Delete)
+	Deletes the Location. It is not allowed when an order or a trip uses it (MSG55).
+	(12) Bản đồ vị trí (Location map)
+	Google Maps with the pin of the Location and a circle of the geofence radius (9). The Dispatcher can drag the pin to correct the position; the coordinates (6) change with it. Driver events outside the circle are marked “outside radius” (BR-36).
+	3. Trip Planning
+3.1 Truck & Driver Assignment
+3.1.1 Trip Assignment
+  
+
+Figure 23. Trip Assignment
+Related use cases: Assign Truck & Driver to Trip, Group Order into Trip, Dispatch Replacement Truck, Hand Over to Vendor, View Trip Documents
+This screen allows the Dispatcher to:
+* Choose how the order is carried: by an ALS truck or by a vendor.
+* Choose the truck, the number of drivers (1 or 2) and the drivers.
+* Plan the route: the stop order, the loading times and the breaks, and check it on the map.
+* Create the trip. The system makes the trip documents and sends the trip to the driver.
+On the screen, s/he can also:
+* Add the order to an open trip of the same customer, if the customer agreed.
+* View the 3D load plan.
+* Hand the order over to a vendor.
+* Change the truck or a driver of a created trip through an incident (UC-15), with a reason (BR-10).
+The screen opens from Order Details (Choose Truck & Driver) for an order that is Ready for Planning, or from Dispatch Replacement Truck (UC-15). The lists show only free trucks and drivers.
+Field Description
+Field Name
+	Description
+	(1) Thông tin chuyến (Trip summary)
+	Read only. Orders with their HAWB numbers, customer, stops, total chargeable weight, total volume, planned start, route distance and trip time.
+	(2) Phương thức vận chuyển (Transport mode)
+	Toggle, required. Đội xe nội bộ (ALS fleet, default) shows (3) to (9), (13) and (14). Nhà xe đối tác (vendor) hides them and shows (10) to (12). Only an order that is Ready for Planning can go to a vendor.
+	ALS truck and drivers
+	(3) Chuyến đang mở (Open trip)
+	Radio list of the open trips of the same customer, shown only when there is one (BR-05) and the customer agreed to grouping in Order Details. “Không ghép” (Do not group) keeps the order on its own trip. On assign, the system adds the order to the chosen trip and checks the payload and driving hours again. If the trip no longer fits, the reason shows (MSG45, MSG46 or MSG14) and the order gets its own trip.
+	(4) Xe (Truck)
+	Dropdown, required. Each item shows the plate, the payload and the status. Only trucks free for the whole time window of the trip that can carry the total weight and have a valid inspection (BR-03, BR-24, BR-33). Nearest to the first pickup first. An expired document leaves a truck out (MSG47). A volume above the truck box shows MSG64 (warning). If no truck of the fleet can carry the trip, MSG13 shows and the Dispatcher can hand the order to a vendor.
+	(5) Số tài xế (Number of drivers)
+	Toggle, required: 1 tài xế (default) or 2 tài xế. When the trip time is over 8 hours, a yellow banner suggests 2 drivers (BR-04, MSG62). With 2, Driver 2 in (6) becomes active.
+	(6) Tài xế 1 / Tài xế 2 (Driver 1 / Driver 2)
+	Dropdowns. Driver 1 is required; Driver 2 is required when (5) is 2 and must be another driver (MSG49). Each item shows the driving hours already used today. Only drivers who meet BR-08: shift for the whole trip, no other trip in the window, enough rest and driving hours (BR-34). Most driving hours left first. A driver left out shows MSG46 or MSG47. An order goes whole on one truck (BR-29).
+	Route
+	(7) Thứ tự điểm dừng (Stop order)
+	The planned stops: start depot (S), pickups, drop-offs and breaks, each with its loading or unloading time and its planned arrival. The Dispatcher drags ≡ to change the order; the last drop-off is loaded first in the 3D load plan (BR-43). A drop-off cannot be placed before its pickup (MSG40). “+ Thêm điểm nghỉ” (Add break) adds a rest stop; a break is needed after 4 hours of driving (BR-34). Each change recalculates the distance, the trip time and the planned arrivals (API-01). The stop order can be changed only before the trip is created; after that, only through an incident (UC-15).
+	(8) Bản đồ tuyến (Route map)
+	Read only. Google Maps with the route and numbered pins of the stops in the order of (7); a cup marks a break. The bottom line shows the order, total distance, trip time and truck. The map follows every change of (7).
+	(9) Xem xếp hàng 3D (View 3D Load Plan)
+	Button, active when a truck is selected. Opens the 3D Load Plan of this trip with the box of that truck (BR-43). View only.
+	Hand over to vendor (when (2) is Nhà xe đối tác)
+	(10) Nhà xe (Vendor)
+	Dropdown of approved vendors, required.
+	(11) Mã vận đơn nhà xe (Vendor tracking code)
+	Text, required, 50 characters or less.
+	(12) Chuyển xe ngoài (Hand Over to Vendor)
+	Sets the order to Handed Over to Vendor and cancels the trip if it exists. Emails the vendor tracking code to the customer. It appears on the tracking page (BR-15, MSG16).
+	Actions
+	(13) Giao xe & tạo chuyến (Assign)
+	Creates the trip with its stops, saves the planned arrivals of (7) on the Trip Stops, makes the trip documents (BR-35), sets the order to Assigned and sends the trip and the trip documents to the driver (BR-23). If the truck or a driver was just taken by another user, MSG35 shows; if the order was put in another trip first, MSG36 shows.
+	(14) Chứng từ chuyến (Trip documents)
+	Link that opens the waybill and the customer documents of this trip. Shown after the trip is created.
+	Change through an incident (opened from UC-15)
+	(15) Lý do thay đổi (Reason for change)
+	Text, required, 255 characters or less. Shown when the Dispatcher changes the truck or a driver of an existing trip through an incident (UC-15, BR-10, BR-41). Saved in the activity log.
+	(16) Lưu thay đổi (Save Change)
+	Saves the new truck or driver and makes a new waybill. Sends the new trip documents to the new driver and tells the old driver (MSG15). Opened without an incident, MSG26 shows.
+	
+
+
+
+
+
+3.1.2 Waybill
+  
+
+Figure 24. Waybill
+Related use cases: View Trip Documents
+This screen allows the Dispatcher and the Driver to:
+* View and export the waybill of one trip as a PDF. It is part of the trip documents.
+* Use the waybill made when the trip is created. A truck or driver change, or a rescue truck on the same trip, makes a new one, and the old one becomes Replaced.
+* Print it for the customer to sign, to confirm the loaded weight.
+Field Description
+Field Name
+	Description
+	(1) Số giấy vận tải (Waybill number)
+	Read only. It is unique. A trip has one valid waybill at a time. The status is Valid or Replaced.
+	(2) Nội dung (Content)
+	Read only. Company name, truck plate, driver names, customer, start and end points, number and date of the contract linked to the order (if any), the HAWB numbers of the orders, cargo name and type, and total weight (BR-35). A copy of the trip data at the time of issue.
+	(3) Bản PDF (PDF view)
+	Shows the PDF of the waybill. After the driver opens it once, it can be opened again without a signal.
+	(4) Xuất PDF (Export PDF)
+	Downloads the PDF to print. The customer signs the printed copy outside the system.
+	
+
+
+
+
+
+
+
+3.1.3 3D Load Plan
+  
+
+Figure 25. 3D Load Plan
+Related use cases: Assign Truck & Driver to Trip, Group Order into Trip
+This screen allows the Dispatcher to:
+* See how the orders of one trip sit in the truck box, one block for each order, coloured by drop-off stop.
+* Use it as a guide only (BR-43). Nothing is saved.
+Field Description
+Field Name
+	Description
+	(1) Thông tin chuyến (Trip summary)
+	Read only. Trip code, truck plate, box size (length, width, height) and total weight.
+	(2) Danh sách điểm dừng (Stops)
+	Read only. The drop-off stops in order, each with a colour, its orders and weight. An eye icon shows or hides the blocks of that stop.
+	(3) Góc nhìn (View tabs)
+	Tabs: 3D, Top, Side, Front. In 3D the user turns the picture by dragging.
+	(4) Hình thùng xe (Truck box)
+	The blocks of the orders in the box, coloured by drop-off stop. The door side is marked. A block that does not fit is red and MSG66 shows (BR-43).
+	(5) Chi tiết khối hàng (Block details)
+	Click a block to see its OrderID, customer, size, weight, drop-off stop and whether it is Stackable.
+	(6) Tổng hợp thùng xe (Box summary)
+	Read only. Weight of all orders against the allowed payload, volume of the orders with a size against the box volume, and the fill rate.
+	(7) Đóng (Close)
+	Goes back to the screen that opened it. Nothing is saved.
+	(8) Hàng rời (Bulk cargo)
+	Read only. Orders of Bulk cargo have no size, so they are not drawn. They are listed here with their weight, specification and drop-off stop; their weight is counted in (6) (BR-43).
+	4. Trip Monitoring & Incidents
+4.1 Monitoring
+4.1.1 Trip Monitoring
+  
+
+Figure 26. Trip Monitoring
+Related use cases: Monitor Trip Progress, Resolve Incident
+This screen allows the Dispatcher to:
+* See the active trips with planned and actual times, late-risk marks and truck location.
+* See the new incident reports and alerts at the top.
+Field Description
+Field Name
+	Description
+	(1) Cảnh báo (Alerts)
+	At the top. Alerts for: an incident report, an order past its document deadline (MSG41), an event far from its stop (MSG50), a driver update not applied (MSG38), a driver close to 4 hours of driving (MSG65). Mở (Open) goes to Incident Details, Order Details or Trip Details.
+	(2) Bản đồ (Map)
+	Truck locations from the Vehicle GPS System. Click a truck to see its trip. If the GPS cannot be reached, the last position and its time show.
+	(3) Lọc (Filter)
+	Dropdown. All active trips (default), With incident, In transit, May be late.
+	(4) Bảng chuyến (Trip table)
+	Active trips: trip code, truck, drivers, current stop, planned arrival (ETA), actual arrival, late-risk mark, driving hours left, status. The ETA is for staff only (BR-13). Click a row to open Trip Details.
+	
+
+
+
+
+
+4.2 Incidents
+4.2.1 Incident Details
+  
+
+Figure 27. Incident Details
+Related use cases: Resolve Incident, Dispatch Replacement Truck, Escalate Incident to Manager, Resolve Major Incident
+This screen allows the Dispatcher to:
+* See one incident. Drivers report most of them.
+* Record what was done, send a replacement truck, or escalate the incident.
+This screen allows the Manager to:
+* For an escalated incident, record the fault and the compensation.
+Field Description
+Field Name
+	Description
+	(1) Trạng thái (Status)
+	Reported, Escalated or Resolved. Read only.
+	(2) Thông tin sự cố (Incident summary)
+	Read only. Type, trip, truck, drivers, time, place, orders and description. Types: damaged or lost cargo, accident, cargo held by authorities, breakdown, road ban, other.
+	(3) Ảnh (Photos)
+	Photos sent by the driver. Click a photo to make it bigger.
+	(4) Cách xử lý (What was done)
+	Text, required to resolve, 500 characters or less. Added to the order history.
+	(5) Đánh dấu đã xử lý (Mark Resolved)
+	Sets the incident to Resolved. Not offered for a major incident (use (7)).
+	(6) Điều xe thay thế (Dispatch Replacement Truck)
+	For a truck breakdown, or a truck or driver that cannot go. A popup to choose an Available truck and free drivers by the rules of Trip Assignment. Changes the truck or the driver on the same trip and makes a new waybill. The old waybill becomes Replaced and the old truck is released. If the change costs extra, the Dispatcher agrees it with the customer outside the system and records it as an extra fee.
+	(7) Chuyển lên Quản lý (Escalate to Manager)
+	For a major incident (BR-16). Asks for a reason and sends the incident to the Manager.
+	(8) Quyết định của Quản lý (Manager decision)
+	For the Manager, on an escalated incident. Fault (Company, Customer or Third party), compensation (0 if none) and Close Incident. A compensation above 0 creates a Pending claim (BR-17).
+	4.3 Trip History
+4.3.1 Trip Details
+  
+
+Figure 28. Trip Details
+Related use cases: Monitor Trip Progress, View Trip Documents, Replay Trip
+This screen allows the Dispatcher and the Manager to:
+* See one trip: stops with planned and actual times, events, evidence, truck and drivers.
+* Open the replay.
+On the screen, the Dispatcher can also:
+* Open the trip documents.
+Field Description
+Field Name
+	Description
+	(1) Đầu chuyến (Trip header)
+	Read only. Trip code, status, truck, drivers (1 or 2), planned start, planned and actual distance and trip time. Báo sự cố / đổi xe (Report Incident) opens an incident for the trip. The truck or driver is then changed in UC-15 (BR-10).
+	(2) Điểm dừng (Stops)
+	Read only. The stops in order: type (pickup, transit, drop-off), Location, planned (ETA) and actual arrival, status and the “outside radius” mark (BR-36).
+	(3) Sự kiện (Events)
+	Read only. For each stop, the events in time order (arrived, loading started, loading done, left, break start, break end) with time and position.
+	(4) Bằng chứng (Evidence)
+	Read only. The seal & plate photo of each pickup stop and the POD photo of each drop-off.
+	(5) Sự cố (Incidents)
+	Read only. The incidents of this trip. Click one to open Incident Details.
+	(6) Chứng từ chuyến (Trip documents)
+	Opens the waybill and the customer documents of the trip.
+	(7) Xem lại chuyến (Replay Trip)
+	Opens Trip Replay.
+	4.3.2 Trip Replay
+  
+
+Figure 29. Trip Replay
+Related use cases: Replay Trip
+This screen allows the Dispatcher and the Manager to:
+* See the GPS track on a map, the events on a timeline, and the plan against the actual times.
+* Check what happened when a customer asks or a claim comes.
+Field Description
+Field Name
+	Description
+	(1) Chuyến (Trip)
+	Read only. Trip code and status. Opened from Trip Details.
+	(2) Bản đồ đường đi (Track map)
+	The GPS track of the truck, with a marker for each stop and each event. A marker outside the radius is red (BR-36).
+	(3) Điều khiển phát (Play controls)
+	Play, pause and a speed choice. The truck marker moves along the track by time.
+	(4) Dòng thời gian (Timeline)
+	The events of all stops in time order, with their time. Click an event to show its place on the map.
+	(5) Kế hoạch và thực tế (Plan against actual)
+	Table. Per stop: planned arrival, actual arrival, difference in minutes, time spent and the “outside radius” mark.
+	4.4 Other Screens
+Screen
+	Related Use Cases
+	Description and Main Fields
+	Truck Status List
+	Manage Trucks
+	Lists the trucks of the fleet. The Dispatcher can only view it. The Manager sets a truck to Maintenance, Inactive or Available. The system sets On Trip by itself (BR-24). Main fields: Plate number, allowed payload, inspection expiry, insurance expiry, current trip, status.
+	5. Website
+  
+
+Figure 30. Order Tracking Page
+Related use cases: Track Order, Upload Customer Documents
+This screen allows the Guest to:
+* Open the page from the tracking link, without login.
+* See the order and its HAWB number, and follow the milestones.
+* See the required documents and upload them.
+* Contact the Dispatcher.
+* Never see the ETA, the seal & plate photo or the POD (BR-13).
+* See MSG28 when the link is wrong, expired or revoked.
+Field Description
+Field Name
+	Description
+	(1) Đầu trang đơn (Order header)
+	Read only. OrderID, HAWB number, customer name and current status.
+	(2) Các mốc (Milestones)
+	Order received, Truck assigned, Picked up, Arrived at transit warehouse (only with a transit stop), Delivered. Each with the time it was reached (BR-14). No ETA is shown (BR-13).
+	(3) Chứng từ cần nộp (Required documents)
+	Read only. The types set by the Dispatcher, each marked Missing, Uploaded, Confirmed or Rejected (upload again), and the document deadline. Shown while the order is Confirmed.
+	(4) Tải chứng từ (Upload documents)
+	Upload box: document type (from the required list or Other) and a PDF, JPG, PNG, Excel or Word file of 10 MB or less (BR-31, MSG09). Shows MSG10. Only while the order is Confirmed.
+	(5) Liên hệ điều phối (Dispatcher contact)
+	Name, hotline and Zalo link of the responsible Dispatcher (BR-20).
+	(6) Link không hợp lệ (Invalid link)
+	A full page with MSG28 and no order data. Shown when the token is wrong, has expired or was revoked (BR-21).
+	  
+
+Figure 31. News Page
+Related use cases: Read News
+This screen allows the Guest to:
+* View the news list: the published posts, newest first, with the featured post on top.
+* Search posts: enter keywords to find posts by title or summary.
+* Filter posts: choose a category.
+* Read a post: open the full content of one post.
+Field Description
+Field Name
+	Description
+	(1) Tìm kiếm (Search)
+	Text, 100 characters or less. Finds published posts by title or summary.
+	(2) Chuyên mục (Category)
+	Chips: Tất cả (default), Thị trường & Vận hành, Công nghệ & AI, Hạ tầng Ga hàng không, Chính sách & Hải quan, Thông báo nội bộ.
+	(3) Bài nổi bật (Featured post)
+	The newest post marked Featured: cover image, category, title, summary, published date and view count. Đọc bài (Read) opens the post and adds 1 to the view count.
+	(4) Danh sách bài (Post list)
+	Cards of the other published posts, newest first, 6 per page: cover image, title and published date. Only Published posts are shown (BR-48).
+	6. Driver PWA
+  
+
+Figure 32. My Trips
+Related use cases: View & Accept Assigned Trips, View Trip Documents
+This screen allows the Driver to:
+* See the trips sent to the driver, and the driving hours left. A trip shows here when it is Dispatched.
+* Accept a trip, to show it has been seen.
+* Open the trip documents.
+Field Description
+Field Name
+	Description
+	(1) Trạng thái đồng bộ (Sync status)
+	Shows Online, or Offline with the number of waiting updates. On iPhone, Sync Now sends them, because the browser cannot sync in the background.
+	(2) Thẻ chuyến (Trip cards)
+	Trips of the driver, newest first, with status, planned start, stops and the other driver if the trip has two.
+	(3) Nhận chuyến (Accept Trip)
+	Shown for new trips. Asks to confirm (MSG17), then records that the driver has seen the trip and sets it to Accepted. There is no reject button (BR-09).
+	(4) Giờ lái còn lại (Driving hours left)
+	Read only. The hours left before each limit (BR-34): 4 hours without a break, 10 hours a day, 48 hours a week.
+	(5) Chứng từ chuyến (Trip documents)
+	On each trip card. Opens the waybill and the customer documents. After the driver opens them once, they open again without a signal.
+	  
+
+Figure 33. Trip Execution
+Related use cases: Record Cargo Pickup, Update Trip Status, Record Delivery, Report Incident, View Trip Documents
+This screen allows the Driver to:
+* Work through the stops: arrived, loading started, loading done, left, and breaks.
+* At pickup, record the packages, the weight and one seal & plate photo.
+* At drop-off, record the POD photo and the receiver name.
+* Work offline. The data syncs when the signal returns.
+Field Description
+Field Name
+	Description
+	(1) Điểm dừng (Stops)
+	Stops in visiting order with state (done, current, next). Addresses only, no directions. A drop-off also shows the receiver name, phone and special request note.
+	(2) Chứng từ chuyến (Trip documents)
+	Links to the waybill and to the customer documents needed to collect or deliver the cargo.
+	(3) Sự kiện tại điểm dừng (Stop events)
+	Buttons for the next event: Arrived, Loading started, Loading done, Left. Break start and Break end are always there (BR-34). Each event saves the time and phone position. One outside the radius is saved and marked (BR-36). The staff ETA is then recalculated.
+	(4) Lấy hàng (Pickup)
+	At a pickup stop. Packages loaded (whole number) and weight loaded in kg, required. One camera photo that shows the seal number and truck plate, required. Seal number (text), required. Lưu lấy hàng (Save Pickup) sets the orders to Picked Up. A weight above the payload shows MSG45 and nothing is saved (BR-33).
+	(5) Ảnh biên bản & người nhận (POD photo & receiver)
+	At a drop-off stop. POD photo (camera, required) of the paper POD signed by the receiver. Receiver name (text; empty if nobody receives the cargo). Lưu giao hàng (Save Delivery) sets the orders of the stop to Delivered (BR-12, BR-39). Time and position are saved automatically.
+	(6) Số kiện đã giao (Packages delivered)
+	Number of  packages of the order.
+	(7) Báo sự cố (Report Incident)
+	Opens Report Incident: type, description and photos.
+	(8) Trạng thái đồng bộ (Sync status)
+	Offline updates stay on the phone and are sent when the signal returns. At most 50 can wait (MSG39). On iPhone, Sync Now sends them.
+	  
+
+Figure 34. Report Incident
+Related use cases: Report Incident
+This screen allows the Driver to:
+* Report an incident on the current trip with its type, a description and photos.
+On the screen, s/he can also:
+* Send the report offline: it is kept on the phone and sent when the signal returns (BR-27).
+Field Description
+Field Name
+	Description
+	(1) Loại sự cố (Incident type)
+	Dropdown, required: damaged or lost cargo, traffic accident, cargo held by authorities, truck breakdown, road ban, other.
+	(2) Mô tả (Description)
+	Text, required, 500 characters or less.
+	(3) Ảnh hiện trường (Photos)
+	Optional, up to 5 JPG or PNG photos (BR-31).
+	(4) Gửi báo cáo (Send report)
+	Saves the incident as Reported at the current stop, alerts the Dispatcher on Trip Monitoring and shows MSG21.
+	(5) Trạng thái đồng bộ (Sync status)
+	Online, or Offline with the number of updates waiting to be sent.
+	6.3 Other Screens
+Screen
+	Related Use Cases
+	Description and Main Fields
+	Notifications
+	View & Accept Assigned Trips
+	Lists trip alerts and changes sent to the driver, newest first. Tapping one opens the trip. Main fields: Message, trip code, time, read / unread.
+	7. Manager Oversight
+  
+
+Figure 35. Performance Dashboard
+Related use cases: View Performance Dashboard
+This screen allows the Manager to:
+* View the performance of the period: revenue, truck use, Dispatcher SLA, successful deliveries and incidents.
+* Change the period.
+On the screen, s/he can also:
+* Open the Driver Performance tab.
+Field Description
+Field Name
+	Description
+	(1) Kỳ (Period)
+	Dropdown: this month (default), last month, this quarter, or a date range.
+	(2) Chỉ số (Indicators)
+	Read only. Revenue = agreed prices plus surcharges and waiting fees, without collection-on-behalf fees. Truck use = hours on trips ÷ available truck hours. Dispatcher SLA = average time from Ready for Planning to truck assignment or Handed Over to Vendor. Successful deliveries and incidents in the period.
+	(3) Sự cố theo loại (Incidents by type)
+	Read only. Number of incidents of each type in the period.
+	(4) Tab (Tabs)
+	Tổng quan (Overview, default) and Hiệu suất tài xế (Driver Performance).
+	  
+
+Figure 36. Driver Performance
+Related use cases: View Driver Performance
+This screen allows the Manager to:
+* View each driver in the period: number of trips, on-time rate and events outside the radius.
+Field Description
+Field Name
+	Description
+	(1) Kỳ (Period)
+	Same as on the Overview tab.
+	(2) Tab (Tabs)
+	Hiệu suất tài xế is selected.
+	(3) Bảng tài xế (Driver table)
+	Read only. Driver, number of trips, on-time rate (drop-offs reached by the planned arrival time plus 30 minutes ÷ all drop-offs) and number of events outside the geofence radius (BR-36). Sorted by number of trips.
+	  
+
+Figure 37. Order Workload
+Related use cases: Monitor Order Workload, Reassign Order
+This screen allows the Manager to:
+* View the active orders of each Dispatcher and the flagged orders.
+* Reassign an order to another Dispatcher.
+On the screen, s/he can also:
+* Open Order Details of an order read only.
+Field Description
+Field Name
+	Description
+	(1) Tải của từng điều phối (Dispatcher load)
+	Read only. Dispatcher, active orders, flagged orders.
+	(2) Đơn bị gắn cờ (Flagged orders)
+	Read only. Orders that wait too long in Draft, are past the document deadline or are late risk, with the time in the current status. Xem đơn (View order) opens Order Details read only.
+	(3) Chuyển cho điều phối (Reassign)
+	Dropdown of active Dispatchers and the Chuyển (Reassign) button. Moves the order and notifies both Dispatchers (MSG29). Saved in the activity log.
+	  
+
+Figure 38. Major Incident List
+Related use cases: Resolve Major Incident
+This screen allows the Manager to:
+* View the incidents escalated by Dispatchers.
+* Filter them by status and type.
+On the screen, s/he can also:
+* Open Incident Details to resolve an incident, and from there the trip and its replay as evidence.
+Field Description
+Field Name
+	Description
+	(1) Trạng thái (Status)
+	Dropdown: Chờ xử lý (Escalated, default), Đã xử lý (Resolved), Tất cả.
+	(2) Loại sự cố (Incident type)
+	Dropdown: all types (default) or one type.
+	(3) Bảng sự cố (Incident table)
+	Incident code, type, order, trip, escalated time and status. 10 rows per page, newest first. Click a row to open Incident Details.
+	  
+
+Figure 39. Compensation Claim List
+Related use cases: Approve Compensation Claim
+This screen allows the Manager to:
+* View the compensation claims from incidents and cancellations.
+* Filter them by status.
+On the screen, s/he can also:
+* Open Claim Details to approve or reject a claim.
+Field Description
+Field Name
+	Description
+	(1) Trạng thái (Status)
+	Dropdown: Chờ duyệt (Pending, default), Đã duyệt (Approved), Từ chối (Rejected), Tất cả.
+	(2) Bảng yêu cầu (Claim table)
+	Order, source (incident code or cancellation), amount, status and created time. 10 rows per page, newest first. Click a row to open Claim Details (BR-17).
+	  
+
+Figure 40. Claim Details
+Related use cases: Approve Compensation Claim
+This screen allows the Manager to:
+* Check one claim with its evidence, the contract rules and the liability limit.
+* Approve or reject the claim with a comment.
+Field Description
+Field Name
+	Description
+	(1) Trạng thái (Status)
+	Pending, Approved or Rejected. Read only.
+	(2) Thông tin yêu cầu (Claim summary)
+	Read only. Source incident or cancellation, trip, customer, amount and reason.
+	(3) Bằng chứng (Evidence)
+	Read only. Photos and records from the incident. Click to enlarge.
+	(4) Điều khoản hợp đồng (Contract rules)
+	Read only. Compensation rules of the transport contract linked to the order, the declared value and the liability limit: the smaller of the contract cap and the declared value, or 500 million VND if there is neither (BR-37).
+	(5) Cảnh báo vượt giới hạn (Over-limit warning)
+	Shown when the amount is more than the liability limit (MSG56).
+	(6) Nhận xét (Comment)
+	Text, 500 characters or less. Required to reject, and to approve an amount above the limit.
+	(7) Duyệt / Từ chối (Approve / Reject)
+	Saves the decision, the reviewer and the time, shows MSG27 and notifies the Dispatcher.
+	  
+
+Figure 41. News Post List
+Related use cases: Manage News Posts
+This screen allows the Manager to:
+* View the news posts with their status.
+* Filter posts by status and category, and search them by title.
+On the screen, s/he can also:
+* Write a new post.
+* Edit, publish, unpublish or delete a post.
+Field Description
+Field Name
+	Description
+	(1) Trạng thái (Status)
+	Dropdown: Tất cả (default), Bản nháp (Draft), Đã đăng (Published), Đã gỡ (Unpublished).
+	(2) Chuyên mục (Category)
+	Dropdown: all categories (default) or one category.
+	(3) Tìm kiếm (Search)
+	Text, 100 characters or less. Finds posts by title.
+	(4) Viết bài (New post)
+	Opens an empty News Post Editor.
+	(5) Bảng bài viết (Post table)
+	Title, category, status, published date, view count and actions: Sửa (Edit) opens the editor; Gỡ (Unpublish) hides a Published post from the website; Đăng lại (Publish again); Xóa (Delete) removes the post and asks to confirm (MSG24, MSG25). 10 rows per page, newest first.
+	  
+
+Figure 42. News Post Editor
+Related use cases: Manage News Posts
+This screen allows the Manager to:
+* Write or edit a news post.
+* Save it as a draft or publish it on the website.
+On the screen, s/he can also:
+* Preview the post as the Guest will see it.
+Field Description
+Field Name
+	Description
+	(1) Tiêu đề (Title)
+	Text, required, 200 characters or less.
+	(2) Chuyên mục (Category)
+	Dropdown, required: Thị trường & Vận hành, Công nghệ & AI, Hạ tầng Ga hàng không, Chính sách & Hải quan, Thông báo nội bộ.
+	(3) Ảnh bìa (Cover image)
+	Optional JPG or PNG file of 10 MB or less, stored in Cloudinary (API-02).
+	(4) Tóm tắt (Summary)
+	Text, required, 200 characters or less. Shown on the post card.
+	(5) Nội dung (Content)
+	Rich text, required.
+	(6) Bài nổi bật (Featured)
+	Tick box. The newest published featured post is shown on top of the News Page.
+	(7) Lưu nháp (Save draft)
+	Saves the post as Draft. It is not shown on the website.
+	(8) Xem trước (Preview)
+	Opens the post as it will look on the News Page. Nothing is published.
+	(9) Đăng bài (Publish)
+	Checks the required fields (MSG69), saves the post as Published with the author and the published time, and shows it on the News Page (BR-48).
+	8. Fleet & Driver Management
+Screen
+	Related Use Cases
+	Description and Main Fields
+	Truck List / Truck Details
+	Manage Trucks
+	Lists the trucks of the fleet. The Manager adds, updates or removes a truck. A document that expires soon is marked, and the Manager gets a reminder (JOB-06). Main fields: Plate number (required, unique), model, allowed payload (kg, required), box size (length, width, height in cm, required). Also inspection expiry and insurance expiry (dates, required), GPS device ID and status.
+	Driver Profile List / Details
+	Manage Driver Profiles
+	Lists driver profiles. The Manager creates or updates a profile and links it to a Driver account. A license that expires soon is marked, and the Manager gets a reminder (JOB-06). Main fields: Full name and phone (read only, from the Driver account), license number (required, unique), status. Also the license class and the license expiry (required), and the linked account.
+	Driver Shift Schedule
+	Schedule Driver Shifts
+	The Manager sets driver shifts by day on a weekly grid. The screen warns when a shift is longer than the legal driving limits (BR-34). Main fields: Date, driver, start time, end time. Overlapping shifts are not allowed.
+	Staff Account List / Details
+	Manage Dispatcher & Driver Accounts
+	Lists Dispatcher and Driver accounts. The Manager creates, updates or locks an account. Main fields: Username (required, unique), full name, email (required, unique, used for password reset), phone, role (Dispatcher or Driver), status (BR-28).
+	  
+
+Figure 43. Driver Shift Schedule
+9. Vendors & Contracts
+Screen
+	Related Use Cases
+	Description and Main Fields
+	Vendor List / Details
+	Approve Vendors
+	Lists truck rental vendors. The Manager adds, updates and approves a vendor. Main fields: Company name (required, unique), contact person, phone, truck types, approval status. The Dispatcher can only view them and choose an approved vendor.
+	Transport Contract List / Details
+	Manage Transport Contracts
+	The Dispatcher is responsible for creating and updating contracts with customers and vendors. Each contract must have a unique and mandatory contract number, along with key information including the customer or the vendor, contract terms and responsibilities, pricing conditions, validity period, and relevant attachments. The contract also records operational terms such as the free waiting time (in minutes) and waiting fee (VND/hour), as well as cancellation fees, liability limits (VND), and compensation terms. The Manager has read-only access to contract information and can view contract details without modifying them. Dispatcher can export contract data as a file for the Finance department.
+
+
+	10. System Administration
+Screen
+	Related Use Cases
+	Description and Main Fields
+	User Account List / Details
+	Manage User Accounts
+	Home screen of the Administrator. Lists all user accounts, including Managers. The Administrator creates, updates or deactivates an account and gives it a role. Main fields: Username, full name, email (required, unique), phone, role (Administrator, Manager, Dispatcher, Driver), status; search and role filter (BR-28).
+	Roles & Permissions
+	Manage Roles & Permissions
+	Shows each role and the actions it may do, based on the Permission Matrix. The Administrator adds or removes actions for a role. Main fields: Role, entity, action, allowed (yes / no).
+	Activity Logs
+	View Activity Logs
+	The Administrator sees who did what and when. Main fields: User, action, target record, time and reason (for a truck or driver change). Filters: user, action and date.
+	System Settings
+	Manage System Settings
+	The Administrator changes the settings. The legal driving limits of BR-34 are shown but cannot be changed. Main fields in four groups. Files and data: retention period for each data type, GPS track retention and file size limit. Operation: draft-waiting-too-long limit, document deadline, minimum driver rest time, stop time per stop and operating hours per day. Trips: default geofence radius, default depot and phone clock limit. Other: Document Assistant on / off, expiry warning period, password reset link lifetime, company name and order code prefix.
+	 
+
+
+11. Background Job Inventory
+Trigger: Scheduled — every day at 2:00 AM
+Purpose: Deletes files and GPS tracks when the retention period of their type is over.
+Processing steps:
+1. Read the retention period of each data type (BR-22 lists the types).
+2. For each type, find the records that are past their period. For the files of an order, the period starts when the order is Delivered or Cancelled.
+3. Skip orders that have a Pending compensation claim.
+4. Delete each file in Cloudinary (API-03). Mark the file record as Purged. For POD and seal & plate photos, also delete the receiver name and the saved position. Keep the order data.
+5. Delete the old GPS track points.
+6. Log how many orders, files and rows were purged.
+Failure behavior:
+Scenario
+	System behavior
+	Cloudinary is not available or returns an error
+	The file record does not change. The job tries again in the next run and logs a warning.
+	The retention period of a type is not set
+	The job deletes nothing of that type and logs a critical error.
+	No old records
+	The job ends. This is normal.
+	11.2 Pull Truck Locations from GPS (JOB-02)
+Trigger: Scheduled — every 1 minute
+Purpose: Gets the location of trucks on active trips from the Vehicle GPS System. It is used for Trip Monitoring, the position check (BR-36) and Replay Trip.
+Processing steps:
+1. Find trucks with an Accepted or In Progress trip.
+2. Call the Vehicle GPS Location API (API-04) with their truck IDs.
+3. Save the latest position and its time for each truck. Add the point to the track of its trip.
+Failure behavior:
+Scenario
+	System behavior
+	The GPS API cannot be reached
+	The last known position and its time are kept. Trip Monitoring shows "last updated". The job tries again in the next run. The track has a gap for that time.
+	The provider does not know the truck
+	The job skips the truck and logs a warning.
+	11.3 Flag Orders Waiting Too Long (JOB-03)
+Trigger: Scheduled — every 15 minutes
+Purpose: Flags orders that stay in Ready for Planning longer than the set limit, for the Manager’s Order Workload.
+Processing steps:
+1. Read the limit.
+2. Find orders in Ready for Planning longer than the limit and flag them.
+3. Remove the flag from orders that have left Ready for Planning.
+Failure behavior:
+Scenario
+	System behavior
+	The database cannot be reached
+	The job tries 3 times, 30 seconds apart, then logs a critical error. Flags are updated in the next good run.
+	
+
+11.4 Recalculate ETA (JOB-04)
+Trigger: On event — a task is added at pickup and at each stop event. The worker checks for tasks every 10 seconds.
+Purpose: Keeps the internal ETA (shown only to staff) and the late-risk flag up to date. Also updates the driving hours left of the driver.
+Processing steps:
+1. Take the oldest waiting task.
+2. ETA: get the travel time from the phone position through the remaining stops (API-01). Add the stop time for each stop. It is the middle value of the last 10 visits at that Location. When there are fewer visits, use the setting. Save the ETA of each order (BR-13).
+3. Late risk: flag an order when the ETA of its drop-off stop is more than 30 minutes later than the planned arrival of that stop.
+4. Driving hours: calculate the driving hours left of the driver (BR-34).
+5. Mark the task as done.
+Failure behavior:
+Scenario
+	System behavior
+	Google Maps Platform is not available
+	The old ETA stays. The task tries again after 1, 2 and 4 minutes. After 5 failures the team gets an alert.
+	Server restarts
+	The task is still waiting and runs once after the restart.
+	 
+11.5 Clean Up Sessions and Notifications (JOB-05)
+Trigger: Scheduled — every day at 3:00 AM.
+Purpose: Deletes old sign-in sessions and old notifications, so the tables stay small.
+Processing steps:
+1. Delete sessions that expired or were signed out more than 7 days ago.
+2. Delete notifications older than 90 days.
+3. Log how many rows were deleted.
+Failure behavior:
+Scenario
+	System behavior
+	The database cannot be reached
+	Nothing is deleted. The job runs again the next day.
+	 
+11.6 Remind Expiry Dates (JOB-06)
+Trigger: Scheduled — every day at 6:00 AM.
+Purpose: Warns the Manager before a truck inspection, a truck insurance or a driver licence expires. It also stops the use of a truck whose inspection has expired.
+Processing steps:
+1. Read the warning period (a setting).
+2. Find trucks whose inspection or insurance, and drivers whose licence expires within the warning period.
+3. Send one alert to the Manager for each item. Do not repeat the same alert on the same day.
+4. Set a truck whose inspection has expired to Inactive.
+5. Log how many alerts were sent.
+Failure behavior:
+Scenario
+	System behavior
+	The database cannot be reached
+	Nothing changes. The job runs again the next day.
+	 
+12. External API Inventory
+URL
+	POST: https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix
+	Purpose
+	Get the distance and travel time between several starting points and destinations.
+	Caller
+	NEXLOG backend, in Calculate Route Distance & Time and the ETA calculation
+	Auth
+	Yes, Google Maps Platform API key. Each request names the fields it wants.
+	 
+12.2 Cloudinary Upload (API-02)
+URL
+	POST: https://api.cloudinary.com/v1_1/{cloud_name}/{resource_type}/upload
+	Purpose
+	Upload one photo or document and get its link.
+	Caller
+	The browser or Driver PWA of the Guest, Dispatcher or Driver, with a signature from the NEXLOG backend. The backend then checks the real file type and size.
+	Auth
+	Yes, a signed request with the Cloudinary API key and secret
+	 
+12.3 Cloudinary Delete (API-03)
+URL
+	POST: https://api.cloudinary.com/v1_1/{cloud_name}/{resource_type}/destroy
+	Purpose
+	Delete one stored file by its ID.
+	Caller
+	NEXLOG backend, in JOB-01 and Manage Customer Documents
+	Auth
+	Yes, a signed request with the Cloudinary API key and secret
+	 
+12.4 Vehicle GPS Location (API-04)
+URL
+	GET: given by the GPS black-box supplier (to be confirmed with ALS)
+	Purpose
+	Get the latest position and time of the listed trucks.
+	Caller
+	NEXLOG backend, in JOB-02
+	Auth
+	Yes, credentials from the GPS supplier (to be confirmed)
+	 
+12.5 Google Maps Geocoding (API-05)
+URL
+	GET: https://maps.googleapis.com/maps/api/geocode/json
+	Purpose
+	Get the latitude and longitude of an address.
+	Caller
+	NEXLOG backend, in Manage Locations
+	Auth
+	Yes, Google Maps Platform API key
+	 
+12.6 AI Document Assistant (API-06)
+URL
+	POST: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent (Google Gemini API)
+	Purpose
+	Answer which customer documents an order needs. Return each document with a short reason.
+	Caller
+	NEXLOG backend, in Ask Document Assistant. Only when the AI setting is on.
+	Data sent
+	Only the cargo type, the cargo name, the HAWB number and the provinces of one order. No customer name, tax code, phone, email or receiver data.
+	Auth
+	Yes, an API key kept on the server.
+	 
+IV. Non-Functional Requirements
+1. External Interfaces
+Interface
+	Requirement
+	User interfaces
+	Web Admin Portal for Dispatchers, Managers and Administrators. It runs on desktop browsers (latest Chrome or Edge, screen 1366 × 768 or larger). Public tracking page for phone and desktop browsers, with no login. Driver PWA for Android and iOS phone browsers.
+	Hardware interfaces
+	Phone camera for seal & plate photos and POD photos. Phone location, saved with each stop event, pickup and delivery. The GPS black box on each truck, reached only through the supplier’s API.
+	Software interfaces
+	Google Maps Platform: Routes API (API-01) and Geocoding API (API-05). Cloudinary API (API-02, API-03). Vehicle GPS Location API (API-04). AI service (API-06), used only for the Document Assistant. A setting turns it off.
+	Communication interfaces
+	All traffic uses HTTPS. Tracking links are sent by email (SMTP). Drivers get trip alerts in the Driver PWA, and as push notifications if they allow them. On iPhone, push works only after the driver adds the Driver PWA to the home screen.
+	2. Quality Attributes
+2.1 Usability
+Requirement
+	Description
+	Driver PWA buttons
+	Buttons are at least 44 × 44 px. The main actions (Accept, stop events, Save Pickup, Save Delivery) can be used with one hand.
+	Few steps for drivers
+	A stop event takes one tap. A pickup or a delivery takes at most 4 taps after the trip is open. The photo and the typed fields are extra.
+	Clear tracking page
+	A customer can read the order status without training or an account. Milestones use plain words, not internal status codes.
+	Short training
+	A new Dispatcher can create an order and assign a trip after a 30-minute guided session.
+	2.2 Performance
+Requirement
+	Target
+	Condition
+	Web page load
+	Any Web Admin Portal page opens within 3 seconds
+	Up to 50 staff users at the same time
+	Tracking page load
+	The first view opens within 3 seconds
+	Phone on cellular networks
+	Form save
+	The system confirms within 2 seconds
+	Up to 50 staff users at the same time
+	Photo upload
+	One photo (made smaller, 2 MB or less) uploads within 10 seconds
+	Phone on cellular networks
+	Offline sync
+	Saved driver updates start sending within 30 seconds after the signal comes back
+	Driver PWA open
+	ETA update
+	The new internal ETA shows on Trip Monitoring within 1 minute after a stop event
+	Routes API available
+	Truck location age
+	The truck position on Trip Monitoring is 2 minutes old or less
+	GPS supplier API available
+	Trip replay
+	The replay opens within 3 seconds
+	One trip with up to 1,000 GPS points
+	2.3 Security
+Requirement
+	Description
+	Sign-in required
+	Every page and action needs sign-in, except the sign-in page and the public tracking page.
+	Role-based access
+	Each role can do only the actions allowed in the Permission Matrix. The server checks this on every request. A denied action shows MSG30.
+	Password protection
+	Passwords are never stored in a form that a person or a program can read. A new password has at least 8 characters (MSG59).
+	Tracking link protection
+	The tracking token cannot be guessed. It shows only its own order, with no data of other orders or customers. The page sends the header Referrer-Policy: no-referrer and the header X-Robots-Tag: noindex. The token stops working when the Dispatcher revokes the link (BR-21).
+	File access
+	Customer documents and photos can be opened only by staff who can view the order. Files are private. They open with a signed link that works for a short time. The system makes the link after it checks the right to view.
+	Sign-in failure
+	A failed sign-in message does not say which field was wrong.
+	Audit trail
+	The activity log records who created, changed, cancelled or closed orders, assignments, incidents and claims, and when. It also records the reason for a change to a locked trip.
+	2.4 Reliability
+Requirement
+	Description
+	Offline-first Driver PWA
+	All driver actions work without a signal. They are sent without data loss when the signal comes back. Each action has its own ID, so a repeated send never makes a double record.
+	External service failure
+	If Google Maps Platform, Cloudinary, the GPS supplier or the AI service is down, the main order flow still works. Only the affected feature waits and tries again. If the AI service is down, the Dispatcher chooses the documents by hand.
+	Backup
+	The database is backed up every day. A backup can be restored within 4 hours.
+	2.5 Data Retention and Privacy
+Requirement
+	Description
+	Data retention
+	Each data type has its own retention period (BR-22). Customer documents: 60–90 days. Seal & plate photos, POD photos and incident photos: 2 years. Waybills and trip events: 3 years. GPS tracks: 90 days. Order records without files are kept for reports.
+	Personal data
+	The system keeps customer contacts, receiver names and phones, signatures on POD photos and driver positions. It follows the Law on Personal Data Protection (Law 91/2025/QH15) and Decree 356/2025/ND-CP. It collects only the data needed for delivery.
+	Data sent to the AI service
+	The cargo type, cargo name, HAWB number and provinces of one order go to a third party. No personal data of the customer or the receiver is sent. The company names this use in its terms with customers. It also signs a data agreement with the AI provider.
+	Driver position
+	The system saves the phone position only with a stop event, a pickup or a delivery. It does not follow the phone all the time. Truck tracks come from the GPS supplier.
+	Public page data
+	The tracking page shows only the POD of that order. It does not show the customer tax code, contract data or prices. The receiver name is shown with some letters hidden.
+	V. Requirement Appendix
+1. Business Rules
+BR-ID
+	Rule Statement
+	Applies To
+	Rationale
+	Enforced By
+	BR-01
+	The order price is the price agreed with the customer by Zalo or Hotline. The Dispatcher enters it. The system does not calculate it,.
+	Order
+	Prices are agreed outside the system.
+	Dispatcher, on the Order Form
+	BR-02
+	Chargeable weight = the larger of the actual weight and L × W × H (cm) / 5000 for cargo with a size. For Bulk cargo, which has no size, the chargeable weight is the actual weight.
+	Order
+	Prices by weight and size use it. Truck choice uses actual weight and volume (BR-03, BR-33).
+	System, on the Order Form
+	BR-03
+	The system suggests the smallest fleet truck that can carry the trip. The total actual weight must not be more than its payload (BR-33). The total volume should also fit its box; this is a warning. If no fleet truck fits, the system shows the payload and volume that a vendor truck needs.
+	Trip, Truck
+	Cargo must not be more than a truck can carry. The fleet can have trucks of different sizes.
+	System, in Suggest Truck Size
+	BR-04
+	Trip time = the driving time of the empty truck from the default depot to the first pickup + the driving time between the stops from Google Maps + the stop time at each stop (loading and unloading) + breaks and rest stops. If the trip time is over 8 hours, the system suggests 2 drivers. The Dispatcher chooses 1 driver (with rest stops) or 2 drivers when assigning the trip.
+	Order, Trip
+	The Dispatcher needs the real trip time to plan the trip. The law limits the hours of one driver (BR-34).
+	System; the Dispatcher chooses at assignment
+	BR-05
+	An order can join an open trip only when it is Ready for Planning, the open trip belongs to the same customer, and the customer agreed to grouping.
+	Order, Trip
+	Cargo cannot be collected without customer documents.
+	System, in Trip Planning
+	BR-06
+	The Dispatcher sets the required document types of each order, or none. Documents can be viewed, uploaded or deleted, but not edited. Only the Dispatcher decides that they are complete.
+	Customer document
+	Keeps a true record of what the customer sent.
+	Dispatcher; the system blocks editing
+	BR-07
+	Fleet trucks are used first. A vendor truck is used only when no fleet truck can carry the trip or is free.
+	Trip
+	Use the own fleet before paying a vendor.
+	Dispatcher, in Assign Truck & Driver
+	BR-08
+	A driver can be assigned only when: one shift covers the whole trip; the driver has no other unfinished trip; the minimum rest time since the last trip has passed; enough driving hours are left (BR-34); and the license has not expired and its class allows the truck.
+	Trip, Driver shift, Driver profile
+	Drivers need rest, cannot run two trips at the same time and must be allowed to drive the truck.
+	System filters the driver list
+	BR-09
+	Drivers cannot reject a trip in the system. Accept means the driver has seen the trip.
+	Trip
+	Dispatching decisions stay with ALS staff.
+	System
+	BR-10
+	Once a trip is Assigned, Dispatched or Accepted, the Dispatcher cannot change its truck or driver, or cancel it, by hand. A change goes through an incident and Dispatch Replacement Truck (UC-15): the truck or the driver changes on the same trip. A reason is required..
+	Trip
+	Keeps the seal record correct.
+	System
+	BR-11
+	At every pickup, also on a replacement trip, the driver must take one clear photo of the seal number with the truck plate, and enter the seal number.
+	Delivery evidence
+	Proves that the cargo left sealed.
+	System, in Record Cargo Pickup
+	BR-12
+	An order cannot become Delivered without a photo of the signed POD. The receiver name is optional: it is empty when nobody receives the cargo.
+	Delivery evidence
+	Proof of delivery.
+	System, in Record Delivery
+	BR-13
+	The ETA is not shown before pickup. It is calculated at pickup and again at each leg update or stop event, for each order. The stop time at a Location is the median of its last 10 visits. With fewer than 3 visits, the stop time setting is used. If the ETA of a drop-off stop is more than 30 minutes later than its planned arrival, the order is flagged as late risk. The ETA is an estimate and is shown only to staff, never on the tracking page.
+	Order, Location
+	Google Maps travel time does not include the time spent at stops. This time is different at each Location.
+	System
+	BR-14
+	Customers see five milestones: Order received; Truck assigned (from Assigned); Picked up; Arrived at transit warehouse; Delivered. The transit milestone is shown only when the trip has a transit stop.
+	Tracking page, Trip
+	Customers need plain steps, not internal statuses. The transit step is shown only when the cargo really goes through a transit warehouse.
+	System
+	BR-15
+	For an order given to a vendor, the system keeps only the vendor and the vendor tracking code. There is no seal photo, POD or ETA in the system, and the order is not counted in fleet numbers.
+	Order, Dashboard
+	Vendors do not use the system, so it has no data from them.
+	System
+	BR-16
+	A major incident is damaged or lost cargo, a traffic accident, or cargo held by authorities. The Dispatcher must send it to the Manager.
+	Incident
+	These cases can cost a lot of money or have legal effects, so a person with more authority must decide.
+	Dispatcher
+	BR-17
+	Every compensation claim, from an incident or a cancellation, stays Pending until the Manager approves or rejects it.
+	Compensation claim
+	Compensation is money that ALS pays out, so one person with authority checks every claim.
+	System
+	BR-18
+	An order can be cancelled while it is Confirmed, Ready for Planning, Assigned or Accepted, until the driver records Loading Started at its pickup stop. After that it goes on to delivery and the trip ends Completed. Before pickup, the system suggests a cancellation fee from the tiers of the contract linked to the order (BR-47) (a percent of the agreed price, by the hours before the planned start). The Dispatcher can change the amount. A trip with no orders left becomes Cancelled only before the truck starts.
+	Order, Trip, Transport contract
+	After pickup the company has spent money and the cargo must go back to a safe place. The contract sets what the customer pays.
+	System, Dispatcher
+	BR-19
+	The system closes an order when it becomes Delivered or Cancelled, and when it is Handed Over to Vendor. A closed order is locked. The Dispatcher gives the contract file to the Finance department, outside the system.
+	Order
+	Payment is handled by the Finance department outside the system.
+	System
+	BR-20
+	The Dispatcher who creates an order is its responsible Dispatcher until the Manager moves it. This Dispatcher is the contact on the tracking page. Any Dispatcher on shift can still work on the order.
+	Order
+	The customer has one Dispatcher to call.
+	System
+	BR-21
+	The tracking link uses a random token that cannot be guessed. It never uses the plain OrderID. One token shows only its own order. The token stops working when the retention period of the POD photo ends, or when the Dispatcher revokes the link.
+	Tracking page
+	The page needs no login and shows customer data, so nobody may reach it by guessing an order number. A link shared by mistake can be stopped.
+	System
+	BR-22
+	Each data type has its own retention period (a setting), counted from Delivered or Cancelled. Customer documents: 60–90 days. Seal & plate, POD and incident photos: 2 years. Files stay while a claim is Pending. Deleting a POD or seal & plate photo also deletes the receiver name and position. Order data is kept.
+	Files, Waybill, Trip event, GPS track
+	Customer documents hold customer data. Photos are evidence for claims up to 2 years (Commercial Law 2005, Article 319). A waybill is kept for 3 years (Decree 158/2024/ND-CP, Article 8). GPS tracks are personal data, so they are kept short.
+	System, JOB-01
+	BR-23
+	The driver gets the stops in visiting order with their addresses. The system does not give turn-by-turn directions.
+	Trip
+	Google Maps routes are for cars and can send trucks onto roads they may not use. Drivers know the truck routes.
+	System
+	BR-24
+	The Manager adds, edits and removes trucks. A truck is reserved for the time window of its trip from the moment the trip is created. The system sets it to On Trip when the trip starts (In Progress) and back to Available when the trip is Completed or Cancelled. It sets a truck to Inactive when its inspection expires (JOB-06). Only the Manager sets Maintenance, Inactive or Available, but not Available while the inspection has expired. The Dispatcher can only view the status.
+	Truck
+	The list of free trucks stays correct without manual work. A truck with an expired inspection must not run.
+	System, by role
+	BR-25
+	An order is “waiting too long” when it stays in Ready for Planning longer than the set limit.
+	Order
+	The Manager sees stuck orders early and moves them before the customer is affected.
+	System, JOB-03
+	BR-26
+	A failed sign-in message must not say if the username or the password was wrong. A locked account cannot sign in.
+	Sign-in
+	Stops people from finding valid usernames.
+	System
+	BR-27
+	Every Driver PWA action works offline. It keeps the phone time and is sent when the signal returns. The phone time is used when it is valid: not in the future, not before the trip was assigned, and within the phone clock limit (a setting) of the server time. Otherwise the server time is used and the action is flagged. If the trip changed while the phone was offline, the action is kept and the Dispatcher is alerted (MSG38).
+	Driver PWA, Trip event
+	There is no signal inside bonded warehouses. A wrong phone clock must not break the ETA or the tracking page.
+	System
+	BR-28
+	The Manager creates and locks Dispatcher and Driver accounts. Only the Administrator manages Manager accounts and assigns roles.
+	User account
+	The Administrator is a technical role.
+	System, by role
+	BR-29
+	An order goes whole on one truck on a trip. It is not split between trucks.
+	Trip
+	Keep one seal and one POD for each order.
+	System, in Trip Planning
+	BR-30
+	An extra fee is a surcharge, a waiting fee or a collection-on-behalf fee. Surcharges and waiting fees are revenue of the company. Collection-on-behalf fees are not revenue and have no VAT. The two groups are reported separately.
+
+
+	Extra fee
+	Keeps VAT reports correct.
+	Dispatcher; the system suggests waiting fees (BR-40)
+	BR-31
+	Customer documents must be PDF, JPG, PNG, Excel (XLS, XLSX) or Word (DOC, DOCX) files of 10 MB or less. The signed order contract must be a PDF, JPG or PNG file of 10 MB or less. Seal & plate photos and POD photos must be JPG or PNG files of 10 MB or less.
+	Files
+	Keeps upload time short on cellular networks. Customers send declarations and contracts as Excel or Word files.
+	System
+	BR-32
+	The cargo, price, HAWB number and Locations of an order can be edited only before pickup. Every change goes into the activity log.
+	Order
+	The evidence stays consistent after the cargo is sealed.
+	System
+	BR-33
+	The total actual weight on a truck must not be more than its allowed payload (equal is allowed). The system checks it when a truck is assigned or changed, and when the driver records the loaded weight at pickup. Only trucks that can carry the weight are suggested (BR-03). There is no button to go over the limit.
+	Trip, Truck, Trip stop
+	Overloading is fined (Decree 168/2024/ND-CP) and is not safe.
+	System, in Suggest Truck Size, Assign Truck & Driver to Trip and Record Cargo Pickup
+	BR-34
+	A driver must not drive more than 4 hours without a break, 10 hours in one day or 48 hours in one week. The system counts driving time from Left to Arrived. A break stops the count. It does not offer a driver with too few hours left (BR-08), warns the Manager about a longer shift, and alerts the Dispatcher near 4 hours (MSG65). The limits are set by law, so the settings cannot change them.
+	Driver profile, Driver shift, Trip event
+	Law 36/2024/QH15 (Article 64) sets these limits for commercial drivers. A tired driver is a risk for people and cargo.
+	System
+	BR-35
+	Every trip of a company truck has a waybill, made as a PDF when the truck and the driver are assigned. A replacement trip gets a new one. It shows the company name, truck plate, customer, start and end points, cargo type, total weight and, if any, the contract number and date. The driver opens it on the phone. The customer signs the printed copy to confirm the loaded weight. It is kept for 3 years (BR-22). A vendor order has no waybill (BR-15).
+	Trip, Waybill
+	Decree 158/2024/ND-CP (Article 8) requires the driver to carry the waybill and the company to keep it for at least 3 years.
+	System
+	BR-36
+	When the driver records arrived, loading started, picked up or delivered, the system compares the phone position with the stop Location. If the distance is more than the geofence radius (a setting; a Location can have its own), the event is still saved, marked “outside radius”, and the Dispatcher is alerted (MSG50). The driver is never blocked. With no phone position, the event is saved without a check.
+	Trip event, Location
+	A wrong position can be a mistake or a false record, but a driver must not be stopped at a gate with bad signal.
+	System
+	BR-37
+	A compensation claim should not be more than the limit of the order: the smaller of the contract liability cap and the declared value, or 500 million VND for each claim if there is neither. The system warns when the amount is higher (MSG56). The Manager can still approve it with a reason.
+	Compensation claim, Transport contract, Order
+	Without an agreement, Decree 163/2017/ND-CP limits the liability of a logistics business to the declared value (500 million VND for each claim if none).
+	System, Manager
+	BR-38
+	Dangerous cargo are not accepted.
+	Order
+	These cargo types need special trucks, permits and trained drivers.
+	Dispatcher
+	BR-39
+	Each drop-off ends with the result Delivered. It needs the POD photo (BR-12); the receiver name is optional. When the driver cannot hand over the cargo, for example the receiver is not there, the driver reports an incident and the Dispatcher handles it with the customer (BF-04). The order stays In Transit until the delivery is saved.
+	Trip stop, Order
+	The customer and the company need to know what really happened at each drop-off, and cargo must not get lost.
+	System, Dispatcher
+	BR-40
+	Waiting time is counted from Arrived to Loading started. When it is longer than the free waiting time in the contract, the system suggests a waiting fee. It uses the waiting fee rate of the contract. The suggestion becomes an Extra Fee only when the Dispatcher confirms it. If the driver skips Loading started, no fee is suggested.
+	Trip event, Extra fee, Transport contract
+	A truck that waits costs money. A fee that the system suggests and a person confirms is fair to the customer.
+	System, Dispatcher
+	BR-41
+	A trip is locked from Assigned (BR-10). A change of its truck or driver needs a reason, and the reason goes to the activity log.
+	Trip, Activity log
+	A person is responsible for every change to a locked trip. The reasons show later why a trip was changed.
+	System
+	BR-42
+	Only the cargo type, the cargo name, the HAWB number and the provinces of the order are sent to the AI service. It returns the cargo class, a risk level and the suggested documents. No customer name, tax code, phone, email or receiver data is sent. The answer is only a suggestion and nothing is stored. If the AI service is off or fails, the Dispatcher chooses the documents by hand.
+	Order
+	The AI service gets only what it needs, and a person decides.
+	System, Dispatcher
+	BR-43
+	The 3D load plan is a guide. The system places the orders of one trip in the truck box, one block for each order (its length × width × height). Bulk cargo has no size: it is not drawn, only listed with its weight, and its weight still counts in the payload. The order delivered last goes deepest, near the front wall. The order delivered first goes nearest the door. A block goes on top of another only when the lower order is Stackable, the upper order is delivered earlier or at the same stop, and the pile stays under the box height. A block that does not fit is marked and MSG66 shows. The plan is calculated when the screen opens. It is not saved and never blocks an assignment or a pickup.
+	Trip, Truck, Order
+	Loading in the reverse order of the stops saves handling at each drop-off. A simple guide is enough: the driver and the loader decide the real loading.
+	System
+	BR-44
+	Each Dispatcher has an order form link. A Guest sends orders through it without login. The orders are saved as Draft for the Dispatcher of the link. A known tax code, or a known email when no tax code is given, links the order to the saved customer; otherwise a new customer is created. The Dispatcher completes the tax code before confirming. The system limits how often the link can be used.
+	Order, Customer
+	The customer sends the full order data at once without an account. The limit stops abuse of a public link.
+	System
+	BR-45
+	The order contract is made for one order from the order data and the agreed price. The customer signs it outside the system and the Dispatcher uploads the signed file. It is the contract of this order only, not the transport contract of the customer. An order cannot be confirmed without the signed file.
+	Order
+	The price and the terms of each order are agreed in writing before work starts.
+	Dispatcher; the system blocks Confirm Order
+	BR-46
+	A Draft order only gets the route distance and the trip time. The truck and the drivers are chosen only when the order is Ready for Planning (UC-09). If no fleet truck is free, the Dispatcher hands the order over to a vendor (BR-07).
+	Order, Trip
+	Documents can still be missing, so the plan can change before the order is ready.
+	System, Dispatcher
+	BR-47
+	When an order is confirmed, the system links it to the Active transport contract of its customer. The link does not change afterwards. The fee tiers, the waiting terms and the liability cap of that contract are used for the order. If the customer has no Active contract, nothing is suggested and the Dispatcher enters the amount.
+	Order, Transport contract
+	The terms at the time of confirming stay with the order.
+	System
+	BR-48
+	Only Published news posts are shown on the website, newest first. Only the Manager writes, publishes, unpublishes and deletes posts. An unpublished or deleted post is hidden from the website.
+	News Post
+	The website must show only content the company approved.
+	System
+	BR-49
+	A password reset link works once and expires after 30 minutes (System Setting). The reset screen shows the same message whether the email exists or not. After a reset, all other sessions of the account are signed out.
+	User Account
+	Protects accounts and does not reveal which emails have accounts.
+	System
+	BR-50
+	A Draft order can be Confirmed only when it has the agreed price, the signed order contract and the HAWB number.
+	Order
+	These are needed to issue the tracking link, link the contract and check the customs documents.
+	System, on Confirm Order
+	BR-51
+	Every status change of an order or a trip is recorded with the new status, the user (or the system) and the time.
+	Order, Trip
+	Gives a full history for disputes and for the Manager.
+	System
+	 
+2. System Messages
+MSG44, MSG48 and MSG51 are not used.
+ #
+	Message code
+	Message Type
+	Context
+	Content
+	1
+	MSG01
+	In line
+	A search or filter finds no data
+	Không tìm thấy kết quả.
+	2
+	MSG02
+	In red, under the field
+	A required field is empty
+	{Field} không được để trống.
+	3
+	MSG03
+	In red, under the field
+	Input is too long
+	{Field} tối đa {max} ký tự.
+	4
+	MSG04
+	In red, under the field
+	Input has a wrong format or is not unique
+	{Field} không hợp lệ.
+	5
+	MSG05
+	In red, above the button
+	Wrong username or password
+	Sai tên đăng nhập hoặc mật khẩu. Vui lòng thử lại.
+	6
+	MSG06
+	In red, above the button
+	A locked account tries to sign in
+	Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Quản lý hoặc Quản trị viên.
+	7
+	MSG07
+	Toast message
+	Data saved
+	Đã lưu.
+	8
+	MSG08
+	Toast message
+	Order created
+	Đã tạo đơn {OrderID}. Link theo dõi đã gửi tới {email}.
+	9
+	MSG09
+	In red, under the field
+	Wrong file type or size
+	Chỉ nhận tệp PDF, JPG, PNG, Excel hoặc Word, tối đa 10 MB.
+	10
+	MSG10
+	Toast message
+	Guest uploads a document
+	Đã tải lên chứng từ. ALS sẽ kiểm tra.
+	11
+	MSG11
+	In line
+	Confirm with a document type missing
+	Mỗi loại chứng từ bắt buộc cần có ít nhất một tệp.
+	12
+	MSG12
+	Toast message
+	Documents confirmed
+	Đã xác nhận chứng từ. Đơn {OrderID} sẵn sàng lên chuyến.
+	13
+	MSG13
+	In line, warning
+	No truck of the fleet can carry the trip
+	Không có xe nào của đội đủ tải cho chuyến này. Hãy chuyển đơn cho nhà xe ngoài.
+	14
+	MSG14
+	In line, warning
+	No free truck or driver
+	Không còn xe hoặc tài xế trong ca phù hợp cho chuyến này.
+	15
+	MSG15
+	Toast message
+	Trip assigned
+	Đã gán chuyến {TripCode} cho {driver}. Tài xế đã được báo.
+	16
+	MSG16
+	Toast message
+	Orders given to a vendor
+	Đã chuyển đơn cho nhà xe {vendor}.
+	17
+	MSG17
+	Confirmation dialog
+	Driver accepts a trip
+	Nhận chuyến {TripCode}?
+	18
+	MSG18
+	In red
+	Pickup photo or seal number missing
+	Hãy chụp rõ số chì và biển số xe, rồi nhập số chì.
+	19
+	MSG19
+	Banner
+	Driver PWA is offline
+	Bạn đang mất mạng. Cập nhật được lưu trên điện thoại và sẽ gửi sau.
+	20
+	MSG20
+	In red
+	POD photo missing
+	Hãy chụp biên bản giao đã ký.
+	21
+	MSG21
+	Toast message
+	Incident reported
+	Đã báo sự cố. Điều phối viên đã được báo.
+	22
+	MSG22
+	Confirmation dialog
+	Dispatcher cancels an order
+	Hủy đơn {OrderID}? Không thể hoàn tác.
+	23
+	MSG23
+	In line
+	Cancel a delivered or closed order
+	Không thể hủy đơn đã giao hoặc đã đóng.
+	24
+	MSG24
+	Confirmation dialog
+	The Manager deletes a news post
+	Xóa bài viết “{Title}”?
+	25
+	MSG25
+	Toast message
+	A news post is deleted
+	Đã xóa bài viết.
+	26
+	MSG26
+	In line
+	Manager changes a trip after pickup
+	Hàng đã được lấy. Hãy dùng “Điều xe thay thế” để đổi xe.
+	27
+	MSG27
+	Toast message
+	Claim decision saved
+	Đã {duyệt / từ chối} yêu cầu bồi thường.
+	28
+	MSG28
+	Full page
+	Tracking link not valid
+	Link theo dõi không hợp lệ. Vui lòng liên hệ ALS.
+	29
+	MSG29
+	Toast message
+	Order moved to another Dispatcher
+	Đơn {OrderID} đã chuyển cho {dispatcher} phụ trách.
+	30
+	MSG30
+	Full page
+	User opens a function without permission
+	Bạn không có quyền thực hiện thao tác này.
+	31
+	MSG31
+	In red
+	File storage not available
+	Tải lên thất bại. Vui lòng thử lại sau.
+	32
+	MSG32
+	In line, warning
+	Tracking email not sent
+	Đã lưu đơn nhưng chưa gửi được email. Hãy sao chép link theo dõi và gửi cho khách.
+	33
+	MSG33
+	In line
+	Edit an order after pickup
+	Hàng đã được lấy. Không thể sửa đơn này nữa.
+	34
+	MSG34
+	In line, warning
+	Distance service not available
+	Dịch vụ tính quãng đường đang lỗi. Hãy thử lại sau.
+	35
+	MSG35
+	In line
+	Truck or driver taken by someone else
+	Xe hoặc tài xế này không còn trống. Vui lòng chọn lại.
+	36
+	MSG36
+	In line
+	Orders were put in another trip first
+	Một số đơn đã được đưa vào chuyến khác. Vui lòng tải lại danh sách.
+	37
+	MSG37
+	In red
+	Too many sign-in tries or tracking link calls
+	Bạn đã thử quá nhiều lần. Vui lòng thử lại sau.
+	38
+	MSG38
+	Alert (bell and Trip Monitoring)
+	A driver update arrives after the trip changed
+	Cập nhật của tài xế cho chuyến {TripCode} chưa được áp dụng vì chuyến đã thay đổi. Vui lòng kiểm tra.
+	39
+	MSG39
+	In red (Driver PWA)
+	The phone holds 50 unsent updates
+	Điện thoại đang giữ quá nhiều cập nhật chưa gửi. Hãy kết nối mạng để gửi trước khi làm tiếp.
+	40
+	MSG40
+	In line
+	A drop-off is placed before its pickup
+	Điểm giao phải nằm sau điểm lấy hàng của đơn.
+	41
+	MSG41
+	In line
+	Order past its document deadline
+	Đơn {OrderID} đã quá hạn nộp chứng từ.
+	42
+	MSG42
+	In line, warning
+	The AI service is off or fails
+	Không lấy được gợi ý. Hãy chọn chứng từ bằng tay.
+	43
+	MSG43
+	In line
+	Confirm an order with no required documents chosen
+	Hãy chọn chứng từ cần nộp, hoặc tick “Không cần chứng từ”.
+	45
+	MSG45
+	In line
+	The weight is more than the allowed payload
+	Tổng khối lượng {total} kg vượt tải trọng cho phép {max} kg của xe. Hãy bỏ bớt đơn hoặc chọn xe khác.
+	46
+	MSG46
+	In line
+	A driver has not enough driving hours
+	Tài xế {driver} không còn đủ giờ lái cho chuyến này.
+	47
+	MSG47
+	In line
+	A truck or driver document has expired
+	{Giấy tờ} của {xe / tài xế} đã hết hạn.
+	49
+	MSG49
+	In line
+	Driver 2 is empty or the same as Driver 1
+	Hãy chọn tài xế thứ hai khác tài xế thứ nhất.
+	50
+	MSG50
+	Alert (bell and Trip Monitoring)
+	An event is saved far from the stop
+	Tài xế {driver} báo {event} cách điểm dừng {distance} m, ngoài bán kính {radius} m. Vui lòng kiểm tra.
+	52
+	MSG52
+	Toast message
+	Order form sent
+	Đã gửi {n} đơn. ALS sẽ liên hệ báo giá.
+	53
+	MSG53
+	In line
+	A Location with the same address exists
+	Địa điểm này đã có: {name}.
+	54
+	MSG54
+	In line, warning
+	Coordinates not found for an address
+	Chưa lấy được tọa độ cho địa chỉ này. Địa điểm vẫn được lưu; hãy kiểm tra địa chỉ hoặc thử lại sau.
+	55
+	MSG55
+	In line
+	Delete a Location that is in use
+	Địa điểm đang được đơn hoặc chuyến sử dụng, không thể xóa.
+	56
+	MSG56
+	In line, warning
+	A claim is above the liability limit
+	Số tiền vượt giới hạn bồi thường {cap}. Hãy ghi lý do nếu vẫn duyệt.
+	57
+	MSG57
+	Confirmation dialog
+	Dispatcher confirms an order
+	Xác nhận đơn {OrderID}? Link theo dõi sẽ được gửi cho khách.
+	58
+	MSG58
+	In red, under the field
+	Wrong current password
+	Mật khẩu hiện tại không đúng.
+	59
+	MSG59
+	In red, under the field
+	The new password is not allowed
+	Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.
+	60
+	MSG60
+	Toast message
+	Password changed
+	Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.
+	61
+	MSG61
+	In line
+	A password reset link is wrong, expired or used
+	Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu link mới.
+	62
+	MSG62
+	In line, warning (yellow banner)
+	The trip time is over 8 hours
+	Thời gian chạy dự kiến {hours} giờ – đề xuất bố trí 2 tài xế.
+	63
+	MSG63
+	Confirmation dialog
+	The Dispatcher revokes a tracking link
+	Thu hồi link theo dõi của đơn {OrderID}? Link cũ sẽ không mở được nữa.
+	64
+	MSG64
+	In line, warning
+	The total volume is more than the truck box
+	Tổng thể tích {total} m³ lớn hơn thùng xe {max} m³. Hãy kiểm tra lại.
+	65
+	MSG65
+	Alert (bell and Trip Monitoring)
+	A driver is close to 4 hours of driving
+	Tài xế {driver} sắp lái đủ 4 giờ liên tục. Cần nghỉ trước {time}.
+	66
+	MSG66
+	In line, warning
+	A block does not fit the truck box in the 3D load plan
+	Khối hàng của đơn {OrderID} không xếp vừa thùng xe. Hãy kiểm tra kích thước hàng hoặc chọn xe lớn hơn.
+	67
+	MSG67
+	In line
+	Signed order contract missing when confirming
+	Hãy tải lên hợp đồng đã ký trước khi xác nhận đơn.
+	68
+	MSG68
+	In line
+	HAWB number missing when confirming
+	Hãy nhập số HAWB trước khi xác nhận đơn.
+	69
+	MSG69
+	In red, under the text box
+	Required field of a news post is empty when publishing
+	Vui lòng nhập {field} trước khi đăng bài.
+	70
+	MSG70
+	In line
+	A password reset link is requested
+	Nếu email có trong hệ thống, link đặt lại mật khẩu đã được gửi.
+	3. Other Requirements
+Item
+	Description
+	Formats
+	Dates are dd/MM/yyyy and times are HH:mm, Vietnam time (UTC+7). Money is in VND with thousand separators. Weight is in kg and sizes are in cm.
+	Settings
+	The Administrator can change the settings. The legal driving limits of BR-34 are shown but cannot be changed. Files and data: retention period for each data type, GPS track retention and file size limit. Operation: waiting-too-long limit, minimum driver rest time, stop time per stop and operating hours per day. Trips: default geofence radius, phone clock limit. Other: AI on / off, password reset link lifetime, expiry warning period, company name and order code prefix.
+	
+
+
+
+
+
+Report 3 (SRS Document)
+	Page /112

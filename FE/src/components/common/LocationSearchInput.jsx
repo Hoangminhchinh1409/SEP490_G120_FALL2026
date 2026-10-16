@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { MapPin, Search, Loader2, X, Navigation, Check } from 'lucide-react';
-import { searchVietnamLocations, lookupLocationCoords, removeVietnameseTones } from '../../data/vietnamLocationsData';
 
 const LocationSearchInput = ({
   value = '',
@@ -36,14 +35,7 @@ const LocationSearchInput = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // 1. Tìm kiếm tức thì trong danh mục địa điểm Việt Nam (offline, 0ms, không cascading render)
-  const localMatches = useMemo(() => {
-    const query = inputValue?.trim();
-    if (!query || query.length < 1) return [];
-    return searchVietnamLocations(query);
-  }, [inputValue]);
-
-  // 2. Tra cứu thêm qua API trực tuyến nếu cần bổ sung kết quả chi tiết
+  // 2. Tra cứu qua Geocoding API trực tuyến
   useEffect(() => {
     const query = inputValue?.trim();
     if (!query || query.length < 2) {
@@ -56,11 +48,13 @@ const LocationSearchInput = ({
     const apiTimer = setTimeout(async () => {
       try {
         setIsLoading(true);
-        const timeoutId = setTimeout(() => controller.abort(), 2500);
-        const res = await fetch(
-          `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=21.0285&lon=105.8542&limit=5`,
-          { signal: controller.signal }
-        );
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        
+        // Sử dụng Geoapify Geocode Autocomplete API chuyên dụng tại Việt Nam
+        const geoapifyKey = process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY || '5a7ccf56c9694e229e9621648227937a';
+        const geoapifyUrl = `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(query)}&filter=countrycode:vn&lang=vi&limit=8&apiKey=${geoapifyKey}`;
+
+        const res = await fetch(geoapifyUrl, { signal: controller.signal });
         clearTimeout(timeoutId);
 
         if (res.ok) {
@@ -69,34 +63,58 @@ const LocationSearchInput = ({
             const apiItems = data.features.map(feat => {
               const props = feat.properties || {};
               const coords = feat.geometry?.coordinates || [105.8542, 21.0285];
-              const main = props.name || props.street || query;
-              const parts = [
-                props.housenumber ? `Số ${props.housenumber}` : '',
-                props.street && props.street !== props.name ? props.street : '',
+              const main = props.name || props.street || props.address_line1 || query;
+              const sub = props.address_line2 || [
                 props.district,
                 props.city || props.state,
                 props.country || 'Việt Nam'
-              ].filter(Boolean);
+              ].filter(Boolean).join(', ');
 
               return {
                 main,
-                sub: parts.join(', '),
+                sub,
                 lat: coords[1],
-                lng: coords[0]
+                lng: coords[0],
+                type: props.category ? props.category.toUpperCase() : 'LOCATION'
               };
             });
 
             setApiSuggestions(apiItems);
+            return;
           }
         }
       } catch {
-        // Fallback an toàn trên danh mục nội bộ
+        // Fallback Photon nếu mạng bận
+        try {
+          const fallbackRes = await fetch(
+            `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&bbox=102.14,8.18,109.46,23.39&limit=6`
+          );
+          if (fallbackRes.ok) {
+            const fbData = await fallbackRes.json();
+            if (!isCancelled && fbData?.features) {
+              const fbItems = fbData.features.map(feat => {
+                const props = feat.properties || {};
+                const coords = feat.geometry?.coordinates || [105.8542, 21.0285];
+                return {
+                  main: props.name || props.street || query,
+                  sub: [props.district, props.city || props.state, 'Việt Nam'].filter(Boolean).join(', '),
+                  lat: coords[1],
+                  lng: coords[0],
+                  type: 'LOCATION'
+                };
+              });
+              setApiSuggestions(fbItems);
+            }
+          }
+        } catch {
+          // Fallback an toàn trên localMatches
+        }
       } finally {
         if (!isCancelled) {
           setIsLoading(false);
         }
       }
-    }, 250);
+    }, 200);
 
     return () => {
       isCancelled = true;
@@ -105,30 +123,11 @@ const LocationSearchInput = ({
     };
   }, [inputValue]);
 
-  // Kết hợp kết quả gợi ý chuẩn xác nhất
+  // Danh sách kết quả gợi ý trực tuyến từ Geocoding API
   const suggestions = useMemo(() => {
     if (!inputValue?.trim()) return [];
-    const seen = new Set();
-    const merged = [];
-
-    for (const item of localMatches) {
-      const key = `${item.lat?.toFixed(3)},${item.lng?.toFixed(3)}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        merged.push(item);
-      }
-    }
-
-    for (const item of apiSuggestions) {
-      const key = `${item.lat?.toFixed(3)},${item.lng?.toFixed(3)}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        merged.push(item);
-      }
-    }
-
-    return merged.slice(0, 8);
-  }, [inputValue, localMatches, apiSuggestions]);
+    return apiSuggestions.slice(0, 8);
+  }, [inputValue, apiSuggestions]);
 
   const handleInputChange = (e) => {
     const val = e.target.value;
@@ -155,18 +154,20 @@ const LocationSearchInput = ({
     }
   };
 
-  const handleSelectCustomAddress = () => {
+  const handleSelectCustomAddress = async () => {
     const customText = inputValue?.trim();
     if (!customText) return;
     setIsOpen(false);
     if (onChange) onChange(customText);
-    const coords = lookupLocationCoords(customText, markerLetter);
+
+    // Nếu người dùng chọn dùng địa chỉ tự gõ, kiểm tra xem có kết quả Geocoding khớp đầu tiên không
+    const firstMatch = apiSuggestions[0];
     if (onSelectLocation) {
       onSelectLocation({
         address: customText,
         mainName: customText,
-        lat: coords?.lat || null,
-        lng: coords?.lng || null
+        lat: firstMatch?.lat || null,
+        lng: firstMatch?.lng || null
       });
     }
   };
@@ -190,8 +191,9 @@ const LocationSearchInput = ({
   // Làm nổi bật từ khóa trong kết quả gợi ý
   const highlightMatch = (text, query) => {
     if (!text || !query) return text;
-    const cleanT = removeVietnameseTones(text);
-    const cleanQ = removeVietnameseTones(query);
+    const clean = (str) => (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+    const cleanT = clean(text);
+    const cleanQ = clean(query);
     const idx = cleanT.indexOf(cleanQ);
     if (idx === -1) return text;
 
@@ -288,18 +290,26 @@ const LocationSearchInput = ({
                   e.preventDefault();
                   handleSelect(item);
                 }}
-                className="px-3.5 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-indigo-50/70 transition-colors group"
+                className="px-3.5 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-indigo-50/80 transition-colors group"
               >
-                <div className="mt-0.5 text-gray-400 group-hover:text-indigo-600 transition-colors shrink-0">
-                  <MapPin size={16} />
+                <div className="w-7 h-7 rounded-full bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center text-gray-500 group-hover:text-indigo-600 transition-colors shrink-0">
+                  <MapPin size={15} />
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-gray-800 group-hover:text-indigo-900 truncate">
-                    {highlightMatch(item.main, inputValue)}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-gray-800 group-hover:text-indigo-900 truncate">
+                      {highlightMatch(item.main, inputValue)}
+                    </span>
+                    {item.type === 'KCN' && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-medium">KCN</span>
+                    )}
+                    {item.type === 'PORT' && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 font-medium">Cảng</span>
+                    )}
                   </div>
                   {item.sub && (
-                    <div className="text-[11px] text-gray-400 group-hover:text-gray-600 truncate mt-0.5">
+                    <div className="text-[11px] text-gray-500 group-hover:text-gray-700 truncate mt-0.5">
                       {item.sub}
                     </div>
                   )}
