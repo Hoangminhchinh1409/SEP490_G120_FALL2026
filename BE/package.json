@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js"
+    "dev": "nodemon --experimental-websocket server.js",
+    "start": "node --experimental-websocket server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
