@@ -139,7 +139,7 @@ export default function OrderConfirmationView() {
         {/* Thông báo nếu đã chốt */}
         {agreedSuccess && (
           <Alert
-            message="Quý khách đã đồng ý chốt đơn hàng và giá cước thành công!"
+            title="Quý khách đã đồng ý chốt đơn hàng và giá cước thành công!"
             description={
               <div className="space-y-2 mt-1 text-xs">
                 <span>Vui lòng chuyển tiếp tới bước <b>Nộp hồ sơ chứng từ</b> để điều phối viên hoàn tất thủ tục cấp hợp đồng.</span>

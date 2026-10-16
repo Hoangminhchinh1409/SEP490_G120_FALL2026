@@ -4,6 +4,11 @@ const { sendOrderPriceConfirmationEmail, sendContractSigningEmail } = require('.
 
 // Helper map status từ DB sang FE
 const mapDbStatusToFe = (dbStatus, order) => {
+  // Nếu đơn hàng đã có ngày hủy hoặc có lý do hủy thì chắc chắn là CANCELLED
+  if (dbStatus === 'CANCELLED' || dbStatus === 'CANCELLED_RETURNING' || (order?.cancelled_at && order?.cancel_reason)) {
+    return 'CANCELLED';
+  }
+
   switch (dbStatus) {
     case 'WAITING_FOR_DOCUMENTS':
       // Đơn nháp: Chỉ áp dụng cho đơn từ Web/Homepage chưa chốt cước hoặc agreed_price = 0
@@ -258,7 +263,8 @@ const getAllOrders = async (req, res) => {
         documents: (() => {
           try {
             const meta = order.ai_input_text ? JSON.parse(order.ai_input_text) : {};
-            return meta.documents || meta.web_workflow?.approved_documents || meta.web_workflow?.documents || null;
+            const docs = meta.documents || meta.web_workflow?.approved_documents || meta.web_workflow?.documents;
+            return (Array.isArray(docs) && docs.length > 0) ? docs : null;
           } catch (e) {
             return null;
           }
@@ -369,14 +375,14 @@ const createConsultationOrder = async (req, res) => {
         return sum + Math.max(itemWeight, itemVol);
       }, 0);
       finalCargoDesc = items.map(it => `${it.cargo_name || 'Hàng'} (${it.package_count || 1} ${it.package_unit || 'kiện'})`).join(', ');
-      l = items[0]?.length_cm || 0;
-      w = items[0]?.width_cm || 0;
-      h = items[0]?.height_cm || 0;
+      l = Math.max(1, parseFloat(items[0]?.length_cm) || 100);
+      w = Math.max(1, parseFloat(items[0]?.width_cm) || 80);
+      h = Math.max(1, parseFloat(items[0]?.height_cm) || 100);
     } else {
       const isBulk = cargo_type === 'BULK';
-      l = isBulk ? 0 : (parseFloat(length_cm) || 120);
-      w = isBulk ? 0 : (parseFloat(width_cm) || 100);
-      h = isBulk ? 0 : (parseFloat(height_cm) || 150);
+      l = isBulk ? 1 : Math.max(1, parseFloat(length_cm) || 120);
+      w = isBulk ? 1 : Math.max(1, parseFloat(width_cm) || 100);
+      h = isBulk ? 1 : Math.max(1, parseFloat(height_cm) || 150);
       actualWeight = actualWeight || 1000;
       const volWeight = isBulk ? 0 : ((l * w * h) / 5000);
       chargeableWeight = isBulk ? actualWeight : Math.max(actualWeight, volWeight);
@@ -551,9 +557,9 @@ const createDirectOrder = async (req, res) => {
     const dbStatus = 'READY_FOR_PLANNING';
 
     const isBulk = cargo_type === 'BULK';
-    const l = isBulk ? 0 : (parseFloat(length_cm) || 120);
-    const w = isBulk ? 0 : (parseFloat(width_cm) || 100);
-    const h = isBulk ? 0 : (parseFloat(height_cm) || 150);
+    const l = isBulk ? 1 : Math.max(1, parseFloat(length_cm) || 120);
+    const w = isBulk ? 1 : Math.max(1, parseFloat(width_cm) || 100);
+    const h = isBulk ? 1 : Math.max(1, parseFloat(height_cm) || 150);
     const actualWeight = parseFloat(weight_kg) || 1000;
 
     const { data: newOrder, error: orderErr } = await supabase
@@ -739,7 +745,7 @@ const getOrderByToken = async (req, res) => {
       return res.status(400).json({ message: 'Thiếu tracking token' });
     }
 
-    const { data: orders, error } = await supabase
+    let query = supabase
       .from('orders')
       .select(`
         *,
@@ -747,11 +753,19 @@ const getOrderByToken = async (req, res) => {
         pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, lat, lng),
         delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, lat, lng),
         notes:order_notes(id, content, created_at)
-      `)
-      .eq('tracking_token', token)
-      .limit(1);
+      `);
+
+    // Hỗ trợ tìm kiếm linh hoạt theo tracking_token HOẶC mã đơn order_code
+    if (token.startsWith('NEX-') || token.startsWith('ORD-')) {
+      query = query.eq('order_code', token);
+    } else {
+      query = query.or(`tracking_token.eq.${token},order_code.eq.${token}`);
+    }
+
+    const { data: orders, error } = await query.limit(1);
 
     if (error || !orders || orders.length === 0) {
+      console.warn(`[getOrderByToken] Not found with token: "${token}"`);
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng tương ứng với mã token này' });
     }
 
@@ -797,11 +811,13 @@ const customerAgreeOrderPrice = async (req, res) => {
   try {
     const { token } = req.params;
 
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('id, order_code, ai_input_text, agreed_price')
-      .eq('tracking_token', token)
-      .limit(1);
+    let query = supabase.from('orders').select('id, order_code, ai_input_text, agreed_price');
+    if (token.startsWith('NEX-') || token.startsWith('ORD-')) {
+      query = query.eq('order_code', token);
+    } else {
+      query = query.or(`tracking_token.eq.${token},order_code.eq.${token}`);
+    }
+    const { data: orders } = await query.limit(1);
 
     if (!orders || orders.length === 0) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
@@ -843,11 +859,13 @@ const customerUploadDocuments = async (req, res) => {
     const { token } = req.params;
     const { documents } = req.body;
 
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('id, order_code, ai_input_text')
-      .eq('tracking_token', token)
-      .limit(1);
+    let query = supabase.from('orders').select('id, order_code, ai_input_text');
+    if (token.startsWith('NEX-') || token.startsWith('ORD-')) {
+      query = query.eq('order_code', token);
+    } else {
+      query = query.or(`tracking_token.eq.${token},order_code.eq.${token}`);
+    }
+    const { data: orders } = await query.limit(1);
 
     if (!orders || orders.length === 0) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
@@ -974,11 +992,13 @@ const customerSignContract = async (req, res) => {
       return res.status(400).json({ message: 'Vui lòng cung cấp chữ ký điện tử' });
     }
 
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('id, order_code, agreed_price, ai_input_text')
-      .eq('tracking_token', token)
-      .limit(1);
+    let query = supabase.from('orders').select('id, order_code, agreed_price, ai_input_text');
+    if (token.startsWith('NEX-') || token.startsWith('ORD-')) {
+      query = query.eq('order_code', token);
+    } else {
+      query = query.or(`tracking_token.eq.${token},order_code.eq.${token}`);
+    }
+    const { data: orders } = await query.limit(1);
 
     if (!orders || orders.length === 0) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
@@ -1015,7 +1035,7 @@ const customerSignContract = async (req, res) => {
 
     if (error) {
       console.error('customerSignContract Update Error:', error);
-      return res.status(500).json({ message: 'Lỗi cập nhật hợp đồng' });
+      return res.status(500).json({ message: error.message || 'Lỗi cập nhật hợp đồng' });
     }
 
     return res.json({
@@ -1024,8 +1044,8 @@ const customerSignContract = async (req, res) => {
       stage: 'CONTRACT_SIGNED'
     });
   } catch (err) {
-    console.error('customerSignContract Error:', err);
-    return res.status(500).json({ message: 'Internal Server Error' });
+    console.error('customerSignContract Exception:', err);
+    return res.status(500).json({ message: err.message || 'Internal Server Error' });
   }
 };
 
@@ -1108,11 +1128,10 @@ const cancelOrder = async (req, res) => {
     const { cancellation_reason, cancellation_fee } = req.body;
 
     const updates = {
-      status: 'CLOSED', // Hủy đơn là tự động đóng đơn luôn
+      status: 'CANCELLED', // Trạng thái CANCELLED chuẩn schema DB
       cancel_reason: cancellation_reason || null,
       cancel_fee: cancellation_fee ? parseInt(cancellation_fee) : 0,
       cancelled_at: new Date().toISOString(),
-      closed_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
@@ -1126,14 +1145,15 @@ const cancelOrder = async (req, res) => {
     const { data, error } = await query.select();
 
     if (error) {
-      console.warn('cancelOrder note (will fallback):', error.message);
+      console.error('cancelOrder Supabase Error:', error);
+      return res.status(500).json({ message: error.message || 'Không thể hủy đơn hàng trên hệ thống' });
     }
 
     return res.json({
-      message: 'Đã hủy và tự động đóng đơn hàng thành công!',
+      message: 'Đã hủy đơn hàng thành công!',
       order: {
         ...(data?.[0] || { id }),
-        status: 'CLOSED',
+        status: 'CANCELLED',
         cancellation_reason,
         cancellation_fee
       }
@@ -1254,6 +1274,69 @@ const uploadContractFile = async (req, res) => {
   }
 };
 
+// 9c. ĐIỀU PHỐI VIÊN / KHÁCH HÀNG LƯU TOÀN BỘ CHỨNG TỪ ĐÃ TẢI LÊN VÀO HỒ SƠ
+const uploadOrderDocuments = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { documents } = req.body;
+
+    if (!Array.isArray(documents)) {
+      return res.status(400).json({ message: 'Danh mục chứng từ không hợp lệ' });
+    }
+
+    let findQuery = supabase.from('orders').select('id, order_code, ai_input_text');
+    if (/^\d+$/.test(id)) {
+      findQuery = findQuery.eq('id', parseInt(id));
+    } else {
+      findQuery = findQuery.eq('order_code', id);
+    }
+
+    const { data: currentOrders, error: findError } = await findQuery;
+    const currentOrder = currentOrders?.[0];
+
+    if (!currentOrder) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    }
+
+    let meta = {};
+    try {
+      meta = currentOrder.ai_input_text ? JSON.parse(currentOrder.ai_input_text) : {};
+    } catch (e) {
+      meta = {};
+    }
+
+    const nowIso = new Date().toISOString();
+    if (!meta.web_workflow) meta.web_workflow = {};
+    meta.web_workflow.documents = documents;
+    meta.documents = documents;
+
+    const updates = {
+      ai_input_text: JSON.stringify(meta),
+      updated_at: nowIso
+    };
+
+    const { data: updatedOrders, error: updateError } = await supabase
+      .from('orders')
+      .update(updates)
+      .eq('id', currentOrder.id)
+      .select();
+
+    if (updateError) {
+      console.error('uploadOrderDocuments update error:', updateError);
+      return res.status(500).json({ message: 'Lỗi khi cập nhật chứng từ', error: updateError });
+    }
+
+    return res.json({
+      message: 'Đã lưu danh mục chứng từ vào hồ sơ đơn hàng thành công!',
+      documents,
+      order: updatedOrders?.[0]
+    });
+  } catch (err) {
+    console.error('uploadOrderDocuments Exception:', err);
+    return res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
 module.exports = {
   getAllOrders,
   createConsultationOrder,
@@ -1268,5 +1351,6 @@ module.exports = {
   customerUploadDocuments,
   approveWebOrderDocuments,
   customerSignContract,
-  uploadContractFile
+  uploadContractFile,
+  uploadOrderDocuments
 };

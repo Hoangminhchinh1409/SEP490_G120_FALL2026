@@ -95,9 +95,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     durationMins: order.estimated_duration_mins || 45
   });
 
-  // State Chứng từ vận tải (Chuẩn hóa 5 chứng từ cơ bản + chứng từ chuyên ngành theo nhóm hàng)
+  // State Chứng từ vận tải (Ưu tiên danh sách chứng từ đã có hoặc khách đã nộp)
   const [documents, setDocuments] = useState(() => {
-    if (order.documents?.length && order.documents[0].isBasic !== undefined) {
+    if (Array.isArray(order.documents) && order.documents.length > 0) {
       return order.documents;
     }
     return getRecommendedDocsByCargo(
@@ -244,10 +244,10 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
       : `${Math.round(file.size / 1024)} KB`;
 
     const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
+    reader.onload = async (uploadEvent) => {
       const base64Data = uploadEvent.target?.result;
 
-      setDocuments(prev => prev.map(d => {
+      const updatedDocs = documents.map(d => {
         if (d.key === uploadingDocKey) {
           return {
             ...d,
@@ -259,10 +259,27 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           };
         }
         return d;
-      }));
+      });
 
-      message.success(`Đã tải lên tệp chứng từ: ${file.name}`);
+      setDocuments(updatedDocs);
       setUploadingDocKey(null);
+
+      // Lưu ngay vào CSDL để không bao giờ bị mất tệp khi đóng modal hoặc reload
+      try {
+        await orderApi.uploadOrderDocuments(order.id || order.order_id, updatedDocs);
+        onUpdateOrder?.({
+          ...order,
+          documents: updatedDocs,
+          web_workflow: {
+            ...(order.web_workflow || {}),
+            documents: updatedDocs
+          }
+        });
+        message.success(`Đã tải lên và lưu tệp chứng từ: ${file.name}`);
+      } catch (err) {
+        console.error('Lỗi lưu chứng từ:', err);
+        message.warning(`Đã đính kèm tệp ${file.name} nhưng chưa lưu được vào máy chủ.`);
+      }
     };
 
     reader.readAsDataURL(file);
@@ -329,14 +346,28 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   };
 
   // 3. Duyệt và Từ chối từng chứng từ
-  const handleApproveDoc = (docKey) => {
-    setDocuments(prev => prev.map(d => d.key === docKey ? { ...d, status: 'APPROVED' } : d));
-    message.success('Đã duyệt tính hợp lệ của chứng từ!');
+  const handleApproveDoc = async (docKey) => {
+    const updated = documents.map(d => d.key === docKey ? { ...d, status: 'APPROVED' } : d);
+    setDocuments(updated);
+    try {
+      await orderApi.uploadOrderDocuments(order.id || order.order_id, updated);
+      onUpdateOrder?.({ ...order, documents: updated });
+      message.success('Đã duyệt tính hợp lệ của chứng từ!');
+    } catch (e) {
+      message.success('Đã duyệt tính hợp lệ của chứng từ!');
+    }
   };
 
-  const handleRejectDoc = (docKey) => {
-    setDocuments(prev => prev.map(d => d.key === docKey ? { ...d, status: 'REJECTED' } : d));
-    message.warning('Đã từ chối chứng từ. Vui lòng yêu cầu tải lên lại.');
+  const handleRejectDoc = async (docKey) => {
+    const updated = documents.map(d => d.key === docKey ? { ...d, status: 'REJECTED' } : d);
+    setDocuments(updated);
+    try {
+      await orderApi.uploadOrderDocuments(order.id || order.order_id, updated);
+      onUpdateOrder?.({ ...order, documents: updated });
+      message.warning('Đã từ chối chứng từ. Vui lòng yêu cầu tải lên lại.');
+    } catch (e) {
+      message.warning('Đã từ chối chứng từ. Vui lòng yêu cầu tải lên lại.');
+    }
   };
 
   // 4. Thêm chứng từ mới linh hoạt (từ danh mục chuyên ngành hoặc nhập tên tùy biến)
@@ -380,34 +411,38 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
       categoryName: catName
     };
 
-    setDocuments(prev => [...prev, newDoc]);
+    const updated = [...documents, newDoc];
+    setDocuments(updated);
     setNewDocName('');
     setSelectedSpecializedDoc('');
+    orderApi.uploadOrderDocuments(order.id || order.order_id, updated).catch(() => {});
     message.success(`Đã thêm mục chứng từ mới: "${newDoc.name}"`);
   };
 
   // Áp dụng danh mục khuyến nghị từ Trợ lý AI (giữ nguyên các tệp đã upload)
   const handleApplyAssistantRecommendations = (recommendedList) => {
-    setDocuments(prev => {
-      return recommendedList.map(rec => {
-        const exist = prev.find(p => p.name === rec.name);
-        if (exist && exist.file !== 'Chờ tải lên') {
-          return { 
-            ...rec, 
-            file: exist.file, 
-            size: exist.size, 
-            uploadDate: exist.uploadDate, 
-            status: exist.status 
-          };
-        }
-        return rec;
-      });
+    const updated = recommendedList.map(rec => {
+      const exist = documents.find(p => p.name === rec.name);
+      if (exist && exist.file !== 'Chờ tải lên') {
+        return { 
+          ...rec, 
+          file: exist.file, 
+          size: exist.size, 
+          uploadDate: exist.uploadDate, 
+          status: exist.status 
+        };
+      }
+      return rec;
     });
+    setDocuments(updated);
+    orderApi.uploadOrderDocuments(order.id || order.order_id, updated).catch(() => {});
     message.success('Đã cập nhật danh mục chứng từ từ Trợ lý AI!');
   };
 
   const handleDeleteCustomDoc = (docKey) => {
-    setDocuments(prev => prev.filter(d => d.key !== docKey));
+    const updated = documents.filter(d => d.key !== docKey);
+    setDocuments(updated);
+    orderApi.uploadOrderDocuments(order.id || order.order_id, updated).catch(() => {});
     message.info('Đã xóa mục chứng từ.');
   };
 
@@ -524,6 +559,8 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     message.success('Đã gửi tin nhắn cho tài xế!');
   };
 
+  const isWebOrder = order.source === 'HOMEPAGE';
+
   // Cột bảng chứng từ theo chuẩn
   const docColumns = [
     { 
@@ -549,14 +586,20 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
       width: '28%',
       render: (text, record) => (
         record.file === 'Chờ tải lên' || record.status === 'WAITING_UPLOAD' ? (
-          <Button 
-            size="small" 
-            icon={<Upload size={13} />} 
-            className="text-xs border-dashed border-indigo-300 text-indigo-700 hover:border-indigo-500 hover:text-indigo-800"
-            onClick={() => triggerUploadDoc(record.key)}
-          >
-            Tải lên tệp
-          </Button>
+          isWebOrder ? (
+            <span className="text-xs text-gray-400 italic flex items-center gap-1">
+              <Clock size={12} className="text-amber-500" /> Chờ khách nộp qua link Web
+            </span>
+          ) : (
+            <Button 
+              size="small" 
+              icon={<Upload size={13} />} 
+              className="text-xs border-dashed border-indigo-300 text-indigo-700 hover:border-indigo-500 hover:text-indigo-800"
+              onClick={() => triggerUploadDoc(record.key)}
+            >
+              Tải lên tệp
+            </Button>
+          )
         ) : (
           <div className="flex items-center gap-1.5 font-mono text-xs text-blue-600">
             <FileText size={14} className="shrink-0" />
@@ -580,15 +623,17 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
               {text}
             </span>
             <span className="text-gray-400 font-sans text-[11px] shrink-0">({record.size})</span>
-            <Tooltip title="Tải lại tệp khác">
-              <Button 
-                type="text" 
-                size="small" 
-                icon={<Upload size={11} />} 
-                className="p-0.5 text-gray-400 hover:text-indigo-600"
-                onClick={() => triggerUploadDoc(record.key)}
-              />
-            </Tooltip>
+            {!isWebOrder && (
+              <Tooltip title="Tải lại tệp khác">
+                <Button 
+                  type="text" 
+                  size="small" 
+                  icon={<Upload size={11} />} 
+                  className="p-0.5 text-gray-400 hover:text-indigo-600"
+                  onClick={() => triggerUploadDoc(record.key)}
+                />
+              </Tooltip>
+            )}
           </div>
         )
       )
@@ -962,7 +1007,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
                 Danh mục chứng từ hồ sơ xuất nhập khẩu
               </h4>
               <p className="text-[11px] text-gray-500 m-0">
-                Tải lên và kiểm duyệt tính hợp lệ của từng loại chứng từ trước khi xếp chuyến
+                {isWebOrder 
+                  ? 'Khách hàng tải lên trực tiếp qua liên kết web. Điều phối viên kiểm tra và phê duyệt tính hợp lệ trước khi xếp chuyến.' 
+                  : 'Tải lên và kiểm duyệt tính hợp lệ của từng loại chứng từ trước khi xếp chuyến.'}
               </p>
             </div>
             <Button
@@ -1047,7 +1094,6 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     });
 
     // TAB 3: HỢP ĐỒNG VẬN TẢI
-    const isWebOrder = order.source === 'HOMEPAGE';
     const signedContractData = order.web_workflow?.signed_contract;
 
     tabItems.push({

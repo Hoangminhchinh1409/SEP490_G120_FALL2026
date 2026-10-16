@@ -13,7 +13,8 @@ const {
   customerUploadDocuments,
   approveWebOrderDocuments,
   customerSignContract,
-  uploadContractFile
+  uploadContractFile,
+  uploadOrderDocuments
 } = require('../controllers/orderController');
 
 const router = express.Router();
@@ -47,6 +48,9 @@ router.patch('/:id/price', updateAgreedPrice);
 
 // 9b. Điều phối viên tải lên tệp hợp đồng đã ký thật
 router.post('/:id/contract-file', uploadContractFile);
+
+// 9c. Điều phối viên cập nhật/lưu chứng từ vào hồ sơ đơn hàng
+router.post('/:id/documents', uploadOrderDocuments);
 
 // 10. Xác nhận đơn hàng trực tiếp (chuyển sang READY_FOR_PLANNING)
 router.patch('/:id/confirm', confirmOrder);

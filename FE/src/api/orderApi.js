@@ -187,6 +187,20 @@ export const orderApi = {
       console.error('orderApi.uploadContractFile Error:', error);
       throw error;
     }
+  },
+
+  // 15. Điều phối viên: Lưu danh mục chứng từ vào hồ sơ đơn hàng
+  uploadOrderDocuments: async (orderId, documents) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/documents`, {
+        method: 'POST',
+        body: JSON.stringify({ documents })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.uploadOrderDocuments Error:', error);
+      throw error;
+    }
   }
 };
 

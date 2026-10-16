@@ -281,7 +281,7 @@ export default function OrderDocumentsView() {
         {/* Thông báo nếu đã nộp */}
         {submitted && (
           <Alert
-            message="Hồ sơ chứng từ đã được nộp thành công!"
+            title="Hồ sơ chứng từ đã được nộp thành công!"
             description={
               <div className="space-y-1 text-xs text-slate-700 mt-1">
                 <p className="m-0">

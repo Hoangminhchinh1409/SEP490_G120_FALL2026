@@ -114,17 +114,25 @@ const OrderManagement = () => {
 
   const handleConfirmCancel = async (cancelData) => {
     try {
-      await orderApi.cancelOrder(cancelData.id || cancelData.order_id, cancelData);
+      const orderTargetId = cancelData.id || cancelData.order_id;
+      await orderApi.cancelOrder(orderTargetId, cancelData);
+      
+      setOrders(prev => prev.map(o => (o.id === cancelData.id || o.order_id === cancelData.order_id)
+        ? { ...o, status: 'CANCELLED', cancel_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
+        : o
+      ));
+      setSelectedOrderForCancel(null);
+
+      if (!cancelData.cancellation_fee || cancelData.cancellation_fee === 0) {
+        message.success(`Đã hủy đơn hàng ${cancelData.order_id || cancelData.id} (Miễn phí hủy: 0 VNĐ)!`);
+      } else {
+        message.warning(`Đã hủy đơn hàng ${cancelData.order_id || cancelData.id}! Phí phạt / tiền công: ${Number(cancelData.cancellation_fee).toLocaleString()} VNĐ`);
+      }
+      fetchOrders();
     } catch (err) {
-      console.warn('cancelOrder API note:', err);
+      console.error('cancelOrder error:', err);
+      message.error(err.message || 'Không thể hủy đơn hàng trên hệ thống');
     }
-    setOrders(prev => prev.map(o => (o.id === cancelData.id || o.order_id === cancelData.order_id)
-      ? { ...o, status: 'CLOSED', cancel_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
-      : o
-    ));
-    setSelectedOrderForCancel(null);
-    message.success(`Đơn hàng ${cancelData.order_id || cancelData.id} đã được hủy và tự động đóng!`);
-    fetchOrders();
   };
 
   // Filter logic
