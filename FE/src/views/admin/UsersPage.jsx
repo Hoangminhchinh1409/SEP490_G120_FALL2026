@@ -54,11 +54,13 @@ export default function UsersPage() {
   ];
 
   const editUser = (record) => {
-    form.setFieldsValue({
-      ...record,
-      status: record.status === 'ACTIVE'
-    });
     setIsModalVisible(true);
+    setTimeout(() => {
+      form.setFieldsValue({
+        ...record,
+        status: record.status === 'ACTIVE'
+      });
+    }, 0);
   };
 
   const toggleStatus = (id) => {
@@ -72,7 +74,14 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold text-gray-800">Quản lý Tài khoản</h1>
           <p className="text-gray-500">Tạo mới, cập nhật và khóa/mở khóa tài khoản hệ thống.</p>
         </div>
-        <Button type="primary" icon={<Plus size={16} />} onClick={() => { form.resetFields(); setIsModalVisible(true); }}>
+        <Button 
+          type="primary" 
+          icon={<Plus size={16} />} 
+          onClick={() => { 
+            setIsModalVisible(true); 
+            setTimeout(() => form.resetFields(), 0); 
+          }}
+        >
           Tạo tài khoản mới
         </Button>
       </div>

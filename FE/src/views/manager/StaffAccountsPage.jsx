@@ -97,29 +97,33 @@ export default function StaffAccountsPage() {
   const handleOpenCreateModal = () => {
     setIsEditMode(false);
     setSelectedAccount(null);
-    form.resetFields();
-    form.setFieldsValue({
-      role: 'DISPATCHER',
-      status: true
-    });
     setIsModalOpen(true);
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        role: 'DISPATCHER',
+        status: true
+      });
+    }, 0);
   };
 
   // Mở modal chi tiết / cập nhật (Screen 27)
   const handleOpenEditModal = (account) => {
     setIsEditMode(true);
     setSelectedAccount(account);
-    form.resetFields();
-    form.setFieldsValue({
-      id: account.id,
-      username: account.username,
-      full_name: account.full_name,
-      email: account.email,
-      phone: account.phone,
-      role: account.role_id === 3 ? 'DISPATCHER' : 'DRIVER',
-      status: account.status === 'ACTIVE'
-    });
     setIsModalOpen(true);
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        id: account.id,
+        username: account.username,
+        full_name: account.full_name,
+        email: account.email,
+        phone: account.phone,
+        role: account.role_id === 3 ? 'DISPATCHER' : 'DRIVER',
+        status: account.status === 'ACTIVE'
+      });
+    }, 0);
   };
 
   // Xử lý submit form Screen 27
@@ -525,7 +529,7 @@ export default function StaffAccountsPage() {
           </Button>
         ]}
         width={560}
-        destroyOnClose
+        destroyOnHidden
         className="rounded-2xl overflow-hidden"
       >
         <Form
@@ -633,11 +637,15 @@ export default function StaffAccountsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <span className="font-semibold text-slate-800 text-sm block">Trạng thái tài khoản (Status)</span>
-                <span className="text-xs text-slate-500">
-                  {form.getFieldValue('status') !== false 
-                    ? 'Tài khoản đang hoạt động bình thường (ACTIVE).' 
-                    : 'Tài khoản bị KHÓA (LOCKED) — người dùng sẽ không thể đăng nhập và hiển thị lỗi MSG06.'}
-                </span>
+                <Form.Item noStyle shouldUpdate={(prev, cur) => prev?.status !== cur?.status}>
+                  {({ getFieldValue }) => (
+                    <span className="text-xs text-slate-500">
+                      {getFieldValue('status') !== false 
+                        ? 'Tài khoản đang hoạt động bình thường (ACTIVE).' 
+                        : 'Tài khoản bị KHÓA (LOCKED) — người dùng sẽ không thể đăng nhập và hiển thị lỗi MSG06.'}
+                    </span>
+                  )}
+                </Form.Item>
               </div>
               <Form.Item name="status" valuePropName="checked" className="mb-0">
                 <Switch 
