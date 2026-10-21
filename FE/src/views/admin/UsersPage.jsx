@@ -487,6 +487,25 @@ export default function UsersPage() {
             <Input.Password placeholder="••••••••" className="h-10 rounded-lg" />
           </Form.Item>
 
+          <Form.Item
+            name="confirmPassword"
+            label="Nhập lại mật khẩu"
+            dependencies={['password']}
+            rules={[
+              modalMode === 'CREATE' ? { required: true, message: 'Vui lòng xác nhận mật khẩu' } : {},
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (getFieldValue('password') && value !== getFieldValue('password')) {
+                    return Promise.reject(new Error('Mật khẩu nhập lại không khớp.')); // MSG82
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="••••••••" className="h-10 rounded-lg" />
+          </Form.Item>
+
           <div className="grid grid-cols-2 gap-3">
             <Form.Item name="phone" label="Số điện thoại">
               <Input placeholder="0901234567" className="h-10 rounded-lg" />
