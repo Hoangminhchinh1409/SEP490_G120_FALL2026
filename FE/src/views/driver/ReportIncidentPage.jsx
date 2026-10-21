@@ -4,7 +4,7 @@ import { Form, Input, Button, Upload, Select, message, Alert } from "antd";
 import { Camera, AlertTriangle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { driverApi, queueOfflineAction } from "@/api/driverApi";
+import { driverApi, queueOfflineAction } from "../../api/driverApi";
 
 export default function ReportIncidentPage() {
   const [form] = Form.useForm();
