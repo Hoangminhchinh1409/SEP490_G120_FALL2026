@@ -21,6 +21,9 @@ export const queueOfflineAction = (action) => {
   if (typeof window === "undefined") return;
   try {
     const actions = getOfflineActions();
+    if (actions.length >= 50) {
+      throw new Error("Đã đạt giới hạn 50 thao tác ngoại tuyến chưa đồng bộ. (MSG39)");
+    }
     actions.push({
       ...action,
       queuedAt: new Date().toISOString()
@@ -28,6 +31,7 @@ export const queueOfflineAction = (action) => {
     localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(actions));
   } catch (e) {
     console.error("Failed to queue offline action", e);
+    throw e;
   }
 };
 
@@ -89,6 +93,18 @@ export const driverApi = {
     });
   },
 
+  // Ghi nhận sự kiện điểm dừng trung gian (Loading started, Left...) (BR-36)
+  recordStopEvent: async (tripId, stopId, eventData) => {
+    return await fetchWithAuth(`/driver/trips/${tripId}/stops/${stopId}/event`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...eventData,
+        clientActionId: eventData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined),
+        phoneTime: eventData.phoneTime || new Date().toISOString()
+      })
+    });
+  },
+
   // Ghi nhận bốc hàng & niêm chì (BR-11, BR-31, BR-33)
   recordPickup: async (tripId, stopId, pickupData) => {
     return await fetchWithAuth(`/driver/trips/${tripId}/stops/${stopId}/pickup`, {
@@ -113,6 +129,61 @@ export const driverApi = {
     });
   },
 
+  // Khách không nhận hàng (BR-57, MSG74, MSG75)
+  reportCustomerRefusal: async (tripId, stopId, refusalData) => {
+    return await fetchWithAuth(`/driver/trips/${tripId}/stops/${stopId}/refuse`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...refusalData,
+        clientActionId: refusalData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined),
+        phoneTime: refusalData.phoneTime || new Date().toISOString()
+      })
+    });
+  },
+
+  // Đề xuất phụ phí phát sinh (BR-30, MSG85)
+  proposeExtraFee: async (tripId, feeData) => {
+    return await fetchWithAuth(`/driver/trips/${tripId}/extra-fees`, {
+      method: "POST",
+      body: JSON.stringify(feeData)
+    });
+  },
+
+  // Quản lý ca làm việc (UC-20, BR-60)
+  getMyShifts: async ({ from, to } = {}) => {
+    let url = "/driver/shifts";
+    const params = new URLSearchParams();
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+    const queryString = params.toString();
+    if (queryString) url += `?${queryString}`;
+    return await fetchWithAuth(url);
+  },
+
+  registerShift: async (shiftData) => {
+    return await fetchWithAuth("/driver/shifts", {
+      method: "POST",
+      body: JSON.stringify(shiftData)
+    });
+  },
+
+  // Thông báo tài xế (Screen 6.5, MSG80)
+  getDriverNotifications: async () => {
+    return await fetchWithAuth("/driver/notifications");
+  },
+
+  markNotificationRead: async (notificationId) => {
+    return await fetchWithAuth(`/driver/notifications/${notificationId}/read`, {
+      method: "PATCH"
+    });
+  },
+
+  markAllNotificationsRead: async () => {
+    return await fetchWithAuth("/driver/notifications/read-all", {
+      method: "PATCH"
+    });
+  },
+
   // Báo cáo sự cố khẩn cấp (UC-32 & BF-04)
   reportIncident: async (incidentData) => {
     return await fetchWithAuth("/driver/incidents", {
@@ -121,7 +192,7 @@ export const driverApi = {
     });
   },
 
-  // Đồng bộ ngoại tuyến (BR-27)
+  // Đồng bộ ngoại tuyến (BR-27, MSG39)
   syncOffline: async (actions) => {
     return await fetchWithAuth("/driver/sync", {
       method: "POST",
