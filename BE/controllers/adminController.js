@@ -257,6 +257,54 @@ const updateSystemSetting = async (req, res) => {
     }
 };
 
+// ==========================================
+// 6. PERMISSIONS MATRIX (UC-34)
+// ==========================================
+
+const getPermissionsMatrix = async (req, res) => {
+    try {
+        const matrix = await adminService.getPermissionsMatrix();
+        return res.status(200).json({
+            message: "Success",
+            ...matrix
+        });
+    } catch (error) {
+        console.error("[AdminController] getPermissionsMatrix error:", error);
+        return res.status(500).json({
+            message: "Failed to fetch permissions matrix",
+            error: error.message
+        });
+    }
+};
+
+const updateRolePermissions = async (req, res) => {
+    try {
+        const { roleId } = req.params;
+        const { permissionIds = [] } = req.body;
+        const adminId = req.user?.id;
+        const ipAddress = getClientIp(req);
+
+        if (!roleId) {
+            return res.status(400).json({
+                message: "Role ID is required"
+            });
+        }
+
+        const result = await adminService.updateRolePermissions(roleId, permissionIds, adminId, ipAddress);
+
+        return res.status(200).json({
+            message: "Role permissions updated successfully",
+            ...result
+        });
+    } catch (error) {
+        console.error(`[AdminController] updateRolePermissions error for roleId ${req.params.roleId}:`, error);
+        return res.status(400).json({
+            message: "Failed to update role permissions",
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     getDashboardStats,
     getActivityLogs,
@@ -267,5 +315,7 @@ module.exports = {
     updateUserStatus,
     getRoles,
     getSystemSettings,
-    updateSystemSetting
+    updateSystemSetting,
+    getPermissionsMatrix,
+    updateRolePermissions
 };
