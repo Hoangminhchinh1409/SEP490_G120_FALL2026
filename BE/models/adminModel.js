@@ -365,6 +365,56 @@ const upsertSystemSetting = async (key, value, updatedBy = null) => {
     return data;
 };
 
+// ==========================================
+// 6. PERMISSIONS & ROLES MATRIX (UC-34)
+// ==========================================
+
+const getPermissionsMatrix = async () => {
+    const [rolesRes, permsRes, rolePermsRes] = await Promise.all([
+        supabase.from("roles").select("id, name").order("id", { ascending: true }),
+        supabase.from("permissions").select("id, key").order("id", { ascending: true }),
+        supabase.from("role_permissions").select("role_id, permission_id")
+    ]);
+
+    if (rolesRes.error) throw rolesRes.error;
+    if (permsRes.error) throw permsRes.error;
+    if (rolePermsRes.error) throw rolePermsRes.error;
+
+    return {
+        roles: rolesRes.data || [],
+        permissions: permsRes.data || [],
+        rolePermissions: rolePermsRes.data || []
+    };
+};
+
+const updateRolePermissions = async (roleId, permissionIds = []) => {
+    const numRoleId = Number(roleId);
+
+    // Xóa toàn bộ quyền cũ của vai trò này
+    const { error: delError } = await supabase
+        .from("role_permissions")
+        .delete()
+        .eq("role_id", numRoleId);
+
+    if (delError) throw delError;
+
+    // Chèn danh sách quyền mới (nếu có)
+    if (permissionIds.length > 0) {
+        const rowsToInsert = permissionIds.map(pId => ({
+            role_id: numRoleId,
+            permission_id: Number(pId)
+        }));
+
+        const { error: insError } = await supabase
+            .from("role_permissions")
+            .insert(rowsToInsert);
+
+        if (insError) throw insError;
+    }
+
+    return { roleId: numRoleId, permissionIds };
+};
+
 module.exports = {
     getActivityLogs,
     createActivityLog,
@@ -377,5 +427,7 @@ module.exports = {
     getRoles,
     getDashboardStats,
     getSystemSettings,
-    upsertSystemSetting
+    upsertSystemSetting,
+    getPermissionsMatrix,
+    updateRolePermissions
 };
