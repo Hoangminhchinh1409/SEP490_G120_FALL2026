@@ -110,7 +110,13 @@ export default function OrderDocumentsView() {
   };
 
   const handleSubmitAllDocs = async () => {
-    const missingDocs = documents.filter(d => d.file === 'Chờ tải lên' || d.status === 'WAITING_UPLOAD');
+    // Khách hàng không cần nộp Tờ khai hải quan (do điều phối chuẩn bị)
+    const missingDocs = documents.filter(d => {
+      const isCustomsDeclaration = d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan');
+      if (isCustomsDeclaration) return false;
+      return d.file === 'Chờ tải lên' || d.status === 'WAITING_UPLOAD';
+    });
+
     if (missingDocs.length > 0) {
       message.warning(`Quý khách còn ${missingDocs.length} chứng từ chưa tải tệp lên. Vui lòng tải đầy đủ để điều phối viên có thể phê duyệt!`);
       return;
@@ -129,8 +135,9 @@ export default function OrderDocumentsView() {
     }
   };
 
-  const uploadedCount = documents.filter(d => d.file !== 'Chờ tải lên').length;
-  const progressPercent = documents.length > 0 ? Math.round((uploadedCount / documents.length) * 100) : 0;
+  const customerRequiredDocs = documents.filter(d => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan')));
+  const uploadedCount = customerRequiredDocs.filter(d => d.file !== 'Chờ tải lên').length;
+  const progressPercent = customerRequiredDocs.length > 0 ? Math.round((uploadedCount / customerRequiredDocs.length) * 100) : 100;
 
   if (loading) {
     return (
@@ -146,26 +153,65 @@ export default function OrderDocumentsView() {
       title: 'Tên loại chứng từ',
       dataIndex: 'name',
       key: 'name',
-      render: (text, record) => (
-        <div>
-          <div className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-            <FileText size={14} className="text-indigo-600 shrink-0" />
-            <span>{text}</span>
-            {record.isBasic && (
-              <Tag color="blue" className="text-[10px] px-1 py-0 rounded">Bắt buộc</Tag>
-            )}
+      render: (text, record) => {
+        const isCustomsDeclaration = record.preparedBy === 'DISPATCHER' || record.key === 'doc-basic-1' || record.name?.toLowerCase().includes('tờ khai hải quan');
+        return (
+          <div>
+            <div className="font-bold text-xs text-slate-800 flex items-center gap-1.5 flex-wrap">
+              <FileText size={14} className="text-indigo-600 shrink-0" />
+              <span>{text}</span>
+              {isCustomsDeclaration ? (
+                <Tag color="cyan" className="text-[10px] px-1 py-0 rounded font-semibold">NEXLOG chuẩn bị</Tag>
+              ) : record.isBasic ? (
+                <Tag color="blue" className="text-[10px] px-1 py-0 rounded">Bắt buộc</Tag>
+              ) : null}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              {isCustomsDeclaration ? 'Điều phối viên NEXLOG sẽ chuẩn bị tờ khai hải quan cho quý khách.' : record.description}
+            </div>
           </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">{record.description}</div>
-        </div>
-      )
+        );
+      }
     },
     {
       title: 'Tệp đã tải lên',
       dataIndex: 'file',
       key: 'file',
       width: '35%',
-      render: (text, record) => (
-        text === 'Chờ tải lên' || record.status === 'WAITING_UPLOAD' ? (
+      render: (text, record) => {
+        const isCustomsDeclaration = record.preparedBy === 'DISPATCHER' || record.key === 'doc-basic-1' || record.name?.toLowerCase().includes('tờ khai hải quan');
+        
+        if (isCustomsDeclaration) {
+          if (record.file && record.file !== 'Chờ tải lên') {
+            return (
+              <div 
+                className="flex items-center gap-1.5 text-xs font-mono text-indigo-700 truncate max-w-[200px] cursor-pointer hover:underline bg-slate-50 p-1.5 px-2.5 rounded-lg border border-slate-200" 
+                title="Bấm để tải về / xem tệp"
+                onClick={() => {
+                  if (record.file_data) {
+                    const a = document.createElement('a');
+                    a.href = record.file_data;
+                    a.download = record.file;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    message.success(`Đang mở / tải xuống: ${record.file}`);
+                  }
+                }}
+              >
+                <FileCheck size={14} className="text-emerald-600 shrink-0" />
+                <span className="truncate font-semibold">{text}</span>
+              </div>
+            );
+          }
+          return (
+            <span className="text-xs text-indigo-600 bg-indigo-50/70 border border-indigo-100 rounded-lg px-2.5 py-1 inline-flex items-center gap-1">
+              <Clock size={12} className="text-indigo-500" /> Điều phối NEXLOG chuẩn bị
+            </span>
+          );
+        }
+
+        return text === 'Chờ tải lên' || record.status === 'WAITING_UPLOAD' ? (
           <Button
             size="small"
             icon={<Upload size={12} />}
@@ -206,16 +252,25 @@ export default function OrderDocumentsView() {
               </Tooltip>
             )}
           </div>
-        )
-      )
+        );
+      }
     },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
       width: '20%',
-      render: (st, record) => (
-        record.file === 'Chờ tải lên' ? (
+      render: (st, record) => {
+        const isCustomsDeclaration = record.preparedBy === 'DISPATCHER' || record.key === 'doc-basic-1' || record.name?.toLowerCase().includes('tờ khai hải quan');
+        if (isCustomsDeclaration) {
+          return record.file !== 'Chờ tải lên' ? (
+            <Tag color="success" className="text-[11px] font-bold">ĐÃ CÓ TỆP</Tag>
+          ) : (
+            <Tag color="cyan" className="text-[11px] font-medium">ĐIỀU PHỐI TỰ LẬP</Tag>
+          );
+        }
+
+        return record.file === 'Chờ tải lên' ? (
           <Tag color="default" className="text-[11px]">Chưa nộp</Tag>
         ) : st === 'APPROVED' ? (
           <Tag color="success" className="text-[11px] font-bold">ĐÃ HỢP LỆ</Tag>
@@ -223,8 +278,8 @@ export default function OrderDocumentsView() {
           <Tag color="error" className="text-[11px] font-bold">YÊU CẦU LẠI</Tag>
         ) : (
           <Tag color="processing" className="text-[11px]">ĐÃ TẢI LÊN</Tag>
-        )
-      )
+        );
+      }
     }
   ];
 

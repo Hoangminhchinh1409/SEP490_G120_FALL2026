@@ -429,7 +429,12 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   const handleConfirmAllDocuments = async () => {
     const unuploaded = documents.filter(d => d.file === 'Chờ tải lên' || d.status === 'WAITING_UPLOAD');
     if (unuploaded.length > 0) {
-      message.warning(`Còn ${unuploaded.length} chứng từ chưa được tải tệp lên! Hãy tải đầy đủ trước khi xác nhận toàn bộ.`);
+      const hasUnuploadedCustoms = unuploaded.some(d => d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'));
+      if (hasUnuploadedCustoms) {
+        message.warning(`Vui lòng đính kèm Tệp Tờ khai hải quan (phần Điều phối chuẩn bị) trước khi phê duyệt toàn bộ hồ sơ!`);
+      } else {
+        message.warning(`Còn ${unuploaded.length} chứng từ chưa được tải tệp lên! Hãy tải đầy đủ trước khi xác nhận toàn bộ.`);
+      }
       return;
     }
 

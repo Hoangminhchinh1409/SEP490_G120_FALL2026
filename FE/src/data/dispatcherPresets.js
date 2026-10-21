@@ -127,8 +127,9 @@ export const BASIC_CUSTOMS_DOCUMENTS = [
   { 
     key: 'doc-basic-1', 
     name: 'Tờ khai hải quan (Customs Declaration)', 
-    description: 'Bản khai chi tiết về mã HS, trị giá, số lượng và thuế suất.',
-    isBasic: true 
+    description: 'Bản khai hải quan do Điều phối viên/Bộ phận Khai báo chuẩn bị và đính kèm.',
+    isBasic: true,
+    preparedBy: 'DISPATCHER'
   },
   { 
     key: 'doc-basic-2', 
@@ -258,7 +259,8 @@ export const getRecommendedDocsByCargo = (cargoName = '', cargoType = '', notes 
     size: '-',
     uploadDate: '-',
     isBasic: true,
-    isCustom: false
+    isCustom: false,
+    preparedBy: doc.preparedBy || 'CUSTOMER'
   }));
 
   // Tìm nhóm hàng đặc thù phù hợp (trực tiếp theo categoryKey hoặc từ khóa)

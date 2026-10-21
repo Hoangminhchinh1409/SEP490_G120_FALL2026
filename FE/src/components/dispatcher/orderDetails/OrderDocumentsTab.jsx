@@ -39,29 +39,54 @@ export default function OrderDocumentsTab({
       dataIndex: 'name', 
       key: 'name',
       width: '40%',
-      render: (text, record) => (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="font-semibold text-gray-800 text-xs">{text}</span>
-          {record.isBasic ? (
-            <Tag color="blue" className="text-[10px] m-0 py-0 px-1 font-semibold">Cơ bản</Tag>
-          ) : (
-            <Tag color="purple" className="text-[10px] m-0 py-0 px-1 font-semibold">Chuyên ngành</Tag>
-          )}
-        </div>
-      )
+      render: (text, record) => {
+        const isCustomsDeclaration = record.preparedBy === 'DISPATCHER' || record.key === 'doc-basic-1' || record.name?.toLowerCase().includes('tờ khai hải quan');
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-semibold text-gray-800 text-xs">{text}</span>
+            {record.isBasic ? (
+              <Tag color="blue" className="text-[10px] m-0 py-0 px-1 font-semibold">Cơ bản</Tag>
+            ) : (
+              <Tag color="purple" className="text-[10px] m-0 py-0 px-1 font-semibold">Chuyên ngành</Tag>
+            )}
+            {isCustomsDeclaration && (
+              <Tag color="cyan" className="text-[10px] m-0 py-0 px-1 font-semibold">Điều phối chuẩn bị</Tag>
+            )}
+          </div>
+        );
+      }
     },
     { 
       title: 'Tệp đính kèm', 
       dataIndex: 'file', 
       key: 'file',
       width: '28%',
-      render: (text, record) => (
-        record.file === 'Chờ tải lên' || record.status === 'WAITING_UPLOAD' ? (
-          isWebOrder ? (
-            <span className="text-xs text-gray-400 italic flex items-center gap-1">
-              <Clock size={12} className="text-amber-500" /> Chờ khách nộp qua link Web
-            </span>
-          ) : (
+      render: (text, record) => {
+        const isCustomsDeclaration = record.preparedBy === 'DISPATCHER' || record.key === 'doc-basic-1' || record.name?.toLowerCase().includes('tờ khai hải quan');
+
+        if (record.file === 'Chờ tải lên' || record.status === 'WAITING_UPLOAD') {
+          if (isCustomsDeclaration) {
+            return (
+              <Button 
+                size="small" 
+                icon={<Upload size={13} />} 
+                className="text-xs bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 font-medium"
+                onClick={() => triggerUploadDoc(record.key)}
+              >
+                Đính kèm Tờ khai
+              </Button>
+            );
+          }
+
+          if (isWebOrder) {
+            return (
+              <span className="text-xs text-gray-400 italic flex items-center gap-1">
+                <Clock size={12} className="text-amber-500" /> Chờ khách nộp qua link Web
+              </span>
+            );
+          }
+
+          return (
             <Button 
               size="small" 
               icon={<Upload size={13} />} 
@@ -70,8 +95,10 @@ export default function OrderDocumentsTab({
             >
               Tải lên tệp
             </Button>
-          )
-        ) : (
+          );
+        }
+
+        return (
           <div className="flex items-center gap-1.5 font-mono text-xs text-blue-600">
             <FileText size={14} className="shrink-0" />
             <span 
@@ -91,7 +118,7 @@ export default function OrderDocumentsTab({
               {text}
             </span>
             <span className="text-gray-400 font-sans text-[11px] shrink-0">({record.size})</span>
-            {!isWebOrder && (
+            {(!isWebOrder || isCustomsDeclaration) && (
               <Tooltip title="Tải lại tệp khác">
                 <Button 
                   type="text" 
@@ -103,8 +130,8 @@ export default function OrderDocumentsTab({
               </Tooltip>
             )}
           </div>
-        )
-      )
+        );
+      }
     },
     { 
       title: 'Trạng thái', 

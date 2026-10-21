@@ -181,64 +181,28 @@ export function TripWaybillModal({ selectedTripWaybill, onClose, onPrintWaybill 
   );
 }
 
+import LoadPlan3DModal from '../../../components/dispatcher/LoadPlan3DModal';
+
 export function Trip3DModal({ selectedTrip3D, onClose }) {
   if (!selectedTrip3D) return null;
 
   return (
-    <AntModal
-      title={
-        <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
-          <Box size={20} className="text-[#7367f0]" />
-          <div>
-            <h3 className="text-base font-bold text-gray-800">Mô phỏng Sơ đồ Xếp thùng 3D</h3>
-            <p className="text-xs text-gray-500 font-normal">Xếp dỡ theo nguyên tắc LIFO (kiện giao chặng cuối xếp sâu nhất)</p>
-          </div>
-        </div>
-      }
+    <LoadPlan3DModal
       open={Boolean(selectedTrip3D)}
-      onCancel={onClose}
-      width={750}
-      footer={[<AntButton key="close" onClick={onClose}>Đóng</AntButton>]}
-    >
-      <div className="py-2 space-y-4 text-xs">
-        <div className="p-4 bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-xl shadow-inner relative overflow-hidden h-64 flex flex-col justify-between">
-          <div className="flex justify-between items-center text-xs">
-            <span className="font-mono text-cyan-300">Xe: {selectedTrip3D.plate} ({selectedTrip3D.truck_model})</span>
-            <span className="bg-indigo-600/80 px-2.5 py-1 rounded text-[11px]">Dung tích tải: 82%</span>
-          </div>
-
-          <div className="flex-1 flex items-center justify-center gap-3 px-6 py-4">
-            <div className="w-28 h-32 bg-indigo-500/30 border-2 border-indigo-400 rounded-lg flex flex-col items-center justify-center p-2 text-center text-indigo-200">
-              <span className="text-[10px] font-bold uppercase">Khoang sâu nhất (Cabin)</span>
-              <span className="text-xs font-bold text-white mt-1">Đơn hàng #2</span>
-              <span className="text-[10px] text-gray-300">Điểm giao cuối</span>
-            </div>
-            <div className="w-28 h-32 bg-cyan-500/30 border-2 border-cyan-400 rounded-lg flex flex-col items-center justify-center p-2 text-center text-cyan-200">
-              <span className="text-[10px] font-bold uppercase">Khoang giữa</span>
-              <span className="text-xs font-bold text-white mt-1">Đơn hàng #1</span>
-              <span className="text-[10px] text-gray-300">Kiện phụ trợ</span>
-            </div>
-            <div className="w-28 h-32 bg-emerald-500/30 border-2 border-emerald-400 rounded-lg flex flex-col items-center justify-center p-2 text-center text-emerald-200">
-              <span className="text-[10px] font-bold uppercase">Cửa sau (Door)</span>
-              <span className="text-xs font-bold text-white mt-1">Dỡ đầu tiên</span>
-              <span className="text-[10px] text-gray-300">LIFO Priority</span>
-            </div>
-          </div>
-
-          <div className="text-[11px] text-gray-400 text-center">
-            ← Đầu xe (Cabin) ────────────────────────────────── Cửa sau thùng xe (Tailgate) →
-          </div>
-        </div>
-
-        <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex justify-between items-center">
-          <div>
-            <span className="font-bold text-gray-800">Quy tắc tải trọng:</span>
-            <p className="text-gray-500 text-[11px] mt-0.5">Hàng giao ở chặng đầu tiên được xếp gần cửa xe để thuận tiện bốc dỡ không cần di dời kiện khác.</p>
-          </div>
-          <AntTag color="success" className="font-semibold px-2 py-1">Đạt chuẩn an toàn</AntTag>
-        </div>
-      </div>
-    </AntModal>
+      trip={{
+        trip_code: selectedTrip3D.id || 'TR261026-009',
+        plate: selectedTrip3D.plate || '29C-456.78',
+        truck_model: selectedTrip3D.truck_model || 'Hyundai 2.5 t',
+        box_dim: selectedTrip3D.box_dim || 'Thùng 4,2 × 1,9 × 1,9 m',
+        max_payload: selectedTrip3D.max_payload || 2500,
+        total_weight: selectedTrip3D.total_weight || 1450,
+        orders_count: selectedTrip3D.orders_count || 6,
+        stops_count: selectedTrip3D.stops_count || 3,
+        total_volume: selectedTrip3D.total_volume || 5.6,
+        max_volume: selectedTrip3D.max_volume || 15.2
+      }}
+      onClose={onClose}
+    />
   );
 }
 
