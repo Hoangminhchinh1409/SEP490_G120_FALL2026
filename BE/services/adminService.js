@@ -303,6 +303,36 @@ const updateSystemSetting = async (key, value, adminId = null, ipAddress = null)
     return updated;
 };
 
+// ==========================================
+// 6. PERMISSIONS MATRIX (UC-34)
+// ==========================================
+
+const getPermissionsMatrix = async () => {
+    return await adminModel.getPermissionsMatrix();
+};
+
+const updateRolePermissions = async (roleId, permissionIds, adminId = null, ipAddress = null) => {
+    if (!roleId) {
+        throw new Error("Role ID is required");
+    }
+
+    const result = await adminModel.updateRolePermissions(roleId, permissionIds);
+
+    // Auto-audit log (UC-35)
+    await adminModel.createActivityLog({
+        actorId: adminId,
+        actorType: "USER",
+        action: "UPDATE_ROLE_PERMISSIONS",
+        targetType: "ROLE",
+        targetId: roleId,
+        changes: { roleId, permissionIds },
+        reason: `Administrator updated permissions for role ID ${roleId}`,
+        ipAddress
+    }).catch(err => console.error("Auto audit log failed:", err.message));
+
+    return result;
+};
+
 module.exports = {
     getActivityLogs,
     logActivity,
@@ -314,5 +344,7 @@ module.exports = {
     getRoles,
     getDashboardStats,
     getSystemSettings,
-    updateSystemSetting
+    updateSystemSetting,
+    getPermissionsMatrix,
+    updateRolePermissions
 };
