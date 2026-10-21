@@ -604,6 +604,318 @@ const logDriverActivity = async ({
   }
 };
 
+// ==========================================
+// 8. DRIVER SHIFTS (UC-20, BR-60)
+// ==========================================
+
+const getDriverShifts = async (driverProfileId, { from = null, to = null } = {}) => {
+  let query = supabase
+    .from("driver_shifts")
+    .select(`
+      id,
+      driver_id,
+      date,
+      start_time,
+      end_time,
+      status,
+      note,
+      rejection_reason,
+      registered_by,
+      reviewed_by,
+      reviewed_at,
+      created_at
+    `)
+    .eq("driver_id", driverProfileId)
+    .order("date", { ascending: true })
+    .order("start_time", { ascending: true });
+
+  if (from) {
+    query = query.gte("date", from);
+  }
+  if (to) {
+    query = query.lte("date", to);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("getDriverShifts error:", error);
+    throw error;
+  }
+  return data || [];
+};
+
+const checkShiftOverlap = async (driverProfileId, date, startTime, endTime) => {
+  // Tìm các ca của tài xế vào ngày đó với trạng thái Requested hoặc Approved
+  const { data, error } = await supabase
+    .from("driver_shifts")
+    .select("id, start_time, end_time, status")
+    .eq("driver_id", driverProfileId)
+    .eq("date", date)
+    .in("status", ["Requested", "Approved"]);
+
+  if (error) {
+    console.error("checkShiftOverlap error:", error);
+    throw error;
+  }
+
+  if (!data || data.length === 0) return false;
+
+  const newStart = new Date(startTime).getTime();
+  const newEnd = new Date(endTime).getTime();
+
+  for (const s of data) {
+    const existingStart = new Date(s.start_time).getTime();
+    const existingEnd = new Date(s.end_time).getTime();
+    // Giao thoa thời gian: max(start) < min(end)
+    if (Math.max(newStart, existingStart) < Math.min(newEnd, existingEnd)) {
+      return true; // Bị trùng
+    }
+  }
+
+  return false;
+};
+
+const createDriverShift = async ({ driverId, date, startTime, endTime, note = null, registeredBy }) => {
+  const payload = {
+    driver_id: driverId,
+    date,
+    start_time: startTime,
+    end_time: endTime,
+    note,
+    status: "Requested",
+    registered_by: registeredBy,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from("driver_shifts")
+    .insert([payload])
+    .select();
+
+  if (error) {
+    console.error("createDriverShift error:", error);
+    throw error;
+  }
+  return data && data.length > 0 ? data[0] : null;
+};
+
+// ==========================================
+// 9. CUSTOMER REFUSAL (BR-57)
+// ==========================================
+
+const updateOrderRefusal = async (orderId, { reason, photoUrl, changedBy = null }) => {
+  const { data, error } = await supabase
+    .from("orders")
+    .update({
+      status: "Delivered (Exception)",
+      refusal_reason: reason,
+      refusal_photo: photoUrl,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", orderId)
+    .select("id, order_code, status, refusal_reason, refusal_photo");
+
+  if (error) {
+    console.error("updateOrderRefusal error:", error);
+    throw error;
+  }
+
+  // Ghi nhận lịch sử đơn hàng
+  try {
+    await supabase.from("order_status_history").insert([{
+      order_id: orderId,
+      to_status: "Delivered (Exception)",
+      notes: `Khách từ chối nhận hàng: ${reason}`,
+      changed_by: changedBy
+    }]);
+  } catch (hErr) {
+    console.warn("order_status_history insert warning:", hErr.message);
+  }
+
+  return data && data.length > 0 ? data[0] : null;
+};
+
+// ==========================================
+// 10. EXTRA FEES (BR-30, MSG85)
+// ==========================================
+
+const createProposedExtraFee = async ({
+  tripId,
+  orderId = null,
+  feeType,
+  amount,
+  reason,
+  photoUrl,
+  recordedBy
+}) => {
+  const payload = {
+    trip_id: tripId,
+    order_id: orderId,
+    fee_type: feeType,
+    amount: parseInt(amount, 10),
+    reason,
+    photo_url: photoUrl,
+    status: "Proposed",
+    source: "Driver",
+    suggested_by_system: false,
+    recorded_by: recordedBy,
+    created_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from("extra_fees")
+    .insert([payload])
+    .select();
+
+  if (error) {
+    console.error("createProposedExtraFee error:", error);
+    throw error;
+  }
+  return data && data.length > 0 ? data[0] : null;
+};
+
+// ==========================================
+// 11. NOTIFICATIONS (Screen 6.5, MSG80, MSG85, MSG75)
+// ==========================================
+
+const getDriverNotifications = async (userAccountId) => {
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, user_account_id, target_type, target_id, message, created_time, read_time")
+    .eq("user_account_id", userAccountId)
+    .order("id", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error("getDriverNotifications error:", error);
+    throw error;
+  }
+  return data || [];
+};
+
+const markNotificationAsRead = async (notificationId, userAccountId) => {
+  const { data, error } = await supabase
+    .from("notifications")
+    .update({ read_time: new Date().toISOString() })
+    .eq("id", notificationId)
+    .eq("user_account_id", userAccountId)
+    .select();
+
+  if (error) {
+    console.error("markNotificationAsRead error:", error);
+    throw error;
+  }
+  return data && data.length > 0 ? data[0] : null;
+};
+
+const markAllNotificationsAsRead = async (userAccountId) => {
+  const { data, error } = await supabase
+    .from("notifications")
+    .update({ read_time: new Date().toISOString() })
+    .eq("user_account_id", userAccountId)
+    .is("read_time", null)
+    .select();
+
+  if (error) {
+    console.error("markAllNotificationsAsRead error:", error);
+    throw error;
+  }
+  return data || [];
+};
+
+const createSystemNotification = async ({ userAccountId, targetType = "TRIP", targetId = null, message }) => {
+  try {
+    const { data } = await supabase.from("notifications").insert([{
+      user_account_id: userAccountId,
+      target_type: targetType,
+      target_id: targetId,
+      message,
+      created_time: new Date().toISOString()
+    }]).select();
+    return data && data.length > 0 ? data[0] : null;
+  } catch (err) {
+    console.warn("createSystemNotification warning:", err.message);
+    return null;
+  }
+};
+
+// ==========================================
+// 12. DRIVING HOURS CALCULATION (BR-34)
+// ==========================================
+
+const getDriverDrivingTimeStats = async (driverProfileId) => {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+
+  // Bắt đầu tuần (Thứ hai)
+  const dayOfWeek = now.getDay(); // 0 is Sunday
+  const diffToMonday = (dayOfWeek + 6) % 7;
+  const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday).toISOString();
+
+  // 1. Tính tổng thời gian các chuyến xe đã hoàn thành trong ngày & tuần
+  const { data: assignments } = await supabase
+    .from("trip_drivers")
+    .select("trip_id")
+    .eq("driver_id", driverProfileId);
+
+  const tripIds = (assignments || []).map(a => a.trip_id);
+
+  let todayDrivenMinutes = 0;
+  let weekDrivenMinutes = 0;
+  let continuousMinutes = 0;
+
+  if (tripIds.length > 0) {
+    const { data: recentTrips } = await supabase
+      .from("trips")
+      .select("id, actual_duration, status, planned_start, created_at, updated_at")
+      .in("id", tripIds)
+      .gte("created_at", startOfWeek);
+
+    for (const t of recentTrips || []) {
+      const dur = t.actual_duration || 0; // phút
+      const tripTime = new Date(t.created_at).getTime();
+
+      if (tripTime >= new Date(startOfDay).getTime()) {
+        todayDrivenMinutes += dur;
+      }
+      weekDrivenMinutes += dur;
+    }
+  }
+
+  // 2. Tính thời gian lái của chuyến In Progress hiện tại (nếu có)
+  const activeTrip = await getActiveTrip(driverProfileId);
+  if (activeTrip && activeTrip.status === "In Progress") {
+    // Tìm sự kiện Arrived đầu tiên
+    const firstStopArrive = (activeTrip.stops || []).find(s => s.actual_arrival);
+    if (firstStopArrive && firstStopArrive.actual_arrival) {
+      const startedAt = new Date(firstStopArrive.actual_arrival).getTime();
+      const currentActiveMin = Math.max(0, Math.round((now.getTime() - startedAt) / 60000));
+      continuousMinutes = currentActiveMin;
+      todayDrivenMinutes += currentActiveMin;
+      weekDrivenMinutes += currentActiveMin;
+    }
+  }
+
+  const continuousHours = Math.round((continuousMinutes / 60) * 10) / 10;
+  const todayHours = Math.round((todayDrivenMinutes / 60) * 10) / 10;
+  const weekHours = Math.round((weekDrivenMinutes / 60) * 10) / 10;
+
+  return {
+    continuous_hours_driven: continuousHours,
+    continuous_hours_left: Math.max(0, Math.round((4.0 - continuousHours) * 10) / 10),
+    continuous_limit: 4.0,
+
+    daily_hours_driven: todayHours,
+    daily_hours_left: Math.max(0, Math.round((10.0 - todayHours) * 10) / 10),
+    daily_limit: 10.0,
+
+    weekly_hours_driven: weekHours,
+    weekly_hours_left: Math.max(0, Math.round((48.0 - weekHours) * 10) / 10),
+    weekly_limit: 48.0
+  };
+};
+
 module.exports = {
   getDriverProfileByUserId,
   getDriverProfileById,
@@ -619,5 +931,16 @@ module.exports = {
   recordTripEvent,
   createIncident,
   checkIdempotency,
-  logDriverActivity
+  logDriverActivity,
+  getDriverShifts,
+  checkShiftOverlap,
+  createDriverShift,
+  updateOrderRefusal,
+  createProposedExtraFee,
+  getDriverNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  createSystemNotification,
+  getDriverDrivingTimeStats
 };
+
