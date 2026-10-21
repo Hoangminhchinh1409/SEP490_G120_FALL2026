@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
+const compression = require("compression");
 require("dotenv").config();
 
 const supabase = require("./config/supabase");
@@ -9,8 +10,17 @@ const apiRoutes = require("./routes");
 const app = express();
 const PORT = process.env.PORT || 9999;
 
+app.use(compression());
+
 app.use(cors({
-    origin: "http://localhost:3000",
+    origin: (origin, callback) => {
+        // Cho phép các request từ trình duyệt cục bộ (localhost, 127.0.0.1) hoặc không có origin (như curl / Postman)
+        if (!origin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+            callback(null, true);
+        } else {
+            callback(null, true);
+        }
+    },
     credentials: true
 }));
 

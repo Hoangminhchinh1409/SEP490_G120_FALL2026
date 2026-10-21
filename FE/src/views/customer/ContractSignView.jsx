@@ -240,10 +240,10 @@ export default function ContractSignView() {
             </div>
 
             <div>
-              <span className="font-bold text-slate-900">ĐIỀU 2: CƯỚC PHÍ VÀ THANH TOÁN</span>
+              <span className="font-bold text-slate-900">ĐIỀU 2: CƯỚC PHÍ VÀ HÓA ĐƠN CHỨNG TỪ</span>
               <div className="mt-1 pl-3 space-y-1 border-l-2 border-indigo-200">
                 <div>• Tổng giá cước thỏa thuận cố định: <b className="text-indigo-700 font-mono text-sm">{(order?.agreed_price || 0).toLocaleString()} VNĐ</b> (Đã bao gồm chi phí phương tiện và tài xế).</div>
-                <div>• Phương thức thanh toán: Chuyển khoản hoặc thanh toán tại điểm giao nhận theo đối soát công nợ.</div>
+                <div>• Phương thức thanh toán: Khách hàng (Bên B) ủy quyền cho ngân hàng trung gian thanh toán theo Hóa đơn GTGT và Bảng kê do Bên A phát hành bàn giao cho bộ phận Kế toán Bên B theo dõi và thu hồi công nợ. Không thu tiền mặt tại hiện trường.</div>
               </div>
             </div>
 

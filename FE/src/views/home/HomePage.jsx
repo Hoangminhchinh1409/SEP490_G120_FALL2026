@@ -165,7 +165,7 @@ export default function HomePage() {
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-space-xs pb-space-xs border-b border-surface-container">
                                 <p className="font-body-md text-body-md text-on-surface-variant flex items-center gap-space-xs">
                                     <span className="material-symbols-outlined text-secondary text-base">verified_user</span>
-                                    <span>Tra cứu &amp; Tải hóa đơn điện tử (e-Invoice) của dịch vụ vận tải, lưu kho và thủ tục hàng hóa NEXLOG.</span>
+                                    <span>Tra cứu &amp; Tải hóa đơn điện tử (e-Invoice) của dịch vụ vận tải NEXLOG để bàn giao bộ phận Kế toán đối soát và thanh toán qua ngân hàng ủy quyền.</span>
                                 </p>
                                 <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider hidden md:inline-block">Thông tư 78 / NĐ-123</span>
                             </div>
@@ -242,7 +242,7 @@ export default function HomePage() {
                                         <span className="font-body-md text-body-md font-semibold text-on-surface line-clamp-1">CÔNG TY TNHH LOGISTICS TOÀN CẦU</span>
                                     </div>
                                     <div className="flex flex-col md:text-right">
-                                        <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Tổng tiền thanh toán</span>
+                                        <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Tổng cước &amp; Hóa đơn GTGT</span>
                                         <span className="font-data-mono text-headline-sm font-bold text-on-tertiary-container">124.500.000 VNĐ</span>
                                     </div>
                                 </div>

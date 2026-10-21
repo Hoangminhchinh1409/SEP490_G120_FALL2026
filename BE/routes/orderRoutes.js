@@ -14,7 +14,8 @@ const {
   approveWebOrderDocuments,
   customerSignContract,
   uploadContractFile,
-  uploadOrderDocuments
+  uploadOrderDocuments,
+  issueInvoiceToAccounting
 } = require('../controllers/orderController');
 
 const router = express.Router();
@@ -51,6 +52,9 @@ router.post('/:id/contract-file', uploadContractFile);
 
 // 9c. Điều phối viên cập nhật/lưu chứng từ vào hồ sơ đơn hàng
 router.post('/:id/documents', uploadOrderDocuments);
+
+// 9d. Xuất hóa đơn GTGT điện tử & bàn giao cho Kế toán thu nợ
+router.patch('/:id/issue-invoice', issueInvoiceToAccounting);
 
 // 10. Xác nhận đơn hàng trực tiếp (chuyển sang READY_FOR_PLANNING)
 router.patch('/:id/confirm', confirmOrder);
