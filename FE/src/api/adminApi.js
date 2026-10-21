@@ -102,13 +102,36 @@ export const adminApi = {
     }
   },
 
-  // 4. Danh mục Vai trò (Roles)
+  // 4. Danh mục Vai trò & Ma trận Phân quyền (Roles & Permissions - UC-34)
   getRoles: async () => {
     try {
       const data = await fetchWithAuth('/admin/roles');
       return data.roles;
     } catch (error) {
       console.error('adminApi.getRoles Error:', error);
+      throw error;
+    }
+  },
+
+  getPermissionsMatrix: async () => {
+    try {
+      const data = await fetchWithAuth('/admin/permissions');
+      return data;
+    } catch (error) {
+      console.error('adminApi.getPermissionsMatrix Error:', error);
+      throw error;
+    }
+  },
+
+  updateRolePermissions: async (roleId, permissionIds) => {
+    try {
+      const data = await fetchWithAuth(`/admin/roles/${roleId}/permissions`, {
+        method: 'PUT',
+        body: JSON.stringify({ permissionIds })
+      });
+      return data;
+    } catch (error) {
+      console.error(`adminApi.updateRolePermissions Error for roleId ${roleId}:`, error);
       throw error;
     }
   },
