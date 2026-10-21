@@ -105,8 +105,102 @@ const recordDelivery = async (req, res) => {
   }
 };
 
+const recordStopEvent = async (req, res) => {
+  try {
+    const tripId = parseInt(req.params.id);
+    const stopId = parseInt(req.params.stopId);
+    const result = await driverService.recordStopEvent(req.user.id, tripId, stopId, req.body);
+    return res.json(result);
+  } catch (error) {
+    console.error("recordStopEvent error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const reportCustomerRefusal = async (req, res) => {
+  try {
+    const tripId = parseInt(req.params.id);
+    const stopId = parseInt(req.params.stopId);
+    const result = await driverService.reportCustomerRefusal(req.user.id, tripId, stopId, req.body);
+    return res.json(result);
+  } catch (error) {
+    console.error("reportCustomerRefusal error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const proposeExtraFee = async (req, res) => {
+  try {
+    const tripId = parseInt(req.params.id);
+    const result = await driverService.proposeExtraFee(req.user.id, tripId, req.body);
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error("proposeExtraFee error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 // ==========================================
-// 3. INCIDENTS & OFFLINE SYNC
+// 3. SHIFTS MANAGEMENT (UC-20, BR-60)
+// ==========================================
+
+const getMyShifts = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const shifts = await driverService.getMyShifts(req.user.id, { from, to });
+    return res.json({ shifts });
+  } catch (error) {
+    console.error("getMyShifts error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const registerShift = async (req, res) => {
+  try {
+    const result = await driverService.registerShift(req.user.id, req.body);
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error("registerShift error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+// ==========================================
+// 4. NOTIFICATIONS (Screen 6.5, MSG80)
+// ==========================================
+
+const getDriverNotifications = async (req, res) => {
+  try {
+    const notifications = await driverService.getDriverNotifications(req.user.id);
+    return res.json({ notifications });
+  } catch (error) {
+    console.error("getDriverNotifications error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const markNotificationRead = async (req, res) => {
+  try {
+    const result = await driverService.markNotificationRead(req.user.id, req.params.id);
+    return res.json({ success: true, notification: result });
+  } catch (error) {
+    console.error("markNotificationRead error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const markAllNotificationsRead = async (req, res) => {
+  try {
+    const result = await driverService.markAllNotificationsRead(req.user.id);
+    return res.json({ success: true, count: result?.length || 0 });
+  } catch (error) {
+    console.error("markAllNotificationsRead error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+// ==========================================
+// 5. INCIDENTS & OFFLINE SYNC
 // ==========================================
 
 const reportIncident = async (req, res) => {
@@ -137,8 +231,17 @@ module.exports = {
   getTripDetail,
   acceptTrip,
   arriveStop,
+  recordStopEvent,
   recordPickup,
   recordDelivery,
+  reportCustomerRefusal,
+  proposeExtraFee,
+  getMyShifts,
+  registerShift,
+  getDriverNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
   reportIncident,
   syncOffline
 };
+
