@@ -2,6 +2,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const userModel = require("../models/userModel");
+const supabase = require("../config/supabase");
 
 const login = async (identifier, password) => {
     const user = await userModel.findUserByIdentifier(identifier);
@@ -12,6 +13,20 @@ const login = async (identifier, password) => {
 
     if (user.status !== "ACTIVE") {
         throw new Error("Account is not active");
+    }
+
+    // Kiểm tra Chế độ bảo trì hệ thống (SRS v2 - MSG86)
+    // Khi bật bảo trì, chỉ duy nhất Administrator (role_id = 1) được phép đăng nhập
+    if (Number(user.role_id) !== 1) {
+        const { data: maintenanceSetting } = await supabase
+            .from("system_settings")
+            .select("value")
+            .eq("key", "maintenance_mode")
+            .maybeSingle();
+
+        if (maintenanceSetting && (maintenanceSetting.value === "true" || maintenanceSetting.value === true)) {
+            throw new Error("Hệ thống đang bảo trì. Vui lòng quay lại sau.");
+        }
     }
 
     const isPasswordValid = await bcrypt.compare(
