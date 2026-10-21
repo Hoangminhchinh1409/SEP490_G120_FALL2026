@@ -52,7 +52,8 @@ const getOrCreateLocation = async ({
   lat,
   lng,
   contactName,
-  contactPhone
+  contactPhone,
+  isNewCustomer = false
 }) => {
   try {
     const cleanAddr = (address || '').trim();
@@ -96,8 +97,14 @@ const getOrCreateLocation = async ({
       }
     }
 
-    // 3. Nếu chưa có, tạo địa điểm mới với thông tin chuẩn
-    // Bỏ hoàn toàn các ghi chú điểm lấy / điểm giao / điểm gửi / điểm nhận
+    // 3. Nếu chưa có:
+    // Theo nghiệp vụ: Chỉ lưu địa điểm vào bảng locations đối với khách hàng mới (isNewCustomer = true).
+    // Nếu là khách hàng cũ tạo đơn có địa điểm giao nhận lẻ/tạm thời thì không tự động lưu vào danh bạ điểm giao nhận,
+    // mà liên kết tạm về kho mặc định 1 để tránh làm tràn danh bạ địa điểm.
+    if (!isNewCustomer) {
+      return 1;
+    }
+
     let cleanName = (name || '').trim();
     cleanName = cleanName
       .replace(/^Điểm (lấy|giao)\s*-\s*/i, '')

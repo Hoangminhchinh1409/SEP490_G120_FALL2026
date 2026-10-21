@@ -783,56 +783,22 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               </div>
             </div>
 
-            {/* ── PHẦN 5: Dịch vụ Hải quan & Ước tính cước phí ── */}
-            <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 p-3.5 rounded-xl border border-blue-200 mb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-2.5">
-                  <div className="p-2 bg-blue-600 text-white rounded-lg mt-0.5">
-                    <ShieldCheck size={18} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-gray-800 flex items-center gap-2">
-                      Dịch vụ Làm thủ tục Hải quan hộ
-                      <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
-                        +500.000 VNĐ / tờ khai
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                      Đội OPS chuyên nghiệp của NEXLOG sẽ đại diện làm việc với hải quan cảng/ga, kiểm hóa và thông quan nhanh chóng.
-                    </p>
-                  </div>
+            {/* ── PHẦN 5: Dịch vụ Hải quan ── */}
+            <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 p-3 rounded-xl border border-blue-200 mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-blue-600 text-white rounded-lg">
+                  <ShieldCheck size={16} />
                 </div>
-
-                <div className="sm:self-center shrink-0">
-                  <Checkbox
-                    checked={customsServiceRequired}
-                    onChange={(e) => setCustomsServiceRequired(e.target.checked)}
-                    className="font-semibold text-xs text-blue-900"
-                  >
-                    Đăng ký làm thủ tục hải quan
-                  </Checkbox>
-                </div>
+                <span className="text-xs font-bold text-gray-800">
+                  Làm Dịch vụ làm thủ tục hải quan
+                </span>
+                <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
+                  +500.000 VNĐ / tờ khai
+                </span>
               </div>
 
-              {/* Bảng tính cước tham chiếu */}
-              <div className="mt-3 pt-2.5 border-t border-blue-200/60 flex flex-wrap items-center justify-between text-xs gap-2">
-                <div className="text-gray-600">
-                  <span>Cước vận chuyển lộ trình: </span>
-                  <b className="text-gray-800">
-                    {estimatedPricing.baselineRate > 0 ? `${estimatedPricing.baselineRate.toLocaleString()} VNĐ` : 'Chờ xác định lộ trình'}
-                  </b>
-                  {customsServiceRequired && (
-                    <span className="text-blue-700 ml-1.5 font-medium">
-                      + Phí hải quan: <b>{CUSTOMS_SERVICE_FEE.toLocaleString()} VNĐ</b>
-                    </span>
-                  )}
-                </div>
-                <div className="text-right">
-                  <span className="text-gray-500 text-[11px]">Tổng cước ước tính: </span>
-                  <span className="text-base font-bold text-[#7367f0]">
-                    {estimatedPricing.totalRate > 0 ? `~ ${estimatedPricing.totalRate.toLocaleString()} VNĐ` : '---'}
-                  </span>
-                </div>
+              <div>
+                <Checkbox checked={customsServiceRequired} onChange={(e) => setCustomsServiceRequired(e.target.checked)} />
               </div>
             </div>
 

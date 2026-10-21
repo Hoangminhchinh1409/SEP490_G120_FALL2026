@@ -51,9 +51,11 @@ const createConsultationOrder = async (req, res) => {
       .or(`email.eq.${customer_email || 'none@none.com'},tax_code.eq.${taxCode}`)
       .limit(1);
 
+    let isNewCustomer = false;
     if (existingCust && existingCust.length > 0) {
       customerId = existingCust[0].id;
     } else {
+      isNewCustomer = true;
       const { data: newCust } = await supabase
         .from('customers')
         .insert([{
@@ -69,7 +71,7 @@ const createConsultationOrder = async (req, res) => {
       }
     }
 
-    // 2. Lấy hoặc tạo Location cho điểm lấy và điểm giao
+    // 2. Lấy hoặc tạo Location cho điểm lấy và điểm giao (chỉ lưu vào danh mục địa điểm với khách hàng mới)
     const pickupLocationId = await getOrCreateLocation({
       name: pickup_address ? (customer_name || 'Địa chỉ lấy hàng') : 'Nhà Ga Hàng Hóa ALS Nội Bài',
       address: pickup_address || 'Nhà Ga Hàng Hóa ALS Nội Bài',
@@ -78,7 +80,8 @@ const createConsultationOrder = async (req, res) => {
       lat: pickup_coords?.lat,
       lng: pickup_coords?.lng,
       contactName: customer_name,
-      contactPhone: cleanPhone
+      contactPhone: cleanPhone,
+      isNewCustomer
     });
 
     const deliveryLocationId = await getOrCreateLocation({
@@ -89,7 +92,8 @@ const createConsultationOrder = async (req, res) => {
       lat: delivery_coords?.lat,
       lng: delivery_coords?.lng,
       contactName: customer_name,
-      contactPhone: cleanPhone
+      contactPhone: cleanPhone,
+      isNewCustomer
     });
 
     // 3. Tính toán trọng lượng (hỗ trợ nhiều loại hàng hóa)
@@ -300,7 +304,8 @@ const createDirectOrder = async (req, res) => {
       }
     }
 
-    // Lấy hoặc tạo Location cho điểm lấy và điểm giao
+    // Lấy hoặc tạo Location cho điểm lấy và điểm giao (chỉ lưu vào danh mục địa điểm với khách hàng mới)
+    const isNew = Boolean(is_new_customer || customerId === 1);
     const pickupLocationId = await getOrCreateLocation({
       name: pickup_address ? (customer_name || 'Địa chỉ lấy hàng') : 'Nhà Ga Hàng Hóa ALS Nội Bài',
       address: pickup_address || 'Nhà Ga Hàng Hóa ALS Nội Bài',
@@ -309,7 +314,8 @@ const createDirectOrder = async (req, res) => {
       lat: pickup_coords?.lat,
       lng: pickup_coords?.lng,
       contactName: customer_name,
-      contactPhone: cleanPhone
+      contactPhone: cleanPhone,
+      isNewCustomer: isNew
     });
 
     const deliveryLocationId = await getOrCreateLocation({
@@ -320,7 +326,8 @@ const createDirectOrder = async (req, res) => {
       lat: delivery_coords?.lat,
       lng: delivery_coords?.lng,
       contactName: customer_name,
-      contactPhone: cleanPhone
+      contactPhone: cleanPhone,
+      isNewCustomer: isNew
     });
 
     // Điều phối viên tạo đơn luôn luôn là đã xác nhận chốt giá với khách (READY_FOR_PLANNING)

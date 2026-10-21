@@ -13,8 +13,7 @@ import {
   calculateRouteEstimate, 
   getCoordsFromAddress,
   ALS_NOI_BAI_TERMINAL,
-  ALS_ICD_LOCATIONS,
-  ALS_NOI_BAI_WAREHOUSES
+  ALS_ICD_LOCATIONS
 } from '../../data/dispatcherPresets';
 import { dispatcherApi } from '../../api/dispatcherApi';
 import RouteMapPicker from '../common/RouteMapPicker';
@@ -75,22 +74,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   ]);
 
   const [shippingDirection, setShippingDirection] = useState('IMPORT');
-  const [assignedWarehouse, setAssignedWarehouse] = useState('WH-1');
-  const [customsLocation, setCustomsLocation] = useState('NOI_BAI');
-  const [customsChannel, setCustomsChannel] = useState('GREEN');
-  const [sealNumber, setSealNumber] = useState('');
-  // --- Kịch bản hải quan ---
-  const [customsScenario, setCustomsScenario] = useState('NOI_BAI_DIRECT');
 
-  const activeScenario = CUSTOMS_SCENARIOS.find(s => s.value === customsScenario) || CUSTOMS_SCENARIOS[0];
-
-  // Tự động phân bổ ngẫu nhiên 1 trong 4 kho hàng của ALS tại Nội Bài
-  const handleRandomizeWarehouse = () => {
-    const randomIndex = Math.floor(Math.random() * ALS_NOI_BAI_WAREHOUSES.length);
-    const chosen = ALS_NOI_BAI_WAREHOUSES[randomIndex];
-    setAssignedWarehouse(chosen.id);
-    form.setFieldsValue({ assigned_warehouse: chosen.id });
-  };
 
   // Khởi tạo địa chỉ theo chiều vận chuyển
   const applyDirectionPreset = (direction) => {
@@ -741,34 +725,24 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         </div>
 
         {/* Khối đăng ký làm thủ tục hải quan hộ */}
-        <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 p-3.5 rounded-xl border border-blue-200 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <div className="p-2 bg-blue-600 text-white rounded-lg mt-0.5">
-                <ShieldCheck size={18} />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-gray-800 flex items-center gap-2">
-                  Dịch vụ Làm thủ tục Hải quan hộ
-                  <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
-                    +500.000 VNĐ / tờ khai
-                  </span>
-                </div>
-                <p className="text-[11px] text-gray-500 mt-0.5">
-                  Đội OPS chuyên nghiệp sẽ đại diện làm việc với hải quan cảng/ga, kiểm hóa và thông quan nhanh chóng.
-                </p>
-              </div>
+        <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 p-3 rounded-xl border border-blue-200 mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-blue-600 text-white rounded-lg">
+              <ShieldCheck size={16} />
             </div>
+            <span className="text-xs font-bold text-gray-800">
+              Dịch vụ làm thủ tục hải quan
+            </span>
+            <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
+              +500.000 VNĐ / tờ khai
+            </span>
+          </div>
 
-            <div className="sm:self-center shrink-0">
-              <Checkbox
-                checked={customsServiceRequired}
-                onChange={(e) => setCustomsServiceRequired(e.target.checked)}
-                className="font-semibold text-xs text-blue-900"
-              >
-                Tích chọn làm thủ tục hải quan hộ
-              </Checkbox>
-            </div>
+          <div>
+            <Checkbox
+              checked={customsServiceRequired}
+              onChange={(e) => setCustomsServiceRequired(e.target.checked)}
+            />
           </div>
         </div>
 
