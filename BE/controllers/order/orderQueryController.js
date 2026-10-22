@@ -9,9 +9,8 @@ const getAllOrders = async (req, res) => {
       .select(`
         *,
         customer:customers(id, company_name, tax_code, email),
-        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, lat, lng, type, province_code),
-        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, lat, lng, type, province_code),
-        notes:order_notes(id, content, created_at)
+        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, latitude, longitude, type, province),
+        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude, type, province)
       `)
       .order('created_at', { ascending: false });
 
@@ -42,18 +41,18 @@ const getAllOrders = async (req, res) => {
         pickup: order.pickup_location?.address || order.pickup_location?.name || 'Kho ALS Cảng HKQT Nội Bài',
         pickup_address: order.pickup_location?.address || order.pickup_location?.name || 'Kho ALS Cảng HKQT Nội Bài',
         pickup_coords: {
-          lat: parseFloat(order.pickup_location?.lat) || 21.2187,
-          lng: parseFloat(order.pickup_location?.lng) || 105.8042
+          lat: parseFloat(order.pickup_location?.latitude || order.pickup_location?.lat) || 21.2187,
+          lng: parseFloat(order.pickup_location?.longitude || order.pickup_location?.lng) || 105.8042
         },
         dropoff: order.delivery_location?.address || order.delivery_location?.name || (order.receiver_name ? `${order.receiver_name} - ${order.receiver_phone}` : 'KCN Tiên Sơn, Bắc Ninh'),
         delivery_address: order.delivery_location?.address || order.delivery_location?.name || 'KCN Tiên Sơn, Bắc Ninh',
         dropoff_coords: {
-          lat: parseFloat(order.delivery_location?.lat) || 21.1215,
-          lng: parseFloat(order.delivery_location?.lng) || 105.9754
+          lat: parseFloat(order.delivery_location?.latitude || order.delivery_location?.lat) || 21.1215,
+          lng: parseFloat(order.delivery_location?.longitude || order.delivery_location?.lng) || 105.9754
         },
         delivery_coords: {
-          lat: parseFloat(order.delivery_location?.lat) || 21.1215,
-          lng: parseFloat(order.delivery_location?.lng) || 105.9754
+          lat: parseFloat(order.delivery_location?.latitude || order.delivery_location?.lat) || 21.1215,
+          lng: parseFloat(order.delivery_location?.longitude || order.delivery_location?.lng) || 105.9754
         },
         receiver_name: order.receiver_name || '',
         receiver_phone: order.receiver_phone || '',
@@ -260,9 +259,8 @@ const getOrderByToken = async (req, res) => {
       .select(`
         *,
         customer:customers(id, company_name, tax_code, email),
-        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, lat, lng),
-        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, lat, lng),
-        notes:order_notes(id, content, created_at)
+        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, latitude, longitude),
+        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude)
       `);
 
     // Hỗ trợ tìm kiếm linh hoạt theo tracking_token HOẶC mã đơn order_code

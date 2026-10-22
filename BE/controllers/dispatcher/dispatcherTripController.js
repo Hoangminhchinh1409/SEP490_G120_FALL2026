@@ -1,5 +1,6 @@
 const supabase = require('../../config/supabase');
 const crypto = require('crypto');
+const { getTruckModelName } = require('./dispatcherFleetController');
 
 // Lấy danh sách các chuyến xe
 const getAllTrips = async (req, res) => {
@@ -8,29 +9,31 @@ const getAllTrips = async (req, res) => {
       .from('trips')
       .select(`
         *,
-        truck:trucks(id, plate_number, payload_kg, status),
-        driver:driver_profiles!trips_driver_id_fkey(
-          id,
-          user:users(id, full_name, phone)
+        trip_trucks(
+          truck:trucks(id, plate_number, allowed_payload, status)
+        ),
+        trip_drivers(
+          driver:driver_profiles(
+            id,
+            user:users(id, full_name, phone)
+          )
         ),
         stops:trip_stops(
           id,
-          seq,
-          type,
+          sequence,
+          stop_type,
           location_id,
-          address,
+          planned_arrival,
+          actual_arrival,
           status,
-          eta_at,
-          arrived_at,
-          done_at,
-          location:locations(id, name, address, lat, lng)
+          location:locations(id, name, address, latitude, longitude)
         ),
-        incidents:incidents!incidents_trip_id_fkey(
+        incidents:incidents(
           id,
           type,
           status,
           description,
-          reported_at
+          reported_time
         )
       `)
       .order('id', { ascending: false });
@@ -41,36 +44,37 @@ const getAllTrips = async (req, res) => {
     }
 
     const formattedTrips = (trips || []).map(trip => {
-      const truckObj = trip.truck || {};
-      const driverObj = trip.driver?.user || {};
-      const sortedStops = (trip.stops || []).sort((a, b) => (a.seq || 0) - (b.seq || 0));
+      const truckObj = trip.trip_trucks?.[0]?.truck || trip.truck || {};
+      const driverObj = trip.trip_drivers?.[0]?.driver?.user || trip.driver?.user || {};
+      const sortedStops = (trip.stops || []).sort((a, b) => (a.sequence || a.seq || 0) - (b.sequence || b.seq || 0));
 
-      const pickupStop = sortedStops.find(s => s.type === 'PICKUP') || sortedStops[0] || {};
-      const dropoffStop = sortedStops.find(s => s.type === 'DROPOFF') || sortedStops[sortedStops.length - 1] || {};
+      const pickupStop = sortedStops.find(s => (s.stop_type || s.type) === 'PICKUP' || (s.stop_type || s.type) === 'Pickup') || sortedStops[0] || {};
+      const dropoffStop = sortedStops.find(s => (s.stop_type || s.type) === 'DROPOFF' || (s.stop_type || s.type) === 'Delivery' || (s.stop_type || s.type) === 'Dropoff') || sortedStops[sortedStops.length - 1] || {};
 
       const hasIncident = trip.incidents && trip.incidents.length > 0;
       const latestIncident = hasIncident ? trip.incidents[0] : null;
 
       let progress = 10;
-      if (trip.status === 'COMPLETED') progress = 100;
-      else if (trip.status === 'IN_PROGRESS') progress = 60;
-      else if (trip.status === 'ASSIGNED') progress = 20;
+      const upperStatus = (trip.status || '').toUpperCase();
+      if (upperStatus === 'COMPLETED') progress = 100;
+      else if (upperStatus === 'IN_PROGRESS' || upperStatus === 'IN_TRANSIT') progress = 60;
+      else if (upperStatus === 'ASSIGNED') progress = 20;
 
       return {
         id: trip.trip_code,
         raw_id: trip.id,
         plate: truckObj.plate_number || '29H-123.45',
-        truck_model: getTruckModelName(truckObj.payload_kg),
+        truck_model: getTruckModelName(truckObj.allowed_payload || truckObj.payload_kg),
         driver_name: driverObj.full_name || 'Nguyễn Văn Tài',
         driver_phone: driverObj.phone || '0901234567',
         orders: [trip.waybill_no || `ORD-${trip.id}`],
         customer: 'Khách hàng vận tải',
-        pickup: pickupStop.address || pickupStop.location?.name || 'Kho ALS Cảng HKQT Nội Bài',
-        dropoff: dropoffStop.address || dropoffStop.location?.name || 'KCN Tiên Sơn, Bắc Ninh',
-        planned_start: trip.planned_start_at ? new Date(trip.planned_start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '08:30',
+        pickup: pickupStop.address || pickupStop.location?.address || pickupStop.location?.name || 'Kho ALS Cảng HKQT Nội Bài',
+        dropoff: dropoffStop.address || dropoffStop.location?.address || dropoffStop.location?.name || 'KCN Tiên Sơn, Bắc Ninh',
+        planned_start: trip.planned_start ? new Date(trip.planned_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '08:30',
         planned_finish: '14:30',
-        actual_start: trip.planned_start_at ? new Date(trip.planned_start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '08:42',
-        status: trip.status === 'IN_PROGRESS' ? 'IN_TRANSIT' : (trip.status === 'COMPLETED' ? 'COMPLETED' : 'ASSIGNED'),
+        actual_start: trip.planned_start ? new Date(trip.planned_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '08:42',
+        status: (upperStatus === 'IN_PROGRESS' || upperStatus === 'IN_TRANSIT') ? 'IN_TRANSIT' : (upperStatus === 'COMPLETED' ? 'COMPLETED' : 'ASSIGNED'),
         is_late_risk: hasIncident,
         late_reason: latestIncident ? latestIncident.description : null,
         has_incident: hasIncident,
@@ -82,11 +86,11 @@ const getAllTrips = async (req, res) => {
         stops: sortedStops.length > 0 ? sortedStops.map(s => ({
           id: s.id,
           name: s.location?.name || s.address || 'Điểm dừng',
-          type: s.type,
-          planned: s.eta_at ? new Date(s.eta_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:00',
-          actual: s.arrived_at ? new Date(s.arrived_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Đang di chuyển',
-          event: s.status === 'COMPLETED' ? 'Đã hoàn thành' : 'Đang di chuyển',
-          note: s.type === 'PICKUP' ? 'Đã kẹp chì niêm phong' : 'Chờ giao hàng và ký POD'
+          type: s.stop_type || s.type,
+          planned: (s.planned_arrival || s.eta_at) ? new Date(s.planned_arrival || s.eta_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:00',
+          actual: (s.actual_arrival || s.arrived_at) ? new Date(s.actual_arrival || s.arrived_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Đang di chuyển',
+          event: (s.status || '').toUpperCase() === 'COMPLETED' ? 'Đã hoàn thành' : 'Đang di chuyển',
+          note: (s.stop_type || s.type) === 'PICKUP' ? 'Đã kẹp chì niêm phong' : 'Chờ giao hàng và ký POD'
         })) : [
           { id: 1, name: 'Kho ALS Cảng HKQT Nội Bài', type: 'PICKUP', planned: '08:30', actual: '08:40', event: 'Đã xuất phát', note: 'Niêm phong chì nguyên vẹn' },
           { id: 2, name: 'Điểm giao nhận', type: 'DROPOFF', planned: '14:30', actual: 'Dự kiến 14:15', event: 'Đang vận chuyển', note: 'Chờ nhận hàng và đối soát POD' }
@@ -316,9 +320,14 @@ const getAllIncidents = async (req, res) => {
       .from('incidents')
       .select(`
         *,
-        trip:trips!incidents_trip_id_fkey(id, trip_code, truck:trucks(plate_number), driver:driver_profiles!trips_driver_id_fkey(user:users(full_name, phone)))
+        trip:trips(
+          id,
+          trip_code,
+          trip_trucks(truck:trucks(plate_number)),
+          trip_drivers(driver:driver_profiles(user:users(full_name, phone)))
+        )
       `)
-      .order('reported_at', { ascending: false });
+      .order('id', { ascending: false });
 
     if (error) {
       console.error('getAllIncidents error:', error);
@@ -336,21 +345,27 @@ const getAllIncidents = async (req, res) => {
       'OTHER': 'SỰ CỐ KHÁC'
     };
 
-    const formatted = (incidents || []).map(inc => ({
-      id: `INC-${inc.id}`,
-      raw_id: inc.id,
-      trip_code: inc.trip?.trip_code || `TRIP-${inc.trip_id}`,
-      truck: inc.trip?.truck?.plate_number || '29H-123.45',
-      driver: inc.trip?.driver?.user?.full_name || 'Tài xế',
-      phone: inc.trip?.driver?.user?.phone || '0901234567',
-      type: typeDisplayMap[inc.type] || inc.type,
-      raw_type: inc.type,
-      severity: inc.type === 'ACCIDENT' || inc.type === 'BREAKDOWN' ? 'HIGH' : 'MEDIUM',
-      status: inc.status === 'REPORTED' ? 'PENDING' : inc.status,
-      reported_at: inc.reported_at ? new Date(inc.reported_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:15',
-      location: 'Km 18 cao tốc Nội Bài - Bắc Ninh',
-      description: inc.description || 'Sự cố phát sinh trên đường vận chuyển'
-    }));
+    const formatted = (incidents || []).map(inc => {
+      const truckObj = inc.trip?.trip_trucks?.[0]?.truck || inc.trip?.truck || {};
+      const driverObj = inc.trip?.trip_drivers?.[0]?.driver?.user || inc.trip?.driver?.user || {};
+      const reportedAt = inc.reported_time || inc.reported_at || inc.created_at;
+
+      return {
+        id: `INC-${inc.id}`,
+        raw_id: inc.id,
+        trip_code: inc.trip?.trip_code || `TRIP-${inc.trip_id}`,
+        truck: truckObj.plate_number || '29H-123.45',
+        driver: driverObj.full_name || 'Tài xế',
+        phone: driverObj.phone || '0901234567',
+        type: typeDisplayMap[inc.type] || inc.type,
+        raw_type: inc.type,
+        severity: inc.type === 'ACCIDENT' || inc.type === 'BREAKDOWN' ? 'HIGH' : 'MEDIUM',
+        status: (inc.status || '').toUpperCase() === 'REPORTED' ? 'PENDING' : inc.status,
+        reported_at: reportedAt ? new Date(reportedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:15',
+        location: 'Km 18 cao tốc Nội Bài - Bắc Ninh',
+        description: inc.description || 'Sự cố phát sinh trên đường vận chuyển'
+      };
+    });
 
     return res.json({ incidents: formatted });
   } catch (err) {

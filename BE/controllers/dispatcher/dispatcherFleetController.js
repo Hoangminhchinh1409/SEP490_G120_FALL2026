@@ -149,7 +149,7 @@ const getFleetDrivers = async (req, res) => {
       .from('driver_profiles')
       .select(`
         id,
-        user_id,
+        user_account_id,
         license_number,
         license_class,
         license_expiry,
@@ -167,6 +167,7 @@ const getFleetDrivers = async (req, res) => {
     const formattedDrivers = (profiles || []).map((d, index) => {
       const u = d.user || {};
       const statusMap = {
+        'Active': 'AVAILABLE',
         'ACTIVE': 'AVAILABLE',
         'ON_TRIP': 'ON_DUTY',
         'RESTING': 'RESTING',
@@ -176,7 +177,7 @@ const getFleetDrivers = async (req, res) => {
       return {
         key: `D${d.id}`,
         id: d.id,
-        user_id: d.user_id,
+        user_id: d.user_account_id,
         name: u.full_name || `Tài xế ${d.id}`,
         phone: u.phone || '0901234567',
         email: u.email || '',
