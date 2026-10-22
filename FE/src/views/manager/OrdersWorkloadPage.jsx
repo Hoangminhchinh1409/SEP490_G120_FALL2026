@@ -1,550 +1,639 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Modal, Select, message, Spin } from 'antd';
+import { Modal, Select, message, Spin, Tag, Input, Tooltip } from 'antd';
 import { managerApi } from '../../api/managerApi';
 
 export default function OrdersWorkloadPage() {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
+  const [flaggedOrders, setFlaggedOrders] = useState([]);
   const [dispatchers, setDispatchers] = useState([]);
-  const [searchText, setSearchText] = useState('');
-  const [activeTab, setActiveTab] = useState('ALL');
-  const [selectedRoute, setSelectedRoute] = useState('ALL');
-  const [selectedService, setSelectedService] = useState('ALL');
+  const [summary, setSummary] = useState({ total_orders: 0, flagged_count: 0, active_dispatchers: 0 });
 
-  // Modal Chuyển giao điều phối viên
+  // Filtering & search
+  const [activeMainTab, setActiveMainTab] = useState('FLAGGED'); // 'WORKLOAD', 'FLAGGED', 'ALL'
+  const [flagFilter, setFlagFilter] = useState('ALL'); // 'ALL', 'WAITING', 'DOCS', 'LATE'
+  const [orderStatusTab, setOrderStatusTab] = useState('ALL');
+  const [searchText, setSearchText] = useState('');
+
+  // Modal Điều chuyển (Reassign)
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [newDispatcherId, setNewDispatcherId] = useState('');
+  const [reassignReason, setReassignReason] = useState('');
   const [reassigning, setReassigning] = useState(false);
 
-  const fetchOrders = () => {
+  // Modal Chi tiết đơn hàng (Screen 09 Read-only)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [orderDetail, setOrderDetail] = useState(null);
+
+  const fetchWorkloadData = async () => {
     setLoading(true);
-    managerApi.getOrders()
-      .then(data => {
-        setOrders(data.orders || []);
-        setDispatchers(data.dispatchers || []);
-      })
-      .catch(error => {
-        console.error('Lỗi khi tải đơn hàng:', error);
-        message.error('Không thể kết nối Backend để lấy danh sách đơn hàng.');
-      })
-      .finally(() => {
-        setLoading(false);
+    try {
+      const data = await managerApi.getOrders();
+      setOrders(data.orders || []);
+      setFlaggedOrders(data.flagged_orders || []);
+      setDispatchers(data.dispatchers || []);
+      setSummary(data.summary || {
+        total_orders: (data.orders || []).length,
+        flagged_count: (data.flagged_orders || []).length,
+        active_dispatchers: (data.dispatchers || []).length
       });
+    } catch (error) {
+      console.error('Lỗi khi tải dữ liệu khối lượng đơn:', error);
+      message.error('Không thể kết nối Backend để lấy dữ liệu tải điều phối.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    let isMounted = true;
-    managerApi.getOrders()
-      .then(data => {
-        if (isMounted) {
+    let ignore = false;
+    async function loadInitial() {
+      try {
+        const data = await managerApi.getOrders();
+        if (!ignore) {
           setOrders(data.orders || []);
+          setFlaggedOrders(data.flagged_orders || []);
           setDispatchers(data.dispatchers || []);
+          setSummary(data.summary || {
+            total_orders: (data.orders || []).length,
+            flagged_count: (data.flagged_orders || []).length,
+            active_dispatchers: (data.dispatchers || []).length
+          });
         }
-      })
-      .catch(error => {
-        console.error('Lỗi khi tải đơn hàng:', error);
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
-
-    return () => { isMounted = false; };
+      } catch (error) {
+        console.error('Lỗi khi tải dữ liệu khối lượng đơn:', error);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    loadInitial();
+    return () => { ignore = true; };
   }, []);
 
+  // Mở Modal điều chuyển
   const handleOpenReassignModal = (order) => {
     setSelectedOrder(order);
-    setNewDispatcherId(order.dispatcher_id || '');
+    setNewDispatcherId(order.responsible_dispatcher_id || order.dispatcher_id || '');
+    setReassignReason('');
     setIsReassignModalOpen(true);
   };
 
+  // Xác nhận điều chuyển
   const handleConfirmReassign = async () => {
     if (!newDispatcherId) {
-      message.warning('Vui lòng chọn điều phối viên phụ trách mới');
+      message.warning('Vui lòng chọn điều phối viên phụ trách mới (MSG02).');
       return;
     }
     try {
       setReassigning(true);
-      await managerApi.reassignOrder(selectedOrder.id, newDispatcherId);
-      message.success(`Đã chuyển giao đơn hàng #${selectedOrder.code || selectedOrder.id} thành công!`);
+      const res = await managerApi.reassignOrder(selectedOrder.id, newDispatcherId, reassignReason);
+      message.success(res.message || `Đơn hàng #${selectedOrder.code || selectedOrder.id} đã được điều chuyển thành công!`);
       setIsReassignModalOpen(false);
-      fetchOrders();
+      fetchWorkloadData();
     } catch (error) {
-      console.error('Lỗi khi chuyển giao đơn:', error);
-      message.error(error.message || 'Lỗi khi chuyển giao đơn hàng');
+      console.error('Lỗi khi điều chuyển đơn:', error);
+      message.error(error.message || 'Lỗi khi điều chuyển đơn hàng');
     } finally {
       setReassigning(false);
     }
   };
 
-  // Filtered orders
-  const filteredOrders = orders.filter((o) => {
+  // Mở modal xem chi tiết đơn hàng (Screen 09 Read-only)
+  const handleOpenDetailModal = async (orderId) => {
+    setIsDetailModalOpen(true);
+    setDetailLoading(true);
+    try {
+      const detail = await managerApi.getOrderDetail(orderId);
+      setOrderDetail(detail);
+    } catch (error) {
+      console.error('Lỗi xem chi tiết đơn:', error);
+      message.error('Không thể tải chi tiết đơn hàng.');
+      setIsDetailModalOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  // Lọc danh sách đơn bị gắn cờ
+  const filteredFlagged = flaggedOrders.filter((o) => {
     const matchSearch =
       !searchText ||
       o.code?.toLowerCase().includes(searchText.toLowerCase()) ||
-      o.tracking_token?.toLowerCase().includes(searchText.toLowerCase()) ||
-      o.dispatcher_name?.toLowerCase().includes(searchText.toLowerCase());
+      o.dispatcher_name?.toLowerCase().includes(searchText.toLowerCase()) ||
+      o.flag_reason?.toLowerCase().includes(searchText.toLowerCase());
+
+    if (!matchSearch) return false;
+
+    if (flagFilter === 'WAITING') return o.waiting_too_long;
+    if (flagFilter === 'DOCS') return o.overdue_docs;
+    if (flagFilter === 'LATE') return o.late_risk;
+    return true;
+  });
+
+  // Lọc toàn bộ đơn hàng
+  const filteredAllOrders = orders.filter((o) => {
+    const matchSearch =
+      !searchText ||
+      o.code?.toLowerCase().includes(searchText.toLowerCase()) ||
+      o.dispatcher_name?.toLowerCase().includes(searchText.toLowerCase()) ||
+      o.tracking_token?.toLowerCase().includes(searchText.toLowerCase());
 
     const matchTab =
-      activeTab === 'ALL' ||
-      (activeTab === 'IN_PROGRESS' && (o.status === 'IN_PROGRESS' || o.status === 'ON_TRIP')) ||
-      (activeTab === 'PENDING' && o.status === 'PENDING') ||
-      (activeTab === 'COMPLETED' && o.status === 'COMPLETED');
+      orderStatusTab === 'ALL' ||
+      (orderStatusTab === 'IN_TRANSIT' && (o.status === 'IN_TRANSIT' || o.status === 'ON_TRIP')) ||
+      (orderStatusTab === 'CONFIRMED' && (o.status === 'CONFIRMED' || o.status === 'READY_FOR_PLANNING')) ||
+      (orderStatusTab === 'DRAFT' && o.status === 'DRAFT') ||
+      (orderStatusTab === 'COMPLETED' && o.status === 'COMPLETED');
 
     return matchSearch && matchTab;
   });
 
-  // Calculate quick stats strictly from real DB records
-  const totalCount = orders.length;
-  const inTransitCount = orders.filter((o) => o.status === 'IN_PROGRESS' || o.status === 'ON_TRIP' || o.status === 'IN_TRANSIT').length;
-  const pendingCount = orders.filter((o) => o.status === 'PENDING' || o.status === 'READY_FOR_PLANNING').length;
-  const completedCount = orders.filter((o) => o.status === 'COMPLETED' || o.status === 'DELIVERED').length;
+  const waitingCount = flaggedOrders.filter((o) => o.waiting_too_long).length;
+  const docsCount = flaggedOrders.filter((o) => o.overdue_docs).length;
+  const lateCount = flaggedOrders.filter((o) => o.late_risk).length;
 
   return (
     <div className="flex flex-col w-full space-y-space-lg">
-      {/* Top Hero Header & Actions */}
+      {/* Top Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 relative overflow-hidden">
-        <div className="absolute -right-16 -top-16 w-64 h-64 bg-surface-container-low rounded-full pointer-events-none opacity-50 blur-2xl"></div>
         <div className="flex flex-col space-y-1 z-10">
           <div className="flex items-center gap-space-sm flex-wrap">
             <h1 className="text-2xl lg:text-3xl font-extrabold text-primary tracking-tight">
-              Quản lý Đơn hàng Vận tải
+              Giám Sát Tải & Đơn Hàng Ách Tắc
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-xs font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-              Toàn mạng lưới: {totalCount} đơn
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-error-container text-on-error-container font-label-sm text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-error animate-pulse"></span>
+              {flaggedOrders.length} Đơn cần can thiệp gấp
             </span>
           </div>
           <p className="font-body-md text-sm text-on-surface-variant max-w-3xl">
-            Theo dõi hành trình vận đơn hàng không (MAWB/HAWB), điều phối chặng trung chuyển và giám sát cam kết thời gian giao hàng (SLA) theo thời gian thực.
+            Theo dõi khối lượng công việc của từng điều phối viên, cảnh báo đơn chờ quá lâu (BR-25), quá hạn chứng từ (MSG41), nguy cơ trễ hẹn (BR-13) và điều chuyển linh hoạt (UC-21, UC-22).
           </p>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex items-center gap-space-sm shrink-0 z-10">
           <button
-            onClick={() => message.info('Đang xuất danh sách đơn hàng sang file Excel...')}
+            onClick={fetchWorkloadData}
             className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-surface-container-low text-primary font-label-lg text-sm font-semibold hover:bg-surface-container transition-colors cursor-pointer"
             type="button"
           >
-            <span className="material-symbols-outlined text-[18px]">file_download</span>
-            <span>Xuất danh sách Excel</span>
+            <span className="material-symbols-outlined text-[18px]">refresh</span>
+            <span>Làm mới số liệu</span>
           </button>
         </div>
       </div>
 
-      {/* KPI Quick Stats (4-Columns) */}
+      {/* 4 Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
-        {/* Stat 1 */}
-        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-space-sm">
-            <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider font-semibold">
-              Tổng đơn trong ngày
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
-              <span className="material-symbols-outlined text-[20px]">inventory_2</span>
-            </div>
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-outline uppercase font-semibold">Tổng đơn quản lý</span>
+            <span className="material-symbols-outlined text-primary text-[22px]">assignment</span>
           </div>
-          <div className="flex items-baseline justify-between mt-1">
-            <div className="font-headline-xl text-headline-xl text-primary font-bold">
-              {totalCount} <span className="font-body-sm text-body-sm text-outline font-normal">đơn</span>
-            </div>
-            <span className="inline-flex items-center text-secondary font-label-sm text-label-sm font-semibold bg-surface-container-low px-2 py-0.5 rounded-full">
-              <span className="material-symbols-outlined text-[14px] mr-0.5">database</span>DB Live
-            </span>
+          <div className="my-2">
+            <div className="text-2xl font-black text-primary">{summary.total_orders || orders.length}</div>
+            <div className="text-xs text-on-surface-variant">Toàn bộ đơn trên hệ thống</div>
           </div>
-          <div className="mt-space-md w-full bg-surface-container h-1 rounded-full overflow-hidden">
-            <div className="bg-secondary h-full rounded-full" style={{ width: totalCount > 0 ? '100%' : '0%' }}></div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div className="bg-primary h-full rounded-full" style={{ width: '100%' }}></div>
           </div>
         </div>
 
-        {/* Stat 2 */}
-        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-space-sm">
-            <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider font-semibold">
-              Đang vận chuyển (In Transit)
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-secondary">
-              <span className="material-symbols-outlined text-[20px]">flight_takeoff</span>
-            </div>
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-error uppercase font-semibold">Đơn bị gắn cờ</span>
+            <span className="material-symbols-outlined text-error text-[22px]">flag</span>
           </div>
-          <div className="flex items-baseline justify-between mt-1">
-            <div className="font-headline-xl text-headline-xl text-primary font-bold">
-              {inTransitCount} <span className="font-body-sm text-body-sm text-outline font-normal">chuyến</span>
-            </div>
-            <span className="font-label-sm text-label-sm text-on-surface-variant font-medium">
-              {inTransitCount > 0 ? `${inTransitCount} đang di chuyển` : 'Không có chuyến đang chạy'}
-            </span>
+          <div className="my-2">
+            <div className="text-2xl font-black text-error">{flaggedOrders.length}</div>
+            <div className="text-xs text-on-surface-variant">Cần xem xét và tái phân bổ</div>
           </div>
-          <div className="mt-space-md w-full bg-surface-container h-1 rounded-full overflow-hidden">
-            <div className="bg-secondary h-full rounded-full" style={{ width: totalCount > 0 ? `${(inTransitCount / totalCount) * 100}%` : '0%' }}></div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-error h-full rounded-full"
+              style={{ width: `${orders.length ? Math.min((flaggedOrders.length / orders.length) * 100, 100) : 0}%` }}
+            ></div>
           </div>
         </div>
 
-        {/* Stat 3 */}
-        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-space-sm">
-            <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider font-semibold">
-              Chờ thông quan / Xử lý
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-tertiary-fixed flex items-center justify-center text-on-tertiary-container">
-              <span className="material-symbols-outlined text-[20px]">gavel</span>
-            </div>
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-tertiary uppercase font-semibold">Chờ quá lâu (BR-25)</span>
+            <span className="material-symbols-outlined text-tertiary text-[22px]">timer_off</span>
           </div>
-          <div className="flex items-baseline justify-between mt-1">
-            <div className="font-headline-xl text-headline-xl text-primary font-bold">
-              {pendingCount} <span className="font-body-sm text-body-sm text-outline font-normal">lô</span>
-            </div>
-            <span className="inline-flex items-center text-on-tertiary-container font-label-sm text-label-sm font-semibold bg-tertiary-fixed px-2 py-0.5 rounded-full">
-              <span className="material-symbols-outlined text-[14px] mr-0.5">priority_high</span>{pendingCount} chờ
-            </span>
+          <div className="my-2">
+            <div className="text-2xl font-black text-tertiary">{waitingCount}</div>
+            <div className="text-xs text-on-surface-variant">Draft &gt;4h hoặc Confirmed &gt;8h</div>
           </div>
-          <div className="mt-space-md w-full bg-surface-container h-1 rounded-full overflow-hidden">
-            <div className="bg-on-tertiary-container h-full rounded-full" style={{ width: totalCount > 0 ? `${(pendingCount / totalCount) * 100}%` : '0%' }}></div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-tertiary h-full rounded-full"
+              style={{ width: `${flaggedOrders.length ? (waitingCount / flaggedOrders.length) * 100 : 0}%` }}
+            ></div>
           </div>
         </div>
 
-        {/* Stat 4 */}
-        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-space-sm">
-            <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider font-semibold">
-              Giao thành công (Delivered)
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-secondary">
-              <span className="material-symbols-outlined text-[20px]">verified</span>
-            </div>
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-secondary uppercase font-semibold">Điều phối viên</span>
+            <span className="material-symbols-outlined text-secondary text-[22px]">groups</span>
           </div>
-          <div className="flex items-baseline justify-between mt-1">
-            <div className="font-headline-xl text-headline-xl text-primary font-bold">
-              {completedCount} <span className="font-body-sm text-body-sm text-outline font-normal">đơn</span>
-            </div>
-            <span className="font-label-sm text-label-sm text-outline">
-              {totalCount > 0 ? `Đạt ${((completedCount / totalCount) * 100).toFixed(0)}% hoàn tất` : '0% hoàn tất'}
-            </span>
+          <div className="my-2">
+            <div className="text-2xl font-black text-secondary">{dispatchers.length}</div>
+            <div className="text-xs text-on-surface-variant">Đang trực xử lý đơn hàng</div>
           </div>
-          <div className="mt-space-md w-full bg-surface-container h-1 rounded-full overflow-hidden">
-            <div className="bg-secondary h-full rounded-full" style={{ width: totalCount > 0 ? `${(completedCount / totalCount) * 100}%` : '0%' }}></div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div className="bg-secondary h-full rounded-full" style={{ width: '100%' }}></div>
           </div>
         </div>
       </div>
 
-      {/* Operational Hub & Quick Telemetry Preview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-space-md">
-        {/* Active Dispatch Radar Card */}
-        <div className="lg:col-span-2 bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-space-md">
-            <div className="flex items-center gap-space-sm">
-              <span className="material-symbols-outlined text-secondary text-[22px]">radar</span>
-              <div>
-                <h3 className="font-headline-sm text-headline-sm text-primary font-bold">
-                  Hành lang Vận tải Cao điểm (Live Air Corridor)
-                </h3>
-                <p className="font-body-sm text-body-sm text-outline">
-                  Luồng bay chính: Nội Bài (HAN) — Tân Sơn Nhất (SGN) — Quốc tế
-                </p>
-              </div>
-            </div>
-            <span className="px-2.5 py-1 rounded bg-surface-container-low text-secondary font-label-sm text-label-sm font-semibold">
-              Tần suất: 45p/chuyến
-            </span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-space-md py-space-sm">
-            <div className="p-space-md rounded-xl bg-surface-container-low flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="font-label-sm text-label-sm text-outline uppercase font-semibold">HAN → SGN</span>
-                <span className="w-2 h-2 rounded-full bg-secondary"></span>
-              </div>
-              <div className="my-2">
-                <div className="font-headline-md text-headline-md text-primary font-bold">42 Đơn</div>
-                <div className="font-body-sm text-body-sm text-on-surface-variant">14.8 Tấn hàng rời &amp; AOG</div>
-              </div>
-              <div className="font-label-sm text-label-sm text-secondary font-medium">Chuyến kế: VN217 (15:15)</div>
-            </div>
-            <div className="p-space-md rounded-xl bg-surface-container-low flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="font-label-sm text-label-sm text-outline uppercase font-semibold">SIN → HAN</span>
-                <span className="w-2 h-2 rounded-full bg-on-tertiary-container"></span>
-              </div>
-              <div className="my-2">
-                <div className="font-headline-md text-headline-md text-primary font-bold">18 Đơn</div>
-                <div className="font-body-sm text-body-sm text-on-surface-variant">Linh kiện điện tử bán dẫn</div>
-              </div>
-              <div className="font-label-sm text-label-sm text-on-tertiary-container font-medium">SQ724 đang hạ cánh</div>
-            </div>
-            <div className="p-space-md rounded-xl bg-surface-container-low flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="font-label-sm text-label-sm text-outline uppercase font-semibold">FRA → SGN</span>
-                <span className="w-2 h-2 rounded-full bg-secondary"></span>
-              </div>
-              <div className="my-2">
-                <div className="font-headline-md text-headline-md text-primary font-bold">9 Đơn</div>
-                <div className="font-body-sm text-body-sm text-on-surface-variant">Cold Chain Dược phẩm</div>
-              </div>
-              <div className="font-label-sm text-label-sm text-secondary font-medium">EK392 đúng lịch 18:00</div>
-            </div>
-          </div>
-        </div>
+      {/* Main Tabs Navigation */}
+      <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md border border-outline-variant/20">
+        <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container pb-space-sm">
+          <div className="flex items-center gap-space-xs">
+            <button
+              onClick={() => setActiveMainTab('FLAGGED')}
+              className={`px-4 py-2 rounded-xl font-label-lg text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                activeMainTab === 'FLAGGED'
+                  ? 'bg-error text-white shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">emergency</span>
+              <span>Đơn Bị Gắn Cờ ({flaggedOrders.length})</span>
+            </button>
 
-        {/* Gateway Hub Map */}
-        <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-space-sm">
-            <h3 className="font-headline-sm text-headline-sm text-primary font-bold">Bản đồ luồng Gateway</h3>
-            <span className="material-symbols-outlined text-outline text-[20px]">hub</span>
-          </div>
-          <div className="relative w-full h-36 rounded-xl overflow-hidden bg-primary/20 flex items-center justify-center">
-            <div className="absolute inset-0 bg-gradient-to-t from-primary/90 via-primary/50 to-transparent flex items-end p-3">
-              <div className="text-on-primary">
-                <div className="font-label-lg text-label-lg font-bold">Sân bay Quốc tế Nội Bài (HAN)</div>
-                <div className="font-body-sm text-body-sm text-inverse-on-surface opacity-90">
-                  Khu ga hàng hóa ALS Cargo Terminal
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mt-space-sm flex items-center justify-between text-on-surface-variant font-body-sm text-body-sm">
-            <span>Tải trọng ga hiện tại:</span>
-            <span className="font-semibold text-primary">76% Công suất</span>
-          </div>
-        </div>
-      </div>
+            <button
+              onClick={() => setActiveMainTab('WORKLOAD')}
+              className={`px-4 py-2 rounded-xl font-label-lg text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                activeMainTab === 'WORKLOAD'
+                  ? 'bg-primary text-on-primary shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">bar_chart</span>
+              <span>Tải Điều Phối Viên ({dispatchers.length})</span>
+            </button>
 
-      {/* Filter & Navigation Segment Container */}
-      <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md space-y-space-md">
-        {/* Segment Tabs */}
-        <div className="flex items-center justify-between border-b border-surface-container pb-space-sm overflow-x-auto gap-space-sm">
-          <div className="flex items-center gap-space-xs shrink-0">
             <button
-              onClick={() => setActiveTab('ALL')}
-              className={`px-space-md py-2 rounded-lg font-label-lg text-label-lg font-semibold transition-colors cursor-pointer ${
-                activeTab === 'ALL'
+              onClick={() => setActiveMainTab('ALL')}
+              className={`px-4 py-2 rounded-xl font-label-lg text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                activeMainTab === 'ALL'
                   ? 'bg-primary text-on-primary shadow-sm'
                   : 'text-on-surface-variant hover:bg-surface-container-low'
               }`}
-              type="button"
             >
-              Tất cả đơn ({orders.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('PENDING')}
-              className={`px-space-md py-2 rounded-lg font-label-lg text-label-lg font-semibold transition-colors cursor-pointer ${
-                activeTab === 'PENDING'
-                  ? 'bg-primary text-on-primary shadow-sm'
-                  : 'text-on-surface-variant hover:bg-surface-container-low'
-              }`}
-              type="button"
-            >
-              Chờ điều phối ({orders.filter((o) => o.status === 'PENDING').length})
-            </button>
-            <button
-              onClick={() => setActiveTab('IN_PROGRESS')}
-              className={`px-space-md py-2 rounded-lg font-label-lg text-label-lg font-semibold transition-colors cursor-pointer ${
-                activeTab === 'IN_PROGRESS'
-                  ? 'bg-primary text-on-primary shadow-sm'
-                  : 'text-on-surface-variant hover:bg-surface-container-low'
-              }`}
-              type="button"
-            >
-              Đang vận chuyển ({orders.filter((o) => o.status === 'IN_PROGRESS' || o.status === 'ON_TRIP').length})
-            </button>
-            <button
-              onClick={() => setActiveTab('COMPLETED')}
-              className={`px-space-md py-2 rounded-lg font-label-lg text-label-lg font-semibold transition-colors cursor-pointer ${
-                activeTab === 'COMPLETED'
-                  ? 'bg-primary text-on-primary shadow-sm'
-                  : 'text-on-surface-variant hover:bg-surface-container-low'
-              }`}
-              type="button"
-            >
-              Hoàn tất ({orders.filter((o) => o.status === 'COMPLETED').length})
+              <span className="material-symbols-outlined text-[18px]">list_alt</span>
+              <span>Tất Cả Đơn Hàng ({orders.length})</span>
             </button>
           </div>
-        </div>
 
-        {/* Filter Selectors & Inline Search Bar */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-space-sm items-center">
-          {/* Search Input */}
-          <div className="md:col-span-6 relative">
+          {/* Quick Search */}
+          <div className="w-full sm:w-72 relative">
             <span className="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px] pointer-events-none">
               search
             </span>
             <input
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="w-full h-10 pl-9 pr-space-md bg-surface-container-low rounded-xl font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary transition-all"
-              placeholder="Tìm kiếm mã vận đơn HAWB, mã đơn, điều phối viên..."
+              className="w-full h-9 pl-9 pr-space-md bg-surface-container-low rounded-xl text-xs text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary"
+              placeholder="Tìm theo mã đơn, ĐPV, lý do..."
               type="text"
             />
           </div>
-
-          {/* Route Dropdown */}
-          <div className="md:col-span-3">
-            <select
-              value={selectedRoute}
-              onChange={(e) => setSelectedRoute(e.target.value)}
-              className="w-full h-10 px-space-sm bg-surface-container-low rounded-xl font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary cursor-pointer"
-            >
-              <option value="ALL">Tất cả Tuyến vận chuyển</option>
-              <option value="HAN-SGN">HAN → SGN (Bắc - Nam)</option>
-              <option value="DAD-SGN">DAD → SGN (Miền Trung)</option>
-              <option value="INTL">Quốc tế (Inbound/Outbound)</option>
-            </select>
-          </div>
-
-          {/* Service Dropdown */}
-          <div className="md:col-span-3">
-            <select
-              value={selectedService}
-              onChange={(e) => setSelectedService(e.target.value)}
-              className="w-full h-10 px-space-sm bg-surface-container-low rounded-xl font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary cursor-pointer"
-            >
-              <option value="ALL">Tất cả Loại dịch vụ</option>
-              <option value="AIR_EXP">Air Cargo Express (Ưu tiên)</option>
-              <option value="COLD">Cold Chain (Dược phẩm/2-8°C)</option>
-              <option value="ROAD_FTL">Đường bộ FTL / Xe tải liên tỉnh</option>
-            </select>
-          </div>
         </div>
-      </div>
 
-      {/* Master Data Table Section */}
-      <div className="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col">
-        {loading ? (
-          <div className="py-20 flex justify-center items-center">
-            <Spin size="large" description="Đang tải danh sách đơn hàng..." />
-          </div>
-        ) : (
-          <div className="overflow-x-auto w-full">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-surface-container-low text-on-surface-variant uppercase font-label-sm text-label-sm tracking-wider">
-                  <th className="py-3 px-space-md font-semibold">MÃ VẬN ĐƠN</th>
-                  <th className="py-3 px-space-md font-semibold">ĐIỀU PHỐI VIÊN</th>
-                  <th className="py-3 px-space-md font-semibold">TUYẾN ĐƯỜNG &amp; HÀNH TRÌNH</th>
-                  <th className="py-3 px-space-md font-semibold">GIÁ CƯỚC THỎA THUẬN</th>
-                  <th className="py-3 px-space-md font-semibold">TRẠNG THÁI</th>
-                  <th className="py-3 px-space-md font-semibold text-right">THAO TÁC</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container font-body-md text-body-md">
-                {filteredOrders.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="py-12 text-center text-outline">
-                      Không tìm thấy đơn hàng nào phù hợp.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredOrders.map((order, idx) => (
-                    <tr key={order.id || idx} className="hover:bg-surface-container-low/60 transition-colors">
-                      {/* Mã vận đơn */}
-                      <td className="py-3.5 px-space-md">
-                        <div className="flex items-center gap-space-sm">
-                          <span className="material-symbols-outlined text-secondary text-[20px]">
-                            airplanemode_active
-                          </span>
-                          <div className="flex flex-col">
-                            <span className="font-data-mono text-data-mono font-bold text-primary">
-                              {order.code || `HAWB-${String(idx + 1).padStart(5, '0')}`}
-                            </span>
-                            <span className="font-label-sm text-label-sm text-outline">
-                              Ref: {order.tracking_token ? order.tracking_token.substring(0, 8) : 'ALS-CARGO'}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
+        {/* SUB-TAB 1: FLAGGED ORDERS (TABLE 2 - SCREEN 18) */}
+        {activeMainTab === 'FLAGGED' && (
+          <div className="mt-space-md space-y-space-md">
+            {/* Filter buttons */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-outline">Lọc loại cờ:</span>
+              <button
+                onClick={() => setFlagFilter('ALL')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  flagFilter === 'ALL' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Tất cả ({flaggedOrders.length})
+              </button>
+              <button
+                onClick={() => setFlagFilter('WAITING')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  flagFilter === 'WAITING' ? 'bg-amber-600 text-white' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Chờ quá lâu (BR-25) ({waitingCount})
+              </button>
+              <button
+                onClick={() => setFlagFilter('DOCS')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  flagFilter === 'DOCS' ? 'bg-purple-600 text-white' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Quá hạn chứng từ (MSG41) ({docsCount})
+              </button>
+              <button
+                onClick={() => setFlagFilter('LATE')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  flagFilter === 'LATE' ? 'bg-red-600 text-white' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Nguy cơ trễ (BR-13) ({lateCount})
+              </button>
+            </div>
 
-                      {/* Điều phối viên */}
-                      <td className="py-3.5 px-space-md">
-                        <div className="flex items-center gap-space-sm">
-                          <div className="w-7 h-7 rounded-full bg-surface-container-high flex items-center justify-center font-bold text-primary text-label-sm">
-                            {(order.dispatcher_name || 'D').charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-primary">
-                              {order.dispatcher_name || 'Chưa phân công'}
-                            </span>
-                            <span className="font-body-sm text-body-sm text-outline">
-                              {order.dispatcher_username || 'Dispatcher'}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Tuyến đường */}
-                      <td className="py-3.5 px-space-md">
-                        <div className="flex items-center gap-space-xs font-data-mono text-data-mono text-primary font-semibold">
-                          <span className="px-1.5 py-0.5 rounded bg-surface-container font-bold text-primary">
-                            HAN
-                          </span>
-                          <span className="material-symbols-outlined text-[14px] text-outline">
-                            arrow_forward
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded bg-surface-container font-bold text-primary">
-                            SGN
-                          </span>
-                          <span className="ml-1 text-secondary font-medium">(Tuyến trục)</span>
-                        </div>
-                      </td>
-
-                      {/* Giá cước */}
-                      <td className="py-3.5 px-space-md">
-                        <div className="flex flex-col">
-                          <span className="font-data-mono font-bold text-primary">
-                            {order.agreed_price
-                              ? Number(order.agreed_price).toLocaleString('vi-VN') + ' đ'
-                              : '15.000.000 đ'}
-                          </span>
-                          <span className="font-label-sm text-label-sm text-outline">Đã xác nhận cước</span>
-                        </div>
-                      </td>
-
-                      {/* Trạng thái */}
-                      <td className="py-3.5 px-space-md">
-                        {order.status === 'IN_PROGRESS' || order.status === 'ON_TRIP' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-highest text-secondary font-label-sm text-label-sm font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-                            Đang vận chuyển
-                          </span>
-                        ) : order.status === 'COMPLETED' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-primary-fixed-variant font-label-sm text-label-sm font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                            Hoàn tất
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-tertiary-fixed text-on-tertiary-container font-label-sm text-label-sm font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-on-tertiary-container"></span>
-                            Chờ điều phối
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Thao tác */}
-                      <td className="py-3.5 px-space-md text-right">
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            onClick={() => handleOpenReassignModal(order)}
-                            className="px-2.5 py-1 rounded-lg bg-surface-container text-secondary hover:bg-secondary hover:text-on-secondary font-label-md text-label-md font-semibold transition-colors cursor-pointer"
-                            type="button"
-                          >
-                            Chuyển giao
-                          </button>
-                        </div>
-                      </td>
+            {loading ? (
+              <div className="py-16 flex justify-center"><Spin size="large" /></div>
+            ) : filteredFlagged.length === 0 ? (
+              <div className="py-12 text-center text-outline bg-surface-container-low/30 rounded-xl">
+                <span className="material-symbols-outlined text-4xl text-secondary mb-2">check_circle</span>
+                <p className="font-semibold text-on-surface">Không có đơn hàng nào bị ách tắc hoặc gắn cờ!</p>
+                <p className="text-xs text-outline mt-1">Toàn bộ luồng điều phối đang vận hành trong ngưỡng cam kết SLA.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider">
+                      <th className="py-3 px-space-md">MÃ ĐƠN</th>
+                      <th className="py-3 px-space-md">LOẠI ĐƠN</th>
+                      <th className="py-3 px-space-md">LÝ DO GẮN CỜ</th>
+                      <th className="py-3 px-space-md">THỜI GIAN TỒN</th>
+                      <th className="py-3 px-space-md">ĐPV PHỤ TRÁCH</th>
+                      <th className="py-3 px-space-md text-right">THAO TÁC</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container text-sm">
+                    {filteredFlagged.map((o) => (
+                      <tr key={o.id} className="hover:bg-error-container/10 transition-colors">
+                        <td className="py-3 px-space-md font-mono font-bold text-primary">
+                          <div className="flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-error text-[18px]">warning</span>
+                            <span>{o.code || o.order_code || `ORD-#${o.id}`}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <Tag color={o.order_type === 'Import' ? 'blue' : 'cyan'}>
+                            {o.order_type || 'Export'}
+                          </Tag>
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <span className="inline-block px-2.5 py-1 rounded-md bg-error-container text-on-error-container text-xs font-bold">
+                            {o.flag_reason}
+                          </span>
+                        </td>
+                        <td className="py-3 px-space-md font-medium text-on-surface-variant">
+                          <span className="text-error font-bold">{o.age_hours} giờ</span> trôi qua
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center font-bold text-xs text-primary">
+                              {(o.dispatcher_name || 'D').charAt(0)}
+                            </div>
+                            <span className="font-semibold text-primary">{o.dispatcher_name}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-space-md text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() => handleOpenDetailModal(o.id)}
+                              className="px-2.5 py-1 rounded-lg bg-surface-container-low text-primary hover:bg-surface-container text-xs font-semibold cursor-pointer"
+                            >
+                              Chi tiết
+                            </button>
+                            <button
+                              onClick={() => handleOpenReassignModal(o)}
+                              className="px-3 py-1 rounded-lg bg-secondary text-on-secondary hover:bg-secondary-container text-xs font-bold shadow-sm transition-all cursor-pointer"
+                            >
+                              Điều chuyển
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SUB-TAB 2: DISPATCHER WORKLOAD (TABLE 1 - SCREEN 18) */}
+        {activeMainTab === 'WORKLOAD' && (
+          <div className="mt-space-md space-y-space-md">
+            {loading ? (
+              <div className="py-16 flex justify-center"><Spin size="large" /></div>
+            ) : dispatchers.length === 0 ? (
+              <div className="py-12 text-center text-outline">Chưa có điều phối viên nào trong hệ thống.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider">
+                      <th className="py-3 px-space-md">ĐIỀU PHỐI VIÊN</th>
+                      <th className="py-3 px-space-md">TỔNG ĐƠN ĐÃ GÁN</th>
+                      <th className="py-3 px-space-md">ĐANG XỬ LÝ (ACTIVE)</th>
+                      <th className="py-3 px-space-md">ĐƠN BỊ GẮN CỜ</th>
+                      <th className="py-3 px-space-md">HOÀN TẤT</th>
+                      <th className="py-3 px-space-md w-56">MỨC ĐỘ TẢI (% LOAD)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container text-sm">
+                    {dispatchers.map((d) => {
+                      const isOverloaded = d.load_percent >= 90;
+                      const isHigh = d.load_percent >= 70 && d.load_percent < 90;
+                      const loadColor = isOverloaded ? 'bg-error' : isHigh ? 'bg-amber-500' : 'bg-secondary';
+
+                      return (
+                        <tr key={d.id} className="hover:bg-surface-container-low/50 transition-colors">
+                          <td className="py-3.5 px-space-md">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
+                                {d.full_name?.charAt(0) || d.username?.charAt(0)}
+                              </div>
+                              <div>
+                                <div className="font-bold text-primary">{d.full_name}</div>
+                                <div className="text-xs text-outline font-mono">@{d.username}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-space-md font-bold text-primary">{d.total_orders}</td>
+                          <td className="py-3.5 px-space-md">
+                            <span className="font-bold text-primary">{d.active_orders}</span>
+                            <span className="text-xs text-outline ml-1">đơn</span>
+                          </td>
+                          <td className="py-3.5 px-space-md">
+                            {d.flagged_orders > 0 ? (
+                              <Tag color="red" className="font-bold">
+                                {d.flagged_orders} đơn cảnh báo
+                              </Tag>
+                            ) : (
+                              <span className="text-xs text-secondary font-semibold">Bình thường</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-space-md font-medium text-on-surface-variant">
+                            {d.completed_orders} đơn
+                          </td>
+                          <td className="py-3.5 px-space-md">
+                            <div className="flex items-center gap-2">
+                              <div className="w-full bg-surface-container h-2.5 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${loadColor}`} style={{ width: `${d.load_percent}%` }}></div>
+                              </div>
+                              <span className={`text-xs font-bold w-10 text-right ${isOverloaded ? 'text-error' : isHigh ? 'text-amber-600' : 'text-secondary'}`}>
+                                {d.load_percent}%
+                              </span>
+                            </div>
+                            {isOverloaded && (
+                              <span className="text-[10px] text-error font-bold mt-0.5 block">
+                                Cảnh báo: Quá tải!
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SUB-TAB 3: ALL ORDERS TABLE */}
+        {activeMainTab === 'ALL' && (
+          <div className="mt-space-md space-y-space-md">
+            {/* Status Tabs */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setOrderStatusTab('ALL')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  orderStatusTab === 'ALL' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Tất cả ({orders.length})
+              </button>
+              <button
+                onClick={() => setOrderStatusTab('IN_TRANSIT')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  orderStatusTab === 'IN_TRANSIT' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Đang vận chuyển ({orders.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'ON_TRIP').length})
+              </button>
+              <button
+                onClick={() => setOrderStatusTab('CONFIRMED')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  orderStatusTab === 'CONFIRMED' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Chờ gán chuyến ({orders.filter((o) => o.status === 'CONFIRMED' || o.status === 'READY_FOR_PLANNING').length})
+              </button>
+              <button
+                onClick={() => setOrderStatusTab('DRAFT')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  orderStatusTab === 'DRAFT' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Bản nháp ({orders.filter((o) => o.status === 'DRAFT').length})
+              </button>
+              <button
+                onClick={() => setOrderStatusTab('COMPLETED')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  orderStatusTab === 'COMPLETED' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Hoàn tất ({orders.filter((o) => o.status === 'COMPLETED').length})
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="py-16 flex justify-center"><Spin size="large" /></div>
+            ) : filteredAllOrders.length === 0 ? (
+              <div className="py-12 text-center text-outline">Không tìm thấy đơn hàng nào.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider">
+                      <th className="py-3 px-space-md">MÃ ĐƠN</th>
+                      <th className="py-3 px-space-md">LOẠI ĐƠN</th>
+                      <th className="py-3 px-space-md">ĐIỀU PHỐI VIÊN</th>
+                      <th className="py-3 px-space-md">GIÁ THỎA THUẬN</th>
+                      <th className="py-3 px-space-md">TRẠNG THÁI</th>
+                      <th className="py-3 px-space-md text-right">THAO TÁC</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container text-sm">
+                    {filteredAllOrders.map((o) => (
+                      <tr key={o.id} className="hover:bg-surface-container-low/50 transition-colors">
+                        <td className="py-3.5 px-space-md font-mono font-bold text-primary">
+                          <div className="flex items-center gap-2">
+                            {o.is_flagged && (
+                              <Tooltip title={o.flag_reason}>
+                                <span className="material-symbols-outlined text-error text-[18px]">warning</span>
+                              </Tooltip>
+                            )}
+                            <span>{o.code || o.order_code || `ORD-#${o.id}`}</span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-space-md">
+                          <Tag color={o.order_type === 'Import' ? 'blue' : 'cyan'}>
+                            {o.order_type || 'Export'}
+                          </Tag>
+                        </td>
+                        <td className="py-3.5 px-space-md">
+                          <span className="font-semibold text-primary">{o.dispatcher_name}</span>
+                        </td>
+                        <td className="py-3.5 px-space-md font-mono font-semibold text-primary">
+                          {o.agreed_price ? Number(o.agreed_price).toLocaleString('vi-VN') + ' đ' : 'Chưa có giá'}
+                        </td>
+                        <td className="py-3.5 px-space-md">
+                          <Tag color={
+                            o.status === 'IN_TRANSIT' ? 'orange' :
+                            o.status === 'COMPLETED' ? 'green' :
+                            o.status === 'DRAFT' ? 'default' : 'blue'
+                          }>
+                            {o.status}
+                          </Tag>
+                        </td>
+                        <td className="py-3.5 px-space-md text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() => handleOpenDetailModal(o.id)}
+                              className="px-2.5 py-1 rounded-lg bg-surface-container-low text-primary hover:bg-surface-container text-xs font-semibold cursor-pointer"
+                            >
+                              Xem
+                            </button>
+                            <button
+                              onClick={() => handleOpenReassignModal(o)}
+                              className="px-2.5 py-1 rounded-lg bg-surface-container text-secondary hover:bg-secondary hover:text-white text-xs font-semibold transition-all cursor-pointer"
+                            >
+                              Chuyển
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Modal Chuyển giao điều phối viên */}
+      {/* MODAL 1: ĐIỀU CHUYỂN ĐƠN HÀNG (UC-22 - SCREEN 18) */}
       <Modal
         title={
-          <span className="font-headline-sm font-bold text-primary">
-            Chuyển Giao Đơn Hàng Cho Điều Phối Viên Khác
-          </span>
+          <div className="flex items-center gap-2 text-primary font-headline-sm font-bold">
+            <span className="material-symbols-outlined text-secondary">sync_alt</span>
+            <span>Điều Chuyển Đơn Hàng Sang Điều Phối Viên Khác</span>
+          </div>
         }
         open={isReassignModalOpen}
         onCancel={() => setIsReassignModalOpen(false)}
@@ -552,12 +641,18 @@ export default function OrdersWorkloadPage() {
         destroyOnHidden
       >
         <div className="mt-4 space-y-4">
-          <p className="text-on-surface-variant font-body-sm">
-            Mã đơn: <strong className="text-primary">{selectedOrder?.code}</strong>
-          </p>
+          <div className="p-3 bg-surface-container-low rounded-xl text-xs space-y-1">
+            <div>Mã đơn: <strong className="text-primary font-mono">{selectedOrder?.code || selectedOrder?.order_code}</strong></div>
+            <div>Loại đơn: <Tag color="blue">{selectedOrder?.order_type || 'Export'}</Tag></div>
+            <div>ĐPV hiện tại: <strong className="text-primary">{selectedOrder?.dispatcher_name}</strong></div>
+            {selectedOrder?.flag_reason && (
+              <div className="text-error font-semibold">Cảnh báo: {selectedOrder?.flag_reason}</div>
+            )}
+          </div>
+
           <div>
-            <label className="block text-sm font-semibold text-primary mb-1">
-              Chọn điều phối viên phụ trách mới:
+            <label className="block text-xs font-bold uppercase text-outline mb-1">
+              Chọn Điều Phối Viên Mới Phụ Trách: *
             </label>
             <Select
               className="w-full h-10"
@@ -566,27 +661,132 @@ export default function OrdersWorkloadPage() {
               onChange={(val) => setNewDispatcherId(val)}
               options={dispatchers.map((d) => ({
                 value: d.id,
-                label: `${d.full_name} (${d.username}) — Đang xử lý: ${d.active_orders || 0} đơn`
+                label: `${d.full_name} (@${d.username}) — Đang xử lý: ${d.active_orders} đơn (${d.load_percent}% tải)`
               }))}
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-4">
+          <div>
+            <label className="block text-xs font-bold uppercase text-outline mb-1">
+              Lý do điều chuyển (Lưu nhật ký activity_logs):
+            </label>
+            <Input.TextArea
+              rows={2}
+              value={reassignReason}
+              onChange={(e) => setReassignReason(e.target.value)}
+              placeholder="VD: Điều chuyển giảm tải do đơn ách tắc quá lâu theo BR-25"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-surface-container">
             <button
               onClick={() => setIsReassignModalOpen(false)}
-              className="px-4 py-2 rounded-xl bg-surface-container-low text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-surface-container-low text-on-surface hover:bg-surface-container text-xs font-semibold cursor-pointer"
             >
               Hủy
             </button>
             <button
               onClick={handleConfirmReassign}
               disabled={reassigning}
-              className="px-5 py-2 rounded-xl bg-secondary text-on-secondary font-semibold hover:bg-secondary-container transition-all cursor-pointer"
+              className="px-5 py-2 rounded-xl bg-secondary text-on-secondary text-xs font-bold hover:bg-secondary-container transition-all cursor-pointer shadow-sm"
             >
-              {reassigning ? 'Đang cập nhật...' : 'Xác nhận chuyển'}
+              {reassigning ? 'Đang điều chuyển...' : 'Xác nhận điều chuyển (MSG29)'}
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* MODAL 2: XEM CHI TIẾT ĐƠN HÀNG CHẾ ĐỘ CHỈ ĐỌC (SCREEN 09 READ-ONLY) */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-primary font-headline-sm font-bold">
+            <span className="material-symbols-outlined text-primary">visibility</span>
+            <span>Chi Tiết Đơn Hàng (Chế độ xem xét dành cho Quản lý)</span>
+          </div>
+        }
+        open={isDetailModalOpen}
+        onCancel={() => setIsDetailModalOpen(false)}
+        footer={[
+          <button
+            key="close"
+            onClick={() => setIsDetailModalOpen(false)}
+            className="px-4 py-2 rounded-xl bg-surface-container text-primary font-semibold text-xs cursor-pointer"
+          >
+            Đóng
+          </button>
+        ]}
+        width={750}
+        destroyOnHidden
+      >
+        {detailLoading ? (
+          <div className="py-12 flex justify-center"><Spin size="large" /></div>
+        ) : !orderDetail ? (
+          <div className="py-8 text-center text-outline">Không tìm thấy thông tin đơn hàng.</div>
+        ) : (
+          <div className="space-y-4 text-sm mt-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-surface-container-low rounded-xl">
+              <div>
+                <span className="text-xs text-outline block">Mã đơn:</span>
+                <span className="font-mono font-bold text-primary">{orderDetail.order_code || orderDetail.code}</span>
+              </div>
+              <div>
+                <span className="text-xs text-outline block">Loại đơn (V2):</span>
+                <Tag color={orderDetail.order_type === 'Import' ? 'blue' : 'cyan'}>
+                  {orderDetail.order_type || 'Export'}
+                </Tag>
+              </div>
+              <div>
+                <span className="text-xs text-outline block">Trạng thái:</span>
+                <Tag color="orange">{orderDetail.status}</Tag>
+              </div>
+              <div>
+                <span className="text-xs text-outline block">Trạng thái chứng từ:</span>
+                <Tag color={orderDetail.document_status === 'APPROVED' ? 'green' : 'gold'}>
+                  {orderDetail.document_status || 'PENDING'}
+                </Tag>
+              </div>
+              <div>
+                <span className="text-xs text-outline block">Giá thỏa thuận:</span>
+                <span className="font-mono font-bold text-primary">
+                  {orderDetail.agreed_price ? Number(orderDetail.agreed_price).toLocaleString('vi-VN') + ' đ' : 'Chưa có'}
+                </span>
+              </div>
+              <div>
+                <span className="text-xs text-outline block">ĐPV phụ trách:</span>
+                <span className="font-semibold text-primary">
+                  {orderDetail.dispatcher?.full_name || orderDetail.dispatcher?.username || 'Chưa gán'}
+                </span>
+              </div>
+            </div>
+
+            {/* Thông tin giao nhận */}
+            <div className="border border-surface-container rounded-xl p-3 space-y-2">
+              <div className="text-xs font-bold uppercase text-outline">Thông tin liên hệ & Giao nhận:</div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-outline">Người nhận / Doanh nghiệp:</span>{' '}
+                  <strong className="text-primary">{orderDetail.receiver_name || 'N/A'}</strong>
+                </div>
+                <div>
+                  <span className="text-outline">Số điện thoại:</span>{' '}
+                  <strong className="text-primary">{orderDetail.receiver_phone || 'N/A'}</strong>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-outline">Địa chỉ giao:</span>{' '}
+                  <span className="text-primary">{orderDetail.delivery_address || 'Địa chỉ tiêu chuẩn kho vận ALS'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Chế độ chỉ đọc thông báo */}
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-2 text-xs text-amber-800">
+              <span className="material-symbols-outlined text-[18px]">lock</span>
+              <span>
+                <strong>Chế độ Read-only (Screen 09):</strong> Quản lý chỉ xem xét thông tin để đánh giá tiến độ và hỗ trợ điều phối. Việc sửa đổi chi tiết hàng hóa do Điều phối viên thực hiện.
+              </span>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
