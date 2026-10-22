@@ -872,17 +872,17 @@ export default function BlogManagementPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-primary uppercase">Chuyên mục</label>
+                  <label className="text-xs font-bold text-primary uppercase">Chuyên mục (Screen 47)</label>
                   <select
                     value={newArticle.category}
                     onChange={e => setNewArticle({ ...newArticle, category: e.target.value })}
                     className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary cursor-pointer"
                   >
-                    <option value="Thị trường & Vận hành">Thị trường & Vận hành</option>
-                    <option value="Công nghệ & AI Chuỗi cung ứng">Công nghệ & AI Chuỗi cung ứng</option>
-                    <option value="Hạ tầng Ga hàng không">Hạ tầng Ga hàng không</option>
-                    <option value="Chính sách & Hải quan">Chính sách & Hải quan</option>
-                    <option value="Thông báo nội bộ">Thông báo nội bộ</option>
+                    <option value="Tin hoạt động ALS">Tin hoạt động ALS</option>
+                    <option value="Thông báo vận tải hàng không">Thông báo vận tải hàng không</option>
+                    <option value="Quy định & Thủ tục hải quan">Quy định & Thủ tục hải quan</option>
+                    <option value="Dịch vụ chuỗi lạnh (Cold Chain)">Dịch vụ chuỗi lạnh (Cold Chain)</option>
+                    <option value="Tin khuyến mãi & Đối tác">Tin khuyến mãi & Đối tác</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -897,31 +897,38 @@ export default function BlogManagementPage() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Ảnh đại diện (URL)</label>
+                <label className="text-xs font-bold text-primary uppercase">Ảnh đại diện (Cloudinary API-02 &lt; 10MB)</label>
                 <input
                   type="url"
                   value={newArticle.image}
                   onChange={e => setNewArticle({ ...newArticle, image: e.target.value })}
                   className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary"
-                  placeholder="https://images.unsplash.com/... (để trống nếu dùng ảnh tự động)"
+                  placeholder="https://res.cloudinary.com/... (ảnh bìa đại diện)"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Tóm tắt ngắn (Excerpt)</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-primary uppercase">Tóm tắt ngắn (Excerpt - Tối đa 200 ký tự)</label>
+                  <span className={`text-[11px] font-mono ${newArticle.summary?.length > 200 ? 'text-red-500 font-bold' : 'text-outline'}`}>
+                    {newArticle.summary?.length || 0}/200
+                  </span>
+                </div>
                 <textarea
                   rows={2}
+                  maxLength={200}
                   value={newArticle.summary}
                   onChange={e => setNewArticle({ ...newArticle, summary: e.target.value })}
                   className="p-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary resize-none"
-                  placeholder="Mô tả tóm tắt 1-2 câu hiển thị ở danh sách bài viết..."
+                  placeholder="Mô tả tóm tắt ngắn gọn hiển thị tại thẻ tin tức danh sách..."
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Nội dung chi tiết (Đoạn văn / Markdown)</label>
+                <label className="text-xs font-bold text-primary uppercase">Nội dung chi tiết (Rich text / Markdown) *</label>
                 <textarea
                   rows={6}
+                  required
                   value={newArticle.content}
                   onChange={e => setNewArticle({ ...newArticle, content: e.target.value })}
                   className="p-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary resize-none font-mono"
@@ -929,43 +936,88 @@ export default function BlogManagementPage() {
                 />
               </div>
 
-              <div className="flex justify-between items-center pt-2">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs font-bold text-outline">Trạng thái:</label>
-                  <select
-                    value={newArticle.status}
-                    onChange={e => setNewArticle({ ...newArticle, status: e.target.value })}
-                    className="h-8 px-2 bg-surface-container rounded-lg text-xs font-semibold cursor-pointer"
-                  >
-                    <option value="PUBLISHED">Xuất bản ngay</option>
-                    <option value="DRAFT">Lưu bản nháp</option>
-                  </select>
-                </div>
+              {/* Checkbox Đặt làm bài nổi bật */}
+              <div className="p-3 bg-surface-container-low rounded-xl flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-primary">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(newArticle.is_featured)}
+                    onChange={e => setNewArticle({ ...newArticle, is_featured: e.target.checked })}
+                    className="w-4 h-4 rounded text-secondary accent-secondary cursor-pointer"
+                  />
+                  <span>Đặt làm bài viết nổi bật (Hiển thị đầu trang chủ & banner tin tức)</span>
+                </label>
+                <span className="text-[11px] text-outline">Featured Post</span>
+              </div>
+
+              {/* Action buttons (Screen 47: Lưu nháp, Xem trước, Đăng bài) */}
+              <div className="flex flex-wrap justify-between items-center pt-3 border-t border-surface-container gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container cursor-pointer"
+                >
+                  Hủy
+                </button>
 
                 <div className="flex items-center gap-2">
-                  {newArticle.id && (
-                    <button
-                      type="button"
-                      onClick={() => setDeleteConfirmTarget({ type: 'single', article: newArticle })}
-                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 cursor-pointer transition-colors"
-                      title="Xoá bài viết này"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">delete</span>
-                      <span>Xoá bài</span>
-                    </button>
-                  )}
                   <button
                     type="button"
-                    onClick={() => setIsCreateModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container cursor-pointer"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setPreviewArticle(newArticle);
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-container text-primary hover:bg-surface-container-high cursor-pointer transition-colors"
                   >
-                    Hủy
+                    Xem trước
                   </button>
+
                   <button
-                    type="submit"
-                    className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-white shadow-md hover:bg-primary-container cursor-pointer"
+                    type="button"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      if (!newArticle.title?.trim()) {
+                        showToast('Vui lòng nhập tiêu đề bài viết (MSG69)', 'error');
+                        return;
+                      }
+                      try {
+                        const payload = { ...newArticle, status: 'DRAFT' };
+                        if (newArticle.id) await managerApi.updateBlog(newArticle.id, payload);
+                        else await managerApi.createBlog(payload);
+                        showToast('Đã lưu bản nháp thành công!');
+                        setIsCreateModalOpen(false);
+                        fetchBlogs();
+                      } catch (err) {
+                        showToast(err.message || 'Lỗi lưu bản nháp', 'error');
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-surface-container-low text-primary hover:bg-surface-container border border-surface-container cursor-pointer transition-colors"
                   >
-                    {newArticle.id ? 'Lưu cập nhật' : 'Lưu & Phát hành'}
+                    Lưu bản nháp
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      if (!newArticle.title?.trim() || !newArticle.content?.trim()) {
+                        showToast('Vui lòng điền đủ Tiêu đề và Nội dung bài viết (MSG69)', 'error');
+                        return;
+                      }
+                      try {
+                        const payload = { ...newArticle, status: 'PUBLISHED' };
+                        if (newArticle.id) await managerApi.updateBlog(newArticle.id, payload);
+                        else await managerApi.createBlog(payload);
+                        showToast('Đã xuất bản bài viết thành công (MSG25)!');
+                        setIsCreateModalOpen(false);
+                        fetchBlogs();
+                      } catch (err) {
+                        showToast(err.message || 'Lỗi đăng bài viết', 'error');
+                      }
+                    }}
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-secondary text-on-secondary shadow-md hover:bg-secondary-container cursor-pointer transition-all"
+                  >
+                    Đăng bài (MSG25)
                   </button>
                 </div>
               </div>

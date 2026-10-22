@@ -1,482 +1,706 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { message, Spin } from 'antd';
+import { Modal, Input, message, Spin, Tag } from 'antd';
 import { managerApi } from '../../api/managerApi';
 
 export default function VendorsPage() {
   const [loading, setLoading] = useState(true);
+  const [activeMainTab, setActiveMainTab] = useState('VENDORS'); // 'VENDORS', 'CONTRACTS', 'LOCATIONS'
+
+  // Vendors state (Screen 28 & 29)
   const [vendors, setVendors] = useState([]);
-  const [activeTab, setActiveTab] = useState('ALL');
-  const [approvingId, setApprovingId] = useState(null);
+  const [vendorSummary, setVendorSummary] = useState({ total: 0, approved: 0, pending: 0, suspended: 0 });
+  const [vendorFilter, setVendorFilter] = useState('ALL'); // 'ALL', 'APPROVED', 'PENDING', 'SUSPENDED'
+  const [vendorSearch, setVendorSearch] = useState('');
 
-  const fetchVendors = () => {
+  // Modal Screen 29 (Add / Edit Vendor)
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [editingVendor, setEditingVendor] = useState(null);
+  const [vendorForm, setVendorForm] = useState({
+    company_name: '',
+    contact_person: '',
+    phone: '',
+    truck_types: 'Xe tải 1.5T - 5T (Thùng kín)'
+  });
+  const [savingVendor, setSavingVendor] = useState(false);
+
+  // Contracts state (Screen 30, 31 Read-only)
+  const [contracts, setContracts] = useState([]);
+  const [contractsLoading, setContractsLoading] = useState(false);
+  const [contractSearch, setContractSearch] = useState('');
+
+  // Locations state (Screen 37 Read-only)
+  const [locations, setLocations] = useState([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [locationSearch, setLocationSearch] = useState('');
+
+  const fetchVendorsData = async () => {
     setLoading(true);
-    managerApi.getVendors()
-      .then(res => {
-        const vendorList = Array.isArray(res) ? res : (res?.vendors || []);
-        setVendors(vendorList);
-      })
-      .catch(error => {
-        console.error('Lỗi khi tải nhà xe & hợp đồng:', error);
-        message.error('Không thể kết nối Backend để lấy danh sách đối tác.');
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-    managerApi.getVendors()
-      .then(res => {
-        const vendorList = Array.isArray(res) ? res : (res?.vendors || []);
-        if (isMounted) setVendors(vendorList);
-      })
-      .catch(error => {
-        console.error('Lỗi khi tải nhà xe & hợp đồng:', error);
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
-
-    return () => { isMounted = false; };
-  }, []);
-
-  const handleApprove = async (vendor) => {
     try {
-      setApprovingId(vendor.id);
-      await managerApi.approveVendor(vendor.id);
-      message.success(`Đã phê duyệt đối tác & hợp đồng vận chuyển cho "${vendor.name}" thành công!`);
-      fetchVendors();
+      const res = await managerApi.getVendors();
+      setVendors(res.vendors || []);
+      setVendorSummary(res.summary || {
+        total: (res.vendors || []).length,
+        approved: (res.vendors || []).filter((v) => v.approval_status === 'APPROVED').length,
+        pending: (res.vendors || []).filter((v) => v.approval_status === 'PENDING').length,
+        suspended: (res.vendors || []).filter((v) => v.approval_status === 'SUSPENDED').length
+      });
     } catch (error) {
-      console.error('Lỗi khi duyệt nhà xe:', error);
-      message.error(error.message || 'Lỗi khi phê duyệt đối tác');
+      console.error('Lỗi khi tải nhà xe đối tác:', error);
+      message.error('Không thể kết nối Backend để lấy danh sách đối tác.');
     } finally {
-      setApprovingId(null);
+      setLoading(false);
     }
   };
 
-  const totalVendors = vendors.length;
-  const approvedVendors = vendors.filter(v => (v.status || v.approval_status) === 'APPROVED').length;
-  const pendingVendors = vendors.filter(v => (v.status || v.approval_status) === 'PENDING').length;
-  const activeContracts = vendors.filter(v => v.contract_status === 'ACTIVE').length;
-  const approvalRate = totalVendors > 0 ? Math.round((approvedVendors / totalVendors) * 100) : 0;
+  useEffect(() => {
+    let ignore = false;
+    async function loadVendors() {
+      try {
+        const res = await managerApi.getVendors();
+        if (!ignore) {
+          setVendors(res.vendors || []);
+          setVendorSummary(res.summary || {
+            total: (res.vendors || []).length,
+            approved: (res.vendors || []).filter((v) => v.approval_status === 'APPROVED').length,
+            pending: (res.vendors || []).filter((v) => v.approval_status === 'PENDING').length,
+            suspended: (res.vendors || []).filter((v) => v.approval_status === 'SUSPENDED').length
+          });
+        }
+      } catch (error) {
+        console.error('Lỗi khi tải nhà xe đối tác:', error);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    loadVendors();
+    return () => { ignore = true; };
+  }, []);
 
+  // Fetch contracts when tab switched
+  const fetchContracts = async () => {
+    setContractsLoading(true);
+    try {
+      const res = await managerApi.getContracts();
+      setContracts(res.contracts || []);
+    } catch (error) {
+      console.error('Lỗi khi tải hợp đồng:', error);
+      message.error('Không thể tải danh sách hợp đồng vận tải.');
+    } finally {
+      setContractsLoading(false);
+    }
+  };
+
+  // Fetch locations when tab switched
+  const fetchLocations = async () => {
+    setLocationsLoading(true);
+    try {
+      const res = await managerApi.getLocations();
+      setLocations(res.locations || []);
+    } catch (error) {
+      console.error('Lỗi khi tải địa điểm:', error);
+      message.error('Không thể tải danh sách địa điểm kho bãi.');
+    } finally {
+      setLocationsLoading(false);
+    }
+  };
+
+  const handleTabChange = (tab) => {
+    setActiveMainTab(tab);
+    if (tab === 'CONTRACTS' && contracts.length === 0) fetchContracts();
+    if (tab === 'LOCATIONS' && locations.length === 0) fetchLocations();
+  };
+
+  // Open Add Vendor Modal
+  const handleOpenAddModal = () => {
+    setEditingVendor(null);
+    setVendorForm({
+      company_name: '',
+      contact_person: '',
+      phone: '',
+      truck_types: 'Xe tải 1.5T - 5T (Thùng kín)'
+    });
+    setIsVendorModalOpen(true);
+  };
+
+  // Open Edit Vendor Modal
+  const handleOpenEditModal = (vendor) => {
+    setEditingVendor(vendor);
+    setVendorForm({
+      company_name: vendor.company_name || vendor.name || '',
+      contact_person: vendor.contact_person || '',
+      phone: vendor.phone || '',
+      truck_types: vendor.truck_types || 'Xe tải 1.5T - 5T (Thùng kín)'
+    });
+    setIsVendorModalOpen(true);
+  };
+
+  // Save Vendor (Create or Update)
+  const handleSaveVendor = async () => {
+    if (!vendorForm.company_name?.trim()) {
+      message.warning('Vui lòng nhập tên công ty nhà xe đối tác (MSG02).');
+      return;
+    }
+
+    try {
+      setSavingVendor(true);
+      if (editingVendor) {
+        await managerApi.updateVendor(editingVendor.id, vendorForm);
+        message.success('Cập nhật thông tin nhà xe đối tác thành công!');
+      } else {
+        await managerApi.createVendor(vendorForm);
+        message.success('Thêm mới nhà xe đối tác thành công (trạng thái Chờ duyệt)!');
+      }
+      setIsVendorModalOpen(false);
+      fetchVendorsData();
+    } catch (error) {
+      console.error('Lỗi lưu nhà xe:', error);
+      message.error(error.message || 'Lỗi khi lưu nhà xe đối tác');
+    } finally {
+      setSavingVendor(false);
+    }
+  };
+
+  // Change Vendor Status (Approve or Suspend)
+  const handleUpdateStatus = async (vendorId, newStatus) => {
+    try {
+      const res = await managerApi.updateVendorStatus(vendorId, newStatus);
+      message.success(res.message || 'Cập nhật trạng thái nhà xe thành công!');
+      fetchVendorsData();
+    } catch (error) {
+      console.error('Lỗi đổi trạng thái nhà xe:', error);
+      message.error(error.message || 'Lỗi khi cập nhật trạng thái');
+    }
+  };
+
+  // Filtered Vendors
   const filteredVendors = vendors.filter((v) => {
-    if (activeTab === 'AIRLINES') return v.name?.toLowerCase().includes('airline') || v.name?.toLowerCase().includes('cargo');
-    if (activeTab === 'FORWARDERS') return v.name?.toLowerCase().includes('dhl') || v.name?.toLowerCase().includes('chuyển');
-    return true;
+    const matchSearch =
+      !vendorSearch ||
+      v.company_name?.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+      v.contact_person?.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+      v.phone?.includes(vendorSearch);
+
+    const matchFilter = vendorFilter === 'ALL' || v.approval_status === vendorFilter;
+    return matchSearch && matchFilter;
   });
 
   return (
-    <div className="flex flex-col w-full">
-      {/* Top Executive Header Panel */}
-      <div className="relative bg-surface-container-lowest p-space-xl rounded-xl shadow-sm mb-space-lg overflow-hidden">
-        <div className="absolute -right-16 -top-24 w-96 h-96 rounded-full bg-surface-container-high/40 blur-3xl pointer-events-none"></div>
-        <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-space-lg">
-          <div className="flex flex-col max-w-3xl">
-            <div className="flex items-center gap-space-sm mb-space-xs flex-wrap">
-              <span className="font-headline-lg text-headline-lg text-primary tracking-tight font-bold">
-                Quản lý Đối tác &amp; Hãng Hàng Không
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-space-sm py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed-variant font-label-sm text-label-sm font-semibold uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-                Tổng đối tác: {totalVendors}
-              </span>
-              <span className="px-space-sm py-0.5 rounded-full bg-surface-container font-data-mono text-body-sm text-outline font-medium">
-                HỆ THỐNG QUẢN LÝ ĐỐI TÁC VẬN TẢI
-              </span>
-            </div>
-            <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">
-              Quản lý liên minh đối tác vận tải, các đại lý giao nhận hàng không, hợp đồng tải xe và hạn mức công nợ theo số liệu thực tế từ hệ thống cơ sở dữ liệu.
-            </p>
+    <div className="flex flex-col w-full space-y-space-lg">
+      {/* Top Hero Panel */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 relative overflow-hidden">
+        <div className="flex flex-col space-y-1 z-10">
+          <div className="flex items-center gap-space-sm flex-wrap">
+            <h1 className="text-2xl lg:text-3xl font-extrabold text-primary tracking-tight">
+              Quản Lý Nhà Xe Đối Tác & Hợp Đồng
+            </h1>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+              {vendorSummary.approved} Nhà xe đang hoạt động
+            </span>
           </div>
-          <div className="flex items-center gap-space-md flex-shrink-0">
-            <button
-              onClick={() => message.info('Đang mở mô-đun Đối soát công nợ...')}
-              className="inline-flex items-center justify-center gap-space-xs px-space-lg h-11 rounded-lg bg-surface-container-low hover:bg-surface-container-high text-primary font-label-lg text-label-lg transition-all shadow-sm cursor-pointer"
-              type="button"
-            >
-              <span className="material-symbols-outlined text-[19px] text-secondary">account_balance_wallet</span>
-              <span>Đối soát công nợ</span>
-            </button>
-            <button
-              onClick={() => message.info('Mở form Thêm đối tác vận tải mới')}
-              className="inline-flex items-center justify-center gap-space-xs px-space-lg h-11 rounded-lg bg-on-tertiary-container hover:bg-tertiary text-on-tertiary font-label-lg text-label-lg shadow-md hover:shadow-lg transition-all active:scale-[0.98] cursor-pointer"
-              type="button"
-            >
-              <span className="material-symbols-outlined text-[20px]">add_circle</span>
-              <span>+ Thêm đối tác mới</span>
-            </button>
+          <p className="font-body-md text-sm text-on-surface-variant max-w-3xl">
+            Thẩm định, phê duyệt và đình chỉ nhà xe vận chuyển ngoài (Vendor - UC-23), tra cứu điều khoản hợp đồng vận tải và mạng lưới kho bãi hàng không ALS (Read-only).
+          </p>
+        </div>
+
+        <div className="flex items-center gap-space-sm shrink-0 z-10">
+          <button
+            onClick={handleOpenAddModal}
+            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-secondary text-on-secondary font-label-lg text-sm font-bold hover:bg-secondary-container transition-all cursor-pointer shadow-sm"
+            type="button"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            <span>+ Thêm Nhà Xe Mới</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 4 Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-outline uppercase font-semibold">Tổng nhà xe</span>
+            <span className="material-symbols-outlined text-primary text-[22px]">domain</span>
+          </div>
+          <div className="my-2">
+            <div className="text-2xl font-black text-primary">{vendorSummary.total}</div>
+            <div className="text-xs text-on-surface-variant">Tổng số đối tác trong hệ thống</div>
+          </div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div className="bg-primary h-full rounded-full" style={{ width: '100%' }}></div>
+          </div>
+        </div>
+
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-secondary uppercase font-semibold">Đã phê duyệt (Approved)</span>
+            <span className="material-symbols-outlined text-secondary text-[22px]">verified</span>
+          </div>
+          <div className="my-2">
+            <div className="text-2xl font-black text-secondary">{vendorSummary.approved}</div>
+            <div className="text-xs text-on-surface-variant">Được phép gán đơn vận chuyển</div>
+          </div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-secondary h-full rounded-full"
+              style={{ width: `${vendorSummary.total ? (vendorSummary.approved / vendorSummary.total) * 100 : 0}%` }}
+            ></div>
+          </div>
+        </div>
+
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-amber-600 uppercase font-semibold">Chờ duyệt (Pending)</span>
+            <span className="material-symbols-outlined text-amber-600 text-[22px]">hourglass_top</span>
+          </div>
+          <div className="my-2">
+            <div className="text-2xl font-black text-amber-600">{vendorSummary.pending}</div>
+            <div className="text-xs text-on-surface-variant">Cần Manager xem xét hồ sơ</div>
+          </div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-amber-600 h-full rounded-full"
+              style={{ width: `${vendorSummary.total ? (vendorSummary.pending / vendorSummary.total) * 100 : 0}%` }}
+            ></div>
+          </div>
+        </div>
+
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-error uppercase font-semibold">Bị đình chỉ (Suspended)</span>
+            <span className="material-symbols-outlined text-error text-[22px]">block</span>
+          </div>
+          <div className="my-2">
+            <div className="text-2xl font-black text-error">{vendorSummary.suspended}</div>
+            <div className="text-xs text-on-surface-variant">Chặn phân chuyến do vi phạm/hết hạn</div>
+          </div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-error h-full rounded-full"
+              style={{ width: `${vendorSummary.total ? (vendorSummary.suspended / vendorSummary.total) * 100 : 0}%` }}
+            ></div>
           </div>
         </div>
       </div>
 
-      {/* Key Metrics / KPI Bento Quad */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-md mb-space-lg">
-        {/* KPI 1 */}
-        <div className="relative bg-surface-container-lowest p-space-lg rounded-xl shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-secondary"></div>
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider block mb-1">
-                Đối tác đã phê duyệt
-              </span>
-              <div className="flex items-baseline gap-2">
-                <span className="font-headline-xl text-headline-xl text-primary font-bold">{approvedVendors}</span>
-                <span className="font-label-md text-label-md text-secondary font-semibold">Đối tác</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-secondary">
-              <span className="material-symbols-outlined text-[22px]">verified</span>
-            </div>
-          </div>
-          <div className="mt-space-md flex items-center justify-between pt-space-xs">
-            <span className="inline-flex items-center gap-1 font-body-sm text-body-sm text-on-surface-variant">
-              <span className="w-2 h-2 rounded-full bg-secondary"></span>
-              Đủ điều kiện vận hành
-            </span>
-            <span className="font-data-mono text-body-sm text-secondary font-semibold">{totalVendors > 0 ? `${Math.round((approvedVendors / totalVendors) * 100)}%` : '0%'}</span>
-          </div>
-        </div>
+      {/* Main Tabs Navigation */}
+      <div className="flex items-center gap-2 border-b border-surface-container pb-2">
+        <button
+          onClick={() => handleTabChange('VENDORS')}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeMainTab === 'VENDORS'
+              ? 'bg-primary text-on-primary shadow-sm'
+              : 'text-on-surface-variant hover:bg-surface-container-low'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+          <span>Danh Sách Nhà Xe Đối Tác (Screen 28) ({vendors.length})</span>
+        </button>
 
-        {/* KPI 2 */}
-        <div className="relative bg-surface-container-lowest p-space-lg rounded-xl shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-primary-container"></div>
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider block mb-1">
-                Hồ sơ chờ phê duyệt
-              </span>
-              <div className="flex items-baseline gap-2">
-                <span className="font-headline-xl text-headline-xl text-primary font-bold">{pendingVendors}</span>
-                <span className="font-label-md text-label-md text-on-primary-container font-semibold">Hồ sơ</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-primary-container">
-              <span className="material-symbols-outlined text-[22px]">pending_actions</span>
-            </div>
-          </div>
-          <div className="mt-space-md flex items-center justify-between pt-space-xs">
-            <span className="inline-flex items-center gap-1 font-body-sm text-body-sm text-on-surface-variant">
-              Cần thẩm định năng lực
-            </span>
-            <span className="font-data-mono text-body-sm text-on-primary-fixed-variant font-semibold">{pendingVendors > 0 ? 'Cần duyệt' : 'Đã duyệt hết'}</span>
-          </div>
-        </div>
+        <button
+          onClick={() => handleTabChange('CONTRACTS')}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeMainTab === 'CONTRACTS'
+              ? 'bg-primary text-on-primary shadow-sm'
+              : 'text-on-surface-variant hover:bg-surface-container-low'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">description</span>
+          <span>Hợp Đồng Vận Tải (Screen 30, 31 Read-only)</span>
+        </button>
 
-        {/* KPI 3 */}
-        <div className="relative bg-surface-container-lowest p-space-lg rounded-xl shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-on-tertiary-container"></div>
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider block mb-1">
-                Hợp đồng vận tải Active
-              </span>
-              <div className="flex items-baseline gap-2">
-                <span className="font-headline-xl text-headline-xl text-primary font-bold">{activeContracts}</span>
-                <span className="font-label-md text-label-md text-on-tertiary-container font-semibold">Hợp đồng</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-tertiary-fixed flex items-center justify-center text-tertiary-container">
-              <span className="material-symbols-outlined text-[22px]">description</span>
-            </div>
-          </div>
-          <div className="mt-space-md flex items-center justify-between pt-space-xs">
-            <span className="inline-flex items-center gap-1 font-body-sm text-body-sm text-on-surface-variant">
-              Hiệu lực pháp lý
-            </span>
-            <span className="font-data-mono text-body-sm text-on-tertiary-container font-semibold">{activeContracts} Đang chạy</span>
-          </div>
-        </div>
-
-        {/* KPI 4 */}
-        <div className="relative bg-surface-container-lowest p-space-lg rounded-xl shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-secondary"></div>
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider block mb-1">
-                Tỷ lệ duyệt đối tác
-              </span>
-              <div className="flex items-baseline gap-2">
-                <span className="font-headline-xl text-headline-xl text-primary font-bold">{approvalRate}%</span>
-                <span className="font-label-md text-label-md text-secondary font-semibold">Đạt chuẩn</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-secondary">
-              <span className="material-symbols-outlined text-[22px]">task_alt</span>
-            </div>
-          </div>
-          <div className="mt-space-md flex items-center justify-between pt-space-xs">
-            <div className="w-full flex items-center gap-2">
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div className="bg-secondary h-full rounded-full" style={{ width: `${approvalRate}%` }}></div>
-              </div>
-              <span className="font-data-mono text-body-sm text-outline">{approvedVendors}/{totalVendors}</span>
-            </div>
-          </div>
-        </div>
+        <button
+          onClick={() => handleTabChange('LOCATIONS')}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeMainTab === 'LOCATIONS'
+              ? 'bg-primary text-on-primary shadow-sm'
+              : 'text-on-surface-variant hover:bg-surface-container-low'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">location_on</span>
+          <span>Kho Bãi & Địa Điểm (Screen 37 Read-only)</span>
+        </button>
       </div>
 
-      {/* Operational Context Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-space-md mb-space-lg">
-        <div className="lg:col-span-2 bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-space-md">
-            <div>
-              <h2 className="font-headline-sm text-headline-sm text-primary font-bold">Cổng kết nối Air Freight Quốc tế</h2>
-              <span className="font-body-sm text-body-sm text-on-surface-variant">
-                Giám sát tải thực tế theo HUB Nội Bài (HAN) &amp; Tân Sơn Nhất (SGN)
-              </span>
+      {/* SUB-MODULE 1: VENDORS LIST & MANAGEMENT (SCREEN 28 & 29) */}
+      {activeMainTab === 'VENDORS' && (
+        <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md border border-outline-variant/20 space-y-space-md">
+          {/* Filter & Search Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-space-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-outline">Lọc trạng thái:</span>
+              <button
+                onClick={() => setVendorFilter('ALL')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  vendorFilter === 'ALL' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Tất cả ({vendors.length})
+              </button>
+              <button
+                onClick={() => setVendorFilter('APPROVED')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  vendorFilter === 'APPROVED' ? 'bg-secondary text-white' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Đã duyệt ({vendorSummary.approved})
+              </button>
+              <button
+                onClick={() => setVendorFilter('PENDING')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  vendorFilter === 'PENDING' ? 'bg-amber-600 text-white' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Chờ duyệt ({vendorSummary.pending})
+              </button>
+              <button
+                onClick={() => setVendorFilter('SUSPENDED')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                  vendorFilter === 'SUSPENDED' ? 'bg-error text-white' : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Bị đình chỉ ({vendorSummary.suspended})
+              </button>
             </div>
-            <span className="font-label-sm text-label-sm text-secondary bg-surface-container-low px-space-md py-1 rounded-full font-semibold">
-              Đang vận hành Realtime
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-md">
-            <div className="p-space-md bg-surface-container-low rounded-xl flex items-center gap-space-md">
-              <div className="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center text-secondary shadow-sm">
-                <span className="material-symbols-outlined text-[20px]">airlines</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="font-label-sm text-label-sm text-outline">Slot bay đặt trước</span>
-                <span className="font-headline-sm text-headline-sm text-primary font-bold truncate">1,840 Tấn</span>
-                <span className="font-body-sm text-body-sm text-secondary">Tháng 11/2026</span>
-              </div>
-            </div>
-            <div className="p-space-md bg-surface-container-low rounded-xl flex items-center gap-space-md">
-              <div className="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center text-on-tertiary-container shadow-sm">
-                <span className="material-symbols-outlined text-[20px]">payments</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="font-label-sm text-label-sm text-outline">Công nợ IATA CASS</span>
-                <span className="font-headline-sm text-headline-sm text-primary font-bold truncate">64.5 Tỷ đ</span>
-                <span className="font-body-sm text-body-sm text-outline">Kỳ thanh toán ngày 15</span>
-              </div>
-            </div>
-            <div className="p-space-md bg-surface-container-low rounded-xl flex items-center gap-space-md">
-              <div className="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center text-primary shadow-sm">
-                <span className="material-symbols-outlined text-[20px]">alarm_on</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="font-label-sm text-label-sm text-outline">Chỉ số On-Time (OTP)</span>
-                <span className="font-headline-sm text-headline-sm text-primary font-bold truncate">99.4%</span>
-                <span className="font-body-sm text-body-sm text-secondary">Đạt chuẩn AWB Master</span>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Quick Announcement */}
-        <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between pb-space-xs">
-            <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider">Thông tri biểu cước hàng không</span>
-            <span className="material-symbols-outlined text-outline text-[18px]">info</span>
+            <div className="w-full sm:w-72 relative">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px] pointer-events-none">
+                search
+              </span>
+              <input
+                value={vendorSearch}
+                onChange={(e) => setVendorSearch(e.target.value)}
+                className="w-full h-9 pl-9 pr-space-md bg-surface-container-low rounded-xl text-xs text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary"
+                placeholder="Tìm tên nhà xe, người liên hệ, SĐT..."
+                type="text"
+              />
+            </div>
           </div>
-          <div className="space-y-space-sm my-space-xs">
-            <div className="flex items-start gap-space-sm">
-              <span className="material-symbols-outlined text-secondary text-[18px] mt-0.5">campaign</span>
-              <p className="font-body-sm text-body-sm text-on-surface leading-snug">
-                Cập nhật phụ phí nhiên liệu FSC &amp; An ninh hàng không SSC từ Vietnam Airlines Cargo và SQ Cargo.
+
+          {loading ? (
+            <div className="py-16 flex justify-center"><Spin size="large" /></div>
+          ) : filteredVendors.length === 0 ? (
+            <div className="py-12 text-center text-outline">Không tìm thấy nhà xe đối tác nào phù hợp.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider">
+                    <th className="py-3 px-space-md">TÊN NHÀ XE ĐỐI TÁC</th>
+                    <th className="py-3 px-space-md">NGƯỜI ĐẠI DIỆN</th>
+                    <th className="py-3 px-space-md">SỐ ĐIỆN THOẠI</th>
+                    <th className="py-3 px-space-md">LOẠI ĐỘI XE</th>
+                    <th className="py-3 px-space-md">HỢP ĐỒNG LIÊN KẾT</th>
+                    <th className="py-3 px-space-md">TRẠNG THÁI (UC-23)</th>
+                    <th className="py-3 px-space-md text-right">THAO TÁC</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-container text-sm">
+                  {filteredVendors.map((v) => (
+                    <tr key={v.id} className="hover:bg-surface-container-low/50 transition-colors">
+                      <td className="py-3.5 px-space-md font-bold text-primary">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-secondary text-[20px]">local_shipping</span>
+                          <span>{v.company_name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-space-md font-medium text-on-surface">
+                        {v.contact_person}
+                      </td>
+                      <td className="py-3.5 px-space-md font-mono text-outline">
+                        {v.phone}
+                      </td>
+                      <td className="py-3.5 px-space-md text-xs text-on-surface-variant">
+                        {v.truck_types}
+                      </td>
+                      <td className="py-3.5 px-space-md">
+                        {v.contract_number ? (
+                          <div className="flex flex-col">
+                            <span className="font-mono text-xs font-bold text-primary">{v.contract_number}</span>
+                            <span className="text-[10px] text-outline">
+                              Trần: {v.liability_cap ? `${v.liability_cap.toLocaleString('vi-VN')} đ` : 'N/A'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-outline italic">Chưa liên kết HĐ</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-space-md">
+                        <Tag color={
+                          v.approval_status === 'APPROVED' ? 'green' :
+                          v.approval_status === 'SUSPENDED' ? 'red' : 'gold'
+                        }>
+                          {v.approval_status === 'APPROVED' ? 'ĐÃ DUYỆT' :
+                           v.approval_status === 'SUSPENDED' ? 'ĐÌNH CHỈ' : 'CHỜ DUYỆT'}
+                        </Tag>
+                      </td>
+                      <td className="py-3.5 px-space-md text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={() => handleOpenEditModal(v)}
+                            className="px-2.5 py-1 rounded-lg bg-surface-container-low text-primary hover:bg-surface-container text-xs font-semibold cursor-pointer"
+                          >
+                            Sửa
+                          </button>
+                          {v.approval_status !== 'APPROVED' ? (
+                            <button
+                              onClick={() => handleUpdateStatus(v.id, 'APPROVED')}
+                              className="px-3 py-1 rounded-lg bg-secondary text-on-secondary hover:bg-secondary-container text-xs font-bold transition-all cursor-pointer shadow-sm"
+                            >
+                              Phê duyệt
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleUpdateStatus(v.id, 'SUSPENDED')}
+                              className="px-3 py-1 rounded-lg bg-error-container text-on-error-container hover:bg-error hover:text-white text-xs font-bold transition-all cursor-pointer"
+                            >
+                              Đình chỉ
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SUB-MODULE 2: TRANSPORT CONTRACTS READ-ONLY (SCREEN 30 & 31) */}
+      {activeMainTab === 'CONTRACTS' && (
+        <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md border border-outline-variant/20 space-y-space-md">
+          <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container pb-space-sm">
+            <div>
+              <h3 className="text-lg font-bold text-primary">
+                Hợp Đồng Vận Tải (Chế Độ Chỉ Đọc - Screen 30, 31)
+              </h3>
+              <p className="text-xs text-outline">
+                Manager tra cứu các điều khoản trần bồi thường (BR-37), phí chờ và thời hạn hợp đồng để đối chiếu nghiệp vụ
               </p>
             </div>
-            <div className="p-space-sm bg-surface-container-low rounded-lg flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-on-surface font-semibold">Tỷ giá đối soát IATA</span>
-              <span className="font-data-mono text-label-md text-primary font-bold">1 USD = 25,410 VND</span>
+
+            <div className="w-full sm:w-72 relative">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px] pointer-events-none">
+                search
+              </span>
+              <input
+                value={contractSearch}
+                onChange={(e) => setContractSearch(e.target.value)}
+                className="w-full h-9 pl-9 pr-space-md bg-surface-container-low rounded-xl text-xs text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary"
+                placeholder="Tìm số hợp đồng, đối tác..."
+                type="text"
+              />
             </div>
           </div>
-          <button
-            onClick={() => message.info('Đang tải danh sách thông cáo CASS mới nhất...')}
-            className="w-full py-2 bg-surface-container text-secondary hover:bg-surface-container-high rounded-lg font-label-md text-label-md font-semibold transition-colors cursor-pointer"
-            type="button"
-          >
-            Xem tất cả thông báo CASS
-          </button>
-        </div>
-      </div>
 
-      {/* Partner Filtering Tabs & Actions Bar */}
-      <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm mb-space-md flex flex-col md:flex-row md:items-center justify-between gap-space-md">
-        <div className="flex items-center gap-space-xs overflow-x-auto pb-1 md:pb-0">
-          <button
-            onClick={() => setActiveTab('ALL')}
-            className={`px-space-md py-2 rounded-lg font-label-md text-label-md font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-              activeTab === 'ALL'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-            }`}
-            type="button"
-          >
-            Tất cả đối tác ({vendors.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('AIRLINES')}
-            className={`px-space-md py-2 rounded-lg font-label-md text-label-md font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-              activeTab === 'AIRLINES'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-            }`}
-            type="button"
-          >
-            Hãng hàng không / Airlines
-          </button>
-          <button
-            onClick={() => setActiveTab('FORWARDERS')}
-            className={`px-space-md py-2 rounded-lg font-label-md text-label-md font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-              activeTab === 'FORWARDERS'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-            }`}
-            type="button"
-          >
-            Freight Forwarders
-          </button>
-        </div>
-
-        <div className="flex items-center gap-space-sm flex-wrap">
-          <button
-            onClick={() => message.info('Đang xuất báo cáo danh mục đối tác ra file Excel...')}
-            className="h-9 px-space-md rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant flex items-center gap-1 font-label-md text-label-md transition-colors cursor-pointer"
-            type="button"
-          >
-            <span className="material-symbols-outlined text-[18px]">download</span>
-            <span>Xuất Excel</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Deep Partner Management Enterprise Data Grid */}
-      <div className="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden mb-space-lg">
-        {loading ? (
-          <div className="py-20 flex justify-center items-center">
-            <Spin size="large" description="Đang tải danh sách nhà xe &amp; hợp đồng..." />
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-surface-container-low text-outline font-label-sm text-label-sm uppercase tracking-wider">
-                <tr>
-                  <th className="py-space-md px-space-lg font-semibold">MÃ &amp; TÊN ĐỐI TÁC</th>
-                  <th className="py-space-md px-space-md font-semibold">LOẠI ĐỐI TÁC</th>
-                  <th className="py-space-md px-space-md font-semibold">HỢP ĐỒNG / CASS</th>
-                  <th className="py-space-md px-space-md font-semibold text-right">KỲ HẠN TT</th>
-                  <th className="py-space-md px-space-md font-semibold text-center">TRẠNG THÁI</th>
-                  <th className="py-space-md px-space-lg font-semibold text-right">THAO TÁC</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container font-body-md text-body-md text-on-surface">
-                {filteredVendors.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="py-12 text-center text-outline">
-                      Chưa có dữ liệu đối tác nào.
-                    </td>
+          {contractsLoading ? (
+            <div className="py-16 flex justify-center"><Spin size="large" /></div>
+          ) : contracts.length === 0 ? (
+            <div className="py-12 text-center text-outline">Chưa có hợp đồng vận tải nào trong cơ sở dữ liệu.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider">
+                    <th className="py-3 px-space-md">SỐ HỢP ĐỒNG</th>
+                    <th className="py-3 px-space-md">ĐỐI TÁC / KHÁCH HÀNG</th>
+                    <th className="py-3 px-space-md">LOẠI ĐỐI TÁC</th>
+                    <th className="py-3 px-space-md">TRẦN TRÁCH NHIỆM (BR-37)</th>
+                    <th className="py-3 px-space-md">PHÍ CHỜ / GIỜ</th>
+                    <th className="py-3 px-space-md">HIỆU LỰC</th>
+                    <th className="py-3 px-space-md">TRẠNG THÁI</th>
                   </tr>
-                ) : (
-                  filteredVendors.map((vendor, idx) => {
-                    const initial = (vendor.name || 'V').substring(0, 2).toUpperCase();
-                    const isApproved = vendor.status === 'APPROVED' || vendor.approval_status === 'APPROVED';
-
-                    return (
-                      <tr key={vendor.id || idx} className="hover:bg-surface-container-low/70 transition-colors group">
-                        {/* Mã & Tên đối tác */}
-                        <td className="py-space-md px-space-lg">
-                          <div className="flex items-center gap-space-md">
-                            <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center font-headline-sm text-headline-sm font-bold text-secondary flex-shrink-0">
-                              {initial}
-                            </div>
-                            <div className="flex flex-col min-w-0">
-                              <div className="flex items-center gap-space-xs">
-                                <span className="font-headline-sm text-headline-sm font-bold text-primary truncate">
-                                  {vendor.name}
-                                </span>
-                                {isApproved && (
-                                  <span className="material-symbols-outlined text-secondary text-[16px]" title="Đối tác xác minh">
-                                    verified
-                                  </span>
-                                )}
-                              </div>
-                              <span className="font-body-sm text-body-sm text-outline">
-                                MST: {vendor.tax_code || 'Đã kiểm tra'} • LH: {vendor.contact_person || vendor.contact_name || 'Đại diện'} ({vendor.phone || 'Chưa có SĐT'})
-                              </span>
-                            </div>
-                          </div>
+                </thead>
+                <tbody className="divide-y divide-surface-container text-xs">
+                  {contracts
+                    .filter((c) => !contractSearch || c.contract_number?.toLowerCase().includes(contractSearch.toLowerCase()) || c.partner_name?.toLowerCase().includes(contractSearch.toLowerCase()))
+                    .map((c) => (
+                      <tr key={c.id} className="hover:bg-surface-container-low/50 transition-colors">
+                        <td className="py-3 px-space-md font-mono font-bold text-primary">
+                          {c.contract_number}
                         </td>
-
-                        {/* Loại đối tác */}
-                        <td className="py-space-md px-space-md">
-                          <div className="flex flex-col">
-                            <span className="font-label-md text-label-md text-primary font-semibold">
-                              Đối tác Vận tải Đường bộ &amp; Hub
-                            </span>
-                            <span className="font-body-sm text-body-sm text-outline">
-                              Đơn vị vận tải ủy thác
-                            </span>
-                          </div>
+                        <td className="py-3 px-space-md font-semibold text-primary">
+                          {c.partner_name}
                         </td>
-
-                        {/* Hợp đồng */}
-                        <td className="py-space-md px-space-md">
-                          <span className="inline-flex items-center gap-1 font-data-mono text-body-sm bg-surface-container-low px-2 py-0.5 rounded text-primary font-semibold">
-                            {vendor.contractId || vendor.contract_code || (vendor.contract_id ? `HD-${vendor.contract_id}-2026` : 'Chưa ký HĐ')}
-                          </span>
+                        <td className="py-3 px-space-md">
+                          <Tag color={c.partner_type === 'VENDOR' ? 'blue' : 'purple'}>
+                            {c.partner_type}
+                          </Tag>
                         </td>
-
-                        {/* Kỳ hạn TT */}
-                        <td className="py-space-md px-space-md text-right">
-                          <div className="flex flex-col items-end">
-                            <span className="font-data-mono text-headline-sm text-headline-sm font-bold text-primary">
-                              {vendor.payment_terms_days || 30} ngày
-                            </span>
-                            <span className="font-body-sm text-body-sm text-secondary">Thanh toán định kỳ</span>
-                          </div>
+                        <td className="py-3 px-space-md font-mono font-bold text-error">
+                          {c.liability_cap ? `${c.liability_cap.toLocaleString('vi-VN')} đ` : '500.000.000 đ (Luật định)'}
                         </td>
-
-                        {/* Trạng thái */}
-                        <td className="py-space-md px-space-md text-center">
-                          {isApproved ? (
-                            <span className="inline-flex items-center gap-1.5 px-space-md py-1 rounded-full bg-surface-container-high text-secondary font-label-sm text-label-sm font-semibold">
-                              <span className="w-2 h-2 rounded-full bg-secondary"></span>
-                              Đang hợp tác
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-space-md py-1 rounded-full bg-tertiary-fixed text-on-tertiary-container font-label-sm text-label-sm font-semibold">
-                              <span className="w-2 h-2 rounded-full bg-on-tertiary-container"></span>
-                              Chờ phê duyệt
-                            </span>
-                          )}
+                        <td className="py-3 px-space-md font-mono text-outline">
+                          {c.waiting_fee_per_hour ? `${c.waiting_fee_per_hour.toLocaleString('vi-VN')} đ/h` : 'Miễn phí 60p'}
                         </td>
-
-                        {/* Thao tác */}
-                        <td className="py-space-md px-space-lg text-right">
-                          <div className="flex items-center justify-end gap-space-xs">
-                            {!isApproved && (
-                              <button
-                                onClick={() => handleApprove(vendor)}
-                                disabled={approvingId === vendor.id}
-                                className="px-space-md py-1.5 rounded-lg bg-on-tertiary-container text-on-tertiary hover:brightness-110 font-label-md text-label-md font-semibold transition-all cursor-pointer shadow-sm"
-                                type="button"
-                              >
-                                {approvingId === vendor.id ? 'Đang duyệt...' : 'Phê duyệt HĐ'}
-                              </button>
-                            )}
-                            <button
-                              onClick={() => message.info(`Xem chi tiết hợp đồng của ${vendor.name}`)}
-                              className="p-1.5 rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
-                              title="Xem hợp đồng"
-                              type="button"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">description</span>
-                            </button>
-                          </div>
+                        <td className="py-3 px-space-md text-outline">
+                          {c.valid_from ? `${new Date(c.valid_from).toLocaleDateString('vi-VN')} ➔ ${new Date(c.valid_to).toLocaleDateString('vi-VN')}` : 'Vô thời hạn'}
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <Tag color={c.status === 'ACTIVE' ? 'green' : 'default'}>
+                            {c.status}
+                          </Tag>
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SUB-MODULE 3: LOCATIONS READ-ONLY (SCREEN 37) */}
+      {activeMainTab === 'LOCATIONS' && (
+        <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md border border-outline-variant/20 space-y-space-md">
+          <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container pb-space-sm">
+            <div>
+              <h3 className="text-lg font-bold text-primary">
+                Mạng Lưới Địa Điểm & Kho Bãi Ga Hàng (Chế Độ Chỉ Đọc - Screen 37)
+              </h3>
+              <p className="text-xs text-outline">
+                Danh sách các điểm dừng, ga hàng không ALS và ICD phục vụ trung chuyển hàng hóa
+              </p>
+            </div>
+
+            <div className="w-full sm:w-72 relative">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px] pointer-events-none">
+                search
+              </span>
+              <input
+                value={locationSearch}
+                onChange={(e) => setLocationSearch(e.target.value)}
+                className="w-full h-9 pl-9 pr-space-md bg-surface-container-low rounded-xl text-xs text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary"
+                placeholder="Tìm mã hoặc tên địa điểm..."
+                type="text"
+              />
+            </div>
           </div>
-        )}
-      </div>
+
+          {locationsLoading ? (
+            <div className="py-16 flex justify-center"><Spin size="large" /></div>
+          ) : locations.length === 0 ? (
+            <div className="py-12 text-center text-outline">Chưa có dữ liệu địa điểm trong hệ thống.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider">
+                    <th className="py-3 px-space-md">MÃ ĐỊA ĐIỂM</th>
+                    <th className="py-3 px-space-md">TÊN ĐIỂM DỪNG / KHO</th>
+                    <th className="py-3 px-space-md">ĐỊA CHỈ</th>
+                    <th className="py-3 px-space-md">TỌA ĐỘ GPS (LAT / LNG)</th>
+                    <th className="py-3 px-space-md">PHÂN LOẠI</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-container text-xs">
+                  {locations
+                    .filter((l) => !locationSearch || l.code?.toLowerCase().includes(locationSearch.toLowerCase()) || l.name?.toLowerCase().includes(locationSearch.toLowerCase()))
+                    .map((loc) => (
+                      <tr key={loc.id} className="hover:bg-surface-container-low/50 transition-colors">
+                        <td className="py-3 px-space-md font-mono font-bold text-primary">
+                          {loc.code || `LOC-${loc.id}`}
+                        </td>
+                        <td className="py-3 px-space-md font-bold text-primary">
+                          {loc.name}
+                        </td>
+                        <td className="py-3 px-space-md text-on-surface-variant">
+                          {loc.address}
+                        </td>
+                        <td className="py-3 px-space-md font-mono text-outline">
+                          {loc.latitude}, {loc.longitude}
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <Tag color="cyan">{loc.type || 'WAREHOUSE'}</Tag>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MODAL SCREEN 29: THÊM / SỬA NHÀ XE ĐỐI TÁC (UC-23) */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-primary font-headline-sm font-bold">
+            <span className="material-symbols-outlined text-secondary">domain</span>
+            <span>{editingVendor ? 'Cập Nhật Nhà Xe Đối Tác (Screen 29)' : 'Khai Báo Nhà Xe Đối Tác Mới (Screen 29)'}</span>
+          </div>
+        }
+        open={isVendorModalOpen}
+        onCancel={() => setIsVendorModalOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <div className="mt-4 space-y-4 text-sm">
+          <div>
+            <label className="block text-xs font-bold uppercase text-outline mb-1">
+              Tên Công Ty Nhà Xe (Company Name): *
+            </label>
+            <Input
+              value={vendorForm.company_name}
+              onChange={(e) => setVendorForm({ ...vendorForm, company_name: e.target.value })}
+              placeholder="VD: Công ty Vận tải Quốc tế ALS Logistics"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase text-outline mb-1">
+                Người Đại Diện / Liên Hệ:
+              </label>
+              <Input
+                value={vendorForm.contact_person}
+                onChange={(e) => setVendorForm({ ...vendorForm, contact_person: e.target.value })}
+                placeholder="VD: Nguyễn Văn Nam"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase text-outline mb-1">
+                Số Điện Thoại Liên Hệ:
+              </label>
+              <Input
+                value={vendorForm.phone}
+                onChange={(e) => setVendorForm({ ...vendorForm, phone: e.target.value })}
+                placeholder="VD: 0988776655"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase text-outline mb-1">
+              Chủng Loại Xe Tải Cung Cấp:
+            </label>
+            <Input
+              value={vendorForm.truck_types}
+              onChange={(e) => setVendorForm({ ...vendorForm, truck_types: e.target.value })}
+              placeholder="VD: Xe tải 1.5T - 8T thùng kín, xe đông lạnh"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-surface-container">
+            <button
+              onClick={() => setIsVendorModalOpen(false)}
+              className="px-4 py-2 rounded-xl bg-surface-container-low text-on-surface hover:bg-surface-container text-xs font-semibold cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={handleSaveVendor}
+              disabled={savingVendor}
+              className="px-5 py-2 rounded-xl bg-secondary text-on-secondary text-xs font-bold hover:bg-secondary-container transition-all cursor-pointer shadow-sm"
+            >
+              {savingVendor ? 'Đang lưu...' : 'Lưu thông tin nhà xe'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

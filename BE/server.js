@@ -39,6 +39,8 @@ app.use("/api/manager", managerRoutes);
 // API routes
 app.use("/api", apiRoutes);
 
+const { initManagerJobs } = require("./jobs/managerJobs");
+
 app.listen(PORT, async () => {
     try {
         const { error } = await supabase.from("orders").select("id").limit(1);
@@ -46,6 +48,8 @@ app.listen(PORT, async () => {
             console.error("PostgreSQL (Supabase) connection failed:", error.message);
         } else {
             console.log("PostgreSQL (Supabase) connected successfully!");
+            // Khởi động các Background Jobs của Phân hệ Quản lý
+            initManagerJobs();
         }
     } catch (error) {
         console.error("PostgreSQL connection failed:", error.message);
