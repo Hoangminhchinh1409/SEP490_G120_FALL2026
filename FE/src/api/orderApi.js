@@ -187,6 +187,34 @@ export const orderApi = {
       console.error('orderApi.uploadContractFile Error:', error);
       throw error;
     }
+  },
+
+  // 15. Điều phối viên: Lưu danh mục chứng từ vào hồ sơ đơn hàng
+  uploadOrderDocuments: async (orderId, documents) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/documents`, {
+        method: 'POST',
+        body: JSON.stringify({ documents })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.uploadOrderDocuments Error:', error);
+      throw error;
+    }
+  },
+
+  // 16. Xuất hóa đơn GTGT điện tử bàn giao cho Kế toán thu nợ
+  issueInvoice: async (orderId, invoiceData) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/issue-invoice`, {
+        method: 'PATCH',
+        body: JSON.stringify(invoiceData)
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.issueInvoice Error:', error);
+      throw error;
+    }
   }
 };
 

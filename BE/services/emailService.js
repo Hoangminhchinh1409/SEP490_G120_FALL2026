@@ -6,17 +6,18 @@ let transporter = null;
 const getTransporter = async () => {
   if (transporter) return transporter;
 
-  // Nếu có cấu hình SMTP thật trong .env
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  // Sử dụng cấu hình SMTP thật từ .env (Tham khảo chuẩn dự án FITFLOW)
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
     transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_SECURE === 'true',
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
     });
+    console.log('[EmailService] Connected to Gmail SMTP Service with account:', process.env.SMTP_USER);
     return transporter;
   }
 
@@ -152,8 +153,9 @@ const sendOrderPriceConfirmationEmail = async ({
   `;
 
   try {
+    const fromAddress = process.env.SMTP_FROM || `NEXLOG Logistics <${process.env.SMTP_USER || 'no-reply@nexlog.vn'}>`;
     const info = await mailTransporter.sendMail({
-      from: '"NEXLOG Logistics" <no-reply@nexlog.vn>',
+      from: fromAddress,
       to: customerEmail || 'khachhang@example.com',
       subject: `[NEXLOG] Xác nhận thông tin đơn hàng & Báo giá cước #${orderCode}`,
       html: htmlContent
@@ -234,8 +236,9 @@ const sendContractSigningEmail = async ({
   `;
 
   try {
+    const fromAddress = process.env.SMTP_FROM || `NEXLOG Logistics <${process.env.SMTP_USER || 'contracts@nexlog.vn'}>`;
     const info = await mailTransporter.sendMail({
-      from: '"NEXLOG Logistics" <contracts@nexlog.vn>',
+      from: fromAddress,
       to: customerEmail || 'khachhang@example.com',
       subject: `[NEXLOG] Hợp đồng vận chuyển điện tử & Chữ ký số #${orderCode}`,
       html: htmlContent

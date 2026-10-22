@@ -60,10 +60,10 @@ export default function GuestTrackingPage() {
 
         {order.status === 0 && (
           <Alert
-            title="Yêu cầu Chứng từ Hải quan"
+            title="Yêu cầu Chứng từ Xuất Nhập Khẩu"
             description={
               <div className="mt-2">
-                <p className="mb-2 text-sm">Vui lòng tải lên Tờ khai hải quan và Giấy ủy quyền để ALS có thể tiến hành lấy hàng. (Tối đa 10MB/tệp)</p>
+                <p className="mb-2 text-sm">Vui lòng tải lên các chứng từ hàng hóa (Hóa đơn, Packing List, Vận đơn...) để tiến hành thủ tục và lấy hàng. Tờ khai hải quan sẽ do điều phối viên chuẩn bị. (Tối đa 10MB/tệp)</p>
                 <Upload action="/api/upload" multiple>
                   <Button icon={<LucideUpload size={14} />}>Tải lên Chứng từ (PDF/JPG)</Button>
                 </Upload>

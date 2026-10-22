@@ -78,11 +78,6 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
         cancellation_fee: isFreeCancel ? 0 : customFee,
         cancelled_at: new Date().toISOString()
       });
-      if (isFreeCancel || customFee === 0) {
-        message.success(`Đã hủy đơn hàng ${order.order_id} (Miễn phí hủy: 0 VNĐ)!`);
-      } else {
-        message.warning(`Đã hủy đơn hàng ${order.order_id}! Phí phạt / tiền công tài xế: ${customFee.toLocaleString()} VNĐ`);
-      }
       onCancel();
     } catch (err) {
       console.error(err);

@@ -104,39 +104,32 @@ export default function OrdersWorkloadPage() {
   return (
     <div className="flex flex-col w-full space-y-space-lg">
       {/* Top Hero Header & Actions */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
-        <div className="flex flex-col space-y-1">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 relative overflow-hidden">
+        <div className="absolute -right-16 -top-16 w-64 h-64 bg-surface-container-low rounded-full pointer-events-none opacity-50 blur-2xl"></div>
+        <div className="flex flex-col space-y-1 z-10">
           <div className="flex items-center gap-space-sm flex-wrap">
-            <h1 className="font-headline-xl text-headline-xl text-primary font-bold tracking-tight">
+            <h1 className="text-2xl lg:text-3xl font-extrabold text-primary tracking-tight">
               Quản lý Đơn hàng Vận tải
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-semibold">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-xs font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
               Toàn mạng lưới: {totalCount} đơn
             </span>
           </div>
-          <p className="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+          <p className="font-body-md text-sm text-on-surface-variant max-w-3xl">
             Theo dõi hành trình vận đơn hàng không (MAWB/HAWB), điều phối chặng trung chuyển và giám sát cam kết thời gian giao hàng (SLA) theo thời gian thực.
           </p>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-space-sm shrink-0">
+        <div className="flex items-center gap-space-sm shrink-0 z-10">
           <button
             onClick={() => message.info('Đang xuất danh sách đơn hàng sang file Excel...')}
-            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-surface-container-lowest text-primary font-label-lg text-label-lg shadow-sm hover:bg-surface-container-low transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-surface-container-low text-primary font-label-lg text-sm font-semibold hover:bg-surface-container transition-colors cursor-pointer"
             type="button"
           >
             <span className="material-symbols-outlined text-[18px]">file_download</span>
             <span>Xuất danh sách Excel</span>
-          </button>
-          <button
-            onClick={() => message.info('Mở form tạo vận đơn Air Cargo mới')}
-            className="inline-flex items-center gap-2 px-space-lg py-2.5 rounded-xl bg-primary-container text-on-primary font-label-lg text-label-lg shadow-md hover:bg-primary transition-all cursor-pointer"
-            type="button"
-          >
-            <span className="material-symbols-outlined text-[20px]">add_circle</span>
-            <span>Tạo đơn hàng mới</span>
           </button>
         </div>
       </div>

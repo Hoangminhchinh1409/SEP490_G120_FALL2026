@@ -328,6 +328,7 @@ export default function UsersPage() {
     }
   ];
 
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -361,6 +362,7 @@ export default function UsersPage() {
             Tạo tài khoản mới
           </Button>
         </div>
+
       </div>
 
       {/* Filter Toolbar */}

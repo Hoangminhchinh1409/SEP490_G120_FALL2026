@@ -171,7 +171,7 @@ export default function ContractSignView() {
         {/* Thông báo trạng thái đã ký */}
         {isSigned && (
           <Alert
-            message="Hợp đồng vận chuyển đã được ký số thành công!"
+            title="Hợp đồng vận chuyển đã được ký số thành công!"
             description={
               <div className="space-y-1 text-xs text-slate-700 mt-1">
                 <p className="m-0">
@@ -240,10 +240,10 @@ export default function ContractSignView() {
             </div>
 
             <div>
-              <span className="font-bold text-slate-900">ĐIỀU 2: CƯỚC PHÍ VÀ THANH TOÁN</span>
+              <span className="font-bold text-slate-900">ĐIỀU 2: CƯỚC PHÍ VÀ HÓA ĐƠN CHỨNG TỪ</span>
               <div className="mt-1 pl-3 space-y-1 border-l-2 border-indigo-200">
                 <div>• Tổng giá cước thỏa thuận cố định: <b className="text-indigo-700 font-mono text-sm">{(order?.agreed_price || 0).toLocaleString()} VNĐ</b> (Đã bao gồm chi phí phương tiện và tài xế).</div>
-                <div>• Phương thức thanh toán: Chuyển khoản hoặc thanh toán tại điểm giao nhận theo đối soát công nợ.</div>
+                <div>• Phương thức thanh toán: Khách hàng (Bên B) ủy quyền cho ngân hàng trung gian thanh toán theo Hóa đơn GTGT và Bảng kê do Bên A phát hành bàn giao cho bộ phận Kế toán Bên B theo dõi và thu hồi công nợ. Không thu tiền mặt tại hiện trường.</div>
               </div>
             </div>
 
@@ -344,18 +344,22 @@ export default function ContractSignView() {
                     <span className="text-xs font-bold text-emerald-800 uppercase flex items-center gap-1">
                       <CheckCircle2 size={16} className="text-emerald-600" /> ĐÃ KÝ CHỮ KÝ SỐ THÀNH CÔNG
                     </span>
-                    {signedData?.signature_data && (
-                      <div className="bg-white p-1 rounded border border-emerald-200">
+                    <div className="bg-white p-2 rounded-lg border border-emerald-200 min-w-[200px] min-h-[64px] flex items-center justify-center">
+                      {signedData?.signature_data?.startsWith('data:image') ? (
                         <img 
                           src={signedData.signature_data} 
                           alt="Chữ ký điện tử của khách hàng" 
-                          className="h-16 object-contain"
+                          className="max-h-16 max-w-[240px] object-contain"
                         />
-                      </div>
-                    )}
+                      ) : (
+                        <div className="font-serif italic text-indigo-800 text-lg font-bold py-2 px-4 border-b border-indigo-400">
+                          {signedData?.signer_name || 'Đã ký điện tử'}
+                        </div>
+                      )}
+                    </div>
                     <span className="text-xs font-bold text-slate-800">{signedData?.signer_name}</span>
                     <span className="text-[10px] text-slate-400">
-                      Thời gian ký: {new Date(signedData?.signed_at).toLocaleString('vi-VN')}
+                      Thời gian ký: {signedData?.signed_at ? new Date(signedData.signed_at).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN')}
                     </span>
                   </div>
                 )}

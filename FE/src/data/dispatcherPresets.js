@@ -24,8 +24,68 @@ export const calculateRouteEstimate = (pLat, pLng, dLat, dLng) => {
   };
 };
 
+// Cấu hình chuẩn nghiệp vụ Nhà Ga Hàng Hóa ALS Cảng HKQT Nội Bài
+export const ALS_NOI_BAI_TERMINAL = {
+  name: 'Nhà Ga Hàng Hóa ALS Nội Bài',
+  address: 'Nhà Ga Hàng Hóa ALS Nội Bài',
+  lat: 21.2187,
+  lng: 105.8042
+};
+
+// 4 kho hàng của ALS tại Nội Bài phân bổ hàng hóa
+export const ALS_NOI_BAI_WAREHOUSES = [
+  { id: 'WH-1', name: 'Kho ALS 1 (Nội Bài Cargo Terminal 1)', code: 'ALS-NB-01' },
+  { id: 'WH-2', name: 'Kho ALS 2 (Nội Bài Cargo Terminal 2)', code: 'ALS-NB-02' },
+  { id: 'WH-3', name: 'Kho ALS 3 (Nội Bài Cargo Terminal 3)', code: 'ALS-NB-03' },
+  { id: 'WH-4', name: 'Kho ALS 4 (Nội Bài Cargo Terminal 4)', code: 'ALS-NB-04' }
+];
+
+// Cửa khẩu kéo dài / Cảng cạn ICD (ALS điều xe chở về thông quan tránh nghẽn hàng)
+export const ALS_ICD_LOCATIONS = [
+  {
+    key: 'NOI_BAI',
+    name: 'Thông quan trực tiếp tại Ga ALS Nội Bài',
+    address: 'Cảng HKQT Nội Bài, Hà Nội',
+    type: 'AIRPORT_DIRECT',
+    description: 'Thông quan trực tiếp tại 4 kho Nội Bài'
+  },
+  { 
+    key: 'MY_DINH', 
+    name: 'Cảng cạn ICD Mỹ Đình (ALS)', 
+    address: 'Số 17 Phạm Hùng, Mỹ Đình 2, Nam Từ Liêm, Hà Nội',
+    type: 'EXTENDED_CUSTOMS',
+    description: 'Cửa khẩu kéo dài ICD Mỹ Đình giúp giảm tải cho Nội Bài'
+  },
+  { 
+    key: 'BAC_NINH', 
+    name: 'Cảng cạn ICD Bắc Ninh (ALS)', 
+    address: 'Lô CN05, Đường YP6, KCN Yên Phong, Đông Phong, Yên Phong, Bắc Ninh',
+    type: 'EXTENDED_CUSTOMS',
+    description: 'Cửa khẩu kéo dài ICD Bắc Ninh phục vụ KCN Yên Phong / VSIP'
+  },
+  { 
+    key: 'GIA_LAM', 
+    name: 'Cảng cạn ICD Gia Lâm (ALS)', 
+    address: 'Khu công nghiệp Đài Tư, 386 Nguyễn Văn Linh, Sài Đồng, Long Biên, Hà Nội',
+    type: 'EXTENDED_CUSTOMS',
+    description: 'Cửa khẩu kéo dài ICD Gia Lâm cửa ngõ phía Đông'
+  }
+];
+
+// 3 luồng phân loại hải quan
+export const CUSTOMS_CHANNELS = [
+  { key: 'GREEN', label: 'Luồng Xanh', color: 'green', desc: 'Thông quan thẳng, gần như không phải kiểm tra.' },
+  { key: 'YELLOW', label: 'Luồng Vàng', color: 'gold', desc: 'Mở ra kiểm tra trực quan chứng từ và thực tế hàng hóa.' },
+  { key: 'RED', label: 'Luồng Đỏ', color: 'red', desc: 'Kiểm tra kỹ lưỡng (áp dụng hóa chất, chất đặc biệt, nguy cơ cao).' }
+];
+
 // Hàm lấy tọa độ từ chuỗi địa chỉ (trả về null nếu chưa được chọn qua Geocoding API)
 export const getCoordsFromAddress = (addressStr = '', markerType = 'A') => {
+  if (!addressStr) return null;
+  const lower = addressStr.toLowerCase();
+  if (lower.includes('als nội bài') || lower.includes('ga hàng hóa als') || lower.includes('cảng hkqt nội bài')) {
+    return { lat: ALS_NOI_BAI_TERMINAL.lat, lng: ALS_NOI_BAI_TERMINAL.lng };
+  }
   return null;
 };
 
@@ -67,8 +127,9 @@ export const BASIC_CUSTOMS_DOCUMENTS = [
   { 
     key: 'doc-basic-1', 
     name: 'Tờ khai hải quan (Customs Declaration)', 
-    description: 'Bản khai chi tiết về mã HS, trị giá, số lượng và thuế suất.',
-    isBasic: true 
+    description: 'Bản khai hải quan do Điều phối viên/Bộ phận Khai báo chuẩn bị và đính kèm.',
+    isBasic: true,
+    preparedBy: 'DISPATCHER'
   },
   { 
     key: 'doc-basic-2', 
@@ -198,7 +259,8 @@ export const getRecommendedDocsByCargo = (cargoName = '', cargoType = '', notes 
     size: '-',
     uploadDate: '-',
     isBasic: true,
-    isCustom: false
+    isCustom: false,
+    preparedBy: doc.preparedBy || 'CUSTOMER'
   }));
 
   // Tìm nhóm hàng đặc thù phù hợp (trực tiếp theo categoryKey hoặc từ khóa)

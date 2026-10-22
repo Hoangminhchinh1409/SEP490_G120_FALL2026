@@ -17,6 +17,8 @@ export default function BlogManagementPage() {
   const [isNotamModalOpen, setIsNotamModalOpen] = useState(false);
   const [previewArticle, setPreviewArticle] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // New Article Form State
   const initialArticleState = {
@@ -185,12 +187,37 @@ export default function BlogManagementPage() {
 
   const handleDeleteArticle = async (id) => {
     try {
+      setIsDeleting(true);
       await managerApi.deleteBlog(id);
-      showToast('Đã lưu trữ / gỡ bài viết khỏi hệ thống!');
+      showToast('Đã xoá bài viết thành công khỏi hệ thống!');
+      setSelectedIds(prev => prev.filter(x => x !== id));
+      if (newArticle?.id === id) {
+        setIsCreateModalOpen(false);
+      }
+      setDeleteConfirmTarget(null);
       fetchBlogs();
     } catch (err) {
       console.error('Lỗi xóa bài viết:', err);
       showToast(err.message || 'Lỗi khi xóa bài viết', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedIds.length) return;
+    try {
+      setIsDeleting(true);
+      await Promise.all(selectedIds.map(id => managerApi.deleteBlog(id)));
+      showToast(`Đã xoá thành công ${selectedIds.length} bài viết đã chọn!`);
+      setSelectedIds([]);
+      setDeleteConfirmTarget(null);
+      fetchBlogs();
+    } catch (err) {
+      console.error('Lỗi xóa hàng loạt bài viết:', err);
+      showToast(err.message || 'Lỗi khi xóa các bài viết đã chọn', 'error');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -384,7 +411,7 @@ export default function BlogManagementPage() {
               }`}
               type="button"
             >
-              Đã xuất bản (58)
+              Đã xuất bản ({publishedCount})
             </button>
             <button
               onClick={() => setSelectedStatus('DRAFT')}
@@ -395,7 +422,7 @@ export default function BlogManagementPage() {
               }`}
               type="button"
             >
-              Bản nháp (7)
+              Bản nháp ({draftCount})
             </button>
             <button
               onClick={() => setSelectedStatus('PENDING')}
@@ -406,7 +433,7 @@ export default function BlogManagementPage() {
               }`}
               type="button"
             >
-              Chờ duyệt xuất bản (3)
+              Chờ duyệt xuất bản ({pendingCount})
             </button>
           </div>
         </div>
@@ -467,6 +494,33 @@ export default function BlogManagementPage() {
             </button>
           </div>
         </div>
+
+        {/* Bulk Actions Floating Toolbar */}
+        {selectedIds.length > 0 && (
+          <div className="mx-space-lg my-space-sm p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between animate-fade-in shadow-xs">
+            <div className="flex items-center gap-2 text-xs font-semibold text-red-900">
+              <span className="material-symbols-outlined text-[18px] text-red-600">check_circle</span>
+              <span>Đang chọn <strong className="text-red-700">{selectedIds.length}</strong> bài viết</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-white cursor-pointer transition-colors"
+              >
+                Bỏ chọn
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget({ type: 'bulk', count: selectedIds.length })}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 shadow-sm cursor-pointer transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+                <span>Xoá {selectedIds.length} bài đã chọn</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Responsive Scrollable Data Grid */}
         <div className="overflow-x-auto w-full">
@@ -578,7 +632,7 @@ export default function BlogManagementPage() {
                     </td>
                     <td className="py-space-md px-space-lg text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {item.status === 'PENDING' ? (
+                        {item.status === 'PENDING' && (
                           <button
                             onClick={() => handleApprovePending(item.id)}
                             className="px-2.5 py-1 rounded-lg bg-on-tertiary-container text-white font-label-sm text-xs font-bold hover:bg-orange-600 transition-colors shadow-sm whitespace-nowrap cursor-pointer"
@@ -587,34 +641,31 @@ export default function BlogManagementPage() {
                           >
                             Duyệt ngay
                           </button>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleOpenEditModal(item)}
-                              className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-secondary hover:bg-surface-container transition-colors cursor-pointer"
-                              title="Sửa bài"
-                              type="button"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">edit</span>
-                            </button>
-                            <button
-                              onClick={() => setPreviewArticle(item)}
-                              className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
-                              title="Xem bài"
-                              type="button"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">visibility</span>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteArticle(item.id)}
-                              className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-surface-container transition-colors cursor-pointer"
-                              title="Gỡ bài"
-                              type="button"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">archive</span>
-                            </button>
-                          </>
                         )}
+                        <button
+                          onClick={() => handleOpenEditModal(item)}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-secondary hover:bg-surface-container transition-colors cursor-pointer"
+                          title="Sửa bài"
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">edit</span>
+                        </button>
+                        <button
+                          onClick={() => setPreviewArticle(item)}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
+                          title="Xem trước bài viết"
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">visibility</span>
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmTarget({ type: 'single', article: item })}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                          title="Xoá bài viết"
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -891,7 +942,18 @@ export default function BlogManagementPage() {
                   </select>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  {newArticle.id && (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirmTarget({ type: 'single', article: newArticle })}
+                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 cursor-pointer transition-colors"
+                      title="Xoá bài viết này"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                      <span>Xoá bài</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsCreateModalOpen(false)}
@@ -939,13 +1001,39 @@ export default function BlogManagementPage() {
                 NEXLOG Logistics Network tự hào mang đến các báo cáo định kỳ hàng tuần dành riêng cho các doanh nghiệp chuỗi cung ứng, nhà vận tải hàng không và các đối tác ủy quyền trung chuyển.
               </div>
             </div>
-            <div className="p-4 bg-surface-container-low border-t border-outline-variant/30 flex justify-end">
+            <div className="p-4 bg-surface-container-low border-t border-outline-variant/30 flex items-center justify-between">
               <button
-                onClick={() => setPreviewArticle(null)}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-white cursor-pointer"
+                type="button"
+                onClick={() => {
+                  const target = previewArticle;
+                  setPreviewArticle(null);
+                  setDeleteConfirmTarget({ type: 'single', article: target });
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 cursor-pointer transition-colors"
               >
-                Đóng xem trước
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+                <span>Xoá bài viết</span>
               </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = previewArticle;
+                    setPreviewArticle(null);
+                    handleOpenEditModal(target);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-surface-container text-primary hover:bg-surface-container-high cursor-pointer transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                  <span>Chỉnh sửa</span>
+                </button>
+                <button
+                  onClick={() => setPreviewArticle(null)}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-white cursor-pointer"
+                >
+                  Đóng xem trước
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1010,6 +1098,94 @@ export default function BlogManagementPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Modal: Delete Confirmation */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-surface-container-lowest w-full max-w-md rounded-2xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col">
+            <div className="p-5 bg-red-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[22px]">delete_forever</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-base leading-tight">Xác nhận xoá bài viết</h3>
+                  <span className="text-[11px] text-red-100">Hành động này không thể hoàn tác</span>
+                </div>
+              </div>
+              <button
+                onClick={() => !isDeleting && setDeleteConfirmTarget(null)}
+                className="text-white/80 hover:text-white cursor-pointer"
+                disabled={isDeleting}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="p-6 flex flex-col gap-3">
+              {deleteConfirmTarget.type === 'bulk' ? (
+                <p className="text-sm text-on-surface leading-relaxed">
+                  Bạn có chắc chắn muốn xoá vĩnh viễn <strong className="text-red-600">{deleteConfirmTarget.count}</strong> bài viết đã chọn? Toàn bộ nội dung bài viết sẽ bị xoá khỏi cơ sở dữ liệu.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-on-surface leading-relaxed">
+                    Bạn có chắc chắn muốn xoá bài viết này không?
+                  </p>
+                  <div className="p-3 bg-surface-container-low rounded-xl border border-surface-container">
+                    <span className="font-bold text-xs text-primary line-clamp-2">
+                      {deleteConfirmTarget.article?.title}
+                    </span>
+                    <div className="flex items-center gap-2 mt-1.5 text-[11px] text-outline">
+                      <span>Chuyên mục: <strong>{deleteConfirmTarget.article?.category}</strong></span>
+                      {deleteConfirmTarget.article?.id && (
+                        <>
+                          <span>•</span>
+                          <span>ID: #{deleteConfirmTarget.article?.id}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-surface-container-low border-t border-surface-container flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container cursor-pointer transition-colors"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (deleteConfirmTarget.type === 'bulk') {
+                    handleBulkDelete();
+                  } else {
+                    handleDeleteArticle(deleteConfirmTarget.article?.id);
+                  }
+                }}
+                disabled={isDeleting}
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-red-600 text-white shadow-md hover:bg-red-700 cursor-pointer transition-colors disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Spin size="small" />
+                    <span>Đang xoá...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                    <span>Xác nhận xoá</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

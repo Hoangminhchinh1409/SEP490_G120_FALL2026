@@ -4,9 +4,11 @@ const nextConfig: NextConfig = {
   /* config options here */
   // Fix Next.js blocking WebSocket from local IP
   experimental: {
-    // If it's under experimental
+    optimizePackageImports: ["antd", "lucide-react", "react-apexcharts", "apexcharts"],
   },
-  // In newer Next.js versions it might be at the root
+  turbopack: {
+    root: __dirname,
+  },
   allowedDevOrigins: ["192.168.1.4", "smart-cobras-wear.loca.lt", "*.loca.lt"],
 };
 

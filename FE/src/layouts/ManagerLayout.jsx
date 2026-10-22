@@ -12,6 +12,7 @@ export default function ManagerLayout({ children }) {
 
   const navItems = [
     { href: '/manager', icon: 'insights', name: 'Tổng quan Hiệu suất' },
+    { href: '/manager/accounts', icon: 'manage_accounts', name: 'Tài khoản nhân viên' },
     { href: '/manager/orders', icon: 'package_2', name: 'Quản lý Đơn hàng' },
     { href: '/manager/fleet', icon: 'local_shipping', name: 'Quản lý Đội xe' },
     { href: '/manager/vendors', icon: 'handshake', name: 'Quản lý Đối tác' },
@@ -109,7 +110,7 @@ export default function ManagerLayout({ children }) {
       {/* Main Wrapper */}
       <div className="pl-64 flex flex-col min-h-screen">
         {/* Fixed Top Header */}
-        <header className="fixed top-0 left-64 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 px-space-lg flex items-center justify-between">
+        <header className="fixed top-0 left-64 right-0 h-16 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 px-space-lg flex items-center justify-between border-b border-surface-container/60">
           <div className="flex items-center gap-space-md">
             <div className="relative flex items-center">
               <span className="material-symbols-outlined absolute left-3 text-outline text-[18px] pointer-events-none">
@@ -178,6 +179,9 @@ export default function ManagerLayout({ children }) {
               )}
             </div>
           </div>
+
+          {/* Dải gradient trang trí phân tách giữa header và màn hình giống trang chủ */}
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-on-tertiary-container to-secondary pointer-events-none"></div>
         </header>
 
         {/* Dynamic Page Content */}

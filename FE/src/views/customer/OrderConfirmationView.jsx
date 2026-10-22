@@ -139,7 +139,7 @@ export default function OrderConfirmationView() {
         {/* Thông báo nếu đã chốt */}
         {agreedSuccess && (
           <Alert
-            message="Quý khách đã đồng ý chốt đơn hàng và giá cước thành công!"
+            title="Quý khách đã đồng ý chốt đơn hàng và giá cước thành công!"
             description={
               <div className="space-y-2 mt-1 text-xs">
                 <span>Vui lòng chuyển tiếp tới bước <b>Nộp hồ sơ chứng từ</b> để điều phối viên hoàn tất thủ tục cấp hợp đồng.</span>
@@ -259,7 +259,7 @@ export default function OrderConfirmationView() {
           {!agreedSuccess ? (
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100">
               <div className="text-xs text-slate-500 text-center sm:text-left">
-                Nhấn <b>"Đồng ý chốt đơn hàng &amp; Giá cước"</b> để chuyển sang bước tải lên chứng từ.
+                Nhấn <b>&quot;Đồng ý chốt đơn hàng &amp; Giá cước&quot;</b> để chuyển sang bước tải lên chứng từ.
               </div>
               <Button
                 type="primary"

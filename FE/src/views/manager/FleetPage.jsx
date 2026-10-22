@@ -101,32 +101,33 @@ export default function FleetPage() {
   });
 
   return (
-    <div className="flex flex-col w-full">
+    <div className="flex flex-col w-full space-y-space-lg">
       {/* Top Dispatch Action & Summary Section */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-lg mb-space-lg">
-        <div className="flex flex-col gap-space-xs">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-lg bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 relative overflow-hidden">
+        <div className="absolute -right-16 -top-16 w-64 h-64 bg-surface-container-low rounded-full pointer-events-none opacity-50 blur-2xl"></div>
+        <div className="flex flex-col gap-space-xs z-10">
           <div className="flex items-center gap-space-md flex-wrap">
-            <h1 className="font-headline-xl text-headline-xl text-primary font-bold tracking-tight">
+            <h1 className="text-2xl lg:text-3xl font-extrabold text-primary tracking-tight">
               Quản lý &amp; Điều phối Đội xe
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-md text-label-md font-semibold">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-md text-xs font-semibold">
               <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
               Trực tuyến: {activeTrucks}/{totalTrucks} Xe
             </span>
-            <span className="font-data-mono text-body-sm text-outline px-2 py-0.5 rounded bg-surface-container-low">
+            <span className="font-data-mono text-xs text-outline px-2 py-0.5 rounded bg-surface-container-low">
               Vận hành thực tế (GPS Synced)
             </span>
           </div>
-          <p className="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+          <p className="font-body-md text-sm text-on-surface-variant max-w-3xl">
             Giám sát định vị GPS xe tải trung chuyển sân bay, kiểm soát tải trọng tự động, theo dõi nhiệt độ thùng lạnh IoT và điều phối lệnh vận tải tức thời.
           </p>
         </div>
 
         {/* Quick Ops Actions */}
-        <div className="flex items-center gap-space-sm flex-wrap">
+        <div className="flex items-center gap-space-sm flex-wrap z-10">
           <button
             onClick={() => message.info('Đang xuất tệp telemetry định vị GPS (.kml/.csv)...')}
-            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-surface-container-lowest text-primary font-label-lg text-label-lg shadow-sm hover:bg-surface-container-low transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-surface-container-low text-primary font-label-lg text-sm font-semibold hover:bg-surface-container transition-colors cursor-pointer"
             type="button"
           >
             <span className="material-symbols-outlined text-[19px] text-secondary">file_download</span>
@@ -134,7 +135,7 @@ export default function FleetPage() {
           </button>
           <button
             onClick={() => message.warning('Chế độ Điều xe khẩn cấp đang quét các phương tiện trống trong bán kính 10km.')}
-            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-primary-container text-on-primary font-label-lg text-label-lg shadow-sm hover:bg-primary transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-primary-container text-on-primary font-label-lg text-sm font-semibold shadow-sm hover:bg-primary transition-all cursor-pointer"
             type="button"
           >
             <span className="material-symbols-outlined text-[19px]">emergency_share</span>
@@ -142,7 +143,7 @@ export default function FleetPage() {
           </button>
           <button
             onClick={() => setIsDriverModalOpen(true)}
-            className="inline-flex items-center gap-2 px-space-lg py-2.5 rounded-xl bg-on-tertiary-container text-on-primary font-label-lg text-label-lg shadow-sm hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-space-lg py-2.5 rounded-xl bg-on-tertiary-container text-on-primary font-label-lg text-sm font-semibold shadow-sm hover:brightness-110 active:scale-95 transition-all cursor-pointer"
             type="button"
           >
             <span className="material-symbols-outlined text-[19px]">add_circle</span>
@@ -470,7 +471,9 @@ export default function FleetPage() {
                           <td className="py-3.5 px-space-md">
                             <div className="flex flex-col gap-1 w-32">
                               <div className="flex justify-between font-data-mono text-label-sm font-semibold">
-                                <span className="text-on-surface">{truck.capacity_ton || '8.0'} Tấn</span>
+                                <span className="text-on-surface">
+                                  {truck.capacity_ton || (truck.payload_kg ? (Number(truck.payload_kg) / 1000).toFixed(1) : '1.25')} Tấn
+                                </span>
                                 <span className="text-secondary">{truck.status === 'ON_TRIP' ? '85%' : '0%'}</span>
                               </div>
                               <div className="w-full bg-surface-container-low h-1.5 rounded-full overflow-hidden">

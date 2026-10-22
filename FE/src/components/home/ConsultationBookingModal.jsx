@@ -1,20 +1,50 @@
-import { useState, useMemo } from 'react';
-import { Modal, Form, Input, InputNumber, Select, Button, message, Result, Space, Tooltip } from 'antd';
-import { Send, MapPin, Package, User, Plus, Trash2, FileText, CheckCircle2 } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Modal, Form, Input, InputNumber, Select, Checkbox, Button, message, Result, Tooltip } from 'antd';
+import { Send, MapPin, Package, User, Plus, Trash2, FileText, ShieldCheck } from 'lucide-react';
 import LocationSearchInput from '../common/LocationSearchInput';
 import { orderApi } from '../../api/orderApi';
-import { calculateRouteEstimate } from '../../data/dispatcherPresets';
+import { dispatcherApi } from '../../api/dispatcherApi';
+import { calculateRouteEstimate, ALS_NOI_BAI_TERMINAL } from '../../data/dispatcherPresets';
 
 const { Option } = Select;
+
+const CUSTOMS_SERVICE_FEE = 500000; // Phí dịch vụ làm thủ tục hải quan hộ (VNĐ)
 
 const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
   const [form] = Form.useForm();
   const [submittedOrder, setSubmittedOrder] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [dbLocations, setDbLocations] = useState([]);
   
-  // Tọa độ định vị lộ trình
-  const [pickupCoords, setPickupCoords] = useState(null);
+  // Quản lý chế độ chọn địa điểm: 'PRESET' (chọn từ danh mục kho có sẵn) hoặc 'CUSTOM' (nhập địa chỉ kho riêng)
+  const [pickupMode, setPickupMode] = useState('PRESET');
+  const [deliveryMode, setDeliveryMode] = useState('CUSTOM');
+  const [selectedPickupPreset, setSelectedPickupPreset] = useState('ALS_NOI_BAI');
+  const [selectedDeliveryPreset, setSelectedDeliveryPreset] = useState('ALS_NOI_BAI');
+  const [customsServiceRequired, setCustomsServiceRequired] = useState(false);
+  
+  // Khởi tạo tọa độ mặc định ban đầu là Nhập khẩu: Lấy hàng từ Ga ALS Nội Bài
+  const [pickupCoords, setPickupCoords] = useState({ lat: 21.2187, lng: 105.8042 });
   const [deliveryCoords, setDeliveryCoords] = useState(null);
+
+  // Tải danh sách điểm giao nhận từ database
+  useEffect(() => {
+    let active = true;
+    const fetchLocations = async () => {
+      try {
+        const locs = await dispatcherApi.getLocations();
+        if (active && Array.isArray(locs)) {
+          setDbLocations(locs);
+        }
+      } catch (err) {
+        console.error('Không tải được danh sách điểm giao nhận:', err);
+      }
+    };
+    if (open) {
+      fetchLocations();
+    }
+    return () => { active = false; };
+  }, [open]);
 
   // Danh sách nhiều loại hàng hóa (Multiple Cargo Items)
   const [cargoItems, setCargoItems] = useState([
@@ -30,6 +60,77 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
       weight: null
     }
   ]);
+
+  // Chiều vận chuyển: IMPORT (Nhập khẩu) hoặc EXPORT (Xuất khẩu)
+  const [shippingDirection, setShippingDirection] = useState('IMPORT');
+
+  const handleDirectionChange = (val) => {
+    setShippingDirection(val);
+    form.setFieldsValue({ shipping_direction: val });
+    if (val === 'IMPORT') {
+      // Nhập khẩu: Lấy hàng từ kho ALS (hoặc kho hệ thống), giao về địa chỉ khách
+      setPickupMode('PRESET');
+      setSelectedPickupPreset('ALS_NOI_BAI');
+      form.setFieldsValue({
+        pickup_address: 'Kho ALS tại Sân Bay Nội Bài',
+        delivery_address: ''
+      });
+      setPickupCoords({ lat: 21.2187, lng: 105.8042 });
+      setDeliveryCoords(null);
+      setDeliveryMode('CUSTOM');
+    } else {
+      // Xuất khẩu: Lấy hàng từ địa chỉ khách, giao đến kho ALS (hoặc kho hệ thống)
+      setDeliveryMode('PRESET');
+      setSelectedDeliveryPreset('ALS_NOI_BAI');
+      form.setFieldsValue({
+        pickup_address: '',
+        delivery_address: 'Kho ALS tại Sân Bay Nội Bài'
+      });
+      setPickupCoords(null);
+      setDeliveryCoords({ lat: 21.2187, lng: 105.8042 });
+      setPickupMode('CUSTOM');
+    }
+  };
+
+  // Xử lý khi chọn từ dropdown địa điểm điểm lấy
+  const handleSelectPickupPreset = (val) => {
+    setSelectedPickupPreset(val);
+    if (val === 'CUSTOM') {
+      setPickupMode('CUSTOM');
+      form.setFieldsValue({ pickup_address: '' });
+      setPickupCoords(null);
+      return;
+    }
+    setPickupMode('PRESET');
+    const matched = dbLocations.find(l => (l.raw_id || l.id) === val);
+    if (matched) {
+      form.setFieldsValue({ pickup_address: matched.address || matched.name });
+      setPickupCoords({ lat: matched.lat || 21.2187, lng: matched.lng || 105.8042 });
+    } else {
+      form.setFieldsValue({ pickup_address: 'Kho ALS tại Sân Bay Nội Bài' });
+      setPickupCoords({ lat: 21.2187, lng: 105.8042 });
+    }
+  };
+
+  // Xử lý khi chọn từ dropdown địa điểm điểm giao
+  const handleSelectDeliveryPreset = (val) => {
+    setSelectedDeliveryPreset(val);
+    if (val === 'CUSTOM') {
+      setDeliveryMode('CUSTOM');
+      form.setFieldsValue({ delivery_address: '' });
+      setDeliveryCoords(null);
+      return;
+    }
+    setDeliveryMode('PRESET');
+    const matched = dbLocations.find(l => (l.raw_id || l.id) === val);
+    if (matched) {
+      form.setFieldsValue({ delivery_address: matched.address || matched.name });
+      setDeliveryCoords({ lat: matched.lat || 21.2187, lng: matched.lng || 105.8042 });
+    } else {
+      form.setFieldsValue({ delivery_address: 'Kho ALS tại Sân Bay Nội Bài' });
+      setDeliveryCoords({ lat: 21.2187, lng: 105.8042 });
+    }
+  };
 
   // Ước tính cự ly ngầm khi có tọa độ
   const routeInfo = useMemo(() => {
@@ -68,6 +169,20 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
       totalCount
     };
   }, [cargoItems]);
+
+  // Ước tính giá cước bao gồm phí dịch vụ hải quan (nếu tích chọn)
+  const estimatedPricing = useMemo(() => {
+    if (!routeInfo.distanceKm) return { baselineRate: 0, customsFee: 0, totalRate: 0 };
+    const dist = routeInfo.distanceKm;
+    const weight = parseFloat(totals.chargeableWeight) || 0;
+    const base = Math.round((1500000 + dist * 45000 + weight * 850) / 50000) * 50000;
+    const customs = customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0;
+    return {
+      baselineRate: base,
+      customsFee: customs,
+      totalRate: base + customs
+    };
+  }, [routeInfo, totals.chargeableWeight, customsServiceRequired]);
 
   const handleAddCargoItem = () => {
     setCargoItems(prev => [
@@ -123,6 +238,10 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
       const payload = {
         ...formValues,
+        shipping_direction: shippingDirection,
+        customs_service_required: customsServiceRequired,
+        customs_fee: customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0,
+        estimated_price: estimatedPricing.totalRate,
         items: cargoItems,
         cargo_name: cargoItems.map(it => `${it.cargo_name} (${it.package_count} ${it.package_unit})`).join(', '),
         cargo_type: cargoItems[0]?.cargo_type || 'GENERAL',
@@ -154,6 +273,14 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
   const handleReset = () => {
     form.resetFields();
+    setShippingDirection('IMPORT');
+    setPickupMode('PRESET');
+    setDeliveryMode('CUSTOM');
+    setSelectedPickupPreset('ALS_NOI_BAI');
+    setSelectedDeliveryPreset('ALS_NOI_BAI');
+    setCustomsServiceRequired(false);
+    setPickupCoords({ lat: 21.2187, lng: 105.8042 });
+    setDeliveryCoords(null);
     setCargoItems([
       {
         id: 1,
@@ -177,7 +304,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
       onCancel={handleReset}
       destroyOnHidden={true}
       footer={null}
-      width={840}
+      width={880}
       centered
       className="consultation-modal"
     >
@@ -220,12 +347,14 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
             form={form}
             layout="vertical"
             initialValues={{
-              pickup_address: '',
+              shipping_direction: 'IMPORT',
+              pickup_address: 'Nhà Ga Hàng Hóa ALS Nội Bài',
               delivery_address: '',
-              customer_tax_code: ''
+              customer_tax_code: '',
+              loading_unloading_required: false
             }}
           >
-            {/* 1. Thông tin liên hệ & Mã số thuế */}
+            {/* ── PHẦN 1: Thông tin liên hệ & Doanh nghiệp ── */}
             <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
               <User size={14} className="text-indigo-600" /> 1. Thông tin liên hệ &amp; Doanh nghiệp
             </div>
@@ -244,52 +373,256 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               </Form.Item>
             </div>
 
-            {/* 2. Địa điểm lấy hàng & Giao hàng */}
+            {/* ── PHẦN 2: Luồng vận chuyển & Địa điểm ── */}
             <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
-              <MapPin size={14} className="text-blue-600" /> 2. Địa điểm lấy hàng &amp; Giao hàng
+              <MapPin size={14} className="text-blue-600" /> 2. Luồng vận chuyển &amp; Địa điểm giao nhận
             </div>
+
             <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-100 mb-4">
+              {/* Chọn chiều Nhập khẩu / Xuất khẩu */}
+              <div className="mb-3 p-2 bg-white rounded-lg border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-gray-700">
+                  Chiều vận chuyển:
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDirectionChange('IMPORT')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      shippingDirection === 'IMPORT' 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>🛬</span>
+                    <span>Nhập khẩu</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDirectionChange('EXPORT')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      shippingDirection === 'EXPORT' 
+                        ? 'bg-indigo-600 text-white shadow-sm' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>🛫</span>
+                    <span>Xuất khẩu</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Điểm lấy hàng */}
-                <Form.Item name="pickup_address" rules={[{ required: true, message: 'Vui lòng nhập địa điểm lấy hàng' }]} className="mb-0">
-                  <LocationSearchInput
-                    label="Điểm lấy hàng"
-                    markerLetter="A"
-                    markerColor="#2563eb"
-                    placeholder="Gõ tìm địa chỉ lấy hàng (VD: Thái Hà, Nội Bài...)..."
-                    value={form.getFieldValue('pickup_address')}
-                    onChange={(val) => form.setFieldsValue({ pickup_address: val })}
-                    onSelectLocation={(loc) => {
-                      setPickupCoords({ lat: loc.lat, lng: loc.lng });
-                      form.setFieldsValue({ pickup_address: loc.address });
-                    }}
-                    required
-                  />
-                </Form.Item>
+                <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200">
+                  <div className="text-[11px] font-bold text-blue-900 uppercase flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">A</span>
+                      Điểm lấy hàng {shippingDirection === 'IMPORT' ? '(Kho/Cảng nhập khẩu)' : ''}
+                    </span>
+                    {shippingDirection === 'IMPORT' && (
+                      <span className="text-[10px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded font-medium">Hệ thống kho</span>
+                    )}
+                  </div>
+
+                  {shippingDirection === 'IMPORT' ? (
+                    <div className="space-y-2">
+                      <Select
+                        className="w-full text-xs"
+                        value={selectedPickupPreset}
+                        onChange={handleSelectPickupPreset}
+                        placeholder="Chọn kho lấy hàng..."
+                      >
+                        <Select.OptGroup label="Kho bãi có sẵn trong hệ thống">
+                          <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài (Mặc định)</Option>
+                          {dbLocations.filter(loc => !loc.name?.toLowerCase().includes('sân bay nội bài')).map(loc => (
+                            <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
+                              📍 {loc.name} {loc.province ? `(${loc.province})` : ''}
+                            </Option>
+                          ))}
+                        </Select.OptGroup>
+                        <Select.OptGroup label="Kho khác bên ngoài">
+                          <Option value="CUSTOM">➕ Khác (Nhập địa chỉ kho của khách bên ngoài)</Option>
+                        </Select.OptGroup>
+                      </Select>
+
+                      {pickupMode === 'CUSTOM' ? (
+                        <Form.Item name="pickup_address" rules={[{ required: true, message: 'Nhập địa chỉ kho bên ngoài' }]} className="mb-0">
+                          <LocationSearchInput
+                            label="Địa chỉ kho bên ngoài của bạn"
+                            markerLetter="A"
+                            markerColor="#2563eb"
+                            placeholder="Gõ tìm địa chỉ kho ngoài..."
+                            value={form.getFieldValue('pickup_address')}
+                            onChange={(val) => form.setFieldsValue({ pickup_address: val })}
+                            onSelectLocation={(loc) => {
+                              setPickupCoords({ lat: loc.lat, lng: loc.lng });
+                              form.setFieldsValue({ pickup_address: loc.address });
+                            }}
+                            required
+                          />
+                        </Form.Item>
+                      ) : (
+                        <div className="text-xs text-blue-950 font-medium bg-white p-2 rounded border border-blue-100">
+                          {form.getFieldValue('pickup_address') || 'Kho ALS tại Sân Bay Nội Bài'}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Form.Item name="pickup_address" rules={[{ required: true, message: 'Vui lòng nhập địa điểm lấy hàng' }]} className="mb-0">
+                        <LocationSearchInput
+                          label="Địa chỉ lấy hàng của khách"
+                          markerLetter="A"
+                          markerColor="#2563eb"
+                          placeholder="Gõ tìm địa chỉ lấy hàng..."
+                          value={form.getFieldValue('pickup_address')}
+                          onChange={(val) => form.setFieldsValue({ pickup_address: val })}
+                          onSelectLocation={(loc) => {
+                            setPickupCoords({ lat: loc.lat, lng: loc.lng });
+                            form.setFieldsValue({ pickup_address: loc.address });
+                          }}
+                          required
+                        />
+                      </Form.Item>
+                    </div>
+                  )}
+                </div>
 
                 {/* Điểm giao hàng */}
-                <Form.Item name="delivery_address" rules={[{ required: true, message: 'Vui lòng nhập địa điểm giao hàng' }]} className="mb-0">
-                  <LocationSearchInput
-                    label="Điểm giao hàng"
-                    markerLetter="B"
-                    markerColor="#10b981"
-                    placeholder="Gõ tìm địa chỉ giao hàng (VD: Láng Hạ, Tiên Sơn...)..."
-                    value={form.getFieldValue('delivery_address')}
-                    onChange={(val) => form.setFieldsValue({ delivery_address: val })}
-                    onSelectLocation={(loc) => {
-                      setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
-                      form.setFieldsValue({ delivery_address: loc.address });
-                    }}
-                    required
-                  />
-                </Form.Item>
+                <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-200">
+                  <div className="text-[11px] font-bold text-indigo-900 uppercase flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">B</span>
+                      Điểm nhận hàng {shippingDirection === 'EXPORT' ? '(Kho/Cảng xuất khẩu)' : ''}
+                    </span>
+                    {shippingDirection === 'EXPORT' && (
+                      <span className="text-[10px] text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded font-medium">Hệ thống kho</span>
+                    )}
+                  </div>
+
+                  {shippingDirection === 'EXPORT' ? (
+                    <div className="space-y-2">
+                      <Select
+                        className="w-full text-xs"
+                        value={selectedDeliveryPreset}
+                        onChange={handleSelectDeliveryPreset}
+                        placeholder="Chọn kho giao hàng xuất..."
+                      >
+                        <Select.OptGroup label="Kho bãi có sẵn trong hệ thống">
+                          <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài (Mặc định)</Option>
+                          {dbLocations.filter(loc => !loc.name?.toLowerCase().includes('sân bay nội bài')).map(loc => (
+                            <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
+                              📍 {loc.name} {loc.province ? `(${loc.province})` : ''}
+                            </Option>
+                          ))}
+                        </Select.OptGroup>
+                        <Select.OptGroup label="Kho khác bên ngoài">
+                          <Option value="CUSTOM">➕ Khác (Nhập địa chỉ kho của khách bên ngoài)</Option>
+                        </Select.OptGroup>
+                      </Select>
+
+                      {deliveryMode === 'CUSTOM' ? (
+                        <Form.Item name="delivery_address" rules={[{ required: true, message: 'Nhập địa chỉ kho bên ngoài' }]} className="mb-0">
+                          <LocationSearchInput
+                            label="Địa chỉ kho bên ngoài của bạn"
+                            markerLetter="B"
+                            markerColor="#10b981"
+                            placeholder="Gõ tìm địa chỉ kho ngoài..."
+                            value={form.getFieldValue('delivery_address')}
+                            onChange={(val) => form.setFieldsValue({ delivery_address: val })}
+                            onSelectLocation={(loc) => {
+                              setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
+                              form.setFieldsValue({ delivery_address: loc.address });
+                            }}
+                            required
+                          />
+                        </Form.Item>
+                      ) : (
+                        <div className="text-xs text-indigo-950 font-medium bg-white p-2 rounded border border-indigo-100">
+                          {form.getFieldValue('delivery_address') || 'Kho ALS tại Sân Bay Nội Bài'}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Form.Item name="delivery_address" rules={[{ required: true, message: 'Vui lòng nhập địa điểm nhận hàng' }]} className="mb-0">
+                        <LocationSearchInput
+                          label="Địa chỉ nhận hàng của khách"
+                          markerLetter="B"
+                          markerColor="#10b981"
+                          placeholder="Gõ tìm địa chỉ nhận hàng..."
+                          value={form.getFieldValue('delivery_address')}
+                          onChange={(val) => form.setFieldsValue({ delivery_address: val })}
+                          onSelectLocation={(loc) => {
+                            setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
+                            form.setFieldsValue({ delivery_address: loc.address });
+                          }}
+                          required
+                        />
+                      </Form.Item>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* 3. Thông tin hàng hóa & Nút Thêm hàng hóa (Nhiều loại hàng) */}
+            {/* ── PHẦN 3: Thông tin Người nhận & Thời gian ── */}
+            <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
+              <span>👤</span> 3. Thông tin người nhận &amp; Thời gian giao hàng
+            </div>
+            <div className="bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-100 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <Form.Item
+                  label={<span className="text-xs font-semibold">Tên người nhận hàng <span className="text-red-500">*</span></span>}
+                  name="receiver_name"
+                  rules={[{ required: true, message: 'Nhập tên người nhận' }]}
+                  className="mb-0"
+                >
+                  <Input placeholder="Người nhận tại điểm giao" className="text-xs" />
+                </Form.Item>
+
+                <Form.Item
+                  label={<span className="text-xs font-semibold">SĐT người nhận <span className="text-red-500">*</span></span>}
+                  name="receiver_phone"
+                  rules={[{ required: true, message: 'Nhập SĐT người nhận' }]}
+                  className="mb-0"
+                >
+                  <Input placeholder="SĐT liên hệ khi giao" className="text-xs" />
+                </Form.Item>
+
+                <Form.Item
+                  label={<span className="text-xs font-semibold">Ngày giao hàng yêu cầu</span>}
+                  name="required_delivery_date"
+                  className="mb-0"
+                >
+                  <Input
+                    type="date"
+                    className="text-xs"
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  label={<span className="text-xs font-semibold">Yêu cầu bốc xếp hàng?</span>}
+                  name="loading_unloading_required"
+                  className="mb-0"
+                >
+                  <Select className="text-xs w-full">
+                    <Option value={false}>Không cần (tự bốc xếp)</Option>
+                    <Option value={true}>Có — Cần nhân công bốc xếp</Option>
+                  </Select>
+                </Form.Item>
+              </div>
+              <div className="mt-2 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-100">
+                ℹ️ Thông tin người nhận và deadline giúp điều phối viên ưu tiên và lên kế hoạch xe chính xác hơn.
+              </div>
+            </div>
+
+            {/* ── PHẦN 4: Danh mục hàng hóa ── */}
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-bold text-gray-700 uppercase flex items-center gap-1.5">
-                <Package size={14} className="text-emerald-600" /> 3. Danh mục hàng hóa &amp; Quy cách ({cargoItems.length} mặt hàng)
+                <Package size={14} className="text-emerald-600" /> 4. Danh mục hàng hóa &amp; Quy cách ({cargoItems.length} mặt hàng)
               </div>
               <Button 
                 type="dashed"
@@ -450,9 +783,28 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               </div>
             </div>
 
-            {/* Ghi chú thêm - CHỈ HIỂN THỊ NẾU KHÁCH NHẬP */}
+            {/* ── PHẦN 5: Dịch vụ Hải quan ── */}
+            <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 p-3 rounded-xl border border-blue-200 mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-blue-600 text-white rounded-lg">
+                  <ShieldCheck size={16} />
+                </div>
+                <span className="text-xs font-bold text-gray-800">
+                  Làm Dịch vụ làm thủ tục hải quan
+                </span>
+                <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
+                  +500.000 VNĐ / tờ khai
+                </span>
+              </div>
+
+              <div>
+                <Checkbox checked={customsServiceRequired} onChange={(e) => setCustomsServiceRequired(e.target.checked)} />
+              </div>
+            </div>
+
+            {/* Ghi chú thêm */}
             <Form.Item label="Ghi chú yêu cầu đặc biệt (nếu có):" name="notes" className="mb-4">
-              <Input.TextArea rows={2} placeholder="Thời gian lấy hàng mong muốn, yêu cầu nâng hạ bốc xếp (để trống nếu không có)..." className="text-xs" />
+              <Input.TextArea rows={2} placeholder="Thời gian lấy hàng mong muốn, yêu cầu nhiệt độ bảo quản, ghi chú lộ trình... (để trống nếu không có)" className="text-xs" />
             </Form.Item>
 
             {/* Nút hành động */}

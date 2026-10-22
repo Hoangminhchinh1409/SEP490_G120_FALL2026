@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip, Space } from 'antd';
 import { Search, Plus, Download, Eye, PhoneCall, Globe, RefreshCw, ArrowUpRight, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -43,50 +43,48 @@ const OrderManagement = () => {
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState(null);
   const [selectedOrderForCancel, setSelectedOrderForCancel] = useState(null);
 
-  // Tải danh sách đơn hàng từ Backend Supabase
-  const fetchOrders = useCallback(async () => {
+  // Tải danh sách đơn hàng từ Backend Supabase (silent: true khi cập nhật nền không bật loading)
+  const fetchOrders = useCallback(async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
       const data = await orderApi.getAllOrders();
       setOrders(data);
     } catch (err) {
       console.error('Fetch orders error:', err);
       message.error('Không thể kết nối đến máy chủ BE để lấy danh sách đơn');
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    let active = true;
+    let isSubscribed = true;
 
-    const loadOrders = async () => {
+    const loadInitialData = async () => {
       try {
         const data = await orderApi.getAllOrders();
-        if (active) {
+        if (isSubscribed) {
           setOrders(data);
+          setLoading(false);
         }
       } catch (err) {
-        if (active) {
+        if (isSubscribed) {
           console.error('Fetch orders error:', err);
           message.error('Không thể kết nối đến máy chủ BE để lấy danh sách đơn');
-        }
-      } finally {
-        if (active) {
           setLoading(false);
         }
       }
     };
 
-    loadOrders();
+    loadInitialData();
 
     const handleStorageChange = () => {
-      fetchOrders();
+      fetchOrders(true);
     };
 
     window.addEventListener('nexlog_orders_updated', handleStorageChange);
     return () => {
-      active = false;
+      isSubscribed = false;
       window.removeEventListener('nexlog_orders_updated', handleStorageChange);
     };
   }, [fetchOrders]);
@@ -114,42 +112,53 @@ const OrderManagement = () => {
 
   const handleConfirmCancel = async (cancelData) => {
     try {
-      await orderApi.cancelOrder(cancelData.id || cancelData.order_id, cancelData);
+      const orderTargetId = cancelData.id || cancelData.order_id;
+      await orderApi.cancelOrder(orderTargetId, cancelData);
+      
+      setOrders(prev => prev.map(o => (o.id === cancelData.id || o.order_id === cancelData.order_id)
+        ? { ...o, status: 'CANCELLED', cancel_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
+        : o
+      ));
+      setSelectedOrderForCancel(null);
+
+      if (!cancelData.cancellation_fee || cancelData.cancellation_fee === 0) {
+        message.success(`Đã hủy đơn hàng ${cancelData.order_id || cancelData.id} (Miễn phí hủy: 0 VNĐ)!`);
+      } else {
+        message.warning(`Đã hủy đơn hàng ${cancelData.order_id || cancelData.id}! Phí phạt / tiền công: ${Number(cancelData.cancellation_fee).toLocaleString()} VNĐ`);
+      }
+      fetchOrders();
     } catch (err) {
-      console.warn('cancelOrder API note:', err);
+      console.error('cancelOrder error:', err);
+      message.error(err.message || 'Không thể hủy đơn hàng trên hệ thống');
     }
-    setOrders(prev => prev.map(o => (o.id === cancelData.id || o.order_id === cancelData.order_id)
-      ? { ...o, status: 'CLOSED', cancel_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
-      : o
-    ));
-    setSelectedOrderForCancel(null);
-    message.success(`Đơn hàng ${cancelData.order_id || cancelData.id} đã được hủy và tự động đóng!`);
-    fetchOrders();
   };
 
   // Filter logic
-  const filteredData = orders.filter(item => {
-    const matchSearch = filterText === '' || 
-      item.order_id.toLowerCase().includes(filterText.toLowerCase()) ||
-      item.customer.toLowerCase().includes(filterText.toLowerCase()) ||
-      (item.hawb_code && item.hawb_code.toLowerCase().includes(filterText.toLowerCase()));
-    
-    let matchStatus = true;
-    if (filterStatus !== 'all') {
-      if (filterStatus === 'CLOSED') {
-        matchStatus = item.status === 'CLOSED' || item.status === 'DELIVERED' || item.status === 'CANCELLED';
-      } else if (filterStatus === 'DELIVERED') {
-        matchStatus = (item.status === 'DELIVERED' || item.status === 'CLOSED') && !item.cancel_reason && !item.cancellation_reason;
-      } else if (filterStatus === 'CANCELLED') {
-        matchStatus = item.status === 'CANCELLED' || (item.status === 'CLOSED' && (item.cancel_reason || item.cancellation_reason));
-      } else {
-        matchStatus = item.status === filterStatus;
+  const filteredData = useMemo(() => {
+    const searchLower = filterText.trim().toLowerCase();
+    return orders.filter(item => {
+      const matchSearch = !searchLower || 
+        (item.order_id && item.order_id.toLowerCase().includes(searchLower)) ||
+        (item.customer && item.customer.toLowerCase().includes(searchLower)) ||
+        (item.hawb_code && item.hawb_code.toLowerCase().includes(searchLower));
+      
+      let matchStatus = true;
+      if (filterStatus !== 'all') {
+        if (filterStatus === 'CLOSED') {
+          matchStatus = item.status === 'CLOSED' || item.status === 'DELIVERED' || item.status === 'CANCELLED';
+        } else if (filterStatus === 'DELIVERED') {
+          matchStatus = (item.status === 'DELIVERED' || item.status === 'CLOSED') && !item.cancel_reason && !item.cancellation_reason;
+        } else if (filterStatus === 'CANCELLED') {
+          matchStatus = item.status === 'CANCELLED' || (item.status === 'CLOSED' && (item.cancel_reason || item.cancellation_reason));
+        } else {
+          matchStatus = item.status === filterStatus;
+        }
       }
-    }
-    return matchSearch && matchStatus;
-  });
+      return matchSearch && matchStatus;
+    });
+  }, [orders, filterText, filterStatus]);
 
-  const columns = [
+  const columns = useMemo(() => [
     { 
       title: 'Đơn hàng & Khách hàng', 
       key: 'order_customer', 
@@ -166,6 +175,15 @@ const OrderManagement = () => {
             <span className="text-[11px] font-mono text-gray-400">
               HAWB: {record.hawb_code}
             </span>
+            {record.shipping_direction === 'EXPORT' ? (
+              <Tag color="purple" className="text-[10px] px-1.5 py-0 rounded font-semibold border-purple-300 bg-purple-50 text-purple-700 inline-flex items-center gap-1">
+                🛫 Xuất khẩu
+              </Tag>
+            ) : (
+              <Tag color="cyan" className="text-[10px] px-1.5 py-0 rounded font-semibold border-cyan-300 bg-cyan-50 text-cyan-700 inline-flex items-center gap-1">
+                🛬 Nhập khẩu
+              </Tag>
+            )}
             {record.source === 'HOMEPAGE' ? (
               <Tag color="orange" className="text-[10px] px-1.5 py-0 rounded font-semibold border-amber-300 bg-amber-50 text-amber-700 inline-flex items-center gap-1">
                 <Globe size={10} /> Đơn Web
@@ -196,6 +214,11 @@ const OrderManagement = () => {
             <span className="text-emerald-600 font-bold mr-1">Giao:</span>
             <span>{record.dropoff}</span>
           </div>
+          {record.customs_location && record.customs_location !== 'NOI_BAI' && (
+            <div className="text-[10px] text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded inline-block">
+              ICD thông quan: {record.customs_location === 'MY_DINH' ? 'Mỹ Đình' : record.customs_location === 'BAC_NINH' ? 'Bắc Ninh' : 'Gia Lâm'}
+            </div>
+          )}
         </div>
       )
     },
@@ -338,16 +361,18 @@ const OrderManagement = () => {
               </Tooltip>
             </>
           ) : (record.status === 'CANCELLED' || record.status === 'DELIVERED' || record.status === 'CLOSED') ? (
-            <Tooltip title="Xem chi tiết hồ sơ">
-              <Button 
-                size="small" 
-                icon={<Eye size={14} />} 
-                className="text-gray-600 hover:text-[#7367f0]"
-                onClick={() => setSelectedOrderForDetails(record)}
-              >
-                Hồ sơ
-              </Button>
-            </Tooltip>
+            <>
+              <Tooltip title="Xem chi tiết hồ sơ">
+                <Button 
+                  size="small" 
+                  icon={<Eye size={14} />} 
+                  className="text-gray-600 hover:text-[#7367f0]"
+                  onClick={() => setSelectedOrderForDetails(record)}
+                >
+                  Hồ sơ
+                </Button>
+              </Tooltip>
+            </>
           ) : record.status === 'ASSIGNED' ? (
             <>
               <Tooltip title="Hồ sơ">
@@ -384,7 +409,7 @@ const OrderManagement = () => {
         </Space>
       )
     }
-  ];
+  ], [router]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 custom-scrollbar">
@@ -468,6 +493,7 @@ const OrderManagement = () => {
         {/* Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <Table 
+            rowKey={record => record.id || record.order_id}
             columns={columns} 
             dataSource={filteredData} 
             loading={loading}

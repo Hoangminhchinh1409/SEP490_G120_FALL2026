@@ -170,5 +170,73 @@ export const managerApi = {
       console.error('managerApi.deleteBlog Error:', error);
       throw error;
     }
+  },
+
+  // 7. Quản lý Tài khoản Nhân sự (Dispatcher & Driver) - Screen 26 & Screen 27
+  getStaffAccounts: async (params = {}) => {
+    try {
+      const query = new URLSearchParams();
+      if (params.search) query.append('search', params.search);
+      if (params.role && params.role !== 'ALL') query.append('role', params.role);
+      if (params.status && params.status !== 'ALL') query.append('status', params.status);
+
+      const qs = query.toString();
+      const url = `/manager/accounts${qs ? `?${qs}` : ''}`;
+      const data = await fetchWithAuth(url);
+      return data;
+    } catch (error) {
+      console.error('managerApi.getStaffAccounts Error:', error);
+      throw error;
+    }
+  },
+
+  getStaffAccountById: async (id) => {
+    try {
+      const data = await fetchWithAuth(`/manager/accounts/${id}`);
+      return data.account;
+    } catch (error) {
+      console.error('managerApi.getStaffAccountById Error:', error);
+      throw error;
+    }
+  },
+
+  createStaffAccount: async (payload) => {
+    try {
+      const data = await fetchWithAuth('/manager/accounts', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.createStaffAccount Error:', error);
+      throw error;
+    }
+  },
+
+  updateStaffAccount: async (id, payload) => {
+    try {
+      const data = await fetchWithAuth(`/manager/accounts/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.updateStaffAccount Error:', error);
+      throw error;
+    }
+  },
+
+  toggleStaffAccountStatus: async (id, status) => {
+    try {
+      const data = await fetchWithAuth(`/manager/accounts/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.toggleStaffAccountStatus Error:', error);
+      throw error;
+    }
   }
 };
+
