@@ -190,16 +190,32 @@ export function Trip3DModal({ selectedTrip3D, onClose }) {
     <LoadPlan3DModal
       open={Boolean(selectedTrip3D)}
       trip={{
-        trip_code: selectedTrip3D.id || 'TR261026-009',
+        trip_code: selectedTrip3D.id || selectedTrip3D.trip_code || 'TR261026-009',
         plate: selectedTrip3D.plate || '29C-456.78',
         truck_model: selectedTrip3D.truck_model || 'Hyundai 2.5 t',
         box_dim: selectedTrip3D.box_dim || 'Thùng 4,2 × 1,9 × 1,9 m',
         max_payload: selectedTrip3D.max_payload || 2500,
-        total_weight: selectedTrip3D.total_weight || 1450,
-        orders_count: selectedTrip3D.orders_count || 6,
-        stops_count: selectedTrip3D.stops_count || 3,
-        total_volume: selectedTrip3D.total_volume || 5.6,
-        max_volume: selectedTrip3D.max_volume || 15.2
+        total_weight: selectedTrip3D.total_weight || selectedTrip3D.weight || 1450,
+        orders_count: selectedTrip3D.orders_count || (selectedTrip3D.orders ? selectedTrip3D.orders.length : 1),
+        stops_count: selectedTrip3D.stops ? selectedTrip3D.stops.length : 1,
+        total_volume: selectedTrip3D.total_volume || selectedTrip3D.volume || 3.4,
+        max_volume: selectedTrip3D.max_volume || 15.2,
+        // Dữ liệu thực tế của chuyến
+        orders: selectedTrip3D.orders_data || selectedTrip3D.orders || [
+          {
+            order_id: selectedTrip3D.id || 'NEX-140280',
+            hawb_code: selectedTrip3D.waybill_no || '180-87429103',
+            customer: selectedTrip3D.customer || 'Khách hàng vận tải',
+            weight: selectedTrip3D.total_weight || 1450,
+            package_count: selectedTrip3D.orders_count || 4,
+            length_cm: 110,
+            width_cm: 90,
+            height_cm: 85,
+            dropoff: selectedTrip3D.dropoff || 'Điểm giao'
+          }
+        ],
+        assignment_stops: selectedTrip3D.stops || [],
+        is_multi_drop: (selectedTrip3D.stops && selectedTrip3D.stops.filter(s => s.type === 'DROPOFF').length > 1)
       }}
       onClose={onClose}
     />

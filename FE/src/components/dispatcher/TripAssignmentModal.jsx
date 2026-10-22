@@ -34,23 +34,6 @@ const TripAssignmentMap = dynamic(
 
 const { Option } = Select;
 
-/**
- * Figure 23: 3.1.1 Trip Assignment (Chọn xe & tài xế – Đơn NEX-XXXXXX)
- * Chuẩn SRS:
- * (1) Thông tin đơn (Trip summary): Đơn, HAWB, Khách hàng, Điểm dừng, KL tính cước, Thể tích, Trạng thái, Xuất phát dự kiến, Quãng đường, Thời gian chuyến.
- * (2) Phương thức vận chuyển (Transport mode): Toggle Đội xe nội bộ (mặc định) / Nhà xe đối tác.
- * (3) Ghép chuyến nhiều điểm trả (Multi-drop grouping): Chỉ kích hoạt khi khách yêu cầu 1 đơn nhưng trả nhiều điểm khác nhau trên cùng tuyến đường.
- * (4) Xe (Truck): Dropdown chọn xe (Biển số, tải trọng, trạng thái).
- * (5) Số tài xế (Number of drivers): Toggle 1 tài xế / 2 tài xế. Cảnh báo vàng nếu chuyến > 8 giờ (MSG62).
- * (6) Tài xế 1 & Tài xế 2 (Driver 1 / Driver 2): Giờ đã lái hôm nay, giờ còn lại.
- * (7) Thứ tự điểm dừng (Stop order): Danh sách kéo thả các điểm S (Xuất phát), Lấy hàng, Điểm trả 1, 2... và Điểm nghỉ.
- * (8) Bản đồ tuyến (Route map): Tích hợp trực tiếp API đường bộ thực tế (OSRM / Geoapify) kết nối các điểm dừng.
- * (9) Nút Xem xếp hàng 3D: Mở Modal Xếp hàng 3D (Figure 25).
- * (10, 11, 12) Nhà xe đối tác: Nhà xe, Mã vận đơn nhà xe, Chuyển xe ngoài.
- * (13) Giao xe & tạo chuyến (Assign).
- * (14) Chứng từ chuyến (Trip documents).
- * (15, 16) Lý do thay đổi & Lưu thay đổi: Dùng khi thay đổi xe / tài xế qua sự cố.
- */
 export default function TripAssignmentModal({
   open,
   order,
@@ -150,18 +133,18 @@ export default function TripAssignmentModal({
 
   // Modal 3D Load Plan
   const [is3DOpen, setIs3DOpen] = useState(false);
-  const [loadingResources, setLoadingResources] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setLoadingResources(true);
 
+    let isMounted = true;
     Promise.all([
       dispatcherApi.getTrucks(),
       dispatcherApi.getDrivers(),
       dispatcherApi.getVendors()
     ])
       .then(([trucksData, driversData, vendorsData]) => {
+        if (!isMounted) return;
         setTrucks(trucksData || []);
         setDrivers(driversData || []);
         setVendors(vendorsData || []);
@@ -171,11 +154,12 @@ export default function TripAssignmentModal({
       })
       .catch(err => {
         console.warn('Load assignment data error:', err);
-      })
-      .finally(() => {
-        setLoadingResources(false);
       });
-  }, [open]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [open, selectedVendor]);
 
   // TÍCH HỢP ROUTING API THỰC TẾ QUA BACKEND PROXY (HOẶC OSRM FALLBACK)
   useEffect(() => {
@@ -783,15 +767,19 @@ export default function TripAssignmentModal({
         open={is3DOpen}
         trip={{
           trip_code: 'TR261026-009',
-          plate: selectedTruckPlate?.split(' - ')[0] || '29C-456.78',
-          truck_model: 'Hyundai 2.5 t',
-          box_dim: 'Thùng 4,2 × 1,9 × 1,9 m',
-          max_payload: 2500,
-          total_weight: chargeableWeight || 1450,
-          orders_count: 6,
-          stops_count: stops.filter(s => s.type === 'DROPOFF').length,
-          total_volume: cargoVolume || 5.6,
-          max_volume: 15.2
+          plate: selectedTruckPlate?.split(' - ')[0] || '29H-995.72',
+          truck_model: selectedTruckPlate?.includes('3.500') ? 'Hyundai 3.5 t' : 'Hyundai 2.5 t',
+          box_dim: selectedTruckPlate?.includes('3.500') ? 'Thùng 5,0 × 2,0 × 2,0 m' : 'Thùng 4,2 × 1,9 × 1,9 m',
+          max_payload: selectedTruckPlate?.includes('3.500') ? 3500 : 2500,
+          total_weight: chargeableWeight,
+          orders_count: 1,
+          total_volume: cargoVolume,
+          max_volume: 15.2,
+          // Truyền order hiện tại và cấu hình điểm trả hàng
+          order: order,
+          orders: [order],
+          assignment_stops: stops,
+          is_multi_drop: multiDropMode === 'MULTI_POINTS'
         }}
         onClose={() => setIs3DOpen(false)}
       />
