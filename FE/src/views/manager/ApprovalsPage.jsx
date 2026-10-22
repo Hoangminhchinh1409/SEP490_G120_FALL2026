@@ -1,821 +1,886 @@
 "use client";
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Modal, Select, Input, InputNumber, message, Spin, Tag, Tooltip, Alert } from 'antd';
 import { managerApi } from '../../api/managerApi';
 
 export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
-  const [approvalsList, setApprovalsList] = useState([]);
-  const [activeTab, setActiveTab] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('SLA'); // 'SLA', 'VALUE_DESC', 'TIME_DESC'
-  
-  // Modal states
-  const [decisionModal, setDecisionModal] = useState({
-    isOpen: false,
-    item: null,
-    action: 'APPROVE', // 'APPROVE' or 'REJECT'
-    reason: '',
-    note: '',
-    submitting: false
-  });
+  const [activeMainTab, setActiveMainTab] = useState('CLAIMS'); // 'CLAIMS' or 'INCIDENTS'
 
-  const [detailModalItem, setDetailModalItem] = useState(null);
-  const [toastMessage, setToastMessage] = useState(null);
+  // Claims state (Screen 19)
+  const [claimsList, setClaimsList] = useState([]);
+  const [claimSummary, setClaimSummary] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [claimFilter, setClaimFilter] = useState('ALL'); // 'ALL', 'PENDING', 'APPROVED', 'REJECTED'
+  const [claimSearch, setClaimSearch] = useState('');
 
-  const showToast = (msg, type = 'success') => {
-    setToastMessage({ msg, type });
-    setTimeout(() => setToastMessage(null), 3500);
-  };
+  // Modal Screen 20 (Claim Details & Decision)
+  const [selectedClaim, setSelectedClaim] = useState(null);
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+  const [claimComment, setClaimComment] = useState('');
+  const [decidingClaim, setDecidingClaim] = useState(false);
 
-  const parseAndSetApprovals = (data) => {
-    // Format DB items
-    const dbItems = (data || []).map(item => {
-      let cat = 'CLAIM';
-      let icon = 'shield_with_heart';
-      let tagColor = 'error';
-      if (item.type === 'BREAKDOWN') {
-        cat = 'FLEET';
-        icon = 'car_crash';
-      } else if (item.type === 'ROAD_BAN') {
-        cat = 'FLEET';
-        icon = 'traffic';
-      } else if (item.type === 'DELAY') {
-        cat = 'QUOTE';
-        icon = 'timer';
-      }
+  // Incidents state (Screen 17)
+  const [incidentsList, setIncidentsList] = useState([]);
+  const [incidentSummary, setIncidentSummary] = useState({ total: 0, pending: 0, resolved: 0 });
+  const [incidentFilter, setIncidentFilter] = useState('ALL');
+  const [incidentSearch, setIncidentSearch] = useState('');
 
-      return {
-        id: item.id,
-        code: item.code || `INC-${item.id}`,
-        type: item.type || 'Sự cố vận hành',
-        category: cat,
-        title: `Xử lý sự cố & Bồi thường ${item.tripId || ''}: ${item.type || 'Sự cố vận chuyển'}`,
-        description: item.description || item.claim_reason || 'Yêu cầu thẩm định và phê duyệt chi phí đền bù tổn thất trong quá trình vận hành trung chuyển.',
-        requester: item.requester_name || 'Dispatcher / Tài xế hiện trường',
-        timeAgo: 'Gần đây',
-        slaRemaining: item.status === 'REPORTED' ? '15 phút' : 'Đã phản hồi',
-        slaCritical: item.type === 'BREAKDOWN' || item.type === 'ACCIDENT',
-        customer: 'ALS Logistics Network',
-        hawb: item.tripId || 'TRIP-998',
-        route: 'Nội địa',
-        proposedValue: Number(item.cost || 0),
-        baseCost: 0,
-        margin: 'Trách nhiệm: ' + (item.fault || 'Đang xác định'),
-        status: (item.claim_status === 'APPROVED' || item.status === 'RESOLVED') ? 'APPROVED' : ((item.claim_status === 'REJECTED' || item.status === 'CLOSED') ? 'REJECTED' : 'PENDING'),
-        icon: icon,
-        tagLabel: item.fault ? `Lỗi: ${item.fault}` : 'Thẩm định sự cố',
-        tagColor: tagColor,
-        isDbRecord: true
-      };
-    });
+  // Modal Screen 14 (Resolve Major Incident)
+  const [selectedIncident, setSelectedIncident] = useState(null);
+  const [isIncidentModalOpen, setIsIncidentModalOpen] = useState(false);
+  const [incidentFault, setIncidentFault] = useState('COMPANY');
+  const [compensationAmount, setCompensationAmount] = useState(0);
+  const [incidentResolutionNote, setIncidentResolutionNote] = useState('');
+  const [resolvingIncident, setResolvingIncident] = useState(false);
 
-    setApprovalsList(dbItems);
-  };
+  // Modal Screen 40 (Trip Replay)
+  const [isReplayModalOpen, setIsReplayModalOpen] = useState(false);
+  const [replayLoading, setReplayLoading] = useState(false);
+  const [replayData, setReplayData] = useState(null);
+  const [replaySpeed, setReplaySpeed] = useState(1);
+  const [isPlaying, setIsPlaying] = useState(false);
 
-  const loadApprovals = () => {
+  // Fetch all data
+  const fetchData = async () => {
     setLoading(true);
-    managerApi.getApprovals()
-      .then(res => {
-        const rawList = Array.isArray(res) ? res : (res?.requests || []);
-        parseAndSetApprovals(rawList);
-      })
-      .catch(err => {
-        console.error('Failed to load approvals:', err);
-        showToast('Không thể tải danh sách duyệt từ máy chủ', 'error');
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-    managerApi.getApprovals()
-      .then(res => {
-        const rawList = Array.isArray(res) ? res : (res?.requests || []);
-        if (isMounted) parseAndSetApprovals(rawList);
-      })
-      .catch(err => {
-        console.error('Failed to load approvals:', err);
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
-
-    return () => { isMounted = false; };
-  }, []);
-
-  // Filter & Search Logic
-  const filteredApprovals = useMemo(() => {
-    return approvalsList.filter(item => {
-      // Tab filter
-      if (activeTab === 'QUOTE' && item.category !== 'QUOTE') return false;
-      if (activeTab === 'CHARTER' && item.category !== 'CHARTER') return false;
-      if (activeTab === 'CLAIM' && item.category !== 'CLAIM') return false;
-      if (activeTab === 'FLEET' && item.category !== 'FLEET') return false;
-
-      // Text search
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = item.title?.toLowerCase().includes(q);
-        const matchCode = item.code?.toLowerCase().includes(q);
-        const matchCust = item.customer?.toLowerCase().includes(q);
-        const matchHawb = item.hawb?.toLowerCase().includes(q);
-        return matchTitle || matchCode || matchCust || matchHawb;
-      }
-
-      return true;
-    }).sort((a, b) => {
-      if (sortBy === 'VALUE_DESC') return b.proposedValue - a.proposedValue;
-      if (sortBy === 'SLA') {
-        if (a.slaCritical && !b.slaCritical) return -1;
-        if (!a.slaCritical && b.slaCritical) return 1;
-        return 0;
-      }
-      return 0;
-    });
-  }, [approvalsList, activeTab, searchQuery, sortBy]);
-
-  // Counts for tabs
-  const tabCounts = useMemo(() => {
-    const total = approvalsList.length;
-    const quotes = approvalsList.filter(x => x.category === 'QUOTE').length;
-    const charters = approvalsList.filter(x => x.category === 'CHARTER').length;
-    const claims = approvalsList.filter(x => x.category === 'CLAIM').length;
-    const fleets = approvalsList.filter(x => x.category === 'FLEET').length;
-    return { total, quotes, charters, claims, fleets };
-  }, [approvalsList]);
-
-  const criticalSlaCount = approvalsList.filter(x => x.slaCritical || x.type === 'BREAKDOWN' || x.type === 'ACCIDENT').length;
-  const pendingCount = approvalsList.filter(x => x.status === 'PENDING').length;
-  const totalClaimsValue = approvalsList.reduce((acc, cur) => acc + (Number(cur.proposedValue) || 0), 0);
-  const fleetDispatchCount = approvalsList.filter(x => x.category === 'FLEET').length;
-  const approvedCount = approvalsList.filter(x => x.status === 'APPROVED').length;
-  const totalCount = approvalsList.length;
-  const approvalRate = totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0;
-
-  // Handler for opening decision modal
-  const handleOpenDecision = (item, action) => {
-    setDecisionModal({
-      isOpen: true,
-      item,
-      action,
-      reason: action === 'APPROVE' ? 'Đủ điều kiện phê duyệt & đúng thẩm quyền' : 'Không đạt tiêu chí biên lợi nhuận quy định',
-      note: '',
-      submitting: false
-    });
-  };
-
-  // Submit Decision
-  const handleConfirmDecision = async () => {
-    const { item, action, reason, note } = decisionModal;
-    if (!item) return;
-
-    setDecisionModal(prev => ({ ...prev, submitting: true }));
-
     try {
-      if (item.isDbRecord) {
-        await managerApi.decideApproval(item.id, {
-          action: action,
-          reason: reason,
-          note: note
-        });
-      }
+      const [claimsRes, incidentsRes] = await Promise.all([
+        managerApi.getClaims().catch(() => ({ claims: [], summary: {} })),
+        managerApi.getIncidents().catch(() => ({ incidents: [], summary: {} }))
+      ]);
 
-      // Update state locally
-      setApprovalsList(prev => prev.map(rec => {
-        if (rec.id === item.id) {
-          return {
-            ...rec,
-            status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED'
-          };
-        }
-        return rec;
-      }));
+      setClaimsList(claimsRes.claims || []);
+      setClaimSummary(claimsRes.summary || { total: 0, pending: 0, approved: 0, rejected: 0 });
 
-      showToast(
-        action === 'APPROVE' 
-          ? `Đã phê duyệt thành công yêu cầu ${item.code}` 
-          : `Đã từ chối yêu cầu ${item.code}`,
-        action === 'APPROVE' ? 'success' : 'info'
-      );
-
-      setDecisionModal({ isOpen: false, item: null, action: 'APPROVE', reason: '', note: '', submitting: false });
-    } catch (err) {
-      console.error('Decision error:', err);
-      showToast(err.message || 'Lỗi khi gửi quyết định duyệt', 'error');
-      setDecisionModal(prev => ({ ...prev, submitting: false }));
+      setIncidentsList(incidentsRes.incidents || []);
+      setIncidentSummary(incidentsRes.summary || { total: 0, pending: 0, resolved: 0 });
+    } catch (error) {
+      console.error('Lỗi khi tải dữ liệu bồi thường & sự cố:', error);
+      message.error('Không thể kết nối Backend để lấy danh sách sự cố và bồi thường.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  return (
-    <div className="flex flex-col w-full gap-y-space-lg text-on-surface">
-      {/* Toast Alert Notification */}
-      {toastMessage && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-xl border animate-slide-up ${
-          toastMessage.type === 'error' 
-            ? 'bg-red-950/95 text-red-200 border-red-700/60' 
-            : 'bg-slate-900/95 text-white border-blue-500/40'
-        }`}>
-          <span className="material-symbols-outlined text-[22px] text-secondary">
-            {toastMessage.type === 'error' ? 'error' : 'task_alt'}
-          </span>
-          <span className="font-body-md text-sm font-medium">{toastMessage.msg}</span>
-        </div>
-      )}
+  useEffect(() => {
+    let ignore = false;
+    async function loadInitial() {
+      try {
+        const [claimsRes, incidentsRes] = await Promise.all([
+          managerApi.getClaims().catch(() => ({ claims: [], summary: {} })),
+          managerApi.getIncidents().catch(() => ({ incidents: [], summary: {} }))
+        ]);
+        if (!ignore) {
+          setClaimsList(claimsRes.claims || []);
+          setClaimSummary(claimsRes.summary || { total: 0, pending: 0, approved: 0, rejected: 0 });
+          setIncidentsList(incidentsRes.incidents || []);
+          setIncidentSummary(incidentsRes.summary || { total: 0, pending: 0, resolved: 0 });
+        }
+      } catch (error) {
+        console.error('Lỗi khi tải dữ liệu bồi thường & sự cố:', error);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    loadInitial();
+    return () => { ignore = true; };
+  }, []);
 
-      {/* Top Hero Header / Dispatch Control Bar */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-space-md bg-surface-container-lowest p-space-lg rounded-xl shadow-[0_1px_3px_0_rgba(15,43,92,0.04)] relative overflow-hidden">
-        <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-secondary/5 blur-3xl pointer-events-none"></div>
-        <div className="flex flex-col gap-space-xs z-10">
-          <div className="flex flex-wrap items-center gap-space-sm">
-            <h1 className="font-headline-lg text-2xl lg:text-3xl font-extrabold text-on-surface tracking-tight">
-              Trung tâm Duyệt Yêu Cầu &amp; Phê Duyệt Tải
+  // Open Claim Decision Modal (Screen 20)
+  const handleOpenClaimModal = (claim) => {
+    setSelectedClaim(claim);
+    setClaimComment(claim.decision_comment || '');
+    setIsClaimModalOpen(true);
+  };
+
+  // Submit Claim Decision
+  const handleDecideClaim = async (action) => {
+    if (!selectedClaim) return;
+    const isApprove = action === 'APPROVE';
+
+    // Ràng buộc nghiệp vụ: Bắt buộc comment nếu từ chối hoặc duyệt vượt hạn mức
+    if (!isApprove && !claimComment.trim()) {
+      message.warning('Bắt buộc nhập lý do/nhận xét khi từ chối yêu cầu bồi thường (MSG02).');
+      return;
+    }
+    if (isApprove && selectedClaim.is_exceeding_cap && !claimComment.trim()) {
+      message.warning('Yêu cầu bồi thường vượt hạn mức trách nhiệm! Vui lòng nhập lý do phê duyệt ngoại lệ (BR-37).');
+      return;
+    }
+
+    try {
+      setDecidingClaim(true);
+      const res = await managerApi.decideClaim(selectedClaim.id, {
+        action,
+        comment: claimComment
+      });
+      message.success(res.message || 'Xử lý yêu cầu bồi thường thành công!');
+      setIsClaimModalOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('Lỗi quyết định claim:', error);
+      message.error(error.message || 'Lỗi khi xử lý bồi thường');
+    } finally {
+      setDecidingClaim(false);
+    }
+  };
+
+  // Open Incident Modal (Screen 14)
+  const handleOpenIncidentModal = (incident) => {
+    setSelectedIncident(incident);
+    setIncidentFault(incident.fault || 'COMPANY');
+    setCompensationAmount(incident.claim_amount || 0);
+    setIncidentResolutionNote(incident.resolution_note || '');
+    setIsIncidentModalOpen(true);
+  };
+
+  // Submit Incident Resolution (UC-25)
+  const handleResolveIncident = async () => {
+    if (!selectedIncident) return;
+    try {
+      setResolvingIncident(true);
+      const res = await managerApi.resolveIncident(selectedIncident.id, {
+        fault: incidentFault,
+        compensation_amount: compensationAmount,
+        resolution_note: incidentResolutionNote
+      });
+      message.success(res.message || 'Đã đóng sự cố và cập nhật quyết định thành công!');
+      setIsIncidentModalOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('Lỗi giải quyết sự cố:', error);
+      message.error(error.message || 'Lỗi khi giải quyết sự cố');
+    } finally {
+      setResolvingIncident(false);
+    }
+  };
+
+  // Open Trip Replay (UC-42 - Screen 40)
+  const handleOpenTripReplay = async (tripId) => {
+    if (!tripId) {
+      message.warning('Sự cố này không gắn với chuyến vận tải cụ thể nào.');
+      return;
+    }
+    setIsReplayModalOpen(true);
+    setReplayLoading(true);
+    try {
+      const data = await managerApi.getTripReplay(tripId);
+      setReplayData(data);
+    } catch (error) {
+      console.error('Lỗi tải dữ liệu tua lại chuyến:', error);
+      message.error('Không thể tải dữ liệu GPS tua lại chuyến.');
+      setIsReplayModalOpen(false);
+    } finally {
+      setReplayLoading(false);
+    }
+  };
+
+  // Filter Claims
+  const filteredClaims = claimsList.filter((c) => {
+    const matchSearch =
+      !claimSearch ||
+      c.claim_code?.toLowerCase().includes(claimSearch.toLowerCase()) ||
+      c.order_code?.toLowerCase().includes(claimSearch.toLowerCase()) ||
+      c.reason?.toLowerCase().includes(claimSearch.toLowerCase());
+
+    const matchFilter = claimFilter === 'ALL' || c.status === claimFilter;
+    return matchSearch && matchFilter;
+  });
+
+  // Filter Incidents
+  const filteredIncidents = incidentsList.filter((i) => {
+    const matchSearch =
+      !incidentSearch ||
+      i.code?.toLowerCase().includes(incidentSearch.toLowerCase()) ||
+      i.trip_code?.toLowerCase().includes(incidentSearch.toLowerCase()) ||
+      i.description?.toLowerCase().includes(incidentSearch.toLowerCase());
+
+    const matchFilter =
+      incidentFilter === 'ALL' ||
+      (incidentFilter === 'PENDING' && ['REPORTED', 'ESCALATED'].includes(i.status)) ||
+      (incidentFilter === 'RESOLVED' && i.status === 'RESOLVED');
+
+    return matchSearch && matchFilter;
+  });
+
+  return (
+    <div className="flex flex-col w-full space-y-space-lg">
+      {/* Top Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 relative overflow-hidden">
+        <div className="flex flex-col space-y-1 z-10">
+          <div className="flex items-center gap-space-sm flex-wrap">
+            <h1 className="text-2xl lg:text-3xl font-extrabold text-primary tracking-tight">
+              Sự Cố Lớn & Thẩm Định Bồi Thường
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-error-container text-error font-label-sm text-xs font-bold animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-error"></span>
-              {tabCounts.total} yêu cầu cần xử lý
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant font-data-mono text-xs">
-              <span className="material-symbols-outlined text-[15px] text-secondary">verified_user</span>
-              Tier 3 Dispatch Authority
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-error-container text-on-error-container font-label-sm text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-error animate-pulse"></span>
+              {claimSummary.pending} Khiếu nại chờ duyệt
             </span>
           </div>
           <p className="font-body-md text-sm text-on-surface-variant max-w-3xl">
-            Xử lý phê duyệt báo giá đặc biệt, yêu cầu chuyến bay khẩn cấp (Emergency Charter), điều chỉnh tải trọng và đền bù sự cố theo phân cấp vận hành NEXLOG OS.
+            Thẩm định sự cố cấp cao (BR-16), xác định trách nhiệm lỗi (UC-25), kiểm soát trần bồi thường theo hợp đồng và NĐ 163 (BR-37) và xem lại hành trình GPS (UC-42 - Screen 40).
           </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-space-sm flex-wrap z-10">
+        <div className="flex items-center gap-space-sm shrink-0 z-10">
           <button
-            onClick={() => loadApprovals()}
-            className="inline-flex items-center gap-space-xs px-space-md py-2.5 rounded-xl bg-surface-container-low text-primary font-label-lg text-sm font-semibold hover:bg-surface-container hover:text-primary transition-all cursor-pointer"
+            onClick={fetchData}
+            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-surface-container-low text-primary font-label-lg text-sm font-semibold hover:bg-surface-container transition-colors cursor-pointer"
             type="button"
           >
-            <span className="material-symbols-outlined text-[18px]">sync</span>
-            <span>Đồng bộ mới nhất</span>
-          </button>
-          <button
-            onClick={() => {
-              // Batch approve all pending items
-              setApprovalsList(prev => prev.map(p => ({ ...p, status: 'APPROVED' })));
-              showToast('Đã áp dụng phê duyệt nhanh cho toàn bộ hồ sơ hợp lệ!');
-            }}
-            className="inline-flex items-center gap-space-xs px-space-lg py-2.5 rounded-xl bg-on-tertiary-container text-white font-label-lg text-sm font-bold shadow-sm hover:brightness-110 active:scale-[0.99] transition-all cursor-pointer"
-            type="button"
-          >
-            <span className="material-symbols-outlined text-[18px]">done_all</span>
-            <span>Phê duyệt hàng loạt</span>
+            <span className="material-symbols-outlined text-[18px]">refresh</span>
+            <span>Làm mới dữ liệu</span>
           </button>
         </div>
       </div>
 
-      {/* KPI Matrix (Key Performance & Dispatch Status) */}
+      {/* 4 Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
-        {/* Card 1: Critical SLAs */}
-        <div className="relative bg-surface-container-lowest p-space-md rounded-xl shadow-[0_1px_3px_0_rgba(15,43,92,0.04)] flex flex-col justify-between overflow-hidden border border-outline-variant/30">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-error"></div>
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col">
-              <span className="font-label-sm text-xs font-semibold text-outline uppercase tracking-wider">Khẩn cấp SLA &lt; 30p</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl text-error font-extrabold leading-none">{criticalSlaCount}</span>
-                <span className="font-label-sm text-xs text-error font-semibold">yêu cầu</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-error-container/60 flex items-center justify-center text-error">
-              <span className="material-symbols-outlined text-[22px]">timer</span>
-            </div>
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-outline uppercase font-semibold">Khiếu nại chờ duyệt</span>
+            <span className="material-symbols-outlined text-amber-600 text-[22px]">pending_actions</span>
           </div>
-          <div className="mt-space-md pt-space-xs flex items-center justify-between font-body-sm text-xs text-on-surface-variant bg-surface-container-low px-2.5 py-1.5 rounded-lg">
-            <span className="flex items-center gap-1 text-error font-medium">
-              <span className="material-symbols-outlined text-[16px]">priority_high</span>
-              {criticalSlaCount > 0 ? `${criticalSlaCount} sự cố khẩn cấp` : 'Không có sự cố khẩn cấp'}
-            </span>
-            <span className="font-data-mono text-[11px] text-outline">Realtime DB</span>
+          <div className="my-2">
+            <div className="text-2xl font-black text-amber-600">{claimSummary.pending}</div>
+            <div className="text-xs text-on-surface-variant">Yêu cầu cần xem xét ra quyết định</div>
+          </div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div className="bg-amber-600 h-full rounded-full" style={{ width: `${claimSummary.total ? (claimSummary.pending / claimSummary.total) * 100 : 0}%` }}></div>
           </div>
         </div>
 
-        {/* Card 2: Price Quotes / Claims */}
-        <div className="relative bg-surface-container-lowest p-space-md rounded-xl shadow-[0_1px_3px_0_rgba(15,43,92,0.04)] flex flex-col justify-between overflow-hidden border border-outline-variant/30">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-on-tertiary-container"></div>
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col">
-              <span className="font-label-sm text-xs font-semibold text-outline uppercase tracking-wider">Hồ sơ chờ phê duyệt</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl text-primary font-extrabold leading-none">{pendingCount}</span>
-                <span className="font-label-sm text-xs text-outline font-semibold">hồ sơ</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
-              <span className="material-symbols-outlined text-[22px]">pending_actions</span>
-            </div>
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-outline uppercase font-semibold">Đã phê duyệt (MSG27)</span>
+            <span className="material-symbols-outlined text-secondary text-[22px]">verified</span>
           </div>
-          <div className="mt-space-md pt-space-xs flex items-center justify-between font-body-sm text-xs text-on-surface-variant bg-surface-container-low px-2.5 py-1.5 rounded-lg">
-            <span className="text-on-surface-variant">Tổng chi phí: <strong className="text-primary font-bold">{totalClaimsValue.toLocaleString('vi-VN')} đ</strong></span>
-            <span className="font-data-mono text-[11px] text-secondary font-semibold">Thẩm định</span>
+          <div className="my-2">
+            <div className="text-2xl font-black text-secondary">{claimSummary.approved}</div>
+            <div className="text-xs text-on-surface-variant">Đã chấp thuận chi trả đền bù</div>
+          </div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div className="bg-secondary h-full rounded-full" style={{ width: `${claimSummary.total ? (claimSummary.approved / claimSummary.total) * 100 : 0}%` }}></div>
           </div>
         </div>
 
-        {/* Card 3: Out-of-province Fleet Dispatch & Technical */}
-        <div className="relative bg-surface-container-lowest p-space-md rounded-xl shadow-[0_1px_3px_0_rgba(15,43,92,0.04)] flex flex-col justify-between overflow-hidden border border-outline-variant/30">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-secondary"></div>
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col">
-              <span className="font-label-sm text-xs font-semibold text-outline uppercase tracking-wider">Sự cố kỹ thuật &amp; Đội xe</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl text-secondary font-extrabold leading-none">{fleetDispatchCount}</span>
-                <span className="font-label-sm text-xs text-outline font-semibold">hồ sơ</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-secondary">
-              <span className="material-symbols-outlined text-[22px]">rv_hookup</span>
-            </div>
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-outline uppercase font-semibold">Sự cố lớn cần đóng</span>
+            <span className="material-symbols-outlined text-error text-[22px]">car_crash</span>
           </div>
-          <div className="mt-space-md pt-space-xs flex items-center justify-between font-body-sm text-xs text-on-surface-variant bg-surface-container-low px-2.5 py-1.5 rounded-lg">
-            <span className="text-on-surface-variant">Phân loại sự cố kỹ thuật xe</span>
-            <span className="font-data-mono text-[11px] text-secondary font-semibold">{fleetDispatchCount} vụ</span>
+          <div className="my-2">
+            <div className="text-2xl font-black text-error">{incidentSummary.pending}</div>
+            <div className="text-xs text-on-surface-variant">Hàng hỏng, tai nạn hoặc bị giữ (BR-16)</div>
+          </div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div className="bg-error h-full rounded-full" style={{ width: `${incidentSummary.total ? (incidentSummary.pending / incidentSummary.total) * 100 : 0}%` }}></div>
           </div>
         </div>
 
-        {/* Card 4: Daily Clearance Metric */}
-        <div className="relative bg-surface-container-lowest p-space-md rounded-xl shadow-[0_1px_3px_0_rgba(15,43,92,0.04)] flex flex-col justify-between overflow-hidden border border-outline-variant/30">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-primary"></div>
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col">
-              <span className="font-label-sm text-xs font-semibold text-outline uppercase tracking-wider">Đã giải quyết / Phê duyệt</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl text-primary font-extrabold leading-none">{approvedCount}</span>
-                <span className="font-label-sm text-xs text-outline font-semibold">hồ sơ</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-surface-container-high flex items-center justify-center text-primary">
-              <span className="material-symbols-outlined text-[22px]">task_alt</span>
-            </div>
+        <div className="p-space-lg bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="font-label-sm text-outline uppercase font-semibold">Sự cố đã giải quyết</span>
+            <span className="material-symbols-outlined text-primary text-[22px]">task_alt</span>
           </div>
-          <div className="mt-space-md pt-space-xs flex items-center justify-between font-body-sm text-xs text-on-surface-variant bg-surface-container-low px-2.5 py-1.5 rounded-lg">
-            <span className="flex items-center gap-1 text-on-surface font-medium">
-              Tỷ lệ hoàn tất: <strong className="text-secondary">{approvalRate}%</strong>
-            </span>
-            <div className="w-16 h-2 bg-surface-container rounded-full overflow-hidden">
-              <div className="bg-secondary h-full rounded-full" style={{ width: `${approvalRate}%` }}></div>
-            </div>
+          <div className="my-2">
+            <div className="text-2xl font-black text-primary">{incidentSummary.resolved}</div>
+            <div className="text-xs text-on-surface-variant">Đã xác định lỗi & hoàn tất hồ sơ</div>
+          </div>
+          <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
+            <div className="bg-primary h-full rounded-full" style={{ width: '100%' }}></div>
           </div>
         </div>
       </div>
 
-      {/* Operational Filter Bar & Tab Segments */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-space-md bg-surface-container-lowest p-space-sm rounded-xl shadow-[0_1px_3px_0_rgba(15,43,92,0.04)] border border-outline-variant/30">
-        {/* Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-          <button
-            onClick={() => setActiveTab('ALL')}
-            className={`px-4 py-2 rounded-xl font-label-lg text-sm whitespace-nowrap transition-all cursor-pointer ${
-              activeTab === 'ALL'
-                ? 'bg-primary text-on-primary font-bold shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
-            }`}
-          >
-            Tất cả yêu cầu <span className="ml-1.5 px-2 py-0.5 rounded-full bg-white/20 text-xs">{tabCounts.total}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('QUOTE')}
-            className={`px-4 py-2 rounded-xl font-label-lg text-sm whitespace-nowrap transition-all cursor-pointer ${
-              activeTab === 'QUOTE'
-                ? 'bg-primary text-on-primary font-bold shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
-            }`}
-          >
-            Báo giá nhanh trực tuyến <span className="ml-1.5 px-2 py-0.5 rounded-full bg-surface-container text-xs font-semibold">{tabCounts.quotes}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('CHARTER')}
-            className={`px-4 py-2 rounded-xl font-label-lg text-sm whitespace-nowrap transition-all cursor-pointer ${
-              activeTab === 'CHARTER'
-                ? 'bg-primary text-on-primary font-bold shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
-            }`}
-          >
-            Cấp tải bay khẩn cấp <span className="ml-1.5 px-2 py-0.5 rounded-full bg-error-container text-error text-xs font-bold">{tabCounts.charters}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('CLAIM')}
-            className={`px-4 py-2 rounded-xl font-label-lg text-sm whitespace-nowrap transition-all cursor-pointer ${
-              activeTab === 'CLAIM'
-                ? 'bg-primary text-on-primary font-bold shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
-            }`}
-          >
-            Bồi thường sự cố hàng hóa <span className="ml-1.5 px-2 py-0.5 rounded-full bg-surface-container text-xs font-semibold">{tabCounts.claims}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('FLEET')}
-            className={`px-4 py-2 rounded-xl font-label-lg text-sm whitespace-nowrap transition-all cursor-pointer ${
-              activeTab === 'FLEET'
-                ? 'bg-primary text-on-primary font-bold shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
-            }`}
-          >
-            Điều xe ngoại tỉnh <span className="ml-1.5 px-2 py-0.5 rounded-full bg-surface-container text-xs font-semibold">{tabCounts.fleets}</span>
-          </button>
+      {/* Main Tab Switcher */}
+      <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md border border-outline-variant/20">
+        <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container pb-space-sm">
+          <div className="flex items-center gap-space-xs">
+            <button
+              onClick={() => setActiveMainTab('CLAIMS')}
+              className={`px-4 py-2 rounded-xl font-label-lg text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                activeMainTab === 'CLAIMS'
+                  ? 'bg-primary text-on-primary shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">gavel</span>
+              <span>Yêu Cầu Bồi Thường (Screen 19 & 20 V2) ({claimsList.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveMainTab('INCIDENTS')}
+              className={`px-4 py-2 rounded-xl font-label-lg text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                activeMainTab === 'INCIDENTS'
+                  ? 'bg-error text-white shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">report_problem</span>
+              <span>Sự Cố Lớn (Screen 17 & 14) ({incidentsList.length})</span>
+            </button>
+          </div>
         </div>
 
-        {/* Quick Tools & Search */}
-        <div className="flex items-center gap-2 px-space-xs">
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Lọc mã đơn, khách hàng..."
-              className="w-48 lg:w-56 h-9 pl-8 pr-3 bg-surface-container-low rounded-xl text-xs text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-secondary transition-all"
-            />
-            <span className="material-symbols-outlined absolute left-2.5 top-2 text-outline text-[16px] pointer-events-none">search</span>
-          </div>
-
-          <select
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value)}
-            className="h-9 bg-surface-container-low px-3 rounded-xl font-label-sm text-xs text-on-surface-variant border-none focus:ring-1 focus:ring-secondary cursor-pointer"
-          >
-            <option value="SLA">Ưu tiên SLA cao nhất</option>
-            <option value="VALUE_DESC">Giá trị cao nhất</option>
-          </select>
-
-          <button
-            onClick={loadApprovals}
-            className="w-9 h-9 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface-variant flex items-center justify-center transition-colors cursor-pointer"
-            title="Làm mới dữ liệu"
-            type="button"
-          >
-            <span className={`material-symbols-outlined text-[18px] ${loading ? 'animate-spin' : ''}`}>sync</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Interactive Dispatch Request Cards List */}
-      <div className="flex flex-col gap-space-md">
-        {loading && approvalsList.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center bg-surface-container-lowest rounded-xl">
-            <span className="material-symbols-outlined text-4xl text-secondary animate-spin">progress_activity</span>
-            <p className="mt-3 text-sm text-on-surface-variant font-medium">Đang tải hồ sơ phê duyệt...</p>
-          </div>
-        ) : filteredApprovals.length === 0 ? (
-          <div className="py-16 text-center bg-surface-container-lowest rounded-xl border border-dashed border-outline-variant/60">
-            <span className="material-symbols-outlined text-4xl text-outline mb-2">task_alt</span>
-            <p className="text-sm font-semibold text-on-surface">Không có yêu cầu nào trong danh mục này</p>
-            <p className="text-xs text-outline mt-1">Tất cả hồ sơ liên quan đã được xử lý hoặc phân cấp hoàn tất.</p>
-          </div>
-        ) : (
-          filteredApprovals.map((item) => {
-            const isApproved = item.status === 'APPROVED';
-            const isRejected = item.status === 'REJECTED';
-            const isPending = !isApproved && !isRejected;
-
-            // Accent bar color
-            let accentColor = 'bg-primary';
-            if (item.tagColor === 'error' || item.slaCritical) accentColor = 'bg-error';
-            else if (item.tagColor === 'warning') accentColor = 'bg-on-tertiary-container';
-            else if (item.tagColor === 'secondary') accentColor = 'bg-secondary';
-
-            return (
-              <div
-                key={item.id}
-                className="bg-surface-container-lowest rounded-xl p-space-lg shadow-[0_2px_8px_rgba(15,43,92,0.06)] hover:shadow-md transition-shadow relative overflow-hidden flex flex-col gap-space-md border border-outline-variant/30"
-              >
-                {/* SLA Accent bar */}
-                <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${accentColor}`}></div>
-
-                {/* Top bar */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-sm pl-2">
-                  <div className="flex flex-wrap items-center gap-space-sm">
-                    <span className={`px-2.5 py-1 rounded font-data-mono text-xs font-bold flex items-center gap-1 ${
-                      item.tagColor === 'error' ? 'bg-error-container text-error' :
-                      item.tagColor === 'warning' ? 'bg-orange-100 text-orange-700' :
-                      item.tagColor === 'secondary' ? 'bg-blue-100 text-blue-700' :
-                      'bg-surface-container-high text-primary font-semibold'
-                    }`}>
-                      <span className="material-symbols-outlined text-[14px]">
-                        {item.tagColor === 'error' ? 'bolt' : item.tagColor === 'warning' ? 'pending_actions' : 'verified'}
-                      </span>
-                      {item.tagLabel}
-                    </span>
-
-                    <span className="font-data-mono text-sm text-primary font-bold">#{item.code}</span>
-                    <span className="h-4 w-[1px] bg-surface-container"></span>
-                    <span className="flex items-center gap-1 font-body-sm text-xs text-on-surface-variant">
-                      <span className="material-symbols-outlined text-[16px] text-outline">schedule</span>
-                      {item.timeAgo}
-                    </span>
-
-                    {item.slaCritical && isPending && (
-                      <span className="px-2 py-0.5 rounded-full bg-error text-on-error font-label-sm text-[11px] font-bold animate-pulse">
-                        {item.slaRemaining}
-                      </span>
-                    )}
-
-                    {isApproved && (
-                      <span className="px-2.5 py-0.5 rounded-full bg-green-100 text-green-700 font-label-sm text-xs font-bold flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                        Đã phê duyệt
-                      </span>
-                    )}
-                    {isRejected && (
-                      <span className="px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 font-label-sm text-xs font-bold flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">cancel</span>
-                        Đã từ chối
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-space-md font-body-sm text-xs text-outline pl-2">
-                    <span>Người gửi: <strong className="text-on-surface font-semibold">{item.requester}</strong></span>
-                  </div>
-                </div>
-
-                {/* Main Content Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-md pl-2 items-center">
-                  {/* Title & Logistics Spec */}
-                  <div className="lg:col-span-6 flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        item.tagColor === 'error' ? 'bg-error-container text-error' :
-                        item.tagColor === 'warning' ? 'bg-orange-100 text-orange-600' :
-                        'bg-surface-container-high text-primary'
-                      }`}>
-                        <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-                      </span>
-                      <h2 className="text-base lg:text-lg font-bold text-primary leading-snug">
-                        {item.title}
-                      </h2>
-                    </div>
-                    <p className="font-body-md text-xs lg:text-sm text-on-surface-variant pl-10 leading-relaxed">
-                      {item.description}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 pl-10 text-xs">
-                      <span className="text-outline">Khách hàng: <strong className="text-on-surface">{item.customer}</strong></span>
-                      <span className="text-outline">Mã HAWB / Tuyến: <span className="font-data-mono font-medium text-secondary">{item.hawb}</span></span>
-                      <span className="text-outline">Lộ trình: <span className="font-data-mono text-on-surface font-medium">{item.route}</span></span>
-                    </div>
-                  </div>
-
-                  {/* Financial & Capacity Metric */}
-                  <div className="lg:col-span-3 flex flex-col bg-surface-container-low p-space-md rounded-xl gap-1 border border-outline-variant/20">
-                    <span className="font-label-sm text-xs text-outline uppercase tracking-wider font-semibold">
-                      {item.category === 'CLAIM' ? 'Giá trị đền bù đề xuất' : 'Giá trị hợp đồng / Cước'}
-                    </span>
-                    <span className="text-xl lg:text-2xl text-primary font-black tracking-tight">
-                      {Number(item.proposedValue || 0).toLocaleString('vi-VN')} đ
-                    </span>
-                    <div className="flex items-center justify-between font-label-sm text-xs text-on-surface-variant pt-1 border-t border-surface-container">
-                      <span>{item.baseCost > 0 ? `Chi phí sàn: ${Number(item.baseCost).toLocaleString('vi-VN')} đ` : 'Quỹ thẩm định'}</span>
-                      <span className="text-secondary font-bold">{item.margin}</span>
-                    </div>
-                  </div>
-
-                  {/* Action CTAs */}
-                  <div className="lg:col-span-3 flex flex-col sm:flex-row lg:flex-col gap-2 justify-end">
-                    {isPending ? (
-                      <>
-                        <button
-                          onClick={() => handleOpenDecision(item, 'APPROVE')}
-                          className="w-full py-2.5 px-space-md rounded-xl bg-primary text-on-primary font-label-lg text-sm font-bold hover:bg-primary-container shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                          <span>Phê duyệt ngay</span>
-                        </button>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleOpenDecision(item, 'REJECT')}
-                            className="flex-1 py-2 px-space-sm rounded-xl bg-error-container text-error hover:bg-error hover:text-white font-label-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
-                            type="button"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">cancel</span>
-                            <span>Từ chối</span>
-                          </button>
-                          <button
-                            onClick={() => setDetailModalItem(item)}
-                            className="px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-label-lg text-xs font-semibold transition-all flex items-center justify-center cursor-pointer"
-                            title="Xem hồ sơ chi tiết"
-                            type="button"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">visibility</span>
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        <button
-                          onClick={() => setDetailModalItem(item)}
-                          className="w-full py-2.5 px-space-md rounded-xl bg-surface-container-high text-primary font-label-lg text-sm font-bold hover:bg-surface-container-highest transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-                          <span>Xem nhật ký duyệt</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
+        {/* TAB 1: CLAIMS (SCREEN 19 & 20) */}
+        {activeMainTab === 'CLAIMS' && (
+          <div className="mt-space-md space-y-space-md">
+            {/* Filter & Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-space-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-outline">Lọc trạng thái:</span>
+                <button
+                  onClick={() => setClaimFilter('ALL')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                    claimFilter === 'ALL' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                  }`}
+                >
+                  Tất cả ({claimsList.length})
+                </button>
+                <button
+                  onClick={() => setClaimFilter('PENDING')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                    claimFilter === 'PENDING' ? 'bg-amber-600 text-white' : 'bg-surface-container-low text-on-surface-variant'
+                  }`}
+                >
+                  Chờ duyệt ({claimSummary.pending})
+                </button>
+                <button
+                  onClick={() => setClaimFilter('APPROVED')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                    claimFilter === 'APPROVED' ? 'bg-secondary text-white' : 'bg-surface-container-low text-on-surface-variant'
+                  }`}
+                >
+                  Đã duyệt ({claimSummary.approved})
+                </button>
+                <button
+                  onClick={() => setClaimFilter('REJECTED')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                    claimFilter === 'REJECTED' ? 'bg-error text-white' : 'bg-surface-container-low text-on-surface-variant'
+                  }`}
+                >
+                  Từ chối ({claimSummary.rejected})
+                </button>
               </div>
-            );
-          })
+
+              <div className="w-full sm:w-72 relative">
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px] pointer-events-none">
+                  search
+                </span>
+                <input
+                  value={claimSearch}
+                  onChange={(e) => setClaimSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-space-md bg-surface-container-low rounded-xl text-xs text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary"
+                  placeholder="Tìm mã khiếu nại, mã đơn, lý do..."
+                  type="text"
+                />
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="py-16 flex justify-center"><Spin size="large" /></div>
+            ) : filteredClaims.length === 0 ? (
+              <div className="py-12 text-center text-outline">Không tìm thấy yêu cầu bồi thường nào.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider">
+                      <th className="py-3 px-space-md">MÃ KHIẾU NẠI</th>
+                      <th className="py-3 px-space-md">ĐƠN HÀNG & LOẠI</th>
+                      <th className="py-3 px-space-md">NGUỒN KHIẾU NẠI (V2)</th>
+                      <th className="py-3 px-space-md">TIỀN YÊU CẦU</th>
+                      <th className="py-3 px-space-md">GIỚI HẠN TRÁCH NHIỆM (BR-37)</th>
+                      <th className="py-3 px-space-md">TRẠNG THÁI</th>
+                      <th className="py-3 px-space-md text-right">THAO TÁC</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container text-sm">
+                    {filteredClaims.map((c) => (
+                      <tr key={c.id} className="hover:bg-surface-container-low/50 transition-colors">
+                        <td className="py-3 px-space-md font-mono font-bold text-primary">
+                          {c.claim_code}
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <div className="flex flex-col">
+                            <span className="font-mono font-semibold text-primary">{c.order_code}</span>
+                            <div className="mt-0.5">
+                              <Tag color={c.order_type === 'Import' ? 'blue' : 'cyan'}>
+                                {c.order_type || 'Export'}
+                              </Tag>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-space-md text-xs font-medium text-on-surface">
+                          <div className="flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px] text-outline">
+                              {c.source === 'CUSTOMER_CLAIM' ? 'support_agent' : 'report'}
+                            </span>
+                            <span>{c.source_display}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-space-md font-mono font-bold text-error">
+                          {c.amount.toLocaleString('vi-VN')} đ
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <div className="flex flex-col">
+                            <span className="font-mono font-semibold text-primary text-xs">
+                              {c.liability_limit ? `${c.liability_limit.toLocaleString('vi-VN')} đ` : '500.000.000 đ'}
+                            </span>
+                            {c.is_exceeding_cap && (
+                              <Tooltip title="Số tiền yêu cầu vượt giới hạn trách nhiệm hợp đồng / luật định (BR-37). Cần nhập lý do nếu phê duyệt.">
+                                <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 font-bold bg-amber-100 px-1.5 py-0.5 rounded mt-0.5 w-fit">
+                                  <span className="material-symbols-outlined text-[12px]">warning</span>
+                                  Vượt trần (MSG56)
+                                </span>
+                              </Tooltip>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <Tag color={c.status === 'APPROVED' ? 'green' : c.status === 'REJECTED' ? 'red' : 'gold'}>
+                            {c.status}
+                          </Tag>
+                        </td>
+                        <td className="py-3 px-space-md text-right">
+                          <button
+                            onClick={() => handleOpenClaimModal(c)}
+                            className="px-3 py-1 rounded-lg bg-surface-container text-primary hover:bg-primary hover:text-white text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Thẩm định
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: MAJOR INCIDENTS (SCREEN 17 & 14) */}
+        {activeMainTab === 'INCIDENTS' && (
+          <div className="mt-space-md space-y-space-md">
+            {/* Filter & Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-space-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-outline">Lọc:</span>
+                <button
+                  onClick={() => setIncidentFilter('ALL')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                    incidentFilter === 'ALL' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                  }`}
+                >
+                  Tất cả ({incidentsList.length})
+                </button>
+                <button
+                  onClick={() => setIncidentFilter('PENDING')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                    incidentFilter === 'PENDING' ? 'bg-error text-white' : 'bg-surface-container-low text-on-surface-variant'
+                  }`}
+                >
+                  Chờ giải quyết ({incidentSummary.pending})
+                </button>
+                <button
+                  onClick={() => setIncidentFilter('RESOLVED')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                    incidentFilter === 'RESOLVED' ? 'bg-secondary text-white' : 'bg-surface-container-low text-on-surface-variant'
+                  }`}
+                >
+                  Đã giải quyết ({incidentSummary.resolved})
+                </button>
+              </div>
+
+              <div className="w-full sm:w-72 relative">
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px] pointer-events-none">
+                  search
+                </span>
+                <input
+                  value={incidentSearch}
+                  onChange={(e) => setIncidentSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-space-md bg-surface-container-low rounded-xl text-xs text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary"
+                  placeholder="Tìm mã sự cố, chuyến xe, mô tả..."
+                  type="text"
+                />
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="py-16 flex justify-center"><Spin size="large" /></div>
+            ) : filteredIncidents.length === 0 ? (
+              <div className="py-12 text-center text-outline">Không tìm thấy sự cố lớn nào.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider">
+                      <th className="py-3 px-space-md">MÃ SỰ CỐ</th>
+                      <th className="py-3 px-space-md">CHUYẾN ĐI</th>
+                      <th className="py-3 px-space-md">LOẠI SỰ CỐ (BR-16)</th>
+                      <th className="py-3 px-space-md">TRÁCH NHIỆM LỖI</th>
+                      <th className="py-3 px-space-md">TIỀN ĐỀN BÙ</th>
+                      <th className="py-3 px-space-md">TRẠNG THÁI</th>
+                      <th className="py-3 px-space-md text-right">THAO TÁC</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container text-sm">
+                    {filteredIncidents.map((i) => (
+                      <tr key={i.id} className="hover:bg-surface-container-low/50 transition-colors">
+                        <td className="py-3 px-space-md font-mono font-bold text-primary">
+                          {i.code}
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <span className="font-mono font-semibold text-primary">{i.trip_code}</span>
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <Tag color="volcano">{i.type}</Tag>
+                        </td>
+                        <td className="py-3 px-space-md font-semibold text-xs">
+                          {i.fault ? (
+                            <span className={i.fault === 'COMPANY' ? 'text-error' : 'text-primary'}>
+                              {i.fault === 'COMPANY' ? 'Lỗi Công ty' : i.fault === 'CUSTOMER' ? 'Lỗi Khách hàng' : 'Bên thứ ba'}
+                            </span>
+                          ) : (
+                            <span className="text-outline">Chưa xác định</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-space-md font-mono font-bold text-primary">
+                          {i.claim_amount > 0 ? `${i.claim_amount.toLocaleString('vi-VN')} đ` : '0 đ'}
+                        </td>
+                        <td className="py-3 px-space-md">
+                          <Tag color={i.status === 'RESOLVED' ? 'green' : 'orange'}>
+                            {i.status}
+                          </Tag>
+                        </td>
+                        <td className="py-3 px-space-md text-right">
+                          <div className="inline-flex items-center gap-2">
+                            {i.trip_id && (
+                              <button
+                                onClick={() => handleOpenTripReplay(i.trip_id)}
+                                className="px-2.5 py-1 rounded-lg bg-surface-container-low text-secondary hover:bg-surface-container text-xs font-semibold cursor-pointer"
+                              >
+                                Xem lại GPS (Screen 40)
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleOpenIncidentModal(i)}
+                              className="px-3 py-1 rounded-lg bg-error text-white hover:bg-red-700 text-xs font-bold shadow-sm transition-all cursor-pointer"
+                            >
+                              Xử lý (Screen 14)
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Dispatch Policy & Governance Notice */}
-      <div className="bg-surface-container-low rounded-xl p-space-md flex flex-col md:flex-row items-start md:items-center justify-between gap-space-md border border-outline-variant/30">
-        <div className="flex items-start gap-space-md">
-          <div className="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center text-primary shrink-0 mt-0.5">
-            <span className="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+      {/* MODAL SCREEN 20: CHI TIẾT & PHÊ DUYỆT BỒI THƯỜNG (UC-26 V2) */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-primary font-headline-sm font-bold">
+            <span className="material-symbols-outlined text-secondary">verified_user</span>
+            <span>Thẩm Định Yêu Cầu Bồi Thường & Ra Quyết Định (Screen 20)</span>
           </div>
-          <div className="flex flex-col">
-            <span className="font-label-lg text-sm text-primary font-bold">Chính sách Phân quyền &amp; Kiểm toán Phê duyệt NEXLOG OS</span>
-            <p className="font-body-sm text-xs text-on-surface-variant mt-0.5">
-              Quản lý cấp vận hành (Manager) được cấp hạn mức duyệt tối đa <strong>500.000.000 đ/lần</strong> cho chuyến Charter và chiết khấu cước đến <strong>10%</strong>. Tất cả quyết định duyệt hoặc từ chối được mã hóa số và đồng bộ tự động tới bộ phận Kế toán &amp; Điều vận Dispatcher.
-            </p>
-          </div>
-        </div>
-        <a
-          className="inline-flex items-center gap-1 text-secondary font-label-sm text-xs font-bold hover:underline shrink-0"
-          href="#"
-          onClick={(e) => { e.preventDefault(); showToast('Tài liệu Phân cấp Thẩm quyền v4.2 đang áp dụng trên toàn mạng lưới.'); }}
-        >
-          <span>Quy chế phân quyền v4.2</span>
-          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-        </a>
-      </div>
+        }
+        open={isClaimModalOpen}
+        onCancel={() => setIsClaimModalOpen(false)}
+        footer={null}
+        width={700}
+        destroyOnHidden
+      >
+        {selectedClaim && (
+          <div className="mt-4 space-y-4 text-sm">
+            {/* Warning Banner MSG56 */}
+            {selectedClaim.is_exceeding_cap && (
+              <Alert
+                message="Cảnh báo: Số tiền yêu cầu vượt giới hạn trách nhiệm (MSG56)"
+                description={`Số tiền bồi thường (${selectedClaim.amount?.toLocaleString('vi-VN')} đ) vượt quá giới hạn trách nhiệm quy định theo Hợp đồng / NĐ 163 (${selectedClaim.liability_limit?.toLocaleString('vi-VN')} đ). Nếu phê duyệt ngoại lệ, bắt buộc phải nhập nhận xét giải trình (BR-37).`}
+                type="warning"
+                showIcon
+                className="rounded-xl border border-amber-300"
+              />
+            )}
 
-      {/* Decision Modal (Approve / Reject) */}
-      {decisionModal.isOpen && decisionModal.item && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-surface-container-lowest w-full max-w-lg rounded-2xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col">
-            <div className={`p-5 flex items-center justify-between text-white ${
-              decisionModal.action === 'APPROVE' ? 'bg-primary' : 'bg-red-700'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-2xl">
-                  {decisionModal.action === 'APPROVE' ? 'check_circle' : 'cancel'}
+            {/* Info Grid */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-surface-container-low rounded-xl text-xs">
+              <div>Mã khiếu nại: <strong className="text-primary font-mono">{selectedClaim.claim_code}</strong></div>
+              <div>Mã đơn hàng: <strong className="text-primary font-mono">{selectedClaim.order_code}</strong></div>
+              <div>Loại đơn (V2): <Tag color="blue">{selectedClaim.order_type}</Tag></div>
+              <div>Nguồn khiếu nại: <strong className="text-primary">{selectedClaim.source_display}</strong></div>
+              <div>Trần Hợp đồng: <strong className="text-primary">{selectedClaim.contract_cap ? `${selectedClaim.contract_cap.toLocaleString('vi-VN')} đ` : 'Chưa thiết lập'}</strong></div>
+              <div>Giới hạn trách nhiệm: <strong className="text-error">{selectedClaim.liability_limit?.toLocaleString('vi-VN')} đ</strong></div>
+            </div>
+
+            {/* Claim Amount & Reason */}
+            <div className="p-3 border border-surface-container rounded-xl space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase text-outline">Số tiền đề xuất bồi thường:</span>
+                <span className="text-xl font-black text-error font-mono">
+                  {selectedClaim.amount?.toLocaleString('vi-VN')} đ
                 </span>
-                <h3 className="font-bold text-lg">
-                  {decisionModal.action === 'APPROVE' ? 'Xác nhận Phê duyệt' : 'Xác nhận Từ chối'}
-                </h3>
               </div>
-              <button 
-                onClick={() => setDecisionModal({ isOpen: false, item: null, action: 'APPROVE', reason: '', note: '', submitting: false })}
-                className="text-white/80 hover:text-white cursor-pointer"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            <div className="p-6 flex flex-col gap-4">
-              <div className="p-3.5 bg-surface-container-low rounded-xl text-xs flex flex-col gap-1">
-                <div className="flex justify-between">
-                  <span className="text-outline">Mã yêu cầu:</span>
-                  <span className="font-data-mono font-bold text-primary">#{decisionModal.item.code}</span>
+              <div>
+                <span className="text-xs font-bold uppercase text-outline block mb-1">Lý do khiếu nại / Bằng chứng:</span>
+                <div className="p-2 bg-surface-container-lowest rounded-lg text-xs text-on-surface">
+                  {selectedClaim.reason || 'Khách hàng yêu cầu bồi thường tổn thất trong quá trình vận chuyển.'}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-outline">Tiêu đề:</span>
-                  <span className="font-semibold text-on-surface truncate max-w-[280px]">{decisionModal.item.title}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-outline">Số tiền thẩm định:</span>
-                  <span className="font-bold text-secondary">{Number(decisionModal.item.proposedValue || 0).toLocaleString('vi-VN')} đ</span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Căn cứ quyết định</label>
-                <input
-                  type="text"
-                  value={decisionModal.reason}
-                  onChange={e => setDecisionModal(prev => ({ ...prev, reason: e.target.value }))}
-                  className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary"
-                  placeholder="Lý do ngắn gọn..."
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Ghi chú điều vận / kế toán</label>
-                <textarea
-                  rows={3}
-                  value={decisionModal.note}
-                  onChange={e => setDecisionModal(prev => ({ ...prev, note: e.target.value }))}
-                  className="p-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary resize-none"
-                  placeholder="Ghi chú thêm gửi cho Dispatcher hoặc bộ phận liên quan..."
-                />
               </div>
             </div>
 
-            <div className="p-4 bg-surface-container-low border-t border-outline-variant/30 flex justify-end gap-3">
+            {/* Comment Input */}
+            <div>
+              <label className="block text-xs font-bold uppercase text-outline mb-1">
+                Nhận xét / Lý do quyết định: {(!selectedClaim || selectedClaim.is_exceeding_cap) ? '(Bắt buộc nếu Từ chối hoặc Vượt trần)' : '(Tùy chọn)'}
+              </label>
+              <Input.TextArea
+                rows={3}
+                value={claimComment}
+                onChange={(e) => setClaimComment(e.target.value)}
+                placeholder="Nhập nhận xét phê duyệt hoặc lý do từ chối bồi thường..."
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-2 pt-3 border-t border-surface-container">
               <button
-                type="button"
-                onClick={() => setDecisionModal({ isOpen: false, item: null, action: 'APPROVE', reason: '', note: '', submitting: false })}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container cursor-pointer"
+                onClick={() => setIsClaimModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-surface-container-low text-on-surface hover:bg-surface-container text-xs font-semibold cursor-pointer"
               >
-                Hủy bỏ
+                Đóng
               </button>
               <button
-                type="button"
-                disabled={decisionModal.submitting}
-                onClick={handleConfirmDecision}
-                className={`px-5 py-2 rounded-xl text-xs font-bold text-white shadow-md flex items-center gap-1.5 cursor-pointer ${
-                  decisionModal.action === 'APPROVE' ? 'bg-primary hover:bg-primary-container' : 'bg-error hover:bg-red-800'
-                }`}
+                onClick={() => handleDecideClaim('REJECT')}
+                disabled={decidingClaim}
+                className="px-5 py-2 rounded-xl bg-error text-white text-xs font-bold hover:bg-red-700 transition-all cursor-pointer shadow-sm"
               >
-                {decisionModal.submitting && <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>}
-                <span>Xác nhận thực hiện</span>
+                Từ chối bồi thường
+              </button>
+              <button
+                onClick={() => handleDecideClaim('APPROVE')}
+                disabled={decidingClaim}
+                className="px-5 py-2 rounded-xl bg-secondary text-on-secondary text-xs font-bold hover:bg-secondary-container transition-all cursor-pointer shadow-sm"
+              >
+                Phê duyệt bồi thường (MSG27)
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
-      {/* Detail Modal */}
-      {detailModalItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-surface-container-lowest w-full max-w-2xl rounded-2xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col">
-            <div className="p-5 bg-primary text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-2xl">description</span>
-                <div>
-                  <h3 className="font-bold text-base">Hồ sơ Chi tiết Yêu cầu #{detailModalItem.code}</h3>
-                  <p className="text-xs text-white/70">Phân cấp thẩm định vận hành ALS Network</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setDetailModalItem(null)}
-                className="text-white/80 hover:text-white cursor-pointer"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
+      {/* MODAL SCREEN 14: XỬ LÝ SỰ CỐ LỚN (UC-25) */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-primary font-headline-sm font-bold">
+            <span className="material-symbols-outlined text-error">gavel</span>
+            <span>Xác Định Trách Nhiệm Lỗi & Đóng Sự Cố Lớn (Screen 14)</span>
+          </div>
+        }
+        open={isIncidentModalOpen}
+        onCancel={() => setIsIncidentModalOpen(false)}
+        footer={null}
+        width={650}
+        destroyOnHidden
+      >
+        {selectedIncident && (
+          <div className="mt-4 space-y-4 text-sm">
+            <div className="p-3 bg-surface-container-low rounded-xl text-xs space-y-1">
+              <div>Mã sự cố: <strong className="text-primary font-mono">{selectedIncident.code}</strong></div>
+              <div>Chuyến đi: <strong className="text-primary font-mono">{selectedIncident.trip_code}</strong></div>
+              <div>Loại sự cố: <Tag color="volcano">{selectedIncident.type}</Tag></div>
+              <div>Mô tả: {selectedIncident.description || 'Không có mô tả chi tiết'}</div>
             </div>
 
-            <div className="p-6 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-outline uppercase">Tiêu đề yêu cầu</span>
-                <h4 className="text-base font-bold text-primary">{detailModalItem.title}</h4>
-              </div>
-
-              <div className="p-4 bg-surface-container-low rounded-xl text-xs flex flex-col gap-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-outline block">Khách hàng:</span>
-                    <span className="font-bold text-on-surface">{detailModalItem.customer}</span>
-                  </div>
-                  <div>
-                    <span className="text-outline block">Vận đơn / Chuyến:</span>
-                    <span className="font-data-mono font-bold text-secondary">{detailModalItem.hawb}</span>
-                  </div>
-                  <div>
-                    <span className="text-outline block">Hành trình:</span>
-                    <span className="font-medium text-on-surface">{detailModalItem.route}</span>
-                  </div>
-                  <div>
-                    <span className="text-outline block">Thời điểm tạo:</span>
-                    <span className="font-medium text-on-surface">{detailModalItem.timeAgo}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-outline uppercase">Mô tả nghiệp vụ</span>
-                <p className="text-xs text-on-surface-variant bg-surface-container-lowest p-3 rounded-xl border border-outline-variant/30 leading-relaxed">
-                  {detailModalItem.description}
-                </p>
-              </div>
-
-              <div className="p-4 bg-blue-50/70 border border-blue-200/50 rounded-xl flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-blue-900 font-semibold block">Giá trị đề xuất thẩm định:</span>
-                  <span className="text-xl font-black text-secondary">
-                    {Number(detailModalItem.proposedValue || 0).toLocaleString('vi-VN')} đ
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-xs text-blue-900 font-semibold block">Trạng thái:</span>
-                  <span className="font-bold text-xs px-2.5 py-1 rounded-full bg-white text-secondary shadow-sm">
-                    {detailModalItem.status}
-                  </span>
-                </div>
-              </div>
+            {/* Chọn lỗi thuộc về */}
+            <div>
+              <label className="block text-xs font-bold uppercase text-outline mb-1">
+                Bên có lỗi (Fault attribution): *
+              </label>
+              <Select
+                className="w-full h-10"
+                value={incidentFault}
+                onChange={(val) => setIncidentFault(val)}
+                options={[
+                  { value: 'COMPANY', label: 'Lỗi thuộc về Công ty (Tài xế / Vận hành ALS)' },
+                  { value: 'CUSTOMER', label: 'Lỗi thuộc về Khách hàng (Đóng gói sai / Thông tin sai)' },
+                  { value: 'THIRD_PARTY', label: 'Lỗi thuộc về Bên thứ ba (Va chạm giao thông / Khách quan)' }
+                ]}
+              />
             </div>
 
-            <div className="p-4 bg-surface-container-low border-t border-outline-variant/30 flex justify-end">
+            {/* Nhập số tiền bồi thường */}
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-bold uppercase text-outline">
+                  Số tiền bồi thường tổn thất (VNĐ):
+                </label>
+                <span className="text-[11px] text-primary font-semibold">
+                  (Nếu &gt; 0, hệ thống tự động sinh Yêu cầu bồi thường theo BR-17)
+                </span>
+              </div>
+              <InputNumber
+                className="w-full h-10"
+                min={0}
+                step={500000}
+                formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                parser={(value) => value.replace(/\$\s?|(,*)/g, '')}
+                value={compensationAmount}
+                onChange={(val) => setCompensationAmount(val || 0)}
+              />
+            </div>
+
+            {/* Ghi chú giải quyết */}
+            <div>
+              <label className="block text-xs font-bold uppercase text-outline mb-1">
+                Kết luận giải quyết & Biện pháp khắc phục:
+              </label>
+              <Input.TextArea
+                rows={3}
+                value={incidentResolutionNote}
+                onChange={(e) => setIncidentResolutionNote(e.target.value)}
+                placeholder="Ghi nhận phương án xử lý sự cố, thỏa thuận bồi thường..."
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-surface-container">
               <button
-                type="button"
-                onClick={() => setDetailModalItem(null)}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-white cursor-pointer"
+                onClick={() => setIsIncidentModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-surface-container-low text-on-surface hover:bg-surface-container text-xs font-semibold cursor-pointer"
               >
-                Đóng hồ sơ
+                Hủy
+              </button>
+              <button
+                onClick={handleResolveIncident}
+                disabled={resolvingIncident}
+                className="px-5 py-2 rounded-xl bg-error text-white text-xs font-bold hover:bg-red-700 transition-all cursor-pointer shadow-sm"
+              >
+                {resolvingIncident ? 'Đang lưu...' : 'Đóng sự cố & Ra quyết định (UC-25)'}
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
+
+      {/* MODAL SCREEN 40: XEM LẠI CHUYẾN ĐI (TRIP REPLAY - UC-42) */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-primary font-headline-sm font-bold">
+            <span className="material-symbols-outlined text-secondary">play_circle</span>
+            <span>Xem Lại Chuyến Đi & Hành Trình GPS (Screen 40)</span>
+          </div>
+        }
+        open={isReplayModalOpen}
+        onCancel={() => setIsReplayModalOpen(false)}
+        footer={[
+          <button
+            key="close"
+            onClick={() => setIsReplayModalOpen(false)}
+            className="px-4 py-2 rounded-xl bg-surface-container text-primary font-semibold text-xs cursor-pointer"
+          >
+            Đóng
+          </button>
+        ]}
+        width={800}
+        destroyOnHidden
+      >
+        {replayLoading ? (
+          <div className="py-16 flex justify-center"><Spin size="large" description="Đang tải vết GPS và dòng thời gian..." /></div>
+        ) : !replayData ? (
+          <div className="py-12 text-center text-outline">Không có dữ liệu GPS cho chuyến đi này.</div>
+        ) : (
+          <div className="space-y-4 text-sm mt-3">
+            {/* Trip summary */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-surface-container-low rounded-xl text-xs">
+              <div>Mã chuyến: <strong className="text-primary font-mono">{replayData.trip?.trip_code}</strong></div>
+              <div>Trạng thái: <Tag color="blue">{replayData.trip?.status}</Tag></div>
+              <div>Số điểm GPS: <strong className="text-primary">{replayData.gps_track?.length || 0} điểm</strong></div>
+              <div>Số sự kiện: <strong className="text-primary">{replayData.events?.length || 0} sự kiện</strong></div>
+            </div>
+
+            {/* GPS Visual Simulation Canvas/Box */}
+            <div className="w-full h-48 bg-slate-900 rounded-xl relative overflow-hidden flex flex-col justify-between p-4 text-white">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-mono text-emerald-400 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  GPS Replay Engine Live
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400">Tốc độ:</span>
+                  {[1, 2, 4].map((spd) => (
+                    <button
+                      key={spd}
+                      onClick={() => setReplaySpeed(spd)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${replaySpeed === spd ? 'bg-secondary text-white' : 'bg-slate-800 text-slate-300'}`}
+                    >
+                      {spd}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Map representation */}
+              <div className="flex flex-col items-center justify-center my-auto">
+                <span className="material-symbols-outlined text-4xl text-secondary animate-bounce">local_shipping</span>
+                <span className="text-xs text-slate-300 mt-1 font-mono">
+                  {replayData.stops?.map((s) => s.address?.split(',')[0]).join(' ➔ ') || 'Kho ALS Nội Bài ➔ Sân bay Tân Sơn Nhất'}
+                </span>
+              </div>
+
+              {/* Playback bar */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsPlaying(!isPlaying)}
+                  className="w-8 h-8 rounded-full bg-secondary text-white flex items-center justify-center cursor-pointer hover:bg-secondary-container"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {isPlaying ? 'pause' : 'play_arrow'}
+                  </span>
+                </button>
+                <div className="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden">
+                  <div className="bg-secondary h-full rounded-full" style={{ width: isPlaying ? '65%' : '20%' }}></div>
+                </div>
+                <span className="text-[11px] font-mono text-slate-400">01:45 / 03:20</span>
+              </div>
+            </div>
+
+            {/* Geofence & Checkpoint Events (BR-36) */}
+            <div className="border border-surface-container rounded-xl p-3 space-y-2">
+              <div className="text-xs font-bold uppercase text-outline">Dòng thời gian sự kiện & Kiểm tra Bán kính Geofence (BR-36):</div>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {replayData.events?.length === 0 ? (
+                  <div className="text-xs text-outline py-2">Không ghi nhận sự kiện vi phạm bán kính nào.</div>
+                ) : (
+                  replayData.events?.map((ev, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-lg bg-surface-container-low">
+                      <div className="flex items-center gap-2">
+                        <span className={`material-symbols-outlined text-[16px] ${ev.outside_radius ? 'text-error' : 'text-secondary'}`}>
+                          {ev.outside_radius ? 'wrong_location' : 'check_circle'}
+                        </span>
+                        <span className="font-semibold text-primary">{ev.type}</span>
+                        {ev.outside_radius && (
+                          <span className="px-1.5 py-0.5 rounded bg-error-container text-on-error-container text-[10px] font-bold">
+                            Ngoài bán kính Geofence (BR-36)
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-outline font-mono">
+                        {ev.occurred_at ? new Date(ev.occurred_at).toLocaleTimeString('vi-VN') : '14:20'}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
