@@ -26,7 +26,9 @@ import {
   Mail, 
   Phone, 
   User, 
-  Calendar
+  Calendar,
+  Copy,
+  Link2
 } from 'lucide-react';
 import { managerApi } from '../../api/managerApi';
 
@@ -240,14 +242,33 @@ export default function StaffAccountsPage() {
       render: (roleId, record) => {
         const isDispatcher = roleId === 3 || record.role === 'DISPATCHER';
         return (
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide border ${
-            isDispatcher 
-              ? 'bg-blue-50 text-blue-700 border-blue-200' 
-              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${isDispatcher ? 'bg-blue-600' : 'bg-emerald-600'}`}></span>
-            {isDispatcher ? 'Điều phối viên (Dispatcher)' : 'Tài xế (Driver)'}
-          </span>
+          <div className="flex flex-col items-center gap-1">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide border ${
+              isDispatcher 
+                ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isDispatcher ? 'bg-blue-600' : 'bg-emerald-600'}`}></span>
+              {isDispatcher ? 'Điều phối viên (Dispatcher)' : 'Tài xế (Driver)'}
+            </span>
+            {isDispatcher && record.order_form_token && (
+              <Tooltip title="Sao chép link đặt đơn (Order Form Link - BR-44)">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const url = `${window.location.origin}/customer/order?token=${record.order_form_token}`;
+                    navigator.clipboard.writeText(url);
+                    message.success('Đã sao chép link đặt đơn của điều phối viên!');
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium bg-blue-50/50 px-2 py-0.5 rounded border border-blue-100"
+                >
+                  <Link2 className="w-3 h-3" />
+                  <span>Link đặt đơn</span>
+                </button>
+              </Tooltip>
+            )}
+          </div>
         );
       }
     },
@@ -656,6 +677,41 @@ export default function StaffAccountsPage() {
               </Form.Item>
             </div>
           </div>
+
+          {/* BR-44: Order Form Token for Dispatcher */}
+          {isEditMode && (selectedAccount?.role_id === 3 || selectedAccount?.order_form_token) && (
+            <div className="bg-blue-50/60 p-4 rounded-xl border border-blue-200 mt-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-1.5 text-blue-900 font-semibold text-sm">
+                    <Link2 className="w-4 h-4 text-blue-600" />
+                    <span>Mã & Liên kết đặt đơn (Order Form Token - BR-44)</span>
+                  </div>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Liên kết độc quyền để Điều phối viên gửi cho khách hàng tự đặt đơn. Đơn tạo qua link này sẽ tự động gán cho Điều phối viên phụ trách:
+                  </p>
+                  <div className="mt-2 p-2 bg-white rounded-lg border border-blue-100 flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs text-slate-700 truncate select-all">
+                      {typeof window !== 'undefined' ? `${window.location.origin}/customer/order?token=${selectedAccount.order_form_token || 'chua-co-token'}` : `/customer/order?token=${selectedAccount.order_form_token}`}
+                    </span>
+                    <Button 
+                      size="small"
+                      type="primary"
+                      icon={<Copy className="w-3.5 h-3.5" />}
+                      className="bg-blue-600 hover:bg-blue-500 rounded-lg text-xs shrink-0 flex items-center gap-1"
+                      onClick={() => {
+                        const url = `${window.location.origin}/customer/order?token=${selectedAccount.order_form_token}`;
+                        navigator.clipboard.writeText(url);
+                        message.success('Đã sao chép link đặt đơn thành công!');
+                      }}
+                    >
+                      Sao chép
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </Form>
       </Modal>
 

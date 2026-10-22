@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const staffAccountModel = require("../models/staffAccountModel");
 
 // Role IDs hợp lệ theo đặc tả BR-28: Chỉ Dispatcher (3) và Driver (4)
@@ -40,6 +41,7 @@ const staffAccountService = {
             role_id: acc.role_id,
             role: acc.roles?.name || ROLE_ID_TO_NAME[acc.role_id] || 'STAFF',
             status: acc.status,
+            order_form_token: acc.order_form_token || null,
             created_at: acc.created_at,
             updated_at: acc.updated_at,
             last_login_at: acc.last_login_at
@@ -64,6 +66,7 @@ const staffAccountService = {
             role_id: acc.role_id,
             role: acc.roles?.name || ROLE_ID_TO_NAME[acc.role_id] || 'STAFF',
             status: acc.status,
+            order_form_token: acc.order_form_token || null,
             created_at: acc.created_at,
             updated_at: acc.updated_at,
             last_login_at: acc.last_login_at
@@ -126,6 +129,11 @@ const staffAccountService = {
         const rawPassword = password || "Nexlog@2026";
         const password_hash = await bcrypt.hash(rawPassword, 10);
 
+        // BR-44: Tự động sinh order_form_token duy nhất cho Dispatcher
+        const order_form_token = targetRoleId === 3 
+            ? `disp_${username.trim().toLowerCase().replace(/[^a-z0-9]/g, '')}_${crypto.randomBytes(6).toString('hex')}`
+            : null;
+
         const newAccount = await staffAccountModel.createStaffAccount({
             username: username.trim(),
             password_hash,
@@ -133,12 +141,14 @@ const staffAccountService = {
             email: email.trim().toLowerCase(),
             phone: (phone || '').trim(),
             role_id: targetRoleId,
-            status: normalizedStatus
+            status: normalizedStatus,
+            order_form_token
         });
 
         return {
             ...newAccount,
             role: newAccount.roles?.name || ROLE_ID_TO_NAME[newAccount.role_id] || 'STAFF',
+            order_form_token: newAccount.order_form_token || order_form_token,
             initial_password: rawPassword
         };
     },

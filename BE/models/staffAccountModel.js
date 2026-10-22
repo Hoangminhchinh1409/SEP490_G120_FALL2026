@@ -17,6 +17,7 @@ const staffAccountModel = {
                 phone,
                 role_id,
                 status,
+                order_form_token,
                 created_at,
                 updated_at,
                 last_login_at,
@@ -58,6 +59,7 @@ const staffAccountModel = {
                 phone,
                 role_id,
                 status,
+                order_form_token,
                 created_at,
                 updated_at,
                 last_login_at,
@@ -111,7 +113,8 @@ const staffAccountModel = {
                 email: payload.email,
                 phone: payload.phone || null,
                 role_id: payload.role_id,
-                status: payload.status || 'ACTIVE'
+                status: payload.status || 'ACTIVE',
+                order_form_token: payload.order_form_token || null
             })
             .select(`
                 id,
@@ -121,6 +124,7 @@ const staffAccountModel = {
                 phone,
                 role_id,
                 status,
+                order_form_token,
                 created_at,
                 updated_at,
                 roles (
