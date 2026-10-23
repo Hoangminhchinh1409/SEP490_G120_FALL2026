@@ -45,8 +45,28 @@ const updateLastLogin = async (id) => {
     return data;
 };
 
+const updatePassword = async (id, passwordHash) => {
+    const { data, error } = await supabase
+        .from("users")
+        .update({
+            password_hash: passwordHash,
+            password_changed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        })
+        .eq("id", id)
+        .select("id")
+        .single();
+
+    if (error) {
+        throw error;
+    }
+
+    return data;
+};
+
 module.exports = {
     findUserByIdentifier,
     findUserById,
-    updateLastLogin
+    updateLastLogin,
+    updatePassword
 };

@@ -115,8 +115,52 @@ const getCurrentUser = async (userId) => {
     };
 };
 
+const changePassword = async (userId, currentPassword, newPassword) => {
+    if (typeof currentPassword !== "string" || !currentPassword) {
+        const error = new Error("Current password is required");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (typeof newPassword !== "string" || !newPassword) {
+        const error = new Error("New password is required");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (newPassword.length < 6) {
+        const error = new Error("Password must be at least 6 characters long");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const user = await userModel.findUserById(userId);
+    if (!user) {
+        const error = new Error("User not found");
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+        currentPassword,
+        user.password_hash
+    );
+
+    if (!isCurrentPasswordValid) {
+        const error = new Error("Current password is incorrect");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await userModel.updatePassword(userId, passwordHash);
+
+    return { message: "Password changed successfully" };
+};
+
 
 module.exports = {
     login,
-    getCurrentUser
+    getCurrentUser,
+    changePassword
 };
