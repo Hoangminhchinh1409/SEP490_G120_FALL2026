@@ -2,6 +2,15 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const userModel = require("../models/userModel");
+const driverModel = require("../models/driverModel");
+const supabase = require("../config/supabase");
+
+const ROLE_NAMES = {
+    1: "ADMINISTRATOR",
+    2: "MANAGER",
+    3: "DISPATCHER",
+    4: "DRIVER"
+};
 
 const login = async (identifier, password) => {
     const user = await userModel.findUserByIdentifier(identifier);
@@ -60,6 +69,10 @@ const getCurrentUser = async (userId) => {
         throw new Error("User not found");
     }
 
+    const driverProfile = Number(user.role_id) === 4
+        ? await driverModel.getDriverProfileByUserId(user.id)
+        : null;
+
     return {
         id: user.id,
         username: user.username,
@@ -68,7 +81,22 @@ const getCurrentUser = async (userId) => {
         phone: user.phone,
         zalo_link: user.zalo_link,
         role_id: user.role_id,
-        status: user.status
+        role_name: ROLE_NAMES[Number(user.role_id)] || null,
+        status: user.status,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        last_login_at: user.last_login_at,
+        driver_profile: driverProfile
+            ? {
+                id: driverProfile.id,
+                user_account_id: driverProfile.user_account_id,
+                license_number: driverProfile.license_number,
+                license_class: driverProfile.license_class,
+                license_expiry: driverProfile.license_expiry,
+                status: driverProfile.status,
+                last_trip_ended_at: driverProfile.last_trip_ended_at
+            }
+            : null
     };
 };
 

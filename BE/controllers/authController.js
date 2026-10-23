@@ -46,7 +46,8 @@ const getMe = async (req, res) => {
         });
 
     } catch (error) {
-        return res.status(404).json({
+        const statusCode = error.message === "User not found" ? 404 : 500;
+        return res.status(statusCode).json({
             message: error.message
         });
     }
