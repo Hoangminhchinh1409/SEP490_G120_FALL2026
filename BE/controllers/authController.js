@@ -31,7 +31,8 @@ const login = async (req, res) => {
 
     } catch (error) {
         return res.status(401).json({
-            message: error.message
+            message: error.message,
+            code: error.code || null
         });
     }
 };

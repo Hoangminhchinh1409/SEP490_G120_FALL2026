@@ -2,15 +2,6 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const userModel = require("../models/userModel");
-const driverModel = require("../models/driverModel");
-const supabase = require("../config/supabase");
-
-const ROLE_NAMES = {
-    1: "ADMINISTRATOR",
-    2: "MANAGER",
-    3: "DISPATCHER",
-    4: "DRIVER"
-};
 
 const login = async (identifier, password) => {
     const user = await userModel.findUserByIdentifier(identifier);
@@ -20,7 +11,23 @@ const login = async (identifier, password) => {
     }
 
     if (user.status !== "ACTIVE") {
-        throw new Error("Account is not active");
+        const error = new Error("[MSG06] Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        error.code = "MSG06";
+        throw error;
+    }
+
+    // Kiểm tra Chế độ bảo trì hệ thống (SRS v2 - MSG86)
+    // Khi bật bảo trì, chỉ duy nhất Administrator (role_id = 1) được phép đăng nhập
+    if (Number(user.role_id) !== 1) {
+        const { data: maintenanceSetting } = await supabase
+            .from("system_settings")
+            .select("value")
+            .eq("key", "maintenance_mode")
+            .maybeSingle();
+
+        if (maintenanceSetting && (maintenanceSetting.value === "true" || maintenanceSetting.value === true)) {
+            throw new Error("Hệ thống đang bảo trì. Vui lòng quay lại sau.");
+        }
     }
 
     const isPasswordValid = await bcrypt.compare(

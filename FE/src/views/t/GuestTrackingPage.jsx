@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Steps, Card, Upload, Button, Tag, Alert, Divider, Modal, message } from 'antd';
-import { UploadOutlined, Phone, MessageCircle, FileText, Image as ImageIcon, MapPin, Package, Clock, ShieldCheck } from 'lucide-react';
+import { Steps, Card, Upload, Button, Alert, Modal, message } from 'antd';
+import { Upload as LucideUpload, Phone, MessageCircle, Image as ImageIcon, Clock, ShieldCheck, Package } from 'lucide-react';
 import { useParams } from 'next/navigation';
 
 export default function GuestTrackingPage() {
@@ -60,12 +60,12 @@ export default function GuestTrackingPage() {
 
         {order.status === 0 && (
           <Alert
-            message="Yêu cầu Chứng từ Hải quan"
+            title="Yêu cầu Chứng từ Xuất Nhập Khẩu"
             description={
               <div className="mt-2">
-                <p className="mb-2 text-sm">Vui lòng tải lên Tờ khai hải quan và Giấy ủy quyền để ALS có thể tiến hành lấy hàng. (Tối đa 10MB/tệp)</p>
+                <p className="mb-2 text-sm">Vui lòng tải lên các chứng từ hàng hóa (Hóa đơn, Packing List, Vận đơn...) để tiến hành thủ tục và lấy hàng. Tờ khai hải quan sẽ do điều phối viên chuẩn bị. (Tối đa 10MB/tệp)</p>
                 <Upload action="/api/upload" multiple>
-                  <Button icon={<UploadOutlined />}>Tải lên Chứng từ (PDF/JPG)</Button>
+                  <Button icon={<LucideUpload size={14} />}>Tải lên Chứng từ (PDF/JPG)</Button>
                 </Upload>
                 <p className="text-xs text-gray-400 mt-2">* Tệp sẽ tự động hủy sau 60 ngày theo Nghị định 13/2023/NĐ-CP.</p>
               </div>
@@ -78,7 +78,7 @@ export default function GuestTrackingPage() {
 
         {order.isVendor && (
           <Alert
-            message="Chuyến đi được thực hiện bởi Đối tác (Vendor)"
+            title="Chuyến đi được thực hiện bởi Đối tác (Vendor)"
             description={
               <div className="mt-1">
                 <p>Đối tác: <strong>{order.vendorName}</strong></p>
@@ -136,7 +136,7 @@ export default function GuestTrackingPage() {
 
       <Modal open={isPODOpen} footer={null} onCancel={() => setIsPODOpen(false)} width={600} title="Biên bản Bàn giao Hàng hóa (POD)">
         <img src={order.podImage} alt="POD" className="w-full rounded-lg mb-4" />
-        <Button type="primary" icon={<UploadOutlined />} block onClick={() => message.success('Đang tải xuống...')}>Tải xuống PDF/JPG</Button>
+        <Button type="primary" icon={<LucideUpload size={14} />} block onClick={() => message.success('Đang tải xuống...')}>Tải xuống PDF/JPG</Button>
       </Modal>
     </div>
   );

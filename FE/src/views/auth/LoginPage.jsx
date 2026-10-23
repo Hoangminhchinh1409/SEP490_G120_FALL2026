@@ -67,11 +67,14 @@ const LoginPage = () => {
             <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay z-0"></div>
 
             <div className="relative z-10">
-              <div className="flex items-center gap-3 mb-12">
-                <div className="bg-white/20 p-2.5 rounded-xl backdrop-blur-sm shadow-lg border border-white/30">
-                  <Truck className="w-8 h-8 text-white" />
+              <div className="inline-flex items-center gap-3 bg-white px-4 py-2.5 rounded-2xl shadow-lg border border-white/50 backdrop-blur-md mb-8">
+                <div className="w-10 h-10 flex items-center justify-center shrink-0">
+                  <img src="/logo-icon.png" alt="NEXLOG Logo" className="w-full h-full object-contain" />
                 </div>
-                <h2 className="font-black text-3xl tracking-tight text-white drop-shadow-sm">NEXLOG</h2>
+                <div className="flex flex-col justify-center">
+                  <img src="/logo-text.png" alt="NEXLOG" className="h-6 w-auto object-contain object-left" />
+                  <span className="text-[9px] text-slate-400 font-bold tracking-widest uppercase leading-none mt-0.5">LOGISTICS OS</span>
+                </div>
               </div>
 
               <h1 className="text-4xl font-bold mb-4 text-white leading-tight drop-shadow-sm">

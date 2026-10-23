@@ -21,4 +21,15 @@ export const API_ENDPOINTS = {
         GET_USERS: "/admin/users",
     },
 
+    MANAGER: {
+        DASHBOARD_STATS: "/manager/dashboard/stats",
+        VEHICLES: "/manager/vehicles",
+        DRIVERS: "/manager/drivers",
+        ORDERS: "/manager/orders",
+        REASSIGN_ORDER: (id) => `/manager/orders/${id}/reassign`,
+        VENDORS: "/manager/vendors",
+        APPROVE_VENDOR: (id) => `/manager/vendors/${id}/approve`,
+        APPROVALS: "/manager/approvals",
+        DECIDE_APPROVAL: (id) => `/manager/approvals/${id}/decide`,
+    },
 };
