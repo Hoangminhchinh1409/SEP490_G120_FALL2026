@@ -2,6 +2,15 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const userModel = require("../models/userModel");
+const driverModel = require("../models/driverModel");
+const supabase = require("../config/supabase");
+
+const ROLE_NAMES = {
+    1: "ADMINISTRATOR",
+    2: "MANAGER",
+    3: "DISPATCHER",
+    4: "DRIVER"
+};
 
 const login = async (identifier, password) => {
     const user = await userModel.findUserByIdentifier(identifier);
@@ -89,7 +98,6 @@ const getCurrentUser = async (userId) => {
         zalo_link: user.zalo_link,
         role_id: user.role_id,
         role_name: ROLE_NAMES[Number(user.role_id)] || null,
-        status: user.status,
         created_at: user.created_at,
         updated_at: user.updated_at,
         last_login_at: user.last_login_at,
