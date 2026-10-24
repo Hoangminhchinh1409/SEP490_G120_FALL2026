@@ -47,7 +47,25 @@ const getMe = async (req, res) => {
         });
 
     } catch (error) {
-        return res.status(404).json({
+        const statusCode = error.message === "User not found" ? 404 : 500;
+        return res.status(statusCode).json({
+            message: error.message
+        });
+    }
+};
+
+const changePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const result = await authService.changePassword(
+            req.user.id,
+            currentPassword,
+            newPassword
+        );
+
+        return res.status(200).json(result);
+    } catch (error) {
+        return res.status(error.statusCode || 500).json({
             message: error.message
         });
     }
@@ -72,5 +90,6 @@ const logout = async (req, res) => {
 module.exports = {
     login,
     getMe,
+    changePassword,
     logout
 };

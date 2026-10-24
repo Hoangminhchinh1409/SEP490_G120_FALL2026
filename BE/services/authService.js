@@ -2,7 +2,15 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const userModel = require("../models/userModel");
+const driverModel = require("../models/driverModel");
 const supabase = require("../config/supabase");
+
+const ROLE_NAMES = {
+    1: "ADMINISTRATOR",
+    2: "MANAGER",
+    3: "DISPATCHER",
+    4: "DRIVER"
+};
 
 const login = async (identifier, password) => {
     const user = await userModel.findUserByIdentifier(identifier);
@@ -77,6 +85,10 @@ const getCurrentUser = async (userId) => {
         throw new Error("User not found");
     }
 
+    const driverProfile = Number(user.role_id) === 4
+        ? await driverModel.getDriverProfileByUserId(user.id)
+        : null;
+
     return {
         id: user.id,
         username: user.username,
@@ -85,12 +97,70 @@ const getCurrentUser = async (userId) => {
         phone: user.phone,
         zalo_link: user.zalo_link,
         role_id: user.role_id,
-        status: user.status
+        role_name: ROLE_NAMES[Number(user.role_id)] || null,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        last_login_at: user.last_login_at,
+        driver_profile: driverProfile
+            ? {
+                id: driverProfile.id,
+                user_account_id: driverProfile.user_account_id,
+                license_number: driverProfile.license_number,
+                license_class: driverProfile.license_class,
+                license_expiry: driverProfile.license_expiry,
+                status: driverProfile.status,
+                last_trip_ended_at: driverProfile.last_trip_ended_at
+            }
+            : null
     };
+};
+
+const changePassword = async (userId, currentPassword, newPassword) => {
+    if (typeof currentPassword !== "string" || !currentPassword) {
+        const error = new Error("Current password is required");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (typeof newPassword !== "string" || !newPassword) {
+        const error = new Error("New password is required");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (newPassword.length < 6) {
+        const error = new Error("Password must be at least 6 characters long");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const user = await userModel.findUserById(userId);
+    if (!user) {
+        const error = new Error("User not found");
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+        currentPassword,
+        user.password_hash
+    );
+
+    if (!isCurrentPasswordValid) {
+        const error = new Error("Current password is incorrect");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await userModel.updatePassword(userId, passwordHash);
+
+    return { message: "Password changed successfully" };
 };
 
 
 module.exports = {
     login,
-    getCurrentUser
+    getCurrentUser,
+    changePassword
 };

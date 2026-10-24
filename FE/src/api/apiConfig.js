@@ -6,7 +6,8 @@ export const API_ENDPOINTS = {
     AUTH: {
         LOGIN: "/auth/login",
         LOGOUT: "/auth/logout",
-        ME: "/auth/me",
+        ME: "/auth/me",// lấy thông tin người dùng hiện tại
+        CHANGE_PASSWORD: "/auth/change-password",// thay đổi mật khẩu
     },
 
     USERS: {
