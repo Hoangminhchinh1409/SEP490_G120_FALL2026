@@ -777,11 +777,16 @@ export default function HomePage() {
             <div className="w-full px-margin-lg max-w-7xl mx-auto relative z-10">
               {/*  Header with Logo presence  */}
               <div className="flex flex-col items-center text-center max-w-3xl mx-auto mb-space-xl">
-                <img
-                  alt="NEXLOG"
-                  className="h-10 w-auto mb-space-sm brightness-0 invert"
-                  src="https://lh3.googleusercontent.com/aida/AEtjO1W8kT1iPjj86E43d5Dzj5e6y4fBeFMRg60lZdkxv_n1ZZHpbt1-ZRWonxZEakogYoCJifwzAfOMVU5yjoHyOfxqOxnaQp_uKcoHV55doI2kt0UKgXR1IJEzYf0PYf3IakZYvURTlluVKCBUDINipcXRVs7itJF5n5s6c0enyeviiC2sktuNlSTjdJaIboRxAMEXxIJEK40SZDOJslcnQ_y_LfxRLDL5gzP30-O30ehgFax9Wl1SBhlETOw"
-                />
+                <div className="inline-flex items-center justify-center gap-2.5 mb-space-sm">
+                  <img
+                    src="/logo-icon.png"
+                    alt="Logo NEXLOG"
+                    className="w-8 h-8 object-contain drop-shadow-sm"
+                  />
+                  <span className="text-2xl font-black tracking-wider text-on-primary uppercase font-sans">
+                    NEX<span className="text-on-tertiary-container">LOG</span>
+                  </span>
+                </div>
                 <h2 className="font-headline-xl text-headline-xl text-on-primary font-bold tracking-tight">
                   Tại sao bạn nên lựa chọn NEXLOG
                 </h2>

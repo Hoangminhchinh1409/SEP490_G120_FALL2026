@@ -238,6 +238,8 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
       const payload = {
         ...formValues,
+        required_pickup_date: formValues.required_pickup_date || formValues.required_delivery_date || null,
+        required_delivery_date: formValues.required_pickup_date || formValues.required_delivery_date || null,
         shipping_direction: shippingDirection,
         customs_service_required: customsServiceRequired,
         customs_fee: customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0,
@@ -487,6 +489,21 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                       </Form.Item>
                     </div>
                   )}
+
+                  {/* Ngày lấy hàng tách riêng gắn liền với Điểm lấy hàng sân bay */}
+                  <div className="mt-2.5 pt-2 border-t border-blue-100">
+                    <Form.Item
+                      label={<span className="text-[11px] font-semibold text-blue-900">Ngày lấy hàng</span>}
+                      name="required_pickup_date"
+                      className="mb-0"
+                    >
+                      <Input
+                        type="date"
+                        className="text-xs bg-white"
+                        min={new Date().toISOString().split('T')[0]}
+                      />
+                    </Form.Item>
+                  </div>
                 </div>
 
                 {/* Điểm giao hàng */}
@@ -567,9 +584,9 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               </div>
             </div>
 
-            {/* ── PHẦN 3: Thông tin Người nhận & Thời gian ── */}
+            {/* ── PHẦN 3: Thông tin Người nhận & Thời gian giao hàng tới nơi ── */}
             <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
-              <span>👤</span> 3. Thông tin người nhận &amp; Thời gian giao hàng
+              <span>👤</span> 3. Thông tin người nhận &amp; Thời gian giao hàng tới nơi
             </div>
             <div className="bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-100 mb-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -592,7 +609,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                 </Form.Item>
 
                 <Form.Item
-                  label={<span className="text-xs font-semibold">Ngày giao hàng yêu cầu</span>}
+                  label={<span className="text-xs font-semibold">Ngày giao hàng tới nơi</span>}
                   name="required_delivery_date"
                   className="mb-0"
                 >
@@ -610,12 +627,12 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                 >
                   <Select className="text-xs w-full">
                     <Option value={false}>Không cần (tự bốc xếp)</Option>
-                    <Option value={true}>Có — Cần nhân công bốc xếp</Option>
+                    <Option value={true}>Có — Hỗ trợ bốc xếp</Option>
                   </Select>
                 </Form.Item>
               </div>
               <div className="mt-2 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-100">
-                ℹ️ Thông tin người nhận và deadline giúp điều phối viên ưu tiên và lên kế hoạch xe chính xác hơn.
+                ℹ️ <b>Lưu ý:</b> Thời gian lấy hàng tại sân bay dùng để điều xe đến kho bốc hàng, thời gian giao hàng dùng để chốt hạn giao tới người nhận.
               </div>
             </div>
 
@@ -790,10 +807,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                   <ShieldCheck size={16} />
                 </div>
                 <span className="text-xs font-bold text-gray-800">
-                  Làm Dịch vụ làm thủ tục hải quan
-                </span>
-                <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
-                  +500.000 VNĐ / tờ khai
+                  Dịch vụ làm thủ tục hải quan
                 </span>
               </div>
 

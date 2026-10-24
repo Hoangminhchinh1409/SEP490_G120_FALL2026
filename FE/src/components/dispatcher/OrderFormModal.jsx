@@ -471,6 +471,21 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
                       </Form.Item>
                     </div>
                   )}
+
+                  {/* Ngày lấy hàng tách riêng gắn liền với Điểm lấy hàng sân bay */}
+                  <div className="mt-2.5 pt-2 border-t border-blue-100">
+                    <Form.Item
+                      label={<span className="text-[11px] font-semibold text-blue-900">Ngày lấy hàng</span>}
+                      name="required_pickup_date"
+                      className="mb-0"
+                    >
+                      <Input
+                        type="date"
+                        className="text-xs bg-white"
+                        min={new Date().toISOString().split('T')[0]}
+                      />
+                    </Form.Item>
+                  </div>
                 </div>
 
                 {/* Điểm giao hàng */}
@@ -560,7 +575,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
             <div className="flex items-center gap-2 mb-2">
               <Truck size={14} className="text-emerald-600" />
               <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
-                3. Thông tin liên hệ &amp; Lịch trình &amp; Loại xe
+                3. Thông tin người nhận &amp; Thời gian giao hàng tới nơi &amp; Loại xe
               </div>
             </div>
             <div className="bg-emerald-50/30 p-3.5 rounded-xl border border-emerald-100 mb-4">
@@ -599,8 +614,8 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
                   />
                 </Form.Item>
 
-                <Form.Item label={<span className="text-xs font-semibold">Ngày lấy hàng yêu cầu</span>}
-                  name="required_pickup_date" className="mb-0">
+                <Form.Item label={<span className="text-xs font-semibold">Ngày giao hàng tới nơi</span>}
+                  name="required_delivery_date" className="mb-0">
                   <Input type="date" className="text-xs" min={new Date().toISOString().split('T')[0]} />
                 </Form.Item>
 

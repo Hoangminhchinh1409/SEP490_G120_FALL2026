@@ -27,6 +27,7 @@ const createConsultationOrder = async (req, res) => {
       // --- Trường mới: Người nhận & Thời gian ---
       receiver_name,
       receiver_phone,
+      required_pickup_date,
       required_delivery_date,
       loading_unloading_required,
       // --- Trường mới: Hải quan & Thương mại ---
@@ -142,6 +143,7 @@ const createConsultationOrder = async (req, res) => {
       estimated_price: req.body.estimated_price ? parseInt(req.body.estimated_price) : 0,
       user_note: notes && notes.trim().length > 0 ? notes.trim() : null,
       // --- Thông tin nghiệp vụ từ form khách hàng ---
+      required_pickup_date: required_pickup_date || null,
       required_delivery_date: required_delivery_date || null,
       loading_unloading_required: loading_unloading_required === true || loading_unloading_required === 'true',
       web_workflow: {
