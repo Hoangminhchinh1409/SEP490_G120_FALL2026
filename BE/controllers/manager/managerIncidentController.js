@@ -53,6 +53,30 @@ const managerIncidentController = {
       const { data: incidents, error } = await query;
       if (error) throw error;
 
+      const tripIds = (incidents || []).map((i) => i.trip_id).filter(Boolean);
+      let orderMapByTrip = {};
+      if (tripIds.length > 0) {
+        const { data: tripStops } = await supabase
+          .from('trip_stops')
+          .select('trip_id, order:orders(id, order_code)')
+          .in('trip_id', tripIds);
+        (tripStops || []).forEach((ts) => {
+          if (ts.trip_id && ts.order?.order_code) {
+            orderMapByTrip[ts.trip_id] = ts.order.order_code;
+          }
+        });
+      }
+
+      const typeMap = {
+        'Vehicle Issue': 'Hỏng xe',
+        'Traffic': 'Cấm đường / Ùn tắc',
+        'TRAFFIC_ACCIDENT': 'Tai nạn giao thông',
+        'ACCIDENT': 'Tai nạn giao thông',
+        'DAMAGED_CARGO': 'Hàng hư hỏng/mất',
+        'CARGO_DAMAGED': 'Hàng hư hỏng/mất',
+        'SEIZED_BY_AUTHORITY': 'Cơ quan chức năng giữ xe'
+      };
+
       const formatted = (incidents || []).map((i) => {
         const claim = Array.isArray(i.compensation_claims)
           ? i.compensation_claims[0]
@@ -60,20 +84,24 @@ const managerIncidentController = {
 
         // Xác định xem có phải sự cố lớn (BR-16)
         const isMajor =
-          ['DAMAGED_CARGO', 'TRAFFIC_ACCIDENT', 'SEIZED_BY_AUTHORITY'].includes(i.type) ||
+          ['DAMAGED_CARGO', 'TRAFFIC_ACCIDENT', 'SEIZED_BY_AUTHORITY', 'Vehicle Issue', 'Traffic'].includes(i.type) ||
           i.status === 'ESCALATED';
+
+        const orderCode = orderMapByTrip[i.trip_id] || 'Chưa gắn đơn';
 
         return {
           id: i.id,
           code: `INC-${String(i.id).padStart(3, '0')}`,
           trip_id: i.trip_id,
           trip_code: i.trip?.trip_code || `TRIP-${i.trip_id}`,
+          order_code: orderCode,
           type: i.type,
+          type_display: typeMap[i.type] || i.type || 'Khác',
           is_major: isMajor,
           description: i.description,
           photos: i.photos || [],
           fault: i.fault,
-          status: i.status,
+          status: i.status === 'Reported' ? 'Chờ xử lý' : i.status === 'Resolved' ? 'Đã xử lý' : i.status,
           reported_time: i.reported_time || i.created_at,
           escalated_time: i.escalated_time,
           escalation_reason: i.escalation_reason,
@@ -91,8 +119,8 @@ const managerIncidentController = {
         incidents: formatted,
         summary: {
           total: formatted.length,
-          pending: formatted.filter((x) => ['REPORTED', 'ESCALATED'].includes(x.status)).length,
-          resolved: formatted.filter((x) => x.status === 'RESOLVED').length
+          pending: formatted.filter((x) => ['REPORTED', 'ESCALATED', 'Chờ xử lý', 'Reported'].includes(x.status)).length,
+          resolved: formatted.filter((x) => ['RESOLVED', 'Đã xử lý', 'Resolved'].includes(x.status)).length
         }
       });
     } catch (error) {
