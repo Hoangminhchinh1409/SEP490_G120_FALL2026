@@ -10,6 +10,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('CREATE'); // 'CREATE' | 'EDIT'
+  const [selectedUser, setSelectedUser] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [pagination, setPagination] = useState({
@@ -25,6 +26,32 @@ export default function UsersPage() {
   });
 
   const [form] = Form.useForm();
+
+  // Điền dữ liệu vào Form khi Modal mở (chuẩn Ant Design, tránh warning form chưa mount)
+  useEffect(() => {
+    if (modalVisible) {
+      if (modalMode === 'EDIT' && selectedUser) {
+        form.setFieldsValue({
+          id: selectedUser.id,
+          username: selectedUser.username,
+          full_name: selectedUser.full_name,
+          email: selectedUser.email,
+          phone: selectedUser.phone,
+          zalo_link: selectedUser.zalo_link,
+          role_id: selectedUser.role_id,
+          status: selectedUser.status === 'ACTIVE',
+          password: '',
+          confirmPassword: ''
+        });
+      } else if (modalMode === 'CREATE') {
+        form.resetFields();
+        form.setFieldsValue({
+          status: true,
+          role_id: 3 // Default Dispatcher
+        });
+      }
+    }
+  }, [modalVisible, modalMode, selectedUser, form]);
 
   // 1. Tải danh mục Roles
   useEffect(() => {
@@ -132,28 +159,14 @@ export default function UsersPage() {
   // Mở modal tạo mới
   const handleOpenCreateModal = () => {
     setModalMode('CREATE');
-    form.resetFields();
-    form.setFieldsValue({
-      status: true,
-      role_id: 3 // Default Dispatcher
-    });
+    setSelectedUser(null);
     setModalVisible(true);
   };
 
   // Mở modal chỉnh sửa
   const handleOpenEditModal = (record) => {
     setModalMode('EDIT');
-    form.resetFields();
-    form.setFieldsValue({
-      id: record.id,
-      username: record.username,
-      full_name: record.full_name,
-      email: record.email,
-      phone: record.phone,
-      zalo_link: record.zalo_link,
-      role_id: record.role_id,
-      status: record.status === 'ACTIVE'
-    });
+    setSelectedUser(record);
     setModalVisible(true);
   };
 
@@ -435,7 +448,10 @@ export default function UsersPage() {
           </div>
         }
         open={modalVisible}
-        onCancel={() => setModalVisible(false)}
+        onCancel={() => {
+          setModalVisible(false);
+          setSelectedUser(null);
+        }}
         onOk={handleFormSubmit}
         confirmLoading={submitting}
         okText={modalMode === 'CREATE' ? 'Tạo tài khoản' : 'Lưu thay đổi'}
