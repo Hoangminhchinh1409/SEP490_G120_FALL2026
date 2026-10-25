@@ -252,7 +252,7 @@ export default function StaffAccountsPage() {
               {isDispatcher ? 'Điều phối viên (Dispatcher)' : 'Tài xế (Driver)'}
             </span>
             {isDispatcher && record.order_form_token && (
-              <Tooltip title="Sao chép link đặt đơn (Order Form Link - BR-44)">
+              <Tooltip title="Sao chép liên kết đặt đơn">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -308,7 +308,7 @@ export default function StaffAccountsPage() {
       align: 'right',
       render: (_, record) => (
         <div className="flex items-center justify-end gap-1.5">
-          <Tooltip title="Xem & Cập nhật chi tiết (Screen 27)">
+          <Tooltip title="Xem & Cập nhật chi tiết">
             <Button 
               type="text" 
               size="small"
@@ -324,7 +324,7 @@ export default function StaffAccountsPage() {
             title={record.status === 'ACTIVE' ? "Xác nhận khóa tài khoản?" : "Xác nhận mở khóa tài khoản?"}
             description={
               record.status === 'ACTIVE' 
-                ? `Tài khoản ${record.username} sẽ không thể đăng nhập và hiển thị lỗi MSG06.` 
+                ? `Tài khoản ${record.username} sẽ không thể đăng nhập vào hệ thống.` 
                 : `Cho phép tài khoản ${record.username} đăng nhập lại hệ thống.`
             }
             onConfirm={() => handleToggleStatus(record)}
@@ -355,16 +355,10 @@ export default function StaffAccountsPage() {
       {/* Tiêu đề trang & Nút hành động */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider uppercase bg-blue-100 text-blue-800">
-              Nhóm 1: Accounts
-            </span>
-            <span className="text-xs text-slate-400 font-medium">Screen 26 & 27</span>
-          </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             Quản lý Tài khoản Nhân viên Vận hành
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-sm text-slate-500 mt-1">
             Tra cứu, cấp mới, cập nhật thông tin và quản trị trạng thái đăng nhập của Điều phối viên (Dispatcher) & Tài xế (Driver).
           </p>
         </div>
@@ -386,17 +380,6 @@ export default function StaffAccountsPage() {
           >
             + Thêm tài khoản
           </Button>
-        </div>
-      </div>
-
-      {/* Thông báo nghiệp vụ BR-28 */}
-      <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 flex items-start gap-3 text-amber-900 text-sm">
-        <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-        <div>
-          <span className="font-semibold text-amber-950">Quy tắc nghiệp vụ BR-28: </span>
-          <span>
-            Manager chỉ được quản lý tài khoản cấp dưới (Điều phối viên và Tài xế). Manager không được quản lý tài khoản của Manager khác hay Admin, và không được cấu hình phân quyền hệ thống.
-          </span>
         </div>
       </div>
 
@@ -529,7 +512,6 @@ export default function StaffAccountsPage() {
               <h2 className="text-lg font-bold text-slate-900 leading-none">
                 {isEditMode ? 'Chi tiết & Cập nhật tài khoản' : 'Thêm mới tài khoản nhân viên'}
               </h2>
-              <span className="text-xs text-slate-400 mt-0.5 block">Staff Account Details (Screen 27)</span>
             </div>
           </div>
         }
@@ -550,7 +532,7 @@ export default function StaffAccountsPage() {
           </Button>
         ]}
         width={560}
-        destroyOnHidden
+        forceRender
         className="rounded-2xl overflow-hidden"
       >
         <Form
@@ -621,12 +603,11 @@ export default function StaffAccountsPage() {
             />
           </Form.Item>
 
-          {/* Role (Chỉ cho chọn Dispatcher hoặc Driver - Tuân thủ BR-28) */}
+          {/* Role */}
           <Form.Item
             name="role"
-            label={<span className="font-semibold text-slate-700">Vai trò (Role - Chỉ Dispatcher hoặc Driver)</span>}
+            label={<span className="font-semibold text-slate-700">Vai trò</span>}
             rules={[{ required: true, message: 'Vui lòng chọn vai trò' }]}
-            extra="Theo quy tắc BR-28, Manager chỉ có quyền cấp phát vai trò Điều phối viên hoặc Tài xế."
           >
             <Select 
               className="rounded-xl h-10"
@@ -663,7 +644,7 @@ export default function StaffAccountsPage() {
                     <span className="text-xs text-slate-500">
                       {getFieldValue('status') !== false 
                         ? 'Tài khoản đang hoạt động bình thường (ACTIVE).' 
-                        : 'Tài khoản bị KHÓA (LOCKED) — người dùng sẽ không thể đăng nhập và hiển thị lỗi MSG06.'}
+                        : 'Tài khoản bị KHÓA (LOCKED) — người dùng sẽ không thể đăng nhập.'}
                     </span>
                   )}
                 </Form.Item>
@@ -678,14 +659,14 @@ export default function StaffAccountsPage() {
             </div>
           </div>
 
-          {/* BR-44: Order Form Token for Dispatcher */}
+          {/* Order Form Token for Dispatcher */}
           {isEditMode && (selectedAccount?.role_id === 3 || selectedAccount?.order_form_token) && (
             <div className="bg-blue-50/60 p-4 rounded-xl border border-blue-200 mt-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-1.5 text-blue-900 font-semibold text-sm">
                     <Link2 className="w-4 h-4 text-blue-600" />
-                    <span>Mã & Liên kết đặt đơn (Order Form Token - BR-44)</span>
+                    <span>Mã & Liên kết đặt đơn</span>
                   </div>
                   <p className="text-xs text-blue-700 mt-1">
                     Liên kết độc quyền để Điều phối viên gửi cho khách hàng tự đặt đơn. Đơn tạo qua link này sẽ tự động gán cho Điều phối viên phụ trách:
