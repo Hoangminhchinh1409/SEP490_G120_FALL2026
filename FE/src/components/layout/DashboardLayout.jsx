@@ -12,10 +12,45 @@ export default function DashboardLayout({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showNotiMenu, setShowNotiMenu] = useState(false);
   const userMenuRef = useRef(null);
+  const notiMenuRef = useRef(null);
   const pathname = usePathname();
   const { user, logout, loading } = useAuth();
   const router = useRouter();
+
+  const [notifications, setNotifications] = useState([
+    {
+      id: 1,
+      title: 'Hệ thống vận hành ổn định',
+      message: 'Chế độ bảo trì đang TẮT. Toàn bộ các dịch vụ và API hoạt động bình thường.',
+      time: 'Vừa xong',
+      type: 'info',
+      read: false
+    },
+    {
+      id: 2,
+      title: 'Phiên đăng nhập quản trị viên',
+      message: 'Tài khoản Administrator vừa đăng nhập thành công vào hệ thống.',
+      time: '15 phút trước',
+      type: 'success',
+      read: false
+    },
+    {
+      id: 3,
+      title: 'Đồng bộ cấu hình hệ thống',
+      message: 'Cấu hình thời hạn lưu trữ và tham số vận hành đã được đồng bộ với Report 4.',
+      time: '1 giờ trước',
+      type: 'info',
+      read: true
+    }
+  ]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const handleMarkAllRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
 
   const roleNames = {
     1: "Quản trị viên",
@@ -42,11 +77,14 @@ export default function DashboardLayout({
     }
   }, [loading, user, router]);
 
-  // Đóng user dropdown khi click ra ngoài
+  // Đóng dropdown khi click ra ngoài
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
         setShowUserMenu(false);
+      }
+      if (notiMenuRef.current && !notiMenuRef.current.contains(e.target)) {
+        setShowNotiMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -181,10 +219,82 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer" title="Thông báo hệ thống">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white"></span>
-            </button>
+            {/* Notification Bell Dropdown */}
+            <div className="relative" ref={notiMenuRef}>
+              <button
+                onClick={() => setShowNotiMenu(!showNotiMenu)}
+                className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+                title="Thông báo hệ thống"
+                type="button"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white"></span>
+                )}
+              </button>
+
+              {showNotiMenu && (
+                <div className="absolute right-0 top-11 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-100 py-3 z-50 animate-in fade-in slide-in-from-top-1">
+                  <div className="px-4 pb-2.5 border-b border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-800">Thông báo hệ thống</span>
+                      {unreadCount > 0 && (
+                        <span className="bg-red-50 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                          {unreadCount} mới
+                        </span>
+                      )}
+                    </div>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="text-[11px] text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
+                        type="button"
+                      >
+                        Đánh dấu đã đọc
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                    {notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        className={`px-4 py-3 hover:bg-slate-50 transition-colors flex items-start gap-3 cursor-pointer ${
+                          !n.read ? 'bg-blue-50/40' : ''
+                        }`}
+                        onClick={() => {
+                          setNotifications(prev =>
+                            prev.map(item => item.id === n.id ? { ...item, read: true } : item)
+                          );
+                        }}
+                      >
+                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${!n.read ? 'bg-blue-600' : 'bg-transparent'}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold text-slate-800 flex items-center justify-between">
+                            <span>{n.title}</span>
+                            <span className="text-[10px] text-slate-400 font-normal shrink-0">{n.time}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">
+                            {n.message}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-2 px-4 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Tự động xóa sau 90 ngày (BR-22)</span>
+                    <Link
+                      href={role === 'admin' ? '/admin/logs' : `/${role}`}
+                      className="text-blue-600 hover:text-blue-700 font-medium"
+                      onClick={() => setShowNotiMenu(false)}
+                    >
+                      {role === 'admin' ? 'Xem nhật ký' : 'Xem chi tiết'}
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="h-6 w-[1px] bg-slate-200"></div>
 
             {/* User Profile Pill với Dropdown đăng xuất giống Manager */}
