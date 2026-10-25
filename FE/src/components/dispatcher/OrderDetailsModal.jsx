@@ -11,7 +11,8 @@ import DocumentAssistantDrawer from './DocumentAssistantDrawer';
 import { 
   SPECIALIZED_CARGO_CATEGORIES, 
   getRecommendedDocsByCargo,
-  getCoordsFromAddress
+  getCoordsFromAddress,
+  calculateAlsPricing
 } from '../../data/dispatcherPresets';
 import { orderApi } from '../../api/orderApi';
 
@@ -124,24 +125,38 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   });
   const [newMessageText, setNewMessageText] = useState('');
 
-  // Tính giá cước sàn gợi ý
+  // Tính giá cước sàn gợi ý theo Biểu giá chuẩn ALS (FedEx Express & Phụ phí)
   const pricingBreakdown = useMemo(() => {
     const dist = parseFloat(routeInfo.distanceKm) || 35.5;
     const weight = parseFloat(order.chargeable || order.chargeable_weight || order.weight || 1000);
-    const baseFare = 1500000;
-    const distanceFee = Math.round(dist * 45000);
-    const weightFee = Math.round(weight * 850);
-    const totalRaw = baseFare + distanceFee + weightFee;
-    const totalRounded = Math.round(totalRaw / 50000) * 50000;
+    const vehicleType = order.vehicle_type_required || order.vehicle_type || 'TRUCK_2.5T';
+    const timeSlot = order.operating_time_slot || 'FULL_DAY';
+    const isUnloading = order.loading_unloading_required === true;
+    const isCustoms = order.customs_service_required === true;
+
+    const alsPricing = calculateAlsPricing({
+      distanceKm: dist,
+      chargeableWeightKg: weight,
+      vehicleType,
+      timeSlot,
+      pickupAddress: order.pickup || order.pickup_address || '',
+      deliveryAddress: order.dropoff || order.delivery_address || '',
+      loadingUnloadingRequired: isUnloading,
+      customsServiceRequired: isCustoms
+    });
 
     return {
       dist,
       weight,
-      baseFare,
-      distanceFee,
-      weightFee,
-      totalRaw,
-      totalRounded
+      vehicleType,
+      timeSlot,
+      isFixedRoute: alsPricing.isFixedRoute,
+      routeName: alsPricing.routeName,
+      baseFare: alsPricing.baseTransportFee,
+      loadingFee: alsPricing.loadingFee,
+      customsFee: alsPricing.customsFee,
+      totalRaw: alsPricing.totalRate,
+      totalRounded: alsPricing.totalRate
     };
   }, [routeInfo, order]);
 

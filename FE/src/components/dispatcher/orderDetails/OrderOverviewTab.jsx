@@ -106,35 +106,39 @@ export default function OrderOverviewTab({
                         </div>
                       }
                       content={
-                        <div className="text-xs space-y-2.5 p-1 w-72">
+                        <div className="text-xs space-y-2.5 p-1 w-80">
                           <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-100 space-y-1.5 font-mono text-[11px]">
-                            <div className="flex justify-between items-center text-gray-600">
-                              <span>1. Cước xuất bến / mở chuyến:</span>
-                              <span className="font-semibold text-gray-800">{pricingBreakdown.baseFare.toLocaleString()} đ</span>
+                            <div className="flex justify-between items-center text-gray-700 font-semibold border-b border-gray-200 pb-1 mb-1">
+                              <span>Loại xe: {pricingBreakdown.vehicleType || 'TRUCK_2.5T'}</span>
+                              <span className="text-indigo-600">{pricingBreakdown.timeSlot === 'AFTERNOON' ? 'Ca chiều (12-17h)' : 'Ca ngày (8-17h)'}</span>
                             </div>
                             <div className="flex justify-between items-center text-gray-600">
-                              <span>2. Cước cự ly ({pricingBreakdown.dist} km × 45.000đ):</span>
-                              <span className="font-semibold text-gray-800">{pricingBreakdown.distanceFee.toLocaleString()} đ</span>
+                              <span>1. {pricingBreakdown.isFixedRoute ? `Tuyến cố định (${pricingBreakdown.routeName}):` : `Cước vận tải (${pricingBreakdown.dist} km):`}</span>
+                              <span className="font-semibold text-gray-800">{(pricingBreakdown.baseFare || 0).toLocaleString()} đ</span>
                             </div>
                             <div className="flex justify-between items-center text-gray-600">
-                              <span>3. Cước tải trọng ({pricingBreakdown.weight} kg × 850đ):</span>
-                              <span className="font-semibold text-gray-800">{pricingBreakdown.weightFee.toLocaleString()} đ</span>
+                              <span>2. Phí bốc xếp tại kho:</span>
+                              <span className="font-semibold text-gray-800">{(pricingBreakdown.loadingFee || 0).toLocaleString()} đ</span>
+                            </div>
+                            <div className="flex justify-between items-center text-gray-600">
+                              <span>3. Phí dịch vụ làm thủ tục hải quan:</span>
+                              <span className="font-semibold text-gray-800">{(pricingBreakdown.customsFee || 0).toLocaleString()} đ</span>
                             </div>
                             <div className="border-t border-gray-200 pt-1.5 mt-1 flex justify-between items-center text-gray-500 text-[10px]">
-                              <span>Tổng thô chưa làm tròn:</span>
-                              <span>{pricingBreakdown.totalRaw.toLocaleString()} đ</span>
+                              <span>Tổng dự toán hệ thống:</span>
+                              <span className="font-bold text-gray-700">{(pricingBreakdown.totalRaw || 0).toLocaleString()} đ</span>
                             </div>
                           </div>
 
                           <div className="p-2 bg-indigo-50/70 border border-indigo-100 rounded-lg flex items-center justify-between">
-                            <span className="font-semibold text-indigo-900 text-xs">Giá gợi ý (làm tròn 50k):</span>
+                            <span className="font-semibold text-indigo-900 text-xs">Giá gợi ý hệ thống:</span>
                             <span className="font-bold text-sm text-indigo-700 font-mono">
-                              {estimatedBaselineRate.toLocaleString()} VNĐ
+                              {(estimatedBaselineRate || 0).toLocaleString()} VNĐ
                             </span>
                           </div>
 
                           <div className="text-[10px] text-gray-400 italic">
-                            * Điều phối viên có thể dựa vào mức giá sàn này để thương lượng và chốt giá cuối cùng phù hợp với khách hàng.
+                            * Tính theo biểu giá vận tải chính thức của ALS (Hợp đồng FedEx Express). Điều phối viên có thể dựa vào mức giá sàn này để thương lượng và chốt giá cuối cùng.
                           </div>
                         </div>
                       }

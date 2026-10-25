@@ -24,6 +24,111 @@ export const calculateRouteEstimate = (pLat, pLng, dLat, dLng) => {
   };
 };
 
+// Biểu giá vận tải & phụ phí chính thức ALS (Hợp đồng FedEx Express)
+export const ALS_TARIFF_RATES = {
+  VEHICLE_TYPES: [
+    { key: 'TRUCK_1.25T', label: 'Xe tải 1.25 tấn', baseWeightKg: 1250, defaultRateKm: 28000, unloadingNB: 200000, unloading2Ends: 300000 },
+    { key: 'TRUCK_2.5T', label: 'Xe tải 2.5 tấn', baseWeightKg: 2500, defaultRateKm: 35000, unloadingNB: 300000, unloading2Ends: 500000 },
+    { key: 'TRUCK_3.5T', label: 'Xe tải 3.5 tấn', baseWeightKg: 3500, defaultRateKm: 42000, unloadingNB: 300000, unloading2Ends: 500000 },
+    { key: 'TRUCK_5T', label: 'Xe tải 5 tấn', baseWeightKg: 5000, defaultRateKm: 50000, unloadingNB: 300000, unloading2Ends: 500000 },
+    { key: 'CONTAINER_20', label: 'Container 20ft', baseWeightKg: 12000, defaultRateKm: 65000, unloadingNB: 500000, unloading2Ends: 800000 },
+    { key: 'CONTAINER_40', label: 'Container 40ft', baseWeightKm: 25000, defaultRateKm: 85000, unloadingNB: 700000, unloading2Ends: 1200000 }
+  ],
+  // Biểu giá tuyến cố định (Vận tải nội địa/Tracking đến Sân bay Nội Bài)
+  FIXED_ROUTES: [
+    {
+      keywords: ['bá thiện', 'ba thien', 'compal', 'vĩnh phúc', 'vinh phuc'],
+      name: 'KCN Bá Thiện (Compal) - Nội Bài',
+      rates: {
+        'TRUCK_1.25T': { fullDay: 950000, afternoon: 750000 },
+        'TRUCK_2.5T': { fullDay: 1350000, afternoon: 1150000 },
+        'TRUCK_3.5T': { fullDay: 1700000, afternoon: 1550000 },
+        'TRUCK_5T': { fullDay: 2100000, afternoon: 1900000 }
+      }
+    },
+    {
+      keywords: ['đồng văn', 'dong van', 'wistron', 'hà nam', 'ha nam'],
+      name: 'KCN Đồng Văn 3 (Wistron) - Nội Bài',
+      rates: {
+        'TRUCK_1.25T': { fullDay: 1450000, afternoon: 1250000 },
+        'TRUCK_2.5T': { fullDay: 1850000, afternoon: 1650000 },
+        'TRUCK_3.5T': { fullDay: 2150000, afternoon: 1950000 },
+        'TRUCK_5T': { fullDay: 2600000, afternoon: 2400000 }
+      }
+    }
+  ],
+  // Biểu phí bốc xếp theo tải trọng
+  UNLOADING_FEES: {
+    'TRUCK_1.25T': { oneEnd: 200000, twoEnds: 300000 },
+    'TRUCK_2.5T': { oneEnd: 300000, twoEnds: 500000 },
+    'TRUCK_3.5T': { oneEnd: 300000, twoEnds: 500000 },
+    'TRUCK_5T': { oneEnd: 300000, twoEnds: 500000 },
+    'CONTAINER_20': { oneEnd: 500000, twoEnds: 800000 },
+    'CONTAINER_40': { oneEnd: 700000, twoEnds: 1200000 }
+  }
+};
+
+/**
+ * Hàm tính cước dự toán chuẩn theo biểu giá ALS
+ */
+export const calculateAlsPricing = ({
+  distanceKm = 0,
+  chargeableWeightKg = 0,
+  vehicleType = 'TRUCK_2.5T',
+  timeSlot = 'FULL_DAY', // 'FULL_DAY' (8:00 - 17:00) | 'AFTERNOON' (12:00 - 17:00)
+  pickupAddress = '',
+  deliveryAddress = '',
+  loadingUnloadingRequired = false,
+  customsServiceRequired = false
+}) => {
+  if (!distanceKm && !pickupAddress && !deliveryAddress) {
+    return { baseTransportFee: 0, loadingFee: 0, customsFee: 0, totalRate: 0, isFixedRoute: false };
+  }
+
+  const vType = vehicleType || 'TRUCK_2.5T';
+  const fullAddress = `${pickupAddress} ${deliveryAddress}`.toLowerCase();
+  
+  // 1. Kiểm tra tuyến cố định
+  let matchedFixedRoute = ALS_TARIFF_RATES.FIXED_ROUTES.find(r => 
+    r.keywords.some(kw => fullAddress.includes(kw))
+  );
+
+  let baseTransportFee = 0;
+  let isFixedRoute = false;
+
+  if (matchedFixedRoute && matchedFixedRoute.rates[vType]) {
+    isFixedRoute = true;
+    const rates = matchedFixedRoute.rates[vType];
+    baseTransportFee = timeSlot === 'AFTERNOON' ? rates.afternoon : rates.fullDay;
+  } else {
+    // Tuyến tự do tính theo km đường đi & hệ số loại xe
+    const vSpec = ALS_TARIFF_RATES.VEHICLE_TYPES.find(v => v.key === vType) || ALS_TARIFF_RATES.VEHICLE_TYPES[1];
+    const baseOpenPrice = vType === 'TRUCK_1.25T' ? 600000 : (vType === 'TRUCK_2.5T' ? 800000 : 1000000);
+    const calculatedRate = baseOpenPrice + (distanceKm * vSpec.defaultRateKm) + (chargeableWeightKg * 250);
+    const discount = timeSlot === 'AFTERNOON' ? 0.9 : 1.0; // Khung giờ chiều giảm ~10%
+    baseTransportFee = Math.round((calculatedRate * discount) / 50000) * 50000;
+  }
+
+  // 2. Phí bốc xếp (nếu có yêu cầu)
+  let loadingFee = 0;
+  if (loadingUnloadingRequired) {
+    const feeSpec = ALS_TARIFF_RATES.UNLOADING_FEES[vType] || ALS_TARIFF_RATES.UNLOADING_FEES['TRUCK_2.5T'];
+    loadingFee = feeSpec.oneEnd; // Mặc định phí bốc xếp tại kho Nội Bài
+  }
+
+  // 3. Phí dịch vụ làm thủ tục hải quan
+  const customsFee = customsServiceRequired ? 500000 : 0;
+
+  return {
+    baseTransportFee,
+    loadingFee,
+    customsFee,
+    totalRate: baseTransportFee + loadingFee + customsFee,
+    isFixedRoute,
+    routeName: matchedFixedRoute ? matchedFixedRoute.name : 'Vận chuyển nội địa theo khoảng cách'
+  };
+};
+
 // Cấu hình chuẩn nghiệp vụ Nhà Ga Hàng Hóa ALS Cảng HKQT Nội Bài
 export const ALS_NOI_BAI_TERMINAL = {
   name: 'Nhà Ga Hàng Hóa ALS Nội Bài',

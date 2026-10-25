@@ -117,16 +117,16 @@ const getOrCreateLocation = async ({
       .from('locations')
       .insert([{
         name: fallbackName,
-        type: customerId ? 'CUSTOMER_SITE' : 'WAREHOUSE',
+        type: customerId ? 'Customer Site' : 'Warehouse',
         customer_id: customerId || null,
         address: cleanAddr || 'Hà Nội',
-        province_code: 'HN',
-        lat: lat ? parseFloat(lat) : 21.0285,
-        lng: lng ? parseFloat(lng) : 105.8542,
+        province: 'Hà Nội',
+        latitude: lat ? parseFloat(lat) : 21.0285,
+        longitude: lng ? parseFloat(lng) : 105.8542,
         contact_name: contactName || null,
         contact_phone: contactPhone || null,
-        radius_m: 200,
-        created_by: 3
+        geofence_radius: 200,
+        created_by: 1
       }])
       .select();
 

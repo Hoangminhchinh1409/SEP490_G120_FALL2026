@@ -10,7 +10,9 @@ const getAllOrders = async (req, res) => {
         *,
         customer:customers(id, company_name, tax_code, email),
         pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, latitude, longitude, type, province),
-        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude, type, province)
+        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude, type, province),
+        order_cargos(*),
+        order_notes(*)
       `)
       .order('created_at', { ascending: false });
 
@@ -21,13 +23,14 @@ const getAllOrders = async (req, res) => {
 
     // Map dữ liệu thành định dạng chuẩn cho giao diện Frontend
     const formattedOrders = (dbOrders || []).map(order => {
+      const cargo = order.order_cargos || {};
       const feStatus = mapDbStatusToFe(order.status, order);
-      const isFromWeb = order.source === 'HOMEPAGE' || order.agreed_price === 0 || 
-        order.notes?.some(n => n.content?.includes('Website') || n.content?.includes('Homepage'));
+      const isFromWeb = order.source === 'HOMEPAGE' || order.source === 'Web' || order.agreed_price === 0 || 
+        order.order_notes?.some(n => n.content?.includes('Website') || n.content?.includes('Homepage'));
 
-      const noteStr = order.notes?.map(n => n.content).join(' ') || '';
-      const isBulk = noteStr.includes('Loại: BULK') || noteStr.includes('Loại hàng: BULK') || (parseFloat(order.length_cm) === 0 && parseFloat(order.width_cm) === 0);
-      const isPallet = noteStr.includes('Loại: PALLET') || noteStr.includes('Loại hàng: PALLET');
+      const noteStr = order.order_notes?.map(n => n.content).join(' ') || '';
+      const isBulk = (cargo.cargo_type === 'Bulk' || cargo.cargo_type === 'BULK') || noteStr.includes('Loại: BULK') || noteStr.includes('Loại hàng: BULK');
+      const isPallet = (cargo.cargo_type === 'Pallet' || cargo.cargo_type === 'PALLET') || noteStr.includes('Loại: PALLET') || noteStr.includes('Loại hàng: PALLET');
       const detectedCargoType = isBulk ? 'BULK' : (isPallet ? 'PALLET' : 'GENERAL');
 
       return {
@@ -58,38 +61,31 @@ const getAllOrders = async (req, res) => {
         receiver_phone: order.receiver_phone || '',
         status: feStatus,
         source: order.source || (isFromWeb ? 'HOMEPAGE' : 'HOTLINE'),
-        package_count: order.package_count || 1,
-        package_unit: isBulk ? 'Chuyến' : 'Pallet',
-        cargo_name: order.cargo_description || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
+        package_count: cargo.quantity || 1,
+        package_unit: cargo.unit || (isBulk ? 'Chuyến' : 'Kiện'),
+        cargo_name: cargo.cargo_name || order.order_notes?.[0]?.content || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
         cargo_type: detectedCargoType,
-        length_cm: isBulk ? 0 : (parseFloat(order.length_cm) || 120),
-        width_cm: isBulk ? 0 : (parseFloat(order.width_cm) || 100),
-        height_cm: isBulk ? 0 : (parseFloat(order.height_cm) || 150),
-        weight: parseFloat(order.actual_weight_kg) || 1200,
-        chargeable: parseFloat(order.chargeable_weight_kg) || 1200,
+        length_cm: isBulk ? 0 : (parseFloat(cargo.length_cm) || 120),
+        width_cm: isBulk ? 0 : (parseFloat(cargo.width_cm) || 100),
+        height_cm: isBulk ? 0 : (parseFloat(cargo.height_cm) || 150),
+        weight: parseFloat(cargo.actual_weight_kg) || 1200,
+        chargeable: parseFloat(cargo.chargeable_weight_kg) || parseFloat(cargo.actual_weight_kg) || 1200,
         estimated_distance_km: 35.5,
         estimated_duration_mins: 45,
         agreed_price: parseInt(order.agreed_price) || 0,
         extra_fees_surcharge: 0,
         extra_fees_collection: 0,
-        cancel_reason: order.cancel_reason || '',
-        cancellation_reason: order.cancel_reason || '',
-        cancel_fee: order.cancel_fee || 0,
-        cancelled_at: order.cancelled_at || null,
-        closed_at: order.closed_at || null,
-        order_notes: (order.notes && order.notes.length > 0 && !order.notes[0]?.content?.includes('Đơn hàng nhận tư vấn từ Website')) 
-          ? order.notes[0].content 
+        cancel_reason: order.cancellation_reason || '',
+        cancellation_reason: order.cancellation_reason || '',
+        cancel_fee: order.cancellation_fee || 0,
+        cancelled_at: null,
+        closed_at: null,
+        order_notes: (order.order_notes && order.order_notes.length > 0 && !order.order_notes[0]?.content?.includes('Đơn hàng nhận tư vấn từ Website')) 
+          ? order.order_notes[0].content 
           : '',
         date: order.created_at ? new Date(order.created_at).toISOString().slice(0, 16).replace('T', ' ') : '',
         tracking_token: order.tracking_token,
-        customer_tax_code: (() => {
-          try {
-            const meta = order.ai_input_text ? JSON.parse(order.ai_input_text) : {};
-            return meta.customer_tax_code || order.customer?.tax_code || '';
-          } catch (e) {
-            return order.customer?.tax_code || '';
-          }
-        })(),
+        customer_tax_code: order.customer?.tax_code || '',
         items: (() => {
           try {
             const meta = order.ai_input_text ? JSON.parse(order.ai_input_text) : {};

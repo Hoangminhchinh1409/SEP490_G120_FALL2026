@@ -28,7 +28,7 @@ const createConsultationOrder = async (req, res) => {
       receiver_name,
       receiver_phone,
       required_pickup_date,
-      required_delivery_date,
+      vehicle_type_required,
       loading_unloading_required,
       // --- Trường mới: Hải quan & Thương mại ---
       declared_value_usd,
@@ -42,7 +42,7 @@ const createConsultationOrder = async (req, res) => {
     } = req.body;
 
     // 1. Tìm hoặc tạo Customer (kèm Mã số thuế)
-    let customerId = 1;
+    let customerId = 16;
     const cleanPhone = (customer_phone || '').replace(/[^0-9]/g, '');
     const taxCode = customer_tax_code || cleanPhone.slice(-10) || '0988123456';
 
@@ -57,16 +57,22 @@ const createConsultationOrder = async (req, res) => {
       customerId = existingCust[0].id;
     } else {
       isNewCustomer = true;
-      const { data: newCust } = await supabase
+      const { data: newCust, error: custErr } = await supabase
         .from('customers')
         .insert([{
           company_name: customer_name || 'Khách hàng trực tuyến',
+          contact_person: customer_name || 'Khách hàng',
+          phone: cleanPhone || '0988123456',
           tax_code: taxCode,
           registered_address: pickup_address || delivery_address || 'Hà Nội',
           email: customer_email || 'client@nexlog.vn',
-          created_by: 3
+          created_by: 1
         }])
         .select();
+
+      if (custErr) {
+        console.error('Error creating customer:', custErr);
+      }
       if (newCust && newCust.length > 0) {
         customerId = newCust[0].id;
       }
@@ -132,55 +138,33 @@ const createConsultationOrder = async (req, res) => {
     const randomCode = `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
     const token = generateTrackingToken();
 
-    // Lưu extraMeta chi tiết kèm quy trình Web Workflow & Nghiệp vụ ALS
-    const extraMeta = {
-      items: items && items.length > 0 ? items : null,
-      customer_tax_code: taxCode,
-      shipping_direction: req.body.shipping_direction || 'IMPORT',
-      assigned_warehouse: req.body.assigned_warehouse || 'WH-1',
-      customs_service_required: req.body.customs_service_required === true || req.body.customs_service_required === 'true',
-      customs_fee: req.body.customs_fee ? parseInt(req.body.customs_fee) : (req.body.customs_service_required ? 500000 : 0),
-      estimated_price: req.body.estimated_price ? parseInt(req.body.estimated_price) : 0,
-      user_note: notes && notes.trim().length > 0 ? notes.trim() : null,
-      // --- Thông tin nghiệp vụ từ form khách hàng ---
-      required_pickup_date: required_pickup_date || null,
-      required_delivery_date: required_delivery_date || null,
-      loading_unloading_required: loading_unloading_required === true || loading_unloading_required === 'true',
-      web_workflow: {
-        stage: 'WAITING_PRICE_CONFIRMATION',
-        documents: [],
-        signed_contract: null
-      }
-    };
-
-    // 4. Insert vào bảng orders với trạng thái WAITING_FOR_DOCUMENTS (Đơn nháp)
+    // 4. Insert vào bảng orders
     const { data: newOrder, error: orderErr } = await supabase
       .from('orders')
       .insert([{
         order_code: randomCode,
-        order_type: 'DELIVERY',
+        hawb_number: randomCode,
+        order_type: req.body.shipping_direction === 'EXPORT' ? 'Export' : 'Import',
         customer_id: customerId,
-        tracking_email: customer_email || 'client@nexlog.vn',
         tracking_token: token,
         pickup_location_id: pickupLocationId,
         delivery_location_id: deliveryLocationId,
-        cargo_description: finalCargoDesc,
-        actual_weight_kg: actualWeight,
-        length_cm: l,
-        width_cm: w,
-        height_cm: h,
-        package_count: totalPackages,
-        stackable: true,
-        chargeable_weight_kg: parseFloat(chargeableWeight.toFixed(2)),
-        // Ưu tiên dùng thông tin người nhận thực từ form, fallback về tên khách hàng
         receiver_name: (receiver_name && (receiver_name + '').trim()) || customer_name || 'Khách hàng trực tuyến',
         receiver_phone: (receiver_phone && (receiver_phone + '').replace(/[^0-9]/g, '')) || cleanPhone || '0988123456',
         agreed_price: 0,
-        status: 'WAITING_FOR_DOCUMENTS',
-        source: 'HOMEPAGE',
-        responsible_dispatcher_id: 3,
-        created_by: 3,
-        ai_input_text: JSON.stringify(extraMeta)
+        status: 'Draft',
+        source: 'Web',
+        responsible_dispatcher_id: 1,
+        created_by: 1,
+        requested_pickup_date: required_pickup_date || null,
+        truck_type_requested: vehicle_type_required || 'TRUCK_2.5T',
+        loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
+        warehouse_type: 'ALS warehouse',
+        customer_agrees_to_grouping: false,
+        document_status: 'Pending Documents',
+        is_closed: false,
+        waiting_too_long: false,
+        late_risk: false
       }])
       .select();
 
@@ -189,24 +173,48 @@ const createConsultationOrder = async (req, res) => {
       return res.status(500).json({ message: 'Không thể tạo đơn hàng trên Supabase', error: orderErr });
     }
 
-    // 5. Thêm ghi chú: CHỈ thêm khi khách thực sự có nhập ghi chú thật
-    if (newOrder && newOrder.length > 0 && notes && notes.trim().length > 0) {
-      const orderId = newOrder[0].id;
+    const createdOrder = newOrder[0];
+
+    // 5. Insert vào bảng order_cargos
+    const { error: cargoErr } = await supabase
+      .from('order_cargos')
+      .insert([{
+        order_id: createdOrder.id,
+        cargo_type: cargo_type === 'BULK' ? 'Bulk' : (cargo_type === 'PALLET' ? 'Pallet' : 'General'),
+        cargo_name: finalCargoDesc,
+        quantity: totalPackages,
+        unit: package_unit || 'Kiện',
+        actual_weight_kg: actualWeight,
+        length_cm: l,
+        width_cm: w,
+        height_cm: h,
+        stackable: true,
+        chargeable_weight_kg: parseFloat(chargeableWeight.toFixed(2)),
+        declared_value: declared_value_usd ? parseFloat(declared_value_usd) * 25000 : 0,
+        special_request_note: notes || null
+      }]);
+
+    if (cargoErr) {
+      console.error('createConsultationOrder Cargo Insert Error:', cargoErr);
+    }
+
+    // 6. Thêm ghi chú vào bảng order_notes nếu có
+    if (notes && notes.trim().length > 0) {
       await supabase.from('order_notes').insert([{
-        order_id: orderId,
+        order_id: createdOrder.id,
         content: notes.trim(),
-        created_by: 3
+        created_by: 1
       }]);
     }
 
     return res.status(201).json({
       message: 'Đăng ký tư vấn thành công!',
       order: {
-        id: newOrder[0].id,
-        order_id: newOrder[0].order_code,
+        id: createdOrder.id,
+        order_id: createdOrder.order_code,
         customer_phone,
         status: 'DRAFT',
-        source: 'HOMEPAGE',
+        source: 'Web',
         tracking_token: token
       }
     });
@@ -248,7 +256,6 @@ const createDirectOrder = async (req, res) => {
       receiver_name,
       receiver_phone,
       required_pickup_date,
-      required_delivery_date,
       vehicle_type_required,
       loading_unloading_required,
       pickup_contact_name,
@@ -274,7 +281,7 @@ const createDirectOrder = async (req, res) => {
     } = req.body;
 
     // Tìm hoặc tạo Customer
-    let customerId = 1;
+    let customerId = 16;
     const cleanPhone = (customer_phone || '').replace(/[^0-9]/g, '');
 
     if (!is_new_customer) {
@@ -290,24 +297,30 @@ const createDirectOrder = async (req, res) => {
     }
 
     // Nếu là khách hàng mới hoặc chưa tìm thấy trong DB thì tạo mới
-    if (is_new_customer || customerId === 1) {
-      const { data: newCust } = await supabase
+    if (is_new_customer || customerId === 16) {
+      const { data: newCust, error: custErr } = await supabase
         .from('customers')
         .insert([{
           company_name: customer_name || 'Khách hàng mới',
+          contact_person: customer_name || 'Khách hàng',
+          phone: cleanPhone || '0988123456',
           tax_code: cleanPhone.slice(-10) || '0988123456',
           registered_address: customer_address || delivery_address || 'Hà Nội',
           email: customer_email || 'client@nexlog.vn',
-          created_by: 3
+          created_by: 1
         }])
         .select();
+
+      if (custErr) {
+        console.error('Error creating customer in direct order:', custErr);
+      }
       if (newCust && newCust.length > 0) {
         customerId = newCust[0].id;
       }
     }
 
     // Lấy hoặc tạo Location cho điểm lấy và điểm giao (chỉ lưu vào danh mục địa điểm với khách hàng mới)
-    const isNew = Boolean(is_new_customer || customerId === 1);
+    const isNew = Boolean(is_new_customer || customerId === 16);
     const pickupLocationId = await getOrCreateLocation({
       name: pickup_address ? (customer_name || 'Địa chỉ lấy hàng') : 'Nhà Ga Hàng Hóa ALS Nội Bài',
       address: pickup_address || 'Nhà Ga Hàng Hóa ALS Nội Bài',
@@ -332,60 +345,44 @@ const createDirectOrder = async (req, res) => {
       isNewCustomer: isNew
     });
 
-    // Điều phối viên tạo đơn luôn luôn là đã xác nhận chốt giá với khách (READY_FOR_PLANNING)
-    // Mã đơn ban đầu: ORD-XXXXXX. Mã vận đơn thống nhất hệ thống NEX-XXXXXX chỉ sinh ra sau khi đã xếp xe nội bộ
+    // Mã đơn ban đầu: ORD-XXXXXX
     const orderCode = hawb_code?.trim() || `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
     const token = generateTrackingToken();
-    const dbStatus = 'READY_FOR_PLANNING';
 
     const isBulk = cargo_type === 'BULK';
     const l = isBulk ? 1 : Math.max(1, parseFloat(length_cm) || 120);
     const w = isBulk ? 1 : Math.max(1, parseFloat(width_cm) || 100);
     const h = isBulk ? 1 : Math.max(1, parseFloat(height_cm) || 150);
     const actualWeight = parseFloat(weight_kg) || 1000;
+    const finalChargeable = isBulk ? actualWeight : (parseFloat(chargeable_weight) || actualWeight);
 
     const { data: newOrder, error: orderErr } = await supabase
       .from('orders')
       .insert([{
         order_code: orderCode,
-        order_type: 'DELIVERY',
+        hawb_number: hawb_number || orderCode,
+        order_type: req.body.shipping_direction === 'EXPORT' ? 'Export' : 'Import',
         customer_id: customerId,
-        tracking_email: customer_email || 'hotline@nexlog.vn',
         tracking_token: token,
         pickup_location_id: pickupLocationId,
         delivery_location_id: deliveryLocationId,
-        cargo_description: cargo_name || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
-        actual_weight_kg: actualWeight,
-        length_cm: l,
-        width_cm: w,
-        height_cm: h,
-        package_count: parseInt(package_count) || 1,
-        stackable: true,
-        chargeable_weight_kg: isBulk ? actualWeight : (parseFloat(chargeable_weight) || actualWeight),
         receiver_name: (receiver_name && (receiver_name + '').trim()) || customer_name || 'Người nhận',
         receiver_phone: (receiver_phone && (receiver_phone + '').replace(/[^0-9]/g, '')) || cleanPhone || '0988123456',
         agreed_price: parseInt(agreed_price) || 0,
-        status: dbStatus,
-        responsible_dispatcher_id: 3,
-        created_by: 3,
-        source: (source || 'HOTLINE').slice(0, 10),
-        ready_for_planning_at: dbStatus === 'READY_FOR_PLANNING' ? new Date().toISOString() : null,
-        ai_input_text: JSON.stringify({
-          shipping_direction: req.body.shipping_direction || 'IMPORT',
-          customs_service_required: req.body.customs_service_required === true || req.body.customs_service_required === 'true',
-          customs_fee: req.body.customs_fee ? parseInt(req.body.customs_fee) : (req.body.customs_service_required ? 500000 : 0),
-          items: req.body.items && req.body.items.length > 0 ? req.body.items : null,
-          customer_tax_code: req.body.customer_tax_code || null,
-          user_note: order_notes || null,
-          // --- Người liên hệ & Lịch trình ---
-          required_pickup_date: required_pickup_date || null,
-          vehicle_type_required: vehicle_type_required || 'TRUCK_2T',
-          loading_unloading_required: loading_unloading_required === true || loading_unloading_required === 'true',
-          // Tương thích ngược:
-          required_delivery_date: required_delivery_date || null,
-          pickup_contact_name: pickup_contact_name || null,
-          pickup_contact_phone: pickup_contact_phone || null
-        })
+        status: 'Assigned',
+        source: 'Direct',
+        responsible_dispatcher_id: 1,
+        created_by: 1,
+        requested_pickup_date: required_pickup_date || null,
+        truck_type_requested: vehicle_type_required || 'TRUCK_2.5T',
+        loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
+        warehouse_type: 'ALS warehouse',
+        customer_agrees_to_grouping: false,
+        document_status: 'Pending Documents',
+        is_closed: false,
+        waiting_too_long: false,
+        late_risk: false,
+        ready_for_planning_at: new Date().toISOString()
       }])
       .select();
 
@@ -394,7 +391,32 @@ const createDirectOrder = async (req, res) => {
       return res.status(500).json({ message: 'Không thể tạo đơn hàng', error: orderErr });
     }
 
-    // Lưu các ghi chú chi tiết về hàng hóa, quy cách, địa chỉ lấy hàng
+    const createdOrder = newOrder[0];
+
+    // Insert cargo
+    const { error: cargoErr } = await supabase
+      .from('order_cargos')
+      .insert([{
+        order_id: createdOrder.id,
+        cargo_type: isBulk ? 'Bulk' : (cargo_type === 'PALLET' ? 'Pallet' : 'General'),
+        cargo_name: cargo_name || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
+        quantity: parseInt(package_count) || 1,
+        unit: package_unit || (isBulk ? 'Chuyến' : 'Kiện'),
+        actual_weight_kg: actualWeight,
+        length_cm: l,
+        width_cm: w,
+        height_cm: h,
+        stackable: true,
+        chargeable_weight_kg: parseFloat(finalChargeable.toFixed(2)),
+        declared_value: declared_value_usd ? parseFloat(declared_value_usd) * 25000 : 0,
+        special_request_note: order_notes || null
+      }]);
+
+    if (cargoErr) {
+      console.error('createDirectOrder Cargo Error:', cargoErr);
+    }
+
+    // Lưu các ghi chú chi tiết
     const noteParts = [
       order_notes,
       pickup_address ? `Điểm lấy hàng: ${pickup_address}` : '',
@@ -403,17 +425,17 @@ const createDirectOrder = async (req, res) => {
       package_unit ? `Quy cách: ${package_count || 1} ${package_unit}` : ''
     ].filter(Boolean);
 
-    if (noteParts.length > 0 && newOrder && newOrder.length > 0) {
+    if (noteParts.length > 0) {
       await supabase.from('order_notes').insert([{
-        order_id: newOrder[0].id,
+        order_id: createdOrder.id,
         content: noteParts.join(' | '),
-        created_by: 3
+        created_by: 1
       }]);
     }
 
     return res.status(201).json({
       message: 'Tạo đơn vận chuyển thành công!',
-      order: newOrder[0]
+      order: createdOrder
     });
   } catch (err) {
     console.error('createDirectOrder Exception:', err);

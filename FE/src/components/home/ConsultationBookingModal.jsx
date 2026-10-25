@@ -4,7 +4,7 @@ import { Send, MapPin, Package, User, Plus, Trash2, FileText, ShieldCheck } from
 import LocationSearchInput from '../common/LocationSearchInput';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
-import { calculateRouteEstimate, ALS_NOI_BAI_TERMINAL } from '../../data/dispatcherPresets';
+import { calculateRouteEstimate, calculateAlsPricing, ALS_TARIFF_RATES, ALS_NOI_BAI_TERMINAL } from '../../data/dispatcherPresets';
 
 const { Option } = Select;
 
@@ -170,19 +170,31 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
     };
   }, [cargoItems]);
 
-  // Ước tính giá cước bao gồm phí dịch vụ hải quan (nếu tích chọn)
+  const watchedValues = Form.useWatch([], form);
+
+  // Ước tính giá cước chính xác theo Biểu giá chuẩn ALS (Hợp đồng vận tải & Phụ phí)
   const estimatedPricing = useMemo(() => {
-    if (!routeInfo.distanceKm) return { baselineRate: 0, customsFee: 0, totalRate: 0 };
-    const dist = routeInfo.distanceKm;
-    const weight = parseFloat(totals.chargeableWeight) || 0;
-    const base = Math.round((1500000 + dist * 45000 + weight * 850) / 50000) * 50000;
-    const customs = customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0;
-    return {
-      baselineRate: base,
-      customsFee: customs,
-      totalRate: base + customs
-    };
-  }, [routeInfo, totals.chargeableWeight, customsServiceRequired]);
+    return calculateAlsPricing({
+      distanceKm: routeInfo.distanceKm,
+      chargeableWeightKg: parseFloat(totals.chargeableWeight) || 0,
+      vehicleType: watchedValues?.vehicle_type_required || 'TRUCK_2.5T',
+      timeSlot: watchedValues?.operating_time_slot || 'FULL_DAY',
+      pickupAddress: watchedValues?.pickup_address || (form.getFieldValue('pickup_address') || ''),
+      deliveryAddress: watchedValues?.delivery_address || (form.getFieldValue('delivery_address') || ''),
+      loadingUnloadingRequired: watchedValues?.loading_unloading_required === true,
+      customsServiceRequired: customsServiceRequired
+    });
+  }, [
+    routeInfo.distanceKm,
+    totals.chargeableWeight,
+    watchedValues?.vehicle_type_required,
+    watchedValues?.operating_time_slot,
+    watchedValues?.pickup_address,
+    watchedValues?.delivery_address,
+    watchedValues?.loading_unloading_required,
+    customsServiceRequired,
+    form
+  ]);
 
   const handleAddCargoItem = () => {
     setCargoItems(prev => [
@@ -238,8 +250,8 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
       const payload = {
         ...formValues,
-        required_pickup_date: formValues.required_pickup_date || formValues.required_delivery_date || null,
-        required_delivery_date: formValues.required_pickup_date || formValues.required_delivery_date || null,
+        required_pickup_date: formValues.required_pickup_date || null,
+        required_delivery_date: formValues.required_pickup_date || null,
         shipping_direction: shippingDirection,
         customs_service_required: customsServiceRequired,
         customs_fee: customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0,
@@ -353,6 +365,8 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               pickup_address: 'Nhà Ga Hàng Hóa ALS Nội Bài',
               delivery_address: '',
               customer_tax_code: '',
+              vehicle_type_required: 'TRUCK_2.5T',
+              operating_time_slot: 'FULL_DAY',
               loading_unloading_required: false
             }}
           >
@@ -490,8 +504,8 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                     </div>
                   )}
 
-                  {/* Ngày lấy hàng tách riêng gắn liền với Điểm lấy hàng sân bay */}
-                  <div className="mt-2.5 pt-2 border-t border-blue-100">
+                  {/* Ngày lấy hàng & Khung giờ giao nhận tách riêng gắn liền với Điểm lấy hàng */}
+                  <div className="mt-2.5 pt-2 border-t border-blue-100 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <Form.Item
                       label={<span className="text-[11px] font-semibold text-blue-900">Ngày lấy hàng</span>}
                       name="required_pickup_date"
@@ -502,6 +516,17 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                         className="text-xs bg-white"
                         min={new Date().toISOString().split('T')[0]}
                       />
+                    </Form.Item>
+
+                    <Form.Item
+                      label={<span className="text-[11px] font-semibold text-blue-900">Khung giờ giao nhận</span>}
+                      name="operating_time_slot"
+                      className="mb-0"
+                    >
+                      <Select className="text-xs w-full bg-white">
+                        <Option value="FULL_DAY">☀️ Ca ngày (8:00 - 17:00)</Option>
+                        <Option value="AFTERNOON">🌤️ Ca chiều (12:00 - 17:00)</Option>
+                      </Select>
                     </Form.Item>
                   </div>
                 </div>
@@ -584,12 +609,12 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               </div>
             </div>
 
-            {/* ── PHẦN 3: Thông tin Người nhận & Thời gian giao hàng tới nơi ── */}
+            {/* ── PHẦN 3: Thông tin Người nhận & Loại xe ── */}
             <div className="text-xs font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5">
-              <span>👤</span> 3. Thông tin người nhận &amp; Thời gian giao hàng tới nơi
+              <span>👤</span> 3. Thông tin người nhận &amp; Loại xe yêu cầu
             </div>
             <div className="bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-100 mb-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <Form.Item
                   label={<span className="text-xs font-semibold">Tên người nhận hàng <span className="text-red-500">*</span></span>}
                   name="receiver_name"
@@ -609,15 +634,18 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                 </Form.Item>
 
                 <Form.Item
-                  label={<span className="text-xs font-semibold">Ngày giao hàng tới nơi</span>}
-                  name="required_delivery_date"
+                  label={<span className="text-xs font-semibold">Loại xe yêu cầu</span>}
+                  name="vehicle_type_required"
                   className="mb-0"
                 >
-                  <Input
-                    type="date"
-                    className="text-xs"
-                    min={new Date().toISOString().split('T')[0]}
-                  />
+                  <Select className="text-xs w-full" placeholder="Chọn loại xe">
+                    <Option value="TRUCK_1.25T">🚐 Xe tải 1.25 tấn (1.25T Truck)</Option>
+                    <Option value="TRUCK_2.5T">🚛 Xe tải 2.5 tấn (2.5T Truck)</Option>
+                    <Option value="TRUCK_3.5T">🚛 Xe tải 3.5 tấn (3.5T Truck)</Option>
+                    <Option value="TRUCK_5T">🚛 Xe tải 5 tấn (5T Truck)</Option>
+                    <Option value="CONTAINER_20">📦 Container 20ft</Option>
+                    <Option value="CONTAINER_40">📦 Container 40ft</Option>
+                  </Select>
                 </Form.Item>
 
                 <Form.Item
@@ -631,8 +659,9 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                   </Select>
                 </Form.Item>
               </div>
+
               <div className="mt-2 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-100">
-                ℹ️ <b>Lưu ý:</b> Thời gian lấy hàng tại sân bay dùng để điều xe đến kho bốc hàng, thời gian giao hàng dùng để chốt hạn giao tới người nhận.
+                ℹ️ <b>Lưu ý:</b> Điều phối viên ALS sẽ tiếp nhận yêu cầu, kiểm tra lộ trình theo biểu giá dịch vụ và liên hệ tư vấn báo giá chi tiết tới quý khách.
               </div>
             </div>
 
