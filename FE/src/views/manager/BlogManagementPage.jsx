@@ -14,7 +14,6 @@ export default function BlogManagementPage() {
   
   // Modals & toast
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isNotamModalOpen, setIsNotamModalOpen] = useState(false);
   const [previewArticle, setPreviewArticle] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
@@ -29,16 +28,10 @@ export default function BlogManagementPage() {
     summary: '',
     content: '',
     image: '',
-    status: 'PUBLISHED'
+    status: 'PUBLISHED',
+    is_featured: false
   };
   const [newArticle, setNewArticle] = useState(initialArticleState);
-
-  // NOTAM Form State
-  const [notamData, setNotamData] = useState({
-    level: 'URGENT',
-    title: '',
-    content: ''
-  });
 
   const showToast = (msg, type = 'success') => {
     setToastMessage({ msg, type });
@@ -82,7 +75,7 @@ export default function BlogManagementPage() {
   const totalBlogs = articles.length;
   const publishedCount = articles.filter(a => a.status === 'PUBLISHED').length;
   const draftCount = articles.filter(a => a.status === 'DRAFT').length;
-  const pendingCount = articles.filter(a => a.status === 'PENDING').length;
+  const unpublishedCount = articles.filter(a => a.status === 'UNPUBLISHED').length;
   const totalViews = articles.reduce((sum, a) => sum + (Number(a.views) || 0), 0);
   const publishedRate = totalBlogs > 0 ? ((publishedCount / totalBlogs) * 100).toFixed(1) : '0';
 
@@ -91,7 +84,7 @@ export default function BlogManagementPage() {
     return articles.filter(item => {
       if (selectedStatus === 'PUBLISHED' && item.status !== 'PUBLISHED') return false;
       if (selectedStatus === 'DRAFT' && item.status !== 'DRAFT') return false;
-      if (selectedStatus === 'PENDING' && item.status !== 'PENDING') return false;
+      if (selectedStatus === 'UNPUBLISHED' && item.status !== 'UNPUBLISHED') return false;
 
       if (selectedCategory !== 'ALL' && item.category !== selectedCategory) return false;
 
@@ -106,9 +99,36 @@ export default function BlogManagementPage() {
     });
   }, [articles, selectedStatus, selectedCategory, searchQuery]);
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const totalPages = Math.max(1, Math.ceil(filteredArticles.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedArticles = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredArticles.slice(start, start + pageSize);
+  }, [filteredArticles, safeCurrentPage, pageSize]);
+
+  const handleSearchChange = (val) => {
+    setSearchQuery(val);
+    setCurrentPage(1);
+  };
+
+  const handleStatusChange = (status) => {
+    setSelectedStatus(status);
+    setCurrentPage(1);
+  };
+
+  const handleCategoryChange = (cat) => {
+    setSelectedCategory(cat);
+    setCurrentPage(1);
+  };
+
   const handleSelectAll = (e) => {
     if (e.target.checked) {
-      setSelectedIds(filteredArticles.map(a => a.id));
+      setSelectedIds(paginatedArticles.map(a => a.id));
     } else {
       setSelectedIds([]);
     }
@@ -134,15 +154,20 @@ export default function BlogManagementPage() {
       summary: item.summary || '',
       content: item.content || '',
       image: item.image || item.image_url || '',
-      status: item.status || 'PUBLISHED'
+      status: item.status || 'PUBLISHED',
+      is_featured: Boolean(item.is_featured)
     });
     setIsCreateModalOpen(true);
   };
 
   const handleSaveArticle = async (e) => {
     e.preventDefault();
-    if (!newArticle.title.trim()) {
+    if (!newArticle.title?.trim()) {
       showToast('Vui lòng nhập tiêu đề bài viết', 'error');
+      return;
+    }
+    if (!newArticle.content?.trim()) {
+      showToast('Vui lòng nhập nội dung bài viết', 'error');
       return;
     }
 
@@ -150,11 +175,12 @@ export default function BlogManagementPage() {
       const payload = {
         title: newArticle.title.trim(),
         summary: newArticle.summary || '',
-        content: newArticle.content || '',
+        content: newArticle.content.trim(),
         category: newArticle.category,
         author: newArticle.author || 'Nguyễn Quản Lý',
         status: newArticle.status,
-        image: newArticle.image || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80'
+        image: newArticle.image || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80',
+        is_featured: Boolean(newArticle.is_featured)
       };
 
       if (newArticle.id) {
@@ -174,14 +200,25 @@ export default function BlogManagementPage() {
     }
   };
 
-  const handleApprovePending = async (id) => {
+  const handleUnpublish = async (id) => {
     try {
-      await managerApi.approveBlog(id);
-      showToast('Đã duyệt và phát hành bài viết ngay lập tức!');
+      await managerApi.updateBlogStatus(id, 'UNPUBLISHED');
+      showToast('Đã gỡ bài viết khỏi website thành công!');
       fetchBlogs();
     } catch (err) {
-      console.error('Lỗi duyệt bài viết:', err);
-      showToast(err.message || 'Lỗi khi phê duyệt bài viết', 'error');
+      console.error('Lỗi khi gỡ bài viết:', err);
+      showToast(err.message || 'Lỗi khi gỡ bài viết', 'error');
+    }
+  };
+
+  const handlePublishAgain = async (id) => {
+    try {
+      await managerApi.approveBlog(id);
+      showToast('Đã đăng lại bài viết thành công lên website!');
+      fetchBlogs();
+    } catch (err) {
+      console.error('Lỗi xuất bản bài viết:', err);
+      showToast(err.message || 'Lỗi khi đăng bài viết', 'error');
     }
   };
 
@@ -219,17 +256,6 @@ export default function BlogManagementPage() {
     } finally {
       setIsDeleting(false);
     }
-  };
-
-  const handleSendNotam = (e) => {
-    e.preventDefault();
-    if (!notamData.title.trim()) {
-      showToast('Vui lòng nhập tiêu đề phát tin khẩn NOTAM', 'error');
-      return;
-    }
-    setIsNotamModalOpen(false);
-    showToast(`Đã phát lệnh NOTAM tới toàn bộ tài xế và đối tác kho bãi!`);
-    setNotamData({ level: 'URGENT', title: '', content: '' });
   };
 
   return (
@@ -327,25 +353,23 @@ export default function BlogManagementPage() {
           </div>
         </div>
 
-        {/* Pending Review Metric */}
+        {/* Unpublished Metric */}
         <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col justify-between group hover:shadow-md transition-shadow relative overflow-hidden border border-outline-variant/30">
           <div className="flex items-center justify-between">
-            <span className="font-label-sm text-xs text-on-tertiary-container uppercase tracking-wider font-semibold">Chờ duyệt xuất bản</span>
-            <span className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-on-tertiary-container">
-              <span className="material-symbols-outlined text-[18px]">rate_review</span>
+            <span className="font-label-sm text-xs text-outline uppercase tracking-wider font-semibold">Đã gỡ khỏi website</span>
+            <span className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-outline">
+              <span className="material-symbols-outlined text-[18px]">visibility_off</span>
             </span>
           </div>
           <div className="mt-space-md flex items-baseline justify-between">
             <div className="flex items-baseline gap-space-xs">
-              <span className="text-3xl font-black text-primary">{pendingCount}</span>
-              <span className="font-body-sm text-xs text-outline font-medium">bài cần xét</span>
+              <span className="text-3xl font-black text-on-surface">{unpublishedCount}</span>
+              <span className="font-body-sm text-xs text-outline font-medium">bài đã gỡ</span>
             </div>
-            <span className={`px-2 py-0.5 rounded font-label-sm text-xs font-bold ${pendingCount > 0 ? 'bg-orange-100 text-orange-700' : 'bg-surface-container text-outline'}`}>
-              {pendingCount > 0 ? 'Cần duyệt' : 'Đã duyệt hết'}
-            </span>
+            <span className="font-data-mono text-xs text-outline font-semibold">{unpublishedCount > 0 ? 'Có thể đăng lại' : 'Không có'}</span>
           </div>
           <div className="w-full bg-surface-container-low h-1.5 rounded-full mt-space-md overflow-hidden">
-            <div className="bg-on-tertiary-container h-full rounded-full" style={{ width: `${totalBlogs > 0 ? (pendingCount / totalBlogs) * 100 : 0}%` }}></div>
+            <div className="bg-outline/50 h-full rounded-full" style={{ width: `${totalBlogs > 0 ? (unpublishedCount / totalBlogs) * 100 : 0}%` }}></div>
           </div>
         </div>
 
@@ -374,94 +398,55 @@ export default function BlogManagementPage() {
         </div>
       </div>
 
-      {/* Filtration Panel & Category Bar */}
-      <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col gap-space-md border border-outline-variant/30">
-        {/* Search and Status Tabs */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-space-md">
-          <div className="relative flex-1 max-w-md">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px] pointer-events-none">manage_search</span>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Tìm theo tiêu đề, từ khóa chuyên ngành, tác giả..."
-              className="w-full h-10 pl-10 pr-space-md bg-surface-container-low rounded-xl font-body-sm text-xs text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary transition-all"
-            />
+      {/* Filtration Panel matching Figure 43 */}
+      <div className="bg-surface-container-lowest p-space-md rounded-2xl shadow-sm border border-outline-variant/30">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+          {/* (1) Trạng thái */}
+          <div className="md:col-span-3 flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-outline uppercase tracking-wider">Trạng thái</label>
+            <select
+              value={selectedStatus}
+              onChange={e => handleStatusChange(e.target.value)}
+              className="w-full h-10 px-3 bg-surface-container-low rounded-xl text-xs font-medium text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary cursor-pointer border border-transparent focus:border-secondary"
+            >
+              <option value="ALL">Tất cả ({articles.length})</option>
+              <option value="PUBLISHED">Đã đăng ({publishedCount})</option>
+              <option value="DRAFT">Bản nháp ({draftCount})</option>
+              <option value="UNPUBLISHED">Đã gỡ ({unpublishedCount})</option>
+            </select>
           </div>
 
-          {/* Quick Status Filters */}
-          <div className="flex items-center gap-space-xs bg-surface-container-low p-1 rounded-xl self-start md:self-auto overflow-x-auto max-w-full">
-            <button
-              onClick={() => setSelectedStatus('ALL')}
-              className={`px-3 py-1.5 rounded-lg font-label-md text-xs font-semibold shrink-0 transition-colors cursor-pointer ${
-                selectedStatus === 'ALL'
-                  ? 'bg-surface-container-lowest text-primary shadow-sm'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-              type="button"
+          {/* (2) Chuyên mục */}
+          <div className="md:col-span-4 flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-outline uppercase tracking-wider">Chuyên mục</label>
+            <select
+              value={selectedCategory}
+              onChange={e => handleCategoryChange(e.target.value)}
+              className="w-full h-10 px-3 bg-surface-container-low rounded-xl text-xs font-medium text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary cursor-pointer border border-transparent focus:border-secondary"
             >
-              Tất cả ({articles.length})
-            </button>
-            <button
-              onClick={() => setSelectedStatus('PUBLISHED')}
-              className={`px-3 py-1.5 rounded-lg font-label-md text-xs font-semibold shrink-0 transition-colors cursor-pointer ${
-                selectedStatus === 'PUBLISHED'
-                  ? 'bg-surface-container-lowest text-primary shadow-sm'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-              type="button"
-            >
-              Đã xuất bản ({publishedCount})
-            </button>
-            <button
-              onClick={() => setSelectedStatus('DRAFT')}
-              className={`px-3 py-1.5 rounded-lg font-label-md text-xs font-semibold shrink-0 transition-colors cursor-pointer ${
-                selectedStatus === 'DRAFT'
-                  ? 'bg-surface-container-lowest text-primary shadow-sm'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-              type="button"
-            >
-              Bản nháp ({draftCount})
-            </button>
-            <button
-              onClick={() => setSelectedStatus('PENDING')}
-              className={`px-3 py-1.5 rounded-lg font-label-md text-xs font-semibold shrink-0 transition-colors cursor-pointer ${
-                selectedStatus === 'PENDING'
-                  ? 'bg-surface-container-lowest text-primary shadow-sm'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-              type="button"
-            >
-              Chờ duyệt xuất bản ({pendingCount})
-            </button>
+              <option value="ALL">Tất cả chuyên mục</option>
+              <option value="Thị trường & Vận hành">Thị trường & Vận hành</option>
+              <option value="Công nghệ & AI">Công nghệ & AI</option>
+              <option value="Hạ tầng Ga hàng không">Hạ tầng Ga hàng không</option>
+              <option value="Chính sách & Hải quan">Chính sách & Hải quan</option>
+              <option value="Thông báo nội bộ">Thông báo nội bộ</option>
+            </select>
           </div>
-        </div>
 
-        {/* Horizontal Category Selector Chips */}
-        <div className="flex items-center gap-space-xs overflow-x-auto py-0.5 no-scrollbar border-t border-surface-container-low pt-space-sm">
-          <span className="font-label-sm text-xs text-outline uppercase tracking-wider shrink-0 mr-space-xs font-semibold">Chuyên mục:</span>
-          {[
-            { key: 'ALL', label: 'Tất cả chuyên mục' },
-            { key: 'Thị trường & Vận hành', label: 'Thị trường & Vận hành' },
-            { key: 'Công nghệ & AI Chuỗi cung ứng', label: 'Công nghệ & AI Chuỗi cung ứng' },
-            { key: 'Hạ tầng Ga hàng không', label: 'Hạ tầng Ga hàng không' },
-            { key: 'Chính sách & Hải quan', label: 'Chính sách & Hải quan' },
-            { key: 'Thông báo nội bộ', label: 'Thông báo nội bộ' }
-          ].map(cat => (
-            <button
-              key={cat.key}
-              onClick={() => setSelectedCategory(cat.key)}
-              className={`px-3 py-1 rounded-full font-label-sm text-xs font-medium shrink-0 transition-colors cursor-pointer ${
-                selectedCategory === cat.key
-                  ? 'bg-primary text-on-primary font-semibold'
-                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
-              }`}
-              type="button"
-            >
-              {cat.label}
-            </button>
-          ))}
+          {/* (3) Tìm kiếm tiêu đề */}
+          <div className="md:col-span-5 flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-outline uppercase tracking-wider">Tìm kiếm</label>
+            <div className="relative w-full">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px] pointer-events-none">search</span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => handleSearchChange(e.target.value)}
+                placeholder="Tiêu đề bài viết..."
+                className="w-full h-10 pl-9 pr-3 bg-surface-container-low rounded-xl text-xs text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary transition-all border border-transparent focus:border-secondary"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -495,177 +480,122 @@ export default function BlogManagementPage() {
           </div>
         </div>
 
-        {/* Bulk Actions Floating Toolbar */}
-        {selectedIds.length > 0 && (
-          <div className="mx-space-lg my-space-sm p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between animate-fade-in shadow-xs">
-            <div className="flex items-center gap-2 text-xs font-semibold text-red-900">
-              <span className="material-symbols-outlined text-[18px] text-red-600">check_circle</span>
-              <span>Đang chọn <strong className="text-red-700">{selectedIds.length}</strong> bài viết</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedIds([])}
-                className="px-3 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-white cursor-pointer transition-colors"
-              >
-                Bỏ chọn
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmTarget({ type: 'bulk', count: selectedIds.length })}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 shadow-sm cursor-pointer transition-colors"
-              >
-                <span className="material-symbols-outlined text-[16px]">delete</span>
-                <span>Xoá {selectedIds.length} bài đã chọn</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Responsive Scrollable Data Grid */}
+        {/* Data Grid matching Figure 43 (6 columns) */}
         <div className="overflow-x-auto w-full">
-          <table className="w-full text-left border-collapse min-w-[1020px]">
+          <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
-              <tr className="bg-surface-container-low text-outline font-label-sm text-xs uppercase tracking-wider">
-                <th className="py-space-sm px-space-lg w-12 text-center">
-                  <input
-                    checked={selectedIds.length === filteredArticles.length && filteredArticles.length > 0}
-                    onChange={handleSelectAll}
-                    className="w-4 h-4 rounded bg-surface-container-lowest text-primary accent-primary cursor-pointer"
-                    type="checkbox"
-                  />
-                </th>
-                <th className="py-space-sm px-space-md">Hình ảnh &amp; Tiêu đề bài viết</th>
-                <th className="py-space-sm px-space-md w-44">Chuyên mục</th>
-                <th className="py-space-sm px-space-md w-48">Tác giả</th>
-                <th className="py-space-sm px-space-md w-28 text-right">Lượt đọc</th>
-                <th className="py-space-sm px-space-md w-36">Ngày đăng</th>
-                <th className="py-space-sm px-space-md w-44">Trạng thái</th>
-                <th className="py-space-sm px-space-lg w-32 text-right">Thao tác</th>
+              <tr className="bg-surface-container-low text-outline font-label-sm text-xs uppercase tracking-wider border-b border-surface-container">
+                <th className="py-3 px-space-lg">Tiêu đề</th>
+                <th className="py-3 px-space-md w-52">Chuyên mục</th>
+                <th className="py-3 px-space-md w-36">Trạng thái</th>
+                <th className="py-3 px-space-md w-36">Ngày đăng</th>
+                <th className="py-3 px-space-md w-28 text-right">Lượt xem</th>
+                <th className="py-3 px-space-lg w-40 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-container font-body-md text-xs text-on-surface">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-outline">
+                  <td colSpan={6} className="py-12 text-center text-outline">
                     <Spin size="small" /> <span className="ml-2">Đang tải danh sách bài viết từ cơ sở dữ liệu...</span>
                   </td>
                 </tr>
               ) : filteredArticles.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-outline">
-                    Không tìm thấy bài viết nào phù hợp với bộ lọc hiện tại.
+                  <td colSpan={6} className="py-12 text-center text-outline">
+                    {articles.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center gap-2 py-6">
+                        <span className="material-symbols-outlined text-4xl text-outline/60">newspaper</span>
+                        <span className="font-semibold text-sm text-on-surface">Chưa có bài viết nào trong cơ sở dữ liệu</span>
+                        <span className="text-xs text-outline">Nhấn &quot;+ Viết bài mới&quot; ở trên để tạo bài viết đầu tiên</span>
+                      </div>
+                    ) : (
+                      'Không tìm thấy bài viết nào phù hợp với bộ lọc hiện tại.'
+                    )}
                   </td>
                 </tr>
               ) : (
-                filteredArticles.map((item) => (
+                paginatedArticles.map((item) => (
                   <tr key={item.id} className="hover:bg-surface-container-low/50 transition-colors group">
-                    <td className="py-space-md px-space-lg text-center">
-                      <input
-                        checked={selectedIds.includes(item.id)}
-                        onChange={() => handleToggleSelect(item.id)}
-                        className="w-4 h-4 rounded bg-surface-container-lowest text-primary accent-primary cursor-pointer"
-                        type="checkbox"
-                      />
-                    </td>
-                    <td className="py-space-md px-space-md max-w-md">
-                      <div className="flex items-center gap-space-md">
-                        {item.image ? (
-                          <img
-                            className="w-16 h-12 rounded-lg object-cover bg-surface-container shrink-0 shadow-sm"
-                            src={item.image}
-                            alt={item.title}
-                          />
-                        ) : (
-                          <div className="w-16 h-12 rounded-lg bg-surface-container-high flex flex-col items-center justify-center text-outline shrink-0">
-                            <span className="material-symbols-outlined text-[20px]">calendar_clock</span>
-                            <span className="font-label-sm text-[9px] uppercase tracking-wider">Lên lịch</span>
-                          </div>
-                        )}
-                        <div className="flex flex-col min-w-0">
-                          <button
-                            onClick={() => setPreviewArticle(item)}
-                            className="font-headline-sm text-xs font-bold text-primary hover:text-secondary truncate block text-left group-hover:text-secondary transition-colors cursor-pointer"
-                            title={item.title}
-                          >
-                            {item.title}
-                          </button>
+                    <td className="py-space-md px-space-lg max-w-md">
+                      <div className="flex flex-col min-w-0">
+                        <button
+                          onClick={() => setPreviewArticle(item)}
+                          className="font-headline-sm text-xs font-bold text-primary hover:text-secondary truncate block text-left group-hover:text-secondary transition-colors cursor-pointer"
+                          title={item.title}
+                        >
+                          {item.title}
+                        </button>
+                        {item.summary && (
                           <span className="font-body-sm text-[11px] text-outline truncate mt-0.5">{item.summary}</span>
-                        </div>
+                        )}
                       </div>
                     </td>
                     <td className="py-space-md px-space-md">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-surface-container-high text-primary font-label-sm text-[11px] font-semibold truncate">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-surface-container-high text-primary font-label-sm text-[11px] font-semibold truncate">
                         {item.category}
                       </span>
                     </td>
                     <td className="py-space-md px-space-md">
-                      <div className="flex items-center gap-space-xs">
-                        <div className={`w-6 h-6 rounded-full ${item.authorColor} font-label-sm text-xs flex items-center justify-center font-bold`}>
-                          {item.authorInitial}
-                        </div>
-                        <span className="font-label-md text-xs text-on-surface truncate font-medium">{item.author}</span>
-                      </div>
-                    </td>
-                    <td className="py-space-md px-space-md text-right font-data-mono text-xs font-bold text-primary">
-                      {item.views > 0 ? item.views.toLocaleString('vi-VN') : '0 (Chờ duyệt)'}
-                    </td>
-                    <td className="py-space-md px-space-md font-data-mono text-xs text-outline">
-                      {item.publishDate}
-                    </td>
-                    <td className="py-space-md px-space-md">
                       {item.status === 'PUBLISHED' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-secondary-fixed text-secondary font-label-sm text-xs font-semibold">
-                          <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                          {item.statusLabel}
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-label-sm text-xs font-semibold border border-emerald-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                          Đã đăng
                         </span>
-                      ) : item.status === 'PENDING' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-orange-100 text-orange-700 font-label-sm text-xs font-bold">
-                          <span className="w-1.5 h-1.5 rounded-full bg-on-tertiary-container"></span>
-                          Chờ duyệt xuất bản
+                      ) : item.status === 'UNPUBLISHED' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-container-high text-outline font-label-sm text-xs font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-outline"></span>
+                          Đã gỡ
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container text-outline font-label-sm text-xs font-medium">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-label-sm text-xs font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                           Bản nháp
                         </span>
                       )}
                     </td>
+                    <td className="py-space-md px-space-md font-data-mono text-xs text-outline">
+                      {item.status === 'DRAFT' ? '—' : (item.publishDate || '—')}
+                    </td>
+                    <td className="py-space-md px-space-md text-right font-data-mono text-xs font-bold text-primary">
+                      {item.status === 'DRAFT' ? '—' : (item.views || 0).toLocaleString('vi-VN')}
+                    </td>
                     <td className="py-space-md px-space-lg text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {item.status === 'PENDING' && (
-                          <button
-                            onClick={() => handleApprovePending(item.id)}
-                            className="px-2.5 py-1 rounded-lg bg-on-tertiary-container text-white font-label-sm text-xs font-bold hover:bg-orange-600 transition-colors shadow-sm whitespace-nowrap cursor-pointer"
-                            title="Duyệt bài ngay"
-                            type="button"
-                          >
-                            Duyệt ngay
-                          </button>
-                        )}
+                      {/* Thao tác matching Figure 43: Sửa · Gỡ (Đã đăng), Sửa · Xóa (Bản nháp), Sửa · Đăng lại (Đã gỡ) */}
+                      <div className="flex items-center justify-end gap-1.5 text-xs font-medium">
                         <button
                           onClick={() => handleOpenEditModal(item)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-secondary hover:bg-surface-container transition-colors cursor-pointer"
-                          title="Sửa bài"
+                          className="text-secondary hover:underline cursor-pointer font-semibold"
                           type="button"
                         >
-                          <span className="material-symbols-outlined text-[18px]">edit</span>
+                          Sửa
                         </button>
-                        <button
-                          onClick={() => setPreviewArticle(item)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
-                          title="Xem trước bài viết"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">visibility</span>
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmTarget({ type: 'single', article: item })}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                          title="Xoá bài viết"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
+                        <span className="text-outline/40">·</span>
+                        {item.status === 'PUBLISHED' ? (
+                          <button
+                            onClick={() => handleUnpublish(item.id)}
+                            className="text-amber-700 hover:underline cursor-pointer"
+                            type="button"
+                          >
+                            Gỡ
+                          </button>
+                        ) : item.status === 'UNPUBLISHED' ? (
+                          <button
+                            onClick={() => handlePublishAgain(item.id)}
+                            className="text-emerald-700 hover:underline cursor-pointer font-semibold"
+                            type="button"
+                          >
+                            Đăng lại
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setDeleteConfirmTarget({ type: 'single', article: item })}
+                            className="text-red-600 hover:underline cursor-pointer"
+                            type="button"
+                          >
+                            Xóa
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -679,232 +609,141 @@ export default function BlogManagementPage() {
         <div className="p-space-md bg-surface-container-lowest border-t border-surface-container flex flex-col md:flex-row items-center justify-between gap-space-md">
           <div className="flex items-center gap-space-md">
             <span className="font-body-sm text-xs text-outline">
-              Hiển thị <span className="font-semibold text-on-surface">1 - {filteredArticles.length}</span> trên tổng số <span className="font-semibold text-on-surface">{totalBlogs}</span> bài viết
+              Hiển thị <span className="font-semibold text-on-surface">
+                {filteredArticles.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} - {Math.min(currentPage * pageSize, filteredArticles.length)}
+              </span> trên tổng số <span className="font-semibold text-on-surface">{filteredArticles.length}</span> bài viết
             </span>
             <div className="h-4 w-[1px] bg-surface-container hidden sm:block"></div>
             <div className="hidden sm:flex items-center gap-space-xs font-label-sm text-xs text-outline">
               <span>Xem mỗi trang:</span>
-              <select className="bg-surface-container-low text-on-surface rounded px-2 py-0.5 border-0 focus:ring-1 focus:ring-secondary font-label-sm text-xs cursor-pointer">
-                <option>10 bài</option>
-                <option>20 bài</option>
-                <option>50 bài</option>
+              <select 
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-surface-container-low text-on-surface rounded px-2 py-0.5 border-0 focus:ring-1 focus:ring-secondary font-label-sm text-xs cursor-pointer"
+              >
+                <option value={10}>10 bài</option>
+                <option value={20}>20 bài</option>
+                <option value={50}>50 bài</option>
               </select>
             </div>
           </div>
 
           {/* Pagination Nav Controls */}
           <div className="flex items-center gap-space-xs">
-            <button className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:bg-surface-container hover:text-on-surface disabled:opacity-40 transition-colors" disabled type="button">
+            <button 
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage <= 1}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:bg-surface-container hover:text-on-surface disabled:opacity-40 transition-colors cursor-pointer disabled:cursor-not-allowed" 
+              type="button"
+            >
               <span className="material-symbols-outlined text-[18px]">chevron_left</span>
             </button>
-            <button className="w-8 h-8 rounded-lg bg-primary text-on-primary font-label-md text-xs font-bold" type="button">
-              1
-            </button>
-            <button className="w-8 h-8 rounded-lg text-on-surface-variant hover:bg-surface-container font-label-md text-xs font-medium transition-colors" type="button">
-              2
-            </button>
-            <button className="w-8 h-8 rounded-lg text-on-surface-variant hover:bg-surface-container font-label-md text-xs font-medium transition-colors" type="button">
-              3
-            </button>
-            <span className="w-6 text-center text-outline font-label-md text-xs">...</span>
-            <button className="w-8 h-8 rounded-lg text-on-surface-variant hover:bg-surface-container font-label-md text-xs font-medium transition-colors" type="button">
-              7
-            </button>
-            <button className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:bg-surface-container hover:text-on-surface transition-colors" type="button">
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+              .reduce((acc, p, idx, arr) => {
+                if (idx > 0 && p - arr[idx - 1] > 1) {
+                  acc.push('ellipsis-' + p);
+                }
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((item) => {
+                if (typeof item === 'string') {
+                  return <span key={item} className="w-6 text-center text-outline font-label-md text-xs">...</span>;
+                }
+                return (
+                  <button
+                    key={item}
+                    onClick={() => setCurrentPage(item)}
+                    className={`w-8 h-8 rounded-lg font-label-md text-xs font-bold cursor-pointer transition-colors ${
+                      currentPage === item
+                        ? 'bg-primary text-on-primary'
+                        : 'text-on-surface-variant hover:bg-surface-container font-medium'
+                    }`}
+                    type="button"
+                  >
+                    {item}
+                  </button>
+                );
+              })}
+            <button 
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage >= totalPages}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:bg-surface-container hover:text-on-surface disabled:opacity-40 transition-colors cursor-pointer disabled:cursor-not-allowed" 
+              type="button"
+            >
               <span className="material-symbols-outlined text-[18px]">chevron_right</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Editorial Insights & Content Engagement Strip */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-space-md">
-        {/* Readership Distribution by Category */}
-        <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col justify-between border border-outline-variant/30">
-          <div>
-            <div className="flex items-center justify-between pb-space-sm border-b border-surface-container">
-              <span className="font-label-lg text-sm text-primary font-bold">Thị phần Độc giả theo Chuyên mục</span>
-              <span className="material-symbols-outlined text-outline text-[18px]">pie_chart</span>
-            </div>
-            <div className="mt-space-md space-y-space-sm">
-              <div>
-                <div className="flex justify-between font-label-sm text-xs mb-1">
-                  <span className="text-on-surface">Thị trường &amp; Vận hành</span>
-                  <span className="font-data-mono font-bold text-primary">42.8%</span>
-                </div>
-                <div className="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
-                  <div className="h-full bg-secondary rounded-full" style={{ width: '42.8%' }}></div>
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between font-label-sm text-xs mb-1">
-                  <span className="text-on-surface">Công nghệ &amp; AI Chuỗi cung ứng</span>
-                  <span className="font-data-mono font-bold text-primary">28.5%</span>
-                </div>
-                <div className="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
-                  <div className="h-full bg-primary-container rounded-full" style={{ width: '28.5%' }}></div>
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between font-label-sm text-xs mb-1">
-                  <span className="text-on-surface">Hạ tầng Ga hàng không</span>
-                  <span className="font-data-mono font-bold text-primary">18.2%</span>
-                </div>
-                <div className="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
-                  <div className="h-full bg-surface-container-highest rounded-full" style={{ width: '18.2%' }}></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="pt-space-md mt-space-md border-t border-surface-container-low flex items-center justify-between font-body-sm text-xs text-outline">
-            <span>Tăng trưởng trung bình</span>
-            <span className="font-data-mono font-bold text-secondary">+12.4% so với tuần trước</span>
-          </div>
-        </div>
-
-        {/* Editorial Queue & Approval Dispatch */}
-        <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col justify-between border border-outline-variant/30">
-          <div>
-            <div className="flex items-center justify-between pb-space-sm border-b border-surface-container">
-              <span className="font-label-lg text-sm text-primary font-bold">Quy trình Kiểm duyệt Bản thảo</span>
-              <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-700 font-label-sm text-xs font-bold">
-                2 Chờ duyệt
-              </span>
-            </div>
-            <div className="mt-space-md space-y-space-sm">
-              <div className="p-space-sm rounded-lg bg-surface-container-low flex items-center justify-between">
-                <div className="flex flex-col min-w-0 pr-2">
-                  <span className="font-label-md text-xs text-primary font-bold truncate">Kế hoạch Điều vận Cao điểm Tết 2027</span>
-                  <span className="font-body-sm text-[11px] text-outline">Nộp bởi: Phòng Vận Hành • 45 phút trước</span>
-                </div>
-                <button
-                  onClick={() => showToast('Đã duyệt bài: Kế hoạch Điều vận Cao điểm')}
-                  className="px-3 py-1 rounded bg-primary text-on-primary font-label-sm text-xs font-semibold hover:bg-primary-container transition-colors shrink-0 cursor-pointer"
-                  type="button"
-                >
-                  Duyệt
-                </button>
-              </div>
-              <div className="p-space-sm rounded-lg bg-surface-container-low flex items-center justify-between">
-                <div className="flex flex-col min-w-0 pr-2">
-                  <span className="font-label-md text-xs text-primary font-bold truncate">Cẩm nang Tiêu chuẩn IATA Cargo iQ 2026</span>
-                  <span className="font-body-sm text-[11px] text-outline">Nộp bởi: Ban An Toàn Bay • 2 giờ trước</span>
-                </div>
-                <button
-                  onClick={() => showToast('Đã duyệt bài: Cẩm nang Tiêu chuẩn IATA')}
-                  className="px-3 py-1 rounded bg-primary text-on-primary font-label-sm text-xs font-semibold hover:bg-primary-container transition-colors shrink-0 cursor-pointer"
-                  type="button"
-                >
-                  Duyệt
-                </button>
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => setSelectedStatus('PENDING')}
-            className="inline-flex items-center gap-space-xs font-label-md text-xs text-secondary hover:underline pt-space-md mt-space-md border-t border-surface-container-low text-left cursor-pointer"
-          >
-            <span>Xem tất cả danh sách chờ duyệt</span>
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </button>
-        </div>
-
-        {/* Quick Dispatch CMS Shortcuts */}
-        <div className="bg-primary text-on-primary p-space-lg rounded-xl shadow-md flex flex-col justify-between relative overflow-hidden border border-primary-container">
-          <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-secondary rounded-full opacity-20 blur-xl pointer-events-none"></div>
-          <div className="z-10">
-            <div className="flex items-center gap-space-xs">
-              <span className="material-symbols-outlined text-orange-400 text-[22px]">campaign</span>
-              <span className="font-label-lg text-sm font-bold">Kênh Phát tin Khẩn cấp (NOTAM)</span>
-            </div>
-            <p className="font-body-sm text-xs text-white/80 mt-space-sm leading-relaxed">
-              Phát hành cảnh báo thời tiết bão, đình công cảng quốc tế hoặc sự cố kỹ thuật hạ tầng bay ngay lập tức lên bảng tin điều hành và cổng thông tin đối tác.
-            </p>
-          </div>
-          <div className="mt-space-lg z-10 flex flex-col gap-space-xs">
-            <button
-              onClick={() => setIsNotamModalOpen(true)}
-              className="w-full py-2.5 px-space-md rounded-xl bg-on-tertiary-container text-white font-label-md text-xs font-bold hover:brightness-110 transition-colors shadow-sm flex items-center justify-center gap-space-xs cursor-pointer"
-              type="button"
-            >
-              <span className="material-symbols-outlined text-[18px]">warning</span>
-              <span>Phát hành Thông cáo Khẩn</span>
-            </button>
-            <span className="font-body-sm text-white/60 text-center text-[11px]">
-              Gửi thông báo tức thời tới 1.240 tài xế và đối tác kho bãi
-            </span>
-          </div>
-        </div>
-      </div>
-
       {/* Modal: Write New Article */}
-      {/* Modal: Write / Edit Article */}
+      {/* Modal: Write / Edit Article matching Figure 44 */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-surface-container-lowest w-full max-w-xl rounded-2xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col">
-            <div className="p-5 bg-primary text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-2xl">post_add</span>
-                <h3 className="font-bold text-base">
-                  {newArticle.id ? `Chỉnh sửa bài viết #${newArticle.id}` : 'Soạn thảo Bản tin / Báo cáo Chuyên ngành'}
+          <div className="bg-surface-container-lowest w-full max-w-2xl rounded-2xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col">
+            <div className="p-5 bg-surface-container-low border-b border-surface-container flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h3 className="font-bold text-lg text-primary">
+                  {newArticle.id ? 'Sửa bài viết' : 'Viết bài'}
                 </h3>
+                <span className="px-3 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold">
+                  {newArticle.status === 'PUBLISHED' ? 'Đã đăng' : 'Bản nháp'}
+                </span>
               </div>
               <button 
                 onClick={() => setIsCreateModalOpen(false)}
-                className="text-white/80 hover:text-white cursor-pointer"
+                className="text-outline hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
             <form onSubmit={handleSaveArticle} className="p-6 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
+              {/* (1) Tiêu đề * */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Tiêu đề bài viết *</label>
+                <label className="text-xs font-bold text-primary uppercase">Tiêu đề *</label>
                 <input
                   type="text"
                   required
+                  maxLength={200}
                   value={newArticle.title}
                   onChange={e => setNewArticle({ ...newArticle, title: e.target.value })}
-                  className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary"
-                  placeholder="Nhập tiêu đề tin tức nổi bật..."
+                  className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary border border-transparent focus:border-secondary"
+                  placeholder="Nhập tiêu đề bài viết..."
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* (2) Chuyên mục * và (3) Ảnh bìa */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-primary uppercase">Chuyên mục (Screen 47)</label>
+                  <label className="text-xs font-bold text-primary uppercase">Chuyên mục *</label>
                   <select
                     value={newArticle.category}
                     onChange={e => setNewArticle({ ...newArticle, category: e.target.value })}
-                    className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary cursor-pointer"
+                    className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary cursor-pointer border border-transparent focus:border-secondary"
                   >
-                    <option value="Tin hoạt động ALS">Tin hoạt động ALS</option>
-                    <option value="Thông báo vận tải hàng không">Thông báo vận tải hàng không</option>
-                    <option value="Quy định & Thủ tục hải quan">Quy định & Thủ tục hải quan</option>
-                    <option value="Dịch vụ chuỗi lạnh (Cold Chain)">Dịch vụ chuỗi lạnh (Cold Chain)</option>
-                    <option value="Tin khuyến mãi & Đối tác">Tin khuyến mãi & Đối tác</option>
+                    <option value="Chính sách & Hải quan">Chính sách & Hải quan</option>
+                    <option value="Thị trường & Vận hành">Thị trường & Vận hành</option>
+                    <option value="Công nghệ & AI">Công nghệ & AI</option>
+                    <option value="Hạ tầng Ga hàng không">Hạ tầng Ga hàng không</option>
+                    <option value="Thông báo nội bộ">Thông báo nội bộ</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-primary uppercase">Tác giả</label>
+                  <label className="text-xs font-bold text-primary uppercase">Ảnh bìa</label>
                   <input
                     type="text"
-                    value={newArticle.author}
-                    onChange={e => setNewArticle({ ...newArticle, author: e.target.value })}
-                    className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary"
+                    value={newArticle.image}
+                    onChange={e => setNewArticle({ ...newArticle, image: e.target.value })}
+                    className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary border border-transparent focus:border-secondary"
+                    placeholder="URL ảnh bìa (hoặc Cloudinary)..."
                   />
                 </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Ảnh đại diện (Cloudinary API-02 &lt; 10MB)</label>
-                <input
-                  type="url"
-                  value={newArticle.image}
-                  onChange={e => setNewArticle({ ...newArticle, image: e.target.value })}
-                  className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary"
-                  placeholder="https://res.cloudinary.com/... (ảnh bìa đại diện)"
-                />
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -945,7 +784,7 @@ export default function BlogManagementPage() {
                     onChange={e => setNewArticle({ ...newArticle, is_featured: e.target.checked })}
                     className="w-4 h-4 rounded text-secondary accent-secondary cursor-pointer"
                   />
-                  <span>Đặt làm bài viết nổi bật (Hiển thị đầu trang chủ & banner tin tức)</span>
+                  <span>Đặt làm bài viết nổi bật (Hiển thị đầu trang chủ &amp; banner tin tức)</span>
                 </label>
                 <span className="text-[11px] text-outline">Featured Post</span>
               </div>
@@ -977,11 +816,16 @@ export default function BlogManagementPage() {
                     onClick={async (e) => {
                       e.preventDefault();
                       if (!newArticle.title?.trim()) {
-                        showToast('Vui lòng nhập tiêu đề bài viết (MSG69)', 'error');
+                        showToast('Vui lòng nhập tiêu đề bài viết', 'error');
                         return;
                       }
                       try {
-                        const payload = { ...newArticle, status: 'DRAFT' };
+                        const payload = { 
+                          ...newArticle, 
+                          content: newArticle.content?.trim() || 'Nội dung đang được soạn thảo...',
+                          status: 'DRAFT',
+                          is_featured: Boolean(newArticle.is_featured)
+                        };
                         if (newArticle.id) await managerApi.updateBlog(newArticle.id, payload);
                         else await managerApi.createBlog(payload);
                         showToast('Đã lưu bản nháp thành công!');
@@ -1001,14 +845,20 @@ export default function BlogManagementPage() {
                     onClick={async (e) => {
                       e.preventDefault();
                       if (!newArticle.title?.trim() || !newArticle.content?.trim()) {
-                        showToast('Vui lòng điền đủ Tiêu đề và Nội dung bài viết (MSG69)', 'error');
+                        showToast('Vui lòng điền đủ Tiêu đề và Nội dung bài viết', 'error');
                         return;
                       }
                       try {
-                        const payload = { ...newArticle, status: 'PUBLISHED' };
+                        const payload = { 
+                          ...newArticle, 
+                          title: newArticle.title.trim(),
+                          content: newArticle.content.trim(),
+                          status: 'PUBLISHED',
+                          is_featured: Boolean(newArticle.is_featured)
+                        };
                         if (newArticle.id) await managerApi.updateBlog(newArticle.id, payload);
                         else await managerApi.createBlog(payload);
-                        showToast('Đã xuất bản bài viết thành công (MSG25)!');
+                        showToast('Đã xuất bản bài viết thành công!');
                         setIsCreateModalOpen(false);
                         fetchBlogs();
                       } catch (err) {
@@ -1017,7 +867,7 @@ export default function BlogManagementPage() {
                     }}
                     className="px-5 py-2 rounded-xl text-xs font-bold bg-secondary text-on-secondary shadow-md hover:bg-secondary-container cursor-pointer transition-all"
                   >
-                    Đăng bài (MSG25)
+                    Đăng bài
                   </button>
                 </div>
               </div>
@@ -1040,17 +890,28 @@ export default function BlogManagementPage() {
               {previewArticle.image && (
                 <img src={previewArticle.image} alt={previewArticle.title} className="w-full h-56 object-cover rounded-xl" />
               )}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high text-primary font-bold text-xs">
                   {previewArticle.category}
                 </span>
-                <span className="text-xs text-outline font-data-mono">{previewArticle.publishDate}</span>
-                <span className="text-xs text-outline">• Tác giả: <strong>{previewArticle.author}</strong></span>
+                {previewArticle.publishDate && (
+                  <span className="text-xs text-outline font-data-mono">{previewArticle.publishDate}</span>
+                )}
+                <span className="text-xs text-outline">• Tác giả: <strong>{previewArticle.author || 'Ban Biên Tập'}</strong></span>
+                {previewArticle.is_featured && (
+                  <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold uppercase">
+                    Nổi bật
+                  </span>
+                )}
               </div>
               <h2 className="text-xl font-bold text-primary">{previewArticle.title}</h2>
-              <p className="text-sm text-on-surface-variant leading-relaxed font-medium">{previewArticle.summary}</p>
-              <div className="p-4 bg-surface-container-low rounded-xl text-xs text-on-surface-variant leading-relaxed">
-                NEXLOG Logistics Network tự hào mang đến các báo cáo định kỳ hàng tuần dành riêng cho các doanh nghiệp chuỗi cung ứng, nhà vận tải hàng không và các đối tác ủy quyền trung chuyển.
+              {previewArticle.summary && (
+                <p className="text-sm text-on-surface-variant leading-relaxed font-medium italic border-l-2 border-secondary pl-3">
+                  {previewArticle.summary}
+                </p>
+              )}
+              <div className="text-xs text-on-surface leading-relaxed whitespace-pre-line bg-surface-container-low/50 p-4 rounded-xl">
+                {previewArticle.content || 'Nội dung bài viết đang được soạn thảo...'}
               </div>
             </div>
             <div className="p-4 bg-surface-container-low border-t border-outline-variant/30 flex items-center justify-between">
@@ -1091,68 +952,7 @@ export default function BlogManagementPage() {
         </div>
       )}
 
-      {/* Modal: Emergency NOTAM Broadcast */}
-      {isNotamModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-surface-container-lowest w-full max-w-lg rounded-2xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col">
-            <div className="p-5 bg-red-700 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-2xl">campaign</span>
-                <h3 className="font-bold text-base">Phát hành Thông Cáo Khẩn (NOTAM)</h3>
-              </div>
-              <button onClick={() => setIsNotamModalOpen(false)} className="text-white/80 hover:text-white cursor-pointer">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
 
-            <form onSubmit={handleSendNotam} className="p-6 flex flex-col gap-4">
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800">
-                Lưu ý: Thông cáo NOTAM sẽ đẩy thông báo đẩy (Push Notification) tức thời tới tất cả điện thoại của tài xế đang trong ca trực và hiển thị dải cờ đỏ trên Cổng đối tác.
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Tiêu đề cảnh báo *</label>
-                <input
-                  type="text"
-                  required
-                  value={notamData.title}
-                  onChange={e => setNotamData({ ...notamData, title: e.target.value })}
-                  className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-red-600"
-                  placeholder="Vd: Cảnh báo bão số 3 ảnh hưởng ga Nội Bài từ 18h00..."
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-primary uppercase">Chi tiết chỉ đạo vận hành</label>
-                <textarea
-                  rows={4}
-                  value={notamData.content}
-                  onChange={e => setNotamData({ ...notamData, content: e.target.value })}
-                  className="p-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-red-600 resize-none"
-                  placeholder="Hướng dẫn tài xế, đội xe và thủ kho thực hiện che chắn bạt, điều chỉnh giờ giao nhận..."
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsNotamModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-on-surface-variant hover:bg-surface-container cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-red-700 text-white shadow-md hover:bg-red-800 cursor-pointer flex items-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[16px]">send</span>
-                  <span>Phát thông cáo ngay</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
       {/* Modal: Delete Confirmation */}
       {deleteConfirmTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">

@@ -14,16 +14,16 @@ const managerOrderController = {
   // 1. Lấy danh sách tải điều phối và danh sách đơn hàng (hỗ trợ Screen 18)
   getOrderWorkload: async (req, res) => {
     try {
-      // 1. Lấy danh sách Dispatchers
+      // 1. Lấy danh sách Dispatchers (role_id = 3 hoặc có đơn phân công)
       const { data: dispatchersData, error: dispErr } = await supabase
         .from('users')
         .select('id, username, full_name, email, phone, role_id, status')
-        .eq('role_id', 3)
+        .or('role_id.eq.3,username.ilike.%disp%')
         .order('id', { ascending: true });
 
       if (dispErr) throw dispErr;
 
-      // 2. Lấy danh sách đơn hàng
+      // 2. Lấy danh sách đơn hàng thực tế
       const { data: ordersData, error: ordersErr } = await supabase
         .from('orders')
         .select(`
@@ -38,6 +38,8 @@ const managerOrderController = {
           receiver_phone,
           tracking_token,
           vendor_id,
+          waiting_too_long,
+          late_risk,
           created_at, 
           updated_at,
           dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name)
@@ -47,40 +49,48 @@ const managerOrderController = {
       if (ordersErr) throw ordersErr;
 
       const now = new Date();
-      const activeStatuses = ['READY_FOR_PLANNING', 'PLANNED', 'ASSIGNED', 'IN_TRANSIT', 'CONFIRMED'];
+      const activeNormalized = ['READY_FOR_PLANNING', 'PLANNED', 'ASSIGNED', 'IN_TRANSIT', 'CONFIRMED', 'DRAFT'];
 
-      // Tính toán gắn cờ cho từng đơn (Screen 18 Flagged Table)
+      // Tính toán gắn cờ cho từng đơn (Screen 18 / Figure 39)
       const formattedOrders = (ordersData || []).map((o) => {
         const createdAt = new Date(o.created_at);
-        const ageHours = (now - createdAt) / (1000 * 60 * 60);
+        const ageHours = Math.max(0, (now - createdAt) / (1000 * 60 * 60));
+        const statusUpper = (o.status || '').toUpperCase();
 
-        let waitingTooLong = false;
+        let waitingTooLong = Boolean(o.waiting_too_long);
         let overdueDocs = false;
-        let lateRisk = false;
+        let lateRisk = Boolean(o.late_risk);
         let flagReason = null;
 
-        // V2: Đơn Draft > 4h hoặc Confirmed chưa có chuyến > 8h
-        if (o.status === 'DRAFT' && ageHours > 4) {
+        // V2 & DB flags:
+        if (statusUpper === 'DRAFT' && ageHours > 4) {
           waitingTooLong = true;
-          flagReason = 'Chờ quá lâu (Bản nháp chưa gửi duyệt)';
-        } else if (['CONFIRMED', 'READY_FOR_PLANNING'].includes(o.status) && ageHours > 8) {
+          flagReason = 'Chờ quá lâu (Bản nháp > 4h)';
+        } else if (['CONFIRMED', 'READY_FOR_PLANNING'].includes(statusUpper) && ageHours > 8) {
           waitingTooLong = true;
-          flagReason = 'Chờ quá lâu (Đã xác nhận nhưng chưa gán chuyến - BR-25)';
+          flagReason = 'Chờ quá lâu (Chưa gán chuyến > 8h)';
+        } else if (o.waiting_too_long) {
+          waitingTooLong = true;
+          flagReason = 'Chờ quá lâu';
         }
 
         // Quá hạn chứng từ (MSG41)
-        if (o.status === 'CONFIRMED' && o.document_status !== 'APPROVED' && ageHours > 12) {
+        if (statusUpper === 'CONFIRMED' && (o.document_status || '').toUpperCase() !== 'APPROVED' && ageHours > 12) {
           overdueDocs = true;
-          flagReason = flagReason ? `${flagReason} & Quá hạn nộp chứng từ (MSG41)` : 'Quá hạn nộp chứng từ (MSG41)';
+          flagReason = flagReason ? `${flagReason} & Quá hạn chứng từ` : 'Quá hạn chứng từ';
         }
 
         // Nguy cơ trễ (BR-13)
-        if (o.status === 'IN_TRANSIT' && ageHours > 24) {
+        if (statusUpper === 'IN_TRANSIT' && ageHours > 24) {
           lateRisk = true;
-          flagReason = flagReason ? `${flagReason} & Nguy cơ trễ hẹn (BR-13)` : 'Có thể trễ (ETA trễ > 30p - BR-13)';
+          flagReason = flagReason ? `${flagReason} & Nguy cơ trễ` : 'Nguy cơ trễ';
+        } else if (o.late_risk) {
+          lateRisk = true;
+          flagReason = flagReason ? `${flagReason} & Nguy cơ trễ` : 'Nguy cơ trễ';
         }
 
         const isFlagged = waitingTooLong || overdueDocs || lateRisk;
+        const timeInStatus = `${o.status || 'Đang xử lý'} ${Math.round(ageHours)}h`;
 
         return {
           id: o.id,
@@ -93,25 +103,49 @@ const managerOrderController = {
           agreed_price: o.agreed_price,
           created_at: o.created_at,
           age_hours: Math.round(ageHours),
+          time_in_status: timeInStatus,
           waiting_too_long: waitingTooLong,
           overdue_docs: overdueDocs,
           late_risk: lateRisk,
           is_flagged: isFlagged,
-          flag_reason: flagReason,
-          dispatcher_id: o.dispatcher?.id || null,
+          flag_reason: flagReason || 'Bình thường',
+          dispatcher_id: o.dispatcher?.id || o.responsible_dispatcher_id || null,
           dispatcher_username: o.dispatcher?.username || null,
-          dispatcher_name: o.dispatcher?.full_name || o.dispatcher?.username || 'Chưa gán',
+          dispatcher_name: o.dispatcher?.full_name || o.dispatcher?.username || (o.responsible_dispatcher_id ? `ĐPV #${o.responsible_dispatcher_id}` : 'Chưa gán'),
           tracking_token: o.tracking_token
         };
       });
 
-      // Thống kê tải của từng Điều phối viên (Table 1)
-      const dispatcherWorkload = (dispatchersData || []).map((d) => {
-        const userOrders = formattedOrders.filter((o) => o.responsible_dispatcher_id === d.id);
+      // Thống kê tải của từng Điều phối viên (Table 1 trong Figure 39)
+      // Nếu dispatchersData không có ai nhưng có đơn được gán, gom theo responsible_dispatcher_id
+      const allDispMap = new Map();
+      (dispatchersData || []).forEach(d => {
+        allDispMap.set(d.id, {
+          id: d.id,
+          username: d.username,
+          full_name: d.full_name || d.username,
+          status: d.status
+        });
+      });
+
+      // Thêm các điều phối viên từ orders nếu chưa có
+      formattedOrders.forEach(o => {
+        if (o.dispatcher_id && !allDispMap.has(o.dispatcher_id)) {
+          allDispMap.set(o.dispatcher_id, {
+            id: o.dispatcher_id,
+            username: o.dispatcher_username || `user_${o.dispatcher_id}`,
+            full_name: o.dispatcher_name,
+            status: 'ACTIVE'
+          });
+        }
+      });
+
+      const dispatcherWorkload = Array.from(allDispMap.values()).map((d) => {
+        const userOrders = formattedOrders.filter((o) => o.responsible_dispatcher_id === d.id || o.dispatcher_id === d.id);
         const total = userOrders.length;
-        const active = userOrders.filter((o) => activeStatuses.includes(o.status)).length;
+        const active = userOrders.filter((o) => activeNormalized.includes((o.status || '').toUpperCase())).length;
         const flagged = userOrders.filter((o) => o.is_flagged).length;
-        const completed = userOrders.filter((o) => o.status === 'COMPLETED').length;
+        const completed = userOrders.filter((o) => ['COMPLETED', 'DELIVERED'].includes((o.status || '').toUpperCase())).length;
         const loadPercent = total > 0 ? Math.min(Math.round((active / 10) * 100), 100) : 0;
 
         return {
