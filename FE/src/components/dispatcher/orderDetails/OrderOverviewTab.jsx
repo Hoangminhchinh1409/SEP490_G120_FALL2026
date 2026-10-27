@@ -46,6 +46,43 @@ export default function OrderOverviewTab({
         </div>
       )}
 
+      {/* Hiển thị Yêu cầu đàm phán / Phản hồi từ Khách hàng nếu có */}
+      {order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' && order.web_workflow?.negotiation && (
+        <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-300 text-xs space-y-1.5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-amber-900 flex items-center gap-1.5">
+              <span>⚠️</span> Khách hàng yêu cầu điều chỉnh giá / lịch trình:
+            </span>
+            <span className="text-[11px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
+              Đang thương lượng
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-gray-700 pt-1">
+            <div>• Lý do: <b className="text-amber-950">{order.web_workflow.negotiation.feedback_reason}</b></div>
+            {order.web_workflow.negotiation.proposed_price && (
+              <div>
+                • Giá khách mong muốn: <b className="text-emerald-700 text-sm font-mono">{order.web_workflow.negotiation.proposed_price.toLocaleString('vi-VN')} đ</b>
+                <button
+                  type="button"
+                  onClick={() => setCurrentAgreedPrice(order.web_workflow.negotiation.proposed_price)}
+                  className="ml-2 text-[10px] text-blue-600 underline font-semibold hover:text-blue-800"
+                >
+                  [Áp dụng giá này]
+                </button>
+              </div>
+            )}
+            {order.web_workflow.negotiation.proposed_pickup_date && (
+              <div>• Ngày lấy hàng khách đề xuất: <b>{order.web_workflow.negotiation.proposed_pickup_date}</b></div>
+            )}
+            {order.web_workflow.negotiation.customer_note && (
+              <div className="sm:col-span-2 italic text-gray-600 bg-white/70 p-2 rounded border border-amber-100">
+                &ldquo;{order.web_workflow.negotiation.customer_note}&rdquo;
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Box Liên hệ khách hàng & Chốt giá cước thỏa thuận */}
       <div className="bg-gradient-to-r from-blue-50/60 to-indigo-50/60 p-4 rounded-xl border border-indigo-100 space-y-3">
         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
@@ -117,11 +154,7 @@ export default function OrderOverviewTab({
                               <span className="font-semibold text-gray-800">{(pricingBreakdown.baseFare || 0).toLocaleString()} đ</span>
                             </div>
                             <div className="flex justify-between items-center text-gray-600">
-                              <span>2. Phí bốc xếp tại kho:</span>
-                              <span className="font-semibold text-gray-800">{(pricingBreakdown.loadingFee || 0).toLocaleString()} đ</span>
-                            </div>
-                            <div className="flex justify-between items-center text-gray-600">
-                              <span>3. Phí dịch vụ làm thủ tục hải quan:</span>
+                              <span>2. Phí dịch vụ làm thủ tục hải quan:</span>
                               <span className="font-semibold text-gray-800">{(pricingBreakdown.customsFee || 0).toLocaleString()} đ</span>
                             </div>
                             <div className="border-t border-gray-200 pt-1.5 mt-1 flex justify-between items-center text-gray-500 text-[10px]">

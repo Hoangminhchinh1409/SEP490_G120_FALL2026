@@ -1,5 +1,5 @@
 const supabase = require('../../config/supabase');
-const { generateTrackingToken, getOrCreateLocation } = require('./orderHelpers');
+const { generateTrackingToken, getOrCreateLocation, saveOrderMeta } = require('./orderHelpers');
 
 // 2. KHÁCH HÀNG GỬI YÊU CẦU TƯ VẤN TỪ HOMEPAGE
 const createConsultationOrder = async (req, res) => {
@@ -138,6 +138,27 @@ const createConsultationOrder = async (req, res) => {
     const randomCode = `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
     const token = generateTrackingToken();
 
+    // Trích xuất thông tin lịch bay & logistics
+    const {
+      flight_arrival_date,
+      flight_arrival_time,
+      flight_datetime,
+      export_pickup_suggestion
+    } = req.body;
+
+    const metadata = {
+      shipping_direction: req.body.shipping_direction || 'IMPORT',
+      flight_arrival_date: flight_arrival_date || null,
+      flight_arrival_time: flight_arrival_time || null,
+      flight_datetime: flight_datetime || null,
+      export_pickup_suggestion: export_pickup_suggestion || null,
+      customer_email: customer_email || null,
+      customer_tax_code: taxCode,
+      accounting_email: accounting_email || customer_email || null,
+      authorized_bank: authorized_bank || 'Vietcombank',
+      items: items || null
+    };
+
     // 4. Insert vào bảng orders
     const { data: newOrder, error: orderErr } = await supabase
       .from('orders')
@@ -156,7 +177,7 @@ const createConsultationOrder = async (req, res) => {
         source: 'Web',
         responsible_dispatcher_id: 1,
         created_by: 1,
-        requested_pickup_date: required_pickup_date || null,
+        requested_pickup_date: required_pickup_date || flight_arrival_date || null,
         truck_type_requested: vehicle_type_required || 'TRUCK_2.5T',
         loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
         warehouse_type: 'ALS warehouse',
@@ -174,6 +195,7 @@ const createConsultationOrder = async (req, res) => {
     }
 
     const createdOrder = newOrder[0];
+    await saveOrderMeta(createdOrder.id, metadata);
 
     // 5. Insert vào bảng order_cargos
     const { error: cargoErr } = await supabase
@@ -356,6 +378,18 @@ const createDirectOrder = async (req, res) => {
     const actualWeight = parseFloat(weight_kg) || 1000;
     const finalChargeable = isBulk ? actualWeight : (parseFloat(chargeable_weight) || actualWeight);
 
+    const directMeta = {
+      shipping_direction: req.body.shipping_direction || 'IMPORT',
+      flight_arrival_date: req.body.flight_arrival_date || null,
+      flight_arrival_time: req.body.flight_arrival_time || null,
+      flight_datetime: req.body.flight_datetime || null,
+      export_pickup_suggestion: req.body.export_pickup_suggestion || null,
+      customer_email: customer_email || null,
+      accounting_email: accounting_email || customer_email || null,
+      authorized_bank: authorized_bank || 'Vietcombank',
+      items: req.body.items || null
+    };
+
     const { data: newOrder, error: orderErr } = await supabase
       .from('orders')
       .insert([{
@@ -373,7 +407,7 @@ const createDirectOrder = async (req, res) => {
         source: 'Direct',
         responsible_dispatcher_id: 1,
         created_by: 1,
-        requested_pickup_date: required_pickup_date || null,
+        requested_pickup_date: required_pickup_date || req.body.flight_arrival_date || null,
         truck_type_requested: vehicle_type_required || 'TRUCK_2.5T',
         loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
         warehouse_type: 'ALS warehouse',
@@ -392,6 +426,7 @@ const createDirectOrder = async (req, res) => {
     }
 
     const createdOrder = newOrder[0];
+    await saveOrderMeta(createdOrder.id, directMeta);
 
     // Insert cargo
     const { error: cargoErr } = await supabase

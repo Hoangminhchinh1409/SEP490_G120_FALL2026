@@ -1,5 +1,42 @@
 const supabase = require('../../config/supabase');
 const { sendOrderPriceConfirmationEmail, sendContractSigningEmail } = require('../../services/emailService');
+const { parseOrderMeta, saveOrderMeta } = require('./orderHelpers');
+
+// Helper tìm đơn hàng theo id hoặc order_code hoặc tracking_token
+const findOrderByIdentifier = async (identifier, includeRelations = false) => {
+  const selectClause = includeRelations
+    ? `
+      *,
+      customer:customers(company_name, email, tax_code),
+      pickup_location:locations!orders_pickup_location_id_fkey(name, address),
+      delivery_location:locations!orders_delivery_location_id_fkey(name, address),
+      order_cargos(*),
+      order_notes(*)
+    `
+    : `
+      *,
+      customer:customers(company_name, email, tax_code),
+      order_notes(*)
+    `;
+
+  let query = supabase.from('orders').select(selectClause);
+  const cleanId = (identifier || '').toString().trim();
+
+  if (/^\d+$/.test(cleanId)) {
+    query = query.eq('id', parseInt(cleanId, 10));
+  } else if (cleanId.startsWith('NEX-') || cleanId.startsWith('ORD-')) {
+    query = query.eq('order_code', cleanId);
+  } else {
+    query = query.or(`tracking_token.eq.${cleanId},order_code.eq.${cleanId}`);
+  }
+
+  const { data, error } = await query.limit(1);
+  if (error) {
+    console.error('[orderDocumentController] findOrderByIdentifier error:', error.message);
+    return null;
+  }
+  return data?.[0] || null;
+};
 
 // 4. CẬP NHẬT GIÁ CƯỚC THỎA THUẬN (VÀ TỰ ĐỘNG GỬI EMAIL XÁC NHẬN CHO KHÁCH HÀNG NẾU LÀ ĐƠN WEB)
 const updateAgreedPrice = async (req, res) => {
@@ -7,102 +44,121 @@ const updateAgreedPrice = async (req, res) => {
     const { id } = req.params;
     const { agreed_price } = req.body;
 
-    const numPrice = parseInt(agreed_price);
+    const numPrice = parseInt(agreed_price, 10);
     if (isNaN(numPrice) || numPrice <= 0) {
       return res.status(400).json({ message: 'Giá cước không hợp lệ (phải > 0 VNĐ)' });
     }
 
-    // Kiểm tra đơn hàng hiện tại
-    let findQuery = supabase.from('orders').select(`
-      id, 
-      order_code, 
-      status, 
-      agreed_price, 
-      cancel_reason, 
-      source, 
-      tracking_email, 
-      tracking_token,
-      cargo_description,
-      ai_input_text,
-      customer:customers(company_name, email, tax_code),
-      pickup_location:locations!orders_pickup_location_id_fkey(name, address),
-      delivery_location:locations!orders_delivery_location_id_fkey(name, address)
-    `);
-
-    if (/^\d+$/.test(id)) {
-      findQuery = findQuery.eq('id', parseInt(id));
-    } else {
-      findQuery = findQuery.eq('order_code', id);
-    }
-    const { data: currentOrderList } = await findQuery;
-    const currentOrder = currentOrderList?.[0];
+    const currentOrder = await findOrderByIdentifier(id, true);
 
     if (!currentOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    if (currentOrder.status === 'CLOSED' || currentOrder.status === 'CANCELLED' || currentOrder.cancel_reason) {
+    if (
+      currentOrder.status === 'CLOSED' ||
+      currentOrder.status === 'CANCELLED' ||
+      currentOrder.is_closed ||
+      currentOrder.cancellation_reason
+    ) {
       return res.status(400).json({ message: 'Đơn hàng đã bị hủy hoặc đã đóng, không thể sửa giá cước!' });
     }
 
     // Cập nhật meta workflow
-    let meta = {};
-    try {
-      meta = currentOrder.ai_input_text ? JSON.parse(currentOrder.ai_input_text) : {};
-    } catch (e) {
-      meta = {};
-    }
-
+    const meta = parseOrderMeta(currentOrder);
     if (!meta.web_workflow) {
       meta.web_workflow = {};
     }
     meta.web_workflow.stage = 'PRICE_AGREED_BY_DISPATCHER';
     meta.web_workflow.agreed_price = numPrice;
 
-    // Cập nhật giá thỏa thuận vào DB
-    let query = supabase.from('orders').update({ 
-      agreed_price: numPrice,
-      ai_input_text: JSON.stringify(meta),
-      updated_at: new Date().toISOString()
-    });
-    if (/^\d+$/.test(id)) {
-      query = query.eq('id', parseInt(id));
-    } else {
-      query = query.eq('order_code', id);
-    }
-
-    const { data, error } = await query.select();
+    // Cập nhật giá thỏa thuận vào DB (chỉ update các cột thực tế của bảng orders)
+    const { data, error } = await supabase
+      .from('orders')
+      .update({
+        agreed_price: numPrice,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', currentOrder.id)
+      .select();
 
     if (error) {
       console.error('updateAgreedPrice Error:', error);
       return res.status(500).json({ message: 'Không thể cập nhật giá cước', error });
     }
 
-    // NẾU LÀ ĐƠN TỪ WEB (HOMEPAGE) -> TỰ ĐỘNG GỬI GMAIL CHO KHÁCH KÈM LINK XÁC NHẬN
-    const isWebOrder = currentOrder.source === 'HOMEPAGE';
-    const targetEmail = currentOrder.tracking_email || currentOrder.customer?.email;
+    await saveOrderMeta(currentOrder.id, meta);
 
-    if (isWebOrder && targetEmail) {
-      const token = currentOrder.tracking_token;
+    // NẾU LÀ ĐƠN TỪ WEB (HOMEPAGE) HOẶC CÓ EMAIL KHÁCH HÀNG -> TỰ ĐỘNG GỬI GMAIL CHO KHÁCH KÈM LINK XÁC NHẬN
+    const targetEmail =
+      meta.customer_email ||
+      currentOrder.customer?.email ||
+      meta.accounting_email ||
+      null;
+    const isWebOrder = Boolean(
+      targetEmail ||
+      currentOrder.source === 'Web' ||
+      currentOrder.source === 'HOMEPAGE'
+    );
+
+    let emailResult = null;
+    if (targetEmail) {
+      const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
       const confirmUrl = `http://localhost:3000/customer/order-confirmation/${token}`;
-      
-      sendOrderPriceConfirmationEmail({
+
+      const orderType = currentOrder.order_type || meta.shipping_direction || 'Export';
+      const isExport =
+        orderType.toUpperCase().includes('EXPORT') ||
+        orderType.toUpperCase().includes('XUẤT');
+
+      const pickupDate = isExport
+        ? (currentOrder.requested_pickup_date || meta.export_pickup_suggestion || 'Theo thỏa thuận')
+        : (meta.flight_arrival_date
+          ? `${meta.flight_arrival_date} ${meta.flight_arrival_time || ''}`.trim()
+          : (currentOrder.requested_pickup_date || 'Ngay khi dỡ máy bay'));
+
+      const flightSchedule = isExport
+        ? (meta.flight_datetime || 'Chờ cập nhật')
+        : (meta.flight_arrival_date
+          ? `${meta.flight_arrival_date} (${meta.flight_arrival_time || 'Giờ bay'})`
+          : 'Chờ thông báo');
+
+      const cargoObj = Array.isArray(currentOrder.order_cargos)
+        ? currentOrder.order_cargos[0]
+        : currentOrder.order_cargos;
+      const cargoDescription =
+        cargoObj?.cargo_name ||
+        currentOrder.cargo_description ||
+        'Hàng bách hóa / Linh kiện';
+
+      emailResult = await sendOrderPriceConfirmationEmail({
         customerEmail: targetEmail,
-        customerName: currentOrder.customer?.company_name || 'Quý khách',
+        customerName: currentOrder.customer?.company_name || currentOrder.receiver_name || 'Quý khách',
         orderCode: currentOrder.order_code,
+        orderType,
         agreedPrice: numPrice,
-        pickupAddress: currentOrder.pickup_location?.address || currentOrder.pickup_location?.name || 'Hà Nội',
-        deliveryAddress: currentOrder.delivery_location?.address || currentOrder.delivery_location?.name || 'Bắc Ninh',
-        cargoDescription: currentOrder.cargo_description,
+        pickupAddress:
+          currentOrder.pickup_location?.address ||
+          currentOrder.pickup_location?.name ||
+          'Hà Nội',
+        deliveryAddress:
+          currentOrder.delivery_location?.address ||
+          currentOrder.delivery_location?.name ||
+          'Bắc Ninh',
+        cargoDescription,
+        pickupDate,
+        flightSchedule,
         confirmUrl
-      }).catch(err => console.error('Auto-email error:', err));
+      });
     }
 
-    return res.json({ 
-      message: isWebOrder 
-        ? `Đã chốt giá ${numPrice.toLocaleString()} VNĐ và tự động gửi email xác nhận kèm link tới khách hàng!` 
-        : 'Cập nhật giá thỏa thuận thành công!', 
-      order: data?.[0] 
+    return res.json({
+      message: isWebOrder
+        ? `Đã chốt giá ${numPrice.toLocaleString('vi-VN')} VNĐ và tự động gửi email xác nhận kèm link tới khách hàng (${targetEmail || 'N/A'})!`
+        : 'Cập nhật giá thỏa thuận thành công!',
+      email_sent: emailResult?.success || false,
+      email_preview_url: emailResult?.previewUrl || null,
+      order: data?.[0]
     });
   } catch (err) {
     console.error('updateAgreedPrice Exception:', err);
@@ -115,42 +171,27 @@ const updateAgreedPrice = async (req, res) => {
 const customerAgreeOrderPrice = async (req, res) => {
   try {
     const { token } = req.params;
+    const order = await findOrderByIdentifier(token, false);
 
-    let query = supabase.from('orders').select('id, order_code, ai_input_text, agreed_price');
-    if (token.startsWith('NEX-') || token.startsWith('ORD-')) {
-      query = query.eq('order_code', token);
-    } else {
-      query = query.or(`tracking_token.eq.${token},order_code.eq.${token}`);
-    }
-    const { data: orders } = await query.limit(1);
-
-    if (!orders || orders.length === 0) {
+    if (!order) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    const order = orders[0];
-    let meta = {};
-    try {
-      meta = order.ai_input_text ? JSON.parse(order.ai_input_text) : {};
-    } catch (e) {
-      meta = {};
-    }
-
+    const meta = parseOrderMeta(order);
     if (!meta.web_workflow) meta.web_workflow = {};
     meta.web_workflow.stage = 'CUSTOMER_CONFIRMED';
     meta.web_workflow.customer_confirmed_at = new Date().toISOString();
 
+    await saveOrderMeta(order.id, meta);
     await supabase
       .from('orders')
-      .update({
-        ai_input_text: JSON.stringify(meta),
-        updated_at: new Date().toISOString()
-      })
+      .update({ updated_at: new Date().toISOString() })
       .eq('id', order.id);
 
+    const cleanToken = (order.tracking_token || token || '').trim();
     return res.json({
       message: 'Quý khách đã đồng ý chốt đơn hàng! Vui lòng hoàn tất nộp chứng từ.',
-      next_url: `/customer/order-documents/${token}`
+      next_url: `/customer/order-documents/${cleanToken}`
     });
   } catch (err) {
     console.error('customerAgreeOrderPrice Error:', err);
@@ -159,43 +200,75 @@ const customerAgreeOrderPrice = async (req, res) => {
 };
 
 
-// 4.3. API CHO KHÁCH HÀNG: UPLOAD CHỨNG TỪ THEO LOẠI HÀNG ĐÃ TẠO
+// 4.3. API CHO KHÁCH HÀNG: YÊU CẦU ĐIỀU CHỈNH GIÁ / LỊCH TRÌNH / VẤN ĐỀ KHÁC
+const customerNegotiateOrder = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { proposed_price, proposed_pickup_date, feedback_reason, customer_note } = req.body;
+
+    const order = await findOrderByIdentifier(token, false);
+    if (!order) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    }
+
+    const meta = parseOrderMeta(order);
+    if (!meta.web_workflow) meta.web_workflow = {};
+    meta.web_workflow.stage = 'CUSTOMER_NEGOTIATING';
+    meta.web_workflow.negotiation = {
+      proposed_price: proposed_price ? parseInt(proposed_price, 10) : null,
+      proposed_pickup_date: proposed_pickup_date || null,
+      feedback_reason: feedback_reason || 'Giá cước chưa phù hợp',
+      customer_note: customer_note || '',
+      submitted_at: new Date().toISOString()
+    };
+
+    // Lưu vào bảng order_notes để điều phối xem được ngay
+    const noteContent = `[Khách hàng phản hồi đàm phán] Lý do: ${feedback_reason || 'Cần điều chỉnh'}. ${proposed_price ? `Giá khách đề xuất: ${parseInt(proposed_price, 10).toLocaleString('vi-VN')} đ.` : ''} ${proposed_pickup_date ? `Đề xuất ngày lấy: ${proposed_pickup_date}.` : ''} Ghi chú: ${customer_note || 'Không có'}`;
+    await supabase.from('order_notes').insert([{
+      order_id: order.id,
+      content: noteContent,
+      created_by: 1
+    }]);
+
+    await saveOrderMeta(order.id, meta);
+    await supabase
+      .from('orders')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', order.id);
+
+    return res.json({
+      success: true,
+      message: 'Đã gửi phản hồi thành công! Điều phối viên NEXLOG sẽ xem xét và phản hồi tới Quý khách sớm nhất.',
+      negotiation: meta.web_workflow.negotiation
+    });
+  } catch (err) {
+    console.error('customerNegotiateOrder Error:', err);
+    return res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+
+// 4.3b. API CHO KHÁCH HÀNG: UPLOAD CHỨNG TỪ THEO LOẠI HÀNG ĐÃ TẠO
 const customerUploadDocuments = async (req, res) => {
   try {
     const { token } = req.params;
     const { documents } = req.body;
 
-    let query = supabase.from('orders').select('id, order_code, ai_input_text');
-    if (token.startsWith('NEX-') || token.startsWith('ORD-')) {
-      query = query.eq('order_code', token);
-    } else {
-      query = query.or(`tracking_token.eq.${token},order_code.eq.${token}`);
-    }
-    const { data: orders } = await query.limit(1);
-
-    if (!orders || orders.length === 0) {
+    const order = await findOrderByIdentifier(token, false);
+    if (!order) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    const order = orders[0];
-    let meta = {};
-    try {
-      meta = order.ai_input_text ? JSON.parse(order.ai_input_text) : {};
-    } catch (e) {
-      meta = {};
-    }
-
+    const meta = parseOrderMeta(order);
     if (!meta.web_workflow) meta.web_workflow = {};
     meta.web_workflow.stage = 'DOCS_UPLOADED';
     meta.web_workflow.documents = documents || [];
     meta.web_workflow.docs_uploaded_at = new Date().toISOString();
 
+    await saveOrderMeta(order.id, meta);
     await supabase
       .from('orders')
-      .update({
-        ai_input_text: JSON.stringify(meta),
-        updated_at: new Date().toISOString()
-      })
+      .update({ updated_at: new Date().toISOString() })
       .eq('id', order.id);
 
     return res.json({
@@ -215,73 +288,51 @@ const approveWebOrderDocuments = async (req, res) => {
     const { id } = req.params;
     const { approved_documents } = req.body;
 
-    let findQuery = supabase
-      .from('orders')
-      .select(`
-        id, 
-        order_code, 
-        status, 
-        agreed_price, 
-        source, 
-        tracking_email, 
-        tracking_token,
-        ai_input_text,
-        customer:customers(company_name, email)
-      `);
-
-    if (/^\d+$/.test(id)) {
-      findQuery = findQuery.eq('id', parseInt(id));
-    } else {
-      findQuery = findQuery.eq('order_code', id);
-    }
-    const { data: currentOrderList } = await findQuery;
-    const currentOrder = currentOrderList?.[0];
-
+    const currentOrder = await findOrderByIdentifier(id, false);
     if (!currentOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    let meta = {};
-    try {
-      meta = currentOrder.ai_input_text ? JSON.parse(currentOrder.ai_input_text) : {};
-    } catch (e) {
-      meta = {};
-    }
-
+    const meta = parseOrderMeta(currentOrder);
     if (!meta.web_workflow) meta.web_workflow = {};
     meta.web_workflow.stage = 'DOCS_APPROVED';
     meta.web_workflow.approved_documents = approved_documents || meta.web_workflow.documents;
     meta.web_workflow.docs_approved_at = new Date().toISOString();
 
+    await saveOrderMeta(currentOrder.id, meta);
     await supabase
       .from('orders')
       .update({
-        ai_input_text: JSON.stringify(meta),
-        docs_confirmed_at: new Date().toISOString(),
-        docs_confirmed_by: 3,
         updated_at: new Date().toISOString()
       })
       .eq('id', currentOrder.id);
 
     // Gửi email hợp đồng và link ký số cho khách hàng
-    const targetEmail = currentOrder.tracking_email || currentOrder.customer?.email;
-    const token = currentOrder.tracking_token;
+    const targetEmail =
+      meta.customer_email ||
+      currentOrder.customer?.email ||
+      meta.accounting_email ||
+      null;
+    const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
     const contractSignUrl = `http://localhost:3000/customer/contract-sign/${token}`;
 
+    let emailResult = null;
     if (targetEmail) {
-      sendContractSigningEmail({
+      emailResult = await sendContractSigningEmail({
         customerEmail: targetEmail,
-        customerName: currentOrder.customer?.company_name || 'Quý khách',
+        customerName: currentOrder.customer?.company_name || currentOrder.receiver_name || 'Quý khách',
         orderCode: currentOrder.order_code,
         agreedPrice: currentOrder.agreed_price,
         contractSignUrl
-      }).catch(err => console.error('Contract email error:', err));
+      });
     }
 
     return res.json({
       message: 'Đã duyệt hồ sơ chứng từ! Hệ thống đã tự động gửi hợp đồng điện tử và link ký số qua email khách hàng.',
       stage: 'DOCS_APPROVED',
-      contractSignUrl
+      contractSignUrl,
+      email_sent: emailResult?.success || false,
+      email_preview_url: emailResult?.previewUrl || null
     });
   } catch (err) {
     console.error('approveWebOrderDocuments Error:', err);
@@ -300,42 +351,30 @@ const customerSignContract = async (req, res) => {
       return res.status(400).json({ message: 'Vui lòng cung cấp chữ ký điện tử' });
     }
 
-    let query = supabase.from('orders').select('id, order_code, agreed_price, ai_input_text');
-    if (token.startsWith('NEX-') || token.startsWith('ORD-')) {
-      query = query.eq('order_code', token);
-    } else {
-      query = query.or(`tracking_token.eq.${token},order_code.eq.${token}`);
-    }
-    const { data: orders } = await query.limit(1);
-
-    if (!orders || orders.length === 0) {
+    const order = await findOrderByIdentifier(token, false);
+    if (!order) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    const order = orders[0];
-    let meta = {};
-    try {
-      meta = order.ai_input_text ? JSON.parse(order.ai_input_text) : {};
-    } catch (e) {
-      meta = {};
-    }
-
+    const meta = parseOrderMeta(order);
     if (!meta.web_workflow) meta.web_workflow = {};
+    const signedContractFile = `HD-${order.order_code}-SIGNED.pdf`;
     meta.web_workflow.stage = 'CONTRACT_SIGNED';
     meta.web_workflow.signed_contract = {
       signed_at: new Date().toISOString(),
       signer_name: signer_name || 'Đại diện Khách hàng',
       signature_data: signature_data,
-      contract_file: `HD-${order.order_code}-SIGNED.pdf`
+      contract_file: signedContractFile
     };
 
-    // Tự động chuyển trạng thái đơn hàng sang READY_FOR_PLANNING để tiến hành xếp xe
+    await saveOrderMeta(order.id, meta);
+
+    // Cập nhật file hợp đồng đã ký và chuyển sang sẵn sàng xếp xe
     const { data: updatedOrder, error } = await supabase
       .from('orders')
       .update({
-        status: 'READY_FOR_PLANNING',
+        signed_order_contract_file: signedContractFile,
         ready_for_planning_at: new Date().toISOString(),
-        ai_input_text: JSON.stringify(meta),
         updated_at: new Date().toISOString()
       })
       .eq('id', order.id)
@@ -368,48 +407,29 @@ const uploadContractFile = async (req, res) => {
       return res.status(400).json({ message: 'Vui lòng cung cấp tên tệp hợp đồng' });
     }
 
-    let findQuery = supabase
-      .from('orders')
-      .select('id, order_code, status, ai_input_text');
-
-    if (/^\d+$/.test(id)) {
-      findQuery = findQuery.eq('id', parseInt(id));
-    } else {
-      findQuery = findQuery.eq('order_code', id);
-    }
-
-    const { data: currentOrders, error: findError } = await findQuery;
-    const currentOrder = currentOrders?.[0];
-
+    const currentOrder = await findOrderByIdentifier(id, false);
     if (!currentOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    let meta = {};
-    try {
-      meta = currentOrder.ai_input_text ? JSON.parse(currentOrder.ai_input_text) : {};
-    } catch (e) {
-      meta = {};
-    }
-
+    const meta = parseOrderMeta(currentOrder);
     const nowIso = new Date().toISOString();
     meta.contract_uploaded = true;
     meta.contract_file = file_name;
     meta.contract_file_size = file_size || '-';
     meta.contract_uploaded_at = nowIso;
     if (file_data) {
-      meta.contract_file_data = file_data; // Base64 url hoặc đường dẫn
+      meta.contract_file_data = file_data;
     }
 
-    // Nếu đơn hàng đang ở trạng thái DRAFT hoặc PENDING, có thể cập nhật thời gian hoàn tất hồ sơ
-    const updates = {
-      ai_input_text: JSON.stringify(meta),
-      updated_at: nowIso
-    };
+    await saveOrderMeta(currentOrder.id, meta);
 
     const { data: updatedOrders, error: updateError } = await supabase
       .from('orders')
-      .update(updates)
+      .update({
+        signed_order_contract_file: file_name,
+        updated_at: nowIso
+      })
       .eq('id', currentOrder.id)
       .select();
 
@@ -442,40 +462,22 @@ const uploadOrderDocuments = async (req, res) => {
       return res.status(400).json({ message: 'Danh mục chứng từ không hợp lệ' });
     }
 
-    let findQuery = supabase.from('orders').select('id, order_code, ai_input_text');
-    if (/^\d+$/.test(id)) {
-      findQuery = findQuery.eq('id', parseInt(id));
-    } else {
-      findQuery = findQuery.eq('order_code', id);
-    }
-
-    const { data: currentOrders, error: findError } = await findQuery;
-    const currentOrder = currentOrders?.[0];
-
+    const currentOrder = await findOrderByIdentifier(id, false);
     if (!currentOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    let meta = {};
-    try {
-      meta = currentOrder.ai_input_text ? JSON.parse(currentOrder.ai_input_text) : {};
-    } catch (e) {
-      meta = {};
-    }
-
+    const meta = parseOrderMeta(currentOrder);
     const nowIso = new Date().toISOString();
     if (!meta.web_workflow) meta.web_workflow = {};
     meta.web_workflow.documents = documents;
     meta.documents = documents;
 
-    const updates = {
-      ai_input_text: JSON.stringify(meta),
-      updated_at: nowIso
-    };
+    await saveOrderMeta(currentOrder.id, meta);
 
     const { data: updatedOrders, error: updateError } = await supabase
       .from('orders')
-      .update(updates)
+      .update({ updated_at: nowIso })
       .eq('id', currentOrder.id)
       .select();
 
@@ -510,35 +512,20 @@ const issueInvoiceToAccounting = async (req, res) => {
       notes
     } = req.body;
 
-    let findQuery = supabase.from('orders').select('*');
-    if (/^\d+$/.test(id)) {
-      findQuery = findQuery.eq('id', parseInt(id));
-    } else {
-      findQuery = findQuery.eq('order_code', id);
-    }
-
-    const { data: currentOrders, error: findError } = await findQuery;
-    const currentOrder = currentOrders?.[0];
-
+    const currentOrder = await findOrderByIdentifier(id, false);
     if (!currentOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    let meta = {};
-    try {
-      meta = currentOrder.ai_input_text ? JSON.parse(currentOrder.ai_input_text) : {};
-    } catch (e) {
-      meta = {};
-    }
-
+    const meta = parseOrderMeta(currentOrder);
     const nowIso = new Date().toISOString();
     const invNumber = invoice_number || `HD-2026-${(currentOrder.order_code || '98124').replace(/\D/g, '').slice(-5)}`;
-    
+
     meta.invoice_status = 'ISSUED_TO_ACCOUNTING';
     meta.invoice_number = invNumber;
     meta.invoice_issued_at = nowIso;
     meta.authorized_bank = authorized_bank || meta.authorized_bank || 'Vietcombank';
-    meta.accounting_email = accounting_email || meta.accounting_email || currentOrder.tracking_email;
+    meta.accounting_email = accounting_email || meta.accounting_email || currentOrder.customer?.email || '';
     meta.invoice = {
       invoice_number: invNumber,
       vat_rate: parseFloat(vat_rate) || 8,
@@ -552,14 +539,11 @@ const issueInvoiceToAccounting = async (req, res) => {
       notes: notes || 'Đã xuất hóa đơn GTGT điện tử bàn giao kế toán thu nợ qua ngân hàng ủy quyền'
     };
 
-    const updates = {
-      ai_input_text: JSON.stringify(meta),
-      updated_at: nowIso
-    };
+    await saveOrderMeta(currentOrder.id, meta);
 
     const { data: updatedOrders, error: updateError } = await supabase
       .from('orders')
-      .update(updates)
+      .update({ updated_at: nowIso })
       .eq('id', currentOrder.id)
       .select();
 
@@ -572,8 +556,8 @@ const issueInvoiceToAccounting = async (req, res) => {
     try {
       await supabase.from('order_notes').insert([{
         order_id: currentOrder.id,
-        author_id: 3,
-        content: `[KẾ TOÁN & HÓA ĐƠN] Đã xuất Hóa đơn GTGT số ${invNumber} (Tổng tiền: ${(parseFloat(total_amount) || currentOrder.agreed_price).toLocaleString()} VNĐ) và bàn giao cho Bộ phận Kế toán để đối soát và thu tiền khách hàng qua ngân hàng ủy quyền ${meta.authorized_bank}.`
+        created_by: 3,
+        content: `[KẾ TOÁN & HÓA ĐƠN] Đã xuất Hóa đơn GTGT số ${invNumber} (Tổng tiền: ${(parseFloat(total_amount) || currentOrder.agreed_price).toLocaleString('vi-VN')} VNĐ) và bàn giao cho Bộ phận Kế toán để đối soát và thu tiền khách hàng qua ngân hàng ủy quyền ${meta.authorized_bank}.`
       }]);
     } catch (noteErr) {
       console.warn('Note insert warning:', noteErr);
@@ -593,6 +577,7 @@ const issueInvoiceToAccounting = async (req, res) => {
 module.exports = {
   updateAgreedPrice,
   customerAgreeOrderPrice,
+  customerNegotiateOrder,
   customerUploadDocuments,
   approveWebOrderDocuments,
   customerSignContract,

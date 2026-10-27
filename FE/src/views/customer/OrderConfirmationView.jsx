@@ -1,7 +1,6 @@
-"use client";
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, Button, Result, Tag, Spin, message, Alert, Divider } from 'antd';
+import { Card, Button, Result, Tag, Spin, message, Alert, Divider, Modal, Input, InputNumber, Select, Form } from 'antd';
 import { 
   Package, 
   MapPin, 
@@ -14,9 +13,14 @@ import {
   ArrowRight,
   Send,
   Building,
-  Info
+  Info,
+  MessageSquare,
+  AlertCircle
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
+
+const { TextArea } = Input;
+const { Option } = Select;
 
 export default function OrderConfirmationView() {
   const params = useParams();
@@ -27,6 +31,12 @@ export default function OrderConfirmationView() {
   const [loading, setLoading] = useState(true);
   const [agreeing, setAgreeing] = useState(false);
   const [agreedSuccess, setAgreedSuccess] = useState(false);
+
+  // Negotiation Modal
+  const [negotiateModalOpen, setNegotiateModalOpen] = useState(false);
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState(false);
+  const [negotiateForm] = Form.useForm();
 
   useEffect(() => {
     if (!token) return;
@@ -49,6 +59,27 @@ export default function OrderConfirmationView() {
       }
     };
     loadOrder();
+
+    // Polling tự động mỗi 3 giây nếu đơn đang chờ đàm phán hoặc chưa chốt để cập nhật giá ngay khi điều phối duyệt
+    const interval = setInterval(async () => {
+      try {
+        const latestData = await orderApi.getOrderByToken(token);
+        if (latestData) {
+          setOrder(prev => {
+            if (!prev) return latestData;
+            // Nếu giá đã thay đổi hoặc stage thay đổi từ đàm phán sang đã chốt
+            if (prev.agreed_price !== latestData.agreed_price) {
+              message.info(`Điều phối viên vừa cập nhật mức giá mới: ${Number(latestData.agreed_price).toLocaleString('vi-VN')} VNĐ!`);
+            }
+            return latestData;
+          });
+        }
+      } catch (e) {
+        // bỏ qua lỗi polling ngầm
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
   }, [token]);
 
   const handleAgreePrice = async () => {
@@ -65,6 +96,25 @@ export default function OrderConfirmationView() {
       message.error(err.message || 'Lỗi khi xác nhận đơn hàng');
     } finally {
       setAgreeing(false);
+    }
+  };
+
+  const handleNegotiateSubmit = async () => {
+    try {
+      const values = await negotiateForm.validateFields();
+      setSubmittingFeedback(true);
+      await orderApi.customerNegotiateOrder(token, values);
+      message.success('Đã gửi yêu cầu đàm phán thành công! Điều phối viên sẽ phản hồi sớm nhất.');
+      setFeedbackSuccess(true);
+      setNegotiateModalOpen(false);
+      // Reload order info
+      const updatedData = await orderApi.getOrderByToken(token);
+      setOrder(updatedData);
+    } catch (err) {
+      console.error('Negotiate submit error:', err);
+      message.error(err.message || 'Không thể gửi yêu cầu đàm phán');
+    } finally {
+      setSubmittingFeedback(false);
     }
   };
 
@@ -132,6 +182,29 @@ export default function OrderConfirmationView() {
             <div className="bg-white/15 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/20 text-right shrink-0">
               <span className="text-[11px] text-indigo-200 block uppercase font-bold">Mã vận đơn</span>
               <span className="text-base font-bold font-mono text-white">{order.order_code}</span>
+            </div>
+          </div>
+
+          {/* Thanh tương tác tức thì (Không delay) */}
+          <div className="mt-5 pt-4 border-t border-white/20 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <span className="text-indigo-100 flex items-center gap-1.5 font-medium">
+              <span>⚡</span> Trao đổi trực tiếp không delay với Điều phối viên:
+            </span>
+            <div className="flex items-center gap-2">
+              <a
+                href="tel:0988123456"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs shadow-sm transition-all"
+              >
+                <PhoneCall size={13} /> Gọi Hotline 24/7
+              </a>
+              <a
+                href="https://zalo.me/0988123456"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs shadow-sm transition-all"
+              >
+                <MessageSquare size={13} /> Chat Zalo Ngay
+              </a>
             </div>
           </div>
         </div>
@@ -255,12 +328,44 @@ export default function OrderConfirmationView() {
             </ul>
           </div>
 
-          {/* Nút Hành Động Đồng Ý */}
+          {/* Thông báo nếu khách đang yêu cầu đàm phán lại */}
+          {(feedbackSuccess || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') && (
+            <Alert
+              title="Yêu cầu điều chỉnh của Quý khách đã được gửi tới Điều phối viên!"
+              description={
+                <div className="text-xs text-amber-900 space-y-1 mt-1">
+                  <div>• Lý do: <b>{order.web_workflow?.negotiation?.feedback_reason || 'Cần điều chỉnh thêm'}</b></div>
+                  {order.web_workflow?.negotiation?.proposed_price && (
+                    <div>• Mức giá Quý khách đề xuất: <b>{order.web_workflow.negotiation.proposed_price.toLocaleString('vi-VN')} VNĐ</b></div>
+                  )}
+                  {order.web_workflow?.negotiation?.customer_note && (
+                    <div>• Ghi chú: <i>&ldquo;{order.web_workflow.negotiation.customer_note}&rdquo;</i></div>
+                  )}
+                  <div className="pt-1 text-slate-600">
+                    Điều phối viên NEXLOG đang xem xét và sẽ liên hệ/cập nhật lại giá cước sớm nhất qua Email/SĐT của Quý khách.
+                  </div>
+                </div>
+              }
+              type="warning"
+              showIcon
+              className="rounded-2xl border border-amber-300 bg-amber-50/90"
+            />
+          )}
+
+          {/* Nút Hành Động Đồng Ý & Đàm Phán Lại */}
           {!agreedSuccess ? (
-            <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100">
-              <div className="text-xs text-slate-500 text-center sm:text-left">
-                Nhấn <b>&quot;Đồng ý chốt đơn hàng &amp; Giá cước&quot;</b> để chuyển sang bước tải lên chứng từ.
+            <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Button
+                  size="large"
+                  icon={<MessageSquare size={16} />}
+                  onClick={() => setNegotiateModalOpen(true)}
+                  className="border-amber-400 text-amber-800 hover:text-amber-900 hover:border-amber-500 bg-amber-50/60 font-semibold h-12 rounded-xl w-full sm:w-auto"
+                >
+                  Yêu cầu điều chỉnh giá / lịch trình
+                </Button>
               </div>
+
               <Button
                 type="primary"
                 size="large"
@@ -287,6 +392,57 @@ export default function OrderConfirmationView() {
           )}
 
         </div>
+
+        {/* MODAL YÊU CẦU ĐIỀU CHỈNH GIÁ / LỊCH TRÌNH */}
+        <Modal
+          title={
+            <div className="flex items-center gap-2 text-base font-bold text-slate-800">
+              <MessageSquare size={18} className="text-amber-600" />
+              Yêu cầu Điều chỉnh Giá cước / Lịch trình vận tải
+            </div>
+          }
+          open={negotiateModalOpen}
+          onCancel={() => setNegotiateModalOpen(false)}
+          onOk={handleNegotiateSubmit}
+          confirmLoading={submittingFeedback}
+          okText="Gửi yêu cầu tới Điều phối"
+          cancelText="Đóng"
+          okButtonProps={{ className: 'bg-[#4f46e5] font-semibold' }}
+          destroyOnClose
+          centered
+        >
+          <div className="py-2 space-y-3">
+            <p className="text-xs text-slate-600">
+              Nếu mức giá <b>{(order.agreed_price || 0).toLocaleString()} VNĐ</b> hoặc lịch trình chưa phù hợp, Quý khách vui lòng gửi đề xuất bên dưới. Điều phối viên sẽ hỗ trợ thẩm định lại ngay:
+            </p>
+
+            <Form form={negotiateForm} layout="vertical" initialValues={{ feedback_reason: 'Giá cước vượt ngân sách' }}>
+              <Form.Item label={<span className="text-xs font-semibold">Lý do điều chỉnh (*)</span>} name="feedback_reason" rules={[{ required: true }]}>
+                <Select className="text-xs">
+                  <Option value="Giá cước vượt ngân sách">💰 Giá cước vượt ngân sách dự toán</Option>
+                  <Option value="Muốn thay đổi ngày/giờ lấy hàng">📅 Muốn thay đổi ngày / giờ lấy hàng</Option>
+                  <Option value="Muốn đổi loại phương tiện">🚛 Muốn đổi loại phương tiện / xe tải khác</Option>
+                  <Option value="Thay đổi số lượng hoặc quy cách hàng">📦 Thay đổi số lượng / quy cách hàng</Option>
+                  <Option value="Lý do khác">Khác (nhập chi tiết bên dưới)</Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item label={<span className="text-xs font-semibold">Mức giá Quý khách đề xuất (VNĐ)</span>} name="proposed_price">
+                <InputNumber
+                  placeholder="VD: 1,200,000"
+                  formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  parser={(val) => val.replace(/\$\s?|(,*)/g, '')}
+                  className="w-full font-bold text-indigo-700"
+                  min={100000}
+                />
+              </Form.Item>
+
+              <Form.Item label={<span className="text-xs font-semibold">Ghi chú cụ thể gửi Điều phối viên (*)</span>} name="customer_note" rules={[{ required: true, message: 'Vui lòng nhập nội dung đề xuất của Quý khách' }]}>
+                <TextArea rows={3} placeholder="VD: Công ty mình có thể linh hoạt giao hàng vào buổi chiều, bên bạn xem xét giảm thêm 200k nhé..." className="text-xs" />
+              </Form.Item>
+            </Form>
+          </div>
+        </Modal>
 
       </div>
     </div>

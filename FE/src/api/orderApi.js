@@ -133,6 +133,20 @@ export const orderApi = {
     }
   },
 
+  // 10b. Khách hàng: Đề xuất đàm phán lại giá / lịch lấy hàng
+  customerNegotiateOrder: async (token, negotiationData) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/customer-negotiate/${token}`, {
+        method: 'POST',
+        body: JSON.stringify(negotiationData)
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.customerNegotiateOrder Error:', error);
+      throw error;
+    }
+  },
+
   // 11. Khách hàng: Tải lên hồ sơ chứng từ liên quan
   customerUploadDocuments: async (token, documents) => {
     try {

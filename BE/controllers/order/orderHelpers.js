@@ -142,8 +142,91 @@ const getOrCreateLocation = async ({
 };
 
 
+const META_NOTE_PREFIX = '[META_JSON]:';
+
+// Đọc metadata từ order (ưu tiên ai_input_text nếu có, hoặc lấy từ order_notes có prefix [META_JSON]:)
+const parseOrderMeta = (order) => {
+  if (!order) return {};
+  if (order.ai_input_text) {
+    try {
+      return JSON.parse(order.ai_input_text);
+    } catch (e) {
+      // ignore
+    }
+  }
+  if (Array.isArray(order.order_notes)) {
+    const metaNote = [...order.order_notes]
+      .reverse()
+      .find((n) => typeof n?.content === 'string' && n.content.startsWith(META_NOTE_PREFIX));
+    if (metaNote) {
+      try {
+        return JSON.parse(metaNote.content.slice(META_NOTE_PREFIX.length));
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+  return {};
+};
+
+// Tải metadata từ DB theo orderId (nếu chưa join sẵn order_notes)
+const loadOrderMeta = async (orderId, orderObj = null) => {
+  const fromObj = parseOrderMeta(orderObj);
+  if (Object.keys(fromObj).length > 0) return fromObj;
+
+  if (!orderId) return {};
+  try {
+    const { data: notes } = await supabase
+      .from('order_notes')
+      .select('id, content')
+      .eq('order_id', orderId)
+      .like('content', `${META_NOTE_PREFIX}%`)
+      .order('id', { ascending: false })
+      .limit(1);
+
+    if (notes && notes.length > 0) {
+      return JSON.parse(notes[0].content.slice(META_NOTE_PREFIX.length));
+    }
+  } catch (e) {
+    // ignore
+  }
+  return {};
+};
+
+// Lưu metadata vào order_notes (tương thích hoàn toàn khi bảng orders chưa có cột ai_input_text)
+const saveOrderMeta = async (orderId, meta) => {
+  if (!orderId || !meta) return;
+  const content = `${META_NOTE_PREFIX}${JSON.stringify(meta)}`;
+  try {
+    const { data: existing } = await supabase
+      .from('order_notes')
+      .select('id')
+      .eq('order_id', orderId)
+      .like('content', `${META_NOTE_PREFIX}%`)
+      .order('id', { ascending: false })
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      await supabase
+        .from('order_notes')
+        .update({ content })
+        .eq('id', existing[0].id);
+    } else {
+      await supabase
+        .from('order_notes')
+        .insert([{ order_id: orderId, content, created_by: 1 }]);
+    }
+  } catch (err) {
+    console.warn('saveOrderMeta warning:', err.message);
+  }
+};
+
 module.exports = {
+  META_NOTE_PREFIX,
   mapDbStatusToFe,
   generateTrackingToken,
-  getOrCreateLocation
+  getOrCreateLocation,
+  parseOrderMeta,
+  loadOrderMeta,
+  saveOrderMeta
 };

@@ -78,6 +78,28 @@ const OrderManagement = () => {
 
     loadInitialData();
 
+    // Tự động kiểm tra cập nhật mỗi 5 giây để phát hiện ngay khi khách gửi yêu cầu đàm phán
+    const pollInterval = setInterval(async () => {
+      try {
+        const latestOrders = await orderApi.getAllOrders();
+        if (isSubscribed && Array.isArray(latestOrders)) {
+          setOrders(prev => {
+            const prevNegotiating = prev.filter(o => o.web_workflow?.stage === 'CUSTOMER_NEGOTIATING').map(o => o.id);
+            const newNegotiating = latestOrders.filter(o => o.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' && !prevNegotiating.includes(o.id));
+            if (newNegotiating.length > 0) {
+              message.warning({
+                content: `⚡ Khách hàng vừa gửi yêu cầu thương lượng giá cho đơn #${newNegotiating[0].order_code}!`,
+                duration: 5
+              });
+            }
+            return latestOrders;
+          });
+        }
+      } catch (e) {
+        // bỏ qua lỗi polling
+      }
+    }, 5000);
+
     const handleStorageChange = () => {
       fetchOrders(true);
     };
@@ -85,6 +107,7 @@ const OrderManagement = () => {
     window.addEventListener('nexlog_orders_updated', handleStorageChange);
     return () => {
       isSubscribed = false;
+      clearInterval(pollInterval);
       window.removeEventListener('nexlog_orders_updated', handleStorageChange);
     };
   }, [fetchOrders]);
@@ -269,6 +292,13 @@ const OrderManagement = () => {
           return (
             <Tag color="green" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
               Đã giao (Đã đóng)
+            </Tag>
+          );
+        }
+        if (record.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') {
+          return (
+            <Tag color="volcano" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap animate-pulse border-red-400">
+              ⚡ Khách thương lượng
             </Tag>
           );
         }

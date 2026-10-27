@@ -10,6 +10,7 @@ const {
   closeOrder,
   getOrderByToken,
   customerAgreeOrderPrice,
+  customerNegotiateOrder,
   customerUploadDocuments,
   approveWebOrderDocuments,
   customerSignContract,
@@ -31,6 +32,9 @@ router.get('/customer-view/:token', getOrderByToken);
 
 // 4. Khách hàng: Đồng ý chốt giá cước đơn hàng (Public)
 router.post('/customer-agree/:token', customerAgreeOrderPrice);
+
+// 4b. Khách hàng: Gửi yêu cầu đàm phán điều chỉnh giá / lịch trình (Public)
+router.post('/customer-negotiate/:token', customerNegotiateOrder);
 
 // 5. Khách hàng: Upload hồ sơ chứng từ liên quan (Public)
 router.post('/customer-upload-docs/:token', customerUploadDocuments);

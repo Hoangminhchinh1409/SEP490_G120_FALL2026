@@ -8,17 +8,25 @@ const getTransporter = async () => {
 
   // Sử dụng cấu hình SMTP thật từ .env (Tham khảo chuẩn dự án FITFLOW)
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-    console.log('[EmailService] Connected to Gmail SMTP Service with account:', process.env.SMTP_USER);
-    return transporter;
+    try {
+      const realTransporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: Number(process.env.SMTP_PORT || 587),
+        secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+        auth: {
+          user: process.env.SMTP_USER.trim(),
+          pass: process.env.SMTP_PASS.replace(/\s+/g, ''),
+        },
+      });
+      await realTransporter.verify();
+      transporter = realTransporter;
+      console.log('[EmailService] Connected & verified Gmail SMTP Service with account:', process.env.SMTP_USER);
+      return transporter;
+    } catch (smtpErr) {
+      console.warn(
+        `[EmailService] Gmail SMTP verify failed for ${process.env.SMTP_USER} (${smtpErr.message}). Falling back to Ethereal test email...`
+      );
+    }
   }
 
   // Chế độ Development / Demo: Sử dụng Ethereal hoặc console preview
@@ -58,14 +66,20 @@ const sendOrderPriceConfirmationEmail = async ({
   customerEmail,
   customerName,
   orderCode,
+  orderType,
   agreedPrice,
   pickupAddress,
   deliveryAddress,
   cargoDescription,
+  pickupDate,
+  flightSchedule,
   confirmUrl
 }) => {
   const mailTransporter = await getTransporter();
   const formattedPrice = (agreedPrice || 0).toLocaleString('vi-VN');
+  const isExport = (orderType || '').toUpperCase().includes('EXPORT') || (orderType || '').toUpperCase().includes('XUẤT');
+  const typeText = isExport ? 'ĐƠN HÀNG XUẤT KHẨU (AIR CARGO EXPORT)' : 'ĐƠN HÀNG NHẬP KHẨU (AIR CARGO IMPORT)';
+  const typeBadgeColor = isExport ? '#4f46e5' : '#0284c7';
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -75,16 +89,18 @@ const sendOrderPriceConfirmationEmail = async ({
       <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; color: #1e293b; }
         .container { max-width: 620px; margin: 20px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
-        .header { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 32px 24px; text-align: center; color: #ffffff; }
+        .header { background: linear-gradient(135deg, ${typeBadgeColor} 0%, #7c3aed 100%); padding: 32px 24px; text-align: center; color: #ffffff; }
         .header h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 0.5px; }
         .header p { margin: 8px 0 0; font-size: 14px; opacity: 0.9; }
         .content { padding: 32px 28px; }
         .greeting { font-size: 16px; font-weight: 600; color: #0f172a; margin-bottom: 16px; }
+        .type-badge { display: inline-block; padding: 6px 14px; background: #e0e7ff; color: #3730a3; border-radius: 20px; font-size: 12px; font-weight: bold; margin-bottom: 12px; }
         .info-card { background-color: #f1f5f9; border-radius: 12px; padding: 20px; margin: 20px 0; border: 1px solid #cbd5e1; }
         .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 14px; }
         .info-row:last-child { border-bottom: none; }
         .info-label { color: #64748b; font-weight: 500; }
         .info-value { color: #0f172a; font-weight: 600; text-align: right; }
+        .warning-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 14px; margin: 16px 0; font-size: 13px; color: #92400e; line-height: 1.5; }
         .price-box { background: #eef2ff; border: 2px dashed #6366f1; border-radius: 12px; padding: 18px; text-align: center; margin: 24px 0; }
         .price-label { font-size: 13px; color: #4338ca; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .price-val { font-size: 28px; color: #4f46e5; font-weight: 800; margin-top: 4px; font-family: monospace; }
@@ -101,15 +117,22 @@ const sendOrderPriceConfirmationEmail = async ({
         </div>
         <div class="content">
           <div class="greeting">Kính gửi Quý khách: ${customerName || 'Quý khách hàng'},</div>
+          <div style="text-align: center;">
+            <span class="type-badge">📦 ${typeText}</span>
+          </div>
           <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-            Bộ phận Điều phối NEXLOG xin chân thành cảm ơn Quý khách đã tin tưởng và gửi yêu cầu vận chuyển từ Hệ thống Website. 
-            Dưới đây là thông tin chi tiết đơn hàng và mức giá cước thỏa thuận đã được điều phối viên thẩm định lộ trình:
+            Bộ phận Điều phối NEXLOG xin chân thành cảm ơn Quý khách đã tin tưởng và gửi yêu cầu vận chuyển từ Hệ thống. 
+            Dưới đây là thông tin chi tiết đơn hàng, lịch trình đề xuất và mức giá cước thỏa thuận đã được thẩm định:
           </p>
 
           <div class="info-card">
             <div class="info-row">
               <span class="info-label">Mã vận đơn:</span>
               <span class="info-value" style="color: #4f46e5; font-family: monospace;">${orderCode}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Phân loại đơn:</span>
+              <span class="info-value" style="color: ${isExport ? '#4338ca' : '#0369a1'};">${isExport ? 'Hàng Xuất Khẩu (Export)' : 'Hàng Nhập Khẩu (Import)'}</span>
             </div>
             <div class="info-row">
               <span class="info-label">Hàng hóa &amp; Quy cách:</span>
@@ -123,15 +146,52 @@ const sendOrderPriceConfirmationEmail = async ({
               <span class="info-label">Điểm giao hàng:</span>
               <span class="info-value">${deliveryAddress}</span>
             </div>
+            ${pickupDate ? `
+            <div class="info-row">
+              <span class="info-label">${isExport ? 'Lịch xe đến lấy hàng đề xuất:' : 'Ngày giờ dự kiến dỡ hàng khỏi máy bay:'}</span>
+              <span class="info-value" style="color: #b45309; font-weight: 700;">${pickupDate}</span>
+            </div>
+            ` : ''}
+            ${flightSchedule ? `
+            <div class="info-row">
+              <span class="info-label">${isExport ? 'Lịch bay xuất khẩu (ETD):' : 'Lịch hạ cánh:'}</span>
+              <span class="info-value" style="color: #0369a1; font-weight: 600;">${flightSchedule}</span>
+            </div>
+            ` : ''}
           </div>
+
+          ${isExport ? `
+          <div class="warning-box">
+            <b>⚠️ QUY ĐỊNH VẬN CHUYỂN HÀNG XUẤT KHẨU:</b><br/>
+            - Thời gian đến lấy hàng trên đã được Điều phối tính toán dựa trên khoảng cách di chuyển và thời gian cut-off kho ALS / kiểm tra an ninh sân bay.<br/>
+            - Quý khách vui lòng kiểm tra và thống nhất ngày lấy hàng. <b>Trường hợp Quý khách vẫn quyết định chọn ngày lấy hàng trễ hơn khuyến nghị dẫn đến muộn lịch bay, chi phí đổi chuyến bay khác hoặc chi phí lưu kho phát sinh sẽ do Quý khách tự chịu trách nhiệm. Hệ thống và điều phối NEXLOG sẽ không chịu trách nhiệm trong trường hợp này.</b>
+          </div>
+          ` : ''}
 
           <div class="price-box">
             <div class="price-label">Giá cước trọn gói thỏa thuận</div>
             <div class="price-val">${formattedPrice} VNĐ</div>
           </div>
 
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px; margin: 16px 0; text-align: center;">
+            <div style="font-size: 13px; font-weight: bold; color: #166534; margin-bottom: 6px;">
+              💬 Cần thương lượng giá hoặc đổi lịch trình ngay?
+            </div>
+            <p style="font-size: 12px; color: #15803d; margin: 0 0 10px;">
+              Quý khách có thể trao đổi trực tiếp với Điều phối viên phụ trách đơn hàng qua Hotline hoặc Zalo:
+            </p>
+            <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+              <a href="tel:0988123456" style="display: inline-block; background: #16a34a; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
+                📞 Gọi Hotline: 0988 123 456
+              </a>
+              <a href="https://zalo.me/0988123456" target="_blank" style="display: inline-block; background: #0284c7; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
+                💬 Chat Zalo Điều Phối
+              </a>
+            </div>
+          </div>
+
           <p style="font-size: 14px; line-height: 1.6; color: #475569; text-align: center;">
-            Quý khách vui lòng nhấn vào nút bên dưới để xem lại thông tin chi tiết, chốt giá cước và hoàn thiện việc nộp chứng từ hồ sơ vận tải:
+            Quý khách đồng ý với thông tin trên vui lòng nhấn vào nút bên dưới để chốt đơn và chuyển sang nộp chứng từ:
           </p>
 
           <div class="btn-container">
@@ -157,7 +217,7 @@ const sendOrderPriceConfirmationEmail = async ({
     const info = await mailTransporter.sendMail({
       from: fromAddress,
       to: customerEmail || 'khachhang@example.com',
-      subject: `[NEXLOG] Xác nhận thông tin đơn hàng & Báo giá cước #${orderCode}`,
+      subject: `[NEXLOG] Xác nhận ${isExport ? 'Đơn hàng Xuất Khẩu' : 'Đơn hàng Nhập Khẩu'} & Báo giá cước #${orderCode}`,
       html: htmlContent
     });
     console.log('[EmailService] Order confirmation email sent:', info.messageId);
@@ -244,7 +304,14 @@ const sendContractSigningEmail = async ({
       html: htmlContent
     });
     console.log('[EmailService] Contract signing email sent:', info.messageId);
-    return { success: true, messageId: info.messageId };
+    if (nodemailer.getTestMessageUrl && info) {
+      console.log('[EmailService] Ethereal Preview URL:', nodemailer.getTestMessageUrl(info));
+    }
+    return {
+      success: true,
+      messageId: info.messageId,
+      previewUrl: nodemailer.getTestMessageUrl ? nodemailer.getTestMessageUrl(info) : null
+    };
   } catch (error) {
     console.error('[EmailService] Error sending contract signing email:', error);
     return { success: false, error: error.message };

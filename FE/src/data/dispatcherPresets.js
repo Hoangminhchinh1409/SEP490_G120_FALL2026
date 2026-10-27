@@ -24,6 +24,40 @@ export const calculateRouteEstimate = (pLat, pLng, dLat, dLng) => {
   };
 };
 
+/**
+ * Tính toán gợi ý thời gian lấy hàng tối ưu cho đơn hàng Xuất khẩu:
+ * - Hàng xuất khẩu bằng đường hàng không cần có mặt tại kho/sân bay tối thiểu 4 - 6 tiếng trước giờ bay (cut-off time làm thủ tục hải quan, soi chiếu an ninh & cân đo).
+ * - Cộng thêm thời gian xe chạy thực tế trên đường (khoảng cách km / 40km/h + 30p dự phòng kẹt xe).
+ */
+export const calculateExportPickupSuggestion = (flightDateTime, distanceKm = 30) => {
+  if (!flightDateTime) return null;
+  const flightDate = new Date(flightDateTime);
+  if (isNaN(flightDate.getTime())) return null;
+
+  // Thời gian xe chạy dự tính (phút)
+  const travelMins = Math.round((Math.max(5, distanceKm) / 40) * 60) + 30;
+  // Thời gian cut-off kho ALS / an ninh sân bay: tối thiểu 4 tiếng (240 phút)
+  const airportLeadMins = 240;
+  const totalLeadMinutes = travelMins + airportLeadMins;
+
+  // Thời điểm muộn nhất nên lấy hàng
+  const latestPickupDate = new Date(flightDate.getTime() - totalLeadMinutes * 60 * 1000);
+
+  return {
+    flightDate,
+    latestPickupDate,
+    latestPickupFormatted: latestPickupDate.toLocaleString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }),
+    travelHours: (travelMins / 60).toFixed(1),
+    airportLeadHours: 4
+  };
+};
+
 // Biểu giá vận tải & phụ phí chính thức ALS (Hợp đồng FedEx Express)
 export const ALS_TARIFF_RATES = {
   VEHICLE_TYPES: [
@@ -109,12 +143,8 @@ export const calculateAlsPricing = ({
     baseTransportFee = Math.round((calculatedRate * discount) / 50000) * 50000;
   }
 
-  // 2. Phí bốc xếp (nếu có yêu cầu)
-  let loadingFee = 0;
-  if (loadingUnloadingRequired) {
-    const feeSpec = ALS_TARIFF_RATES.UNLOADING_FEES[vType] || ALS_TARIFF_RATES.UNLOADING_FEES['TRUCK_2.5T'];
-    loadingFee = feeSpec.oneEnd; // Mặc định phí bốc xếp tại kho Nội Bài
-  }
+  // 2. Phí bốc xếp (Tùy case phát sinh thực tế -> chuyển sang ghi nhận phụ phí phát sinh)
+  const loadingFee = 0;
 
   // 3. Phí dịch vụ làm thủ tục hải quan
   const customsFee = customsServiceRequired ? 500000 : 0;

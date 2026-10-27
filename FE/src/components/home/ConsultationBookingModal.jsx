@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Select, Checkbox, Button, message, Result, Tooltip } from 'antd';
-import { Send, MapPin, Package, User, Plus, Trash2, FileText, ShieldCheck } from 'lucide-react';
+import { Modal, Form, Input, InputNumber, Select, Checkbox, Button, message, Result, Tooltip, Alert } from 'antd';
+import { Send, MapPin, Package, User, Plus, Trash2, FileText, ShieldCheck, PlaneTakeoff, PlaneLanding, Clock, Calendar, AlertTriangle } from 'lucide-react';
 import LocationSearchInput from '../common/LocationSearchInput';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
-import { calculateRouteEstimate, calculateAlsPricing, ALS_TARIFF_RATES, ALS_NOI_BAI_TERMINAL } from '../../data/dispatcherPresets';
+import { calculateRouteEstimate, calculateAlsPricing, calculateExportPickupSuggestion, ALS_TARIFF_RATES, ALS_NOI_BAI_TERMINAL } from '../../data/dispatcherPresets';
 
 const { Option } = Select;
 
@@ -196,6 +196,12 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
     form
   ]);
 
+  // Gợi ý lịch lấy hàng xuất khẩu dựa trên khoảng cách và lịch bay
+  const exportPickupSuggestion = useMemo(() => {
+    if (shippingDirection !== 'EXPORT' || !watchedValues?.flight_datetime) return null;
+    return calculateExportPickupSuggestion(watchedValues.flight_datetime, routeInfo.distanceKm || 30);
+  }, [shippingDirection, watchedValues?.flight_datetime, routeInfo.distanceKm]);
+
   const handleAddCargoItem = () => {
     setCargoItems(prev => [
       ...prev,
@@ -250,8 +256,14 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
       const payload = {
         ...formValues,
-        required_pickup_date: formValues.required_pickup_date || null,
+        required_pickup_date: shippingDirection === 'IMPORT' 
+          ? (formValues.flight_arrival_date || formValues.required_pickup_date || null)
+          : (formValues.required_pickup_date || null),
         required_delivery_date: formValues.required_pickup_date || null,
+        flight_arrival_date: formValues.flight_arrival_date || null,
+        flight_arrival_time: formValues.flight_arrival_time || null,
+        flight_datetime: formValues.flight_datetime || null,
+        export_pickup_suggestion: exportPickupSuggestion?.latestPickupFormatted || null,
         shipping_direction: shippingDirection,
         customs_service_required: customsServiceRequired,
         customs_fee: customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0,
@@ -504,30 +516,66 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                     </div>
                   )}
 
-                  {/* Ngày lấy hàng & Khung giờ giao nhận tách riêng gắn liền với Điểm lấy hàng */}
-                  <div className="mt-2.5 pt-2 border-t border-blue-100 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Form.Item
-                      label={<span className="text-[11px] font-semibold text-blue-900">Ngày lấy hàng</span>}
-                      name="required_pickup_date"
-                      className="mb-0"
-                    >
-                      <Input
-                        type="date"
-                        className="text-xs bg-white"
-                        min={new Date().toISOString().split('T')[0]}
-                      />
-                    </Form.Item>
+                  {/* Lịch trình hàng hóa: Nhập khẩu (Hàng xuống máy bay) vs Xuất khẩu (Lịch bay & Giờ lấy hàng) */}
+                  <div className="mt-2.5 pt-2 border-t border-blue-100">
+                    {shippingDirection === 'IMPORT' ? (
+                      <div>
+                        <div className="text-[11px] font-semibold text-blue-900 mb-1.5 flex items-center gap-1">
+                          <PlaneLanding size={13} className="text-blue-600" />
+                          <span>Thời gian hàng xuống khỏi máy bay (Flight Arrival Time) <span className="text-red-500">*</span></span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <Form.Item
+                            label={<span className="text-[10px] text-gray-500">Ngày máy bay hạ cánh</span>}
+                            name="flight_arrival_date"
+                            rules={[{ required: true, message: 'Chọn ngày hàng hạ cánh' }]}
+                            className="mb-0"
+                          >
+                            <Input
+                              type="date"
+                              className="text-xs bg-white"
+                              min={new Date().toISOString().split('T')[0]}
+                            />
+                          </Form.Item>
+                          <Form.Item
+                            label={<span className="text-[10px] text-gray-500">Giờ máy bay hạ cánh</span>}
+                            name="flight_arrival_time"
+                            rules={[{ required: true, message: 'Nhập giờ hạ cánh' }]}
+                            className="mb-0"
+                          >
+                            <Input
+                              type="time"
+                              className="text-xs bg-white"
+                            />
+                          </Form.Item>
+                        </div>
+                        <div className="mt-1.5 p-1.5 bg-blue-100/60 rounded text-[10px] text-blue-800 flex items-center gap-1">
+                          <span>ℹ️</span> Điều phối sẽ tự động điều xe đến cửa kho ALS lấy hàng ngay sau khi hàng hoàn tất dỡ khỏi máy bay và nhập kho.
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="text-[11px] font-semibold text-indigo-900 mb-1.5 flex items-center gap-1">
+                          <PlaneTakeoff size={13} className="text-indigo-600" />
+                          <span>Lịch bay dự kiến của lô hàng xuất khẩu (Flight ETD) <span className="text-red-500">*</span></span>
+                        </div>
+                        <Form.Item
+                          name="flight_datetime"
+                          rules={[{ required: true, message: 'Vui lòng chọn ngày giờ bay dự kiến' }]}
+                          className="mb-1"
+                        >
+                          <Input
+                            type="datetime-local"
+                            className="text-xs bg-white"
+                            min={new Date().toISOString().slice(0, 16)}
+                          />
+                        </Form.Item>
 
-                    <Form.Item
-                      label={<span className="text-[11px] font-semibold text-blue-900">Khung giờ giao nhận</span>}
-                      name="operating_time_slot"
-                      className="mb-0"
-                    >
-                      <Select className="text-xs w-full bg-white">
-                        <Option value="FULL_DAY">☀️ Ca ngày (8:00 - 17:00)</Option>
-                        <Option value="AFTERNOON">🌤️ Ca chiều (12:00 - 17:00)</Option>
-                      </Select>
-                    </Form.Item>
+                        <div className="mt-1.5 p-1.5 bg-indigo-50 rounded text-[10px] text-indigo-900 flex items-center gap-1">
+                          <span>ℹ️</span> Điều phối sẽ căn cứ khoảng cách để liên hệ chốt giờ lấy hàng phù hợp với lịch bay.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -614,7 +662,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
               <span>👤</span> 3. Thông tin người nhận &amp; Loại xe yêu cầu
             </div>
             <div className="bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-100 mb-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 <Form.Item
                   label={<span className="text-xs font-semibold">Tên người nhận hàng <span className="text-red-500">*</span></span>}
                   name="receiver_name"
@@ -645,17 +693,6 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                     <Option value="TRUCK_5T">🚛 Xe tải 5 tấn (5T Truck)</Option>
                     <Option value="CONTAINER_20">📦 Container 20ft</Option>
                     <Option value="CONTAINER_40">📦 Container 40ft</Option>
-                  </Select>
-                </Form.Item>
-
-                <Form.Item
-                  label={<span className="text-xs font-semibold">Yêu cầu bốc xếp hàng?</span>}
-                  name="loading_unloading_required"
-                  className="mb-0"
-                >
-                  <Select className="text-xs w-full">
-                    <Option value={false}>Không cần (tự bốc xếp)</Option>
-                    <Option value={true}>Có — Hỗ trợ bốc xếp</Option>
                   </Select>
                 </Form.Item>
               </div>
