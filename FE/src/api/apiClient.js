@@ -1,5 +1,56 @@
 import { API_URL } from "./apiConfig";
 
+function createResponseError(message, status) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+}
+
+async function parseJsonResponse(response) {
+    const contentType = response.headers.get("content-type") || "";
+    const raw = await response.text();
+
+    if (!raw) {
+        if (!response.ok) {
+            throw createResponseError(
+                `Request failed with status ${response.status}`,
+                response.status
+            );
+        }
+        return null;
+    }
+
+    if (!contentType.includes("application/json")) {
+        throw createResponseError(
+            response.ok
+                ? "Server returned a non-JSON response"
+                : `Request failed with status ${response.status}`,
+            response.status
+        );
+    }
+
+    let data;
+    try {
+        data = JSON.parse(raw);
+    } catch {
+        throw createResponseError(
+            response.ok
+                ? "Server returned invalid JSON"
+                : `Request failed with status ${response.status}`,
+            response.status
+        );
+    }
+
+    if (!response.ok) {
+        throw createResponseError(
+            data.message || "Something went wrong",
+            response.status
+        );
+    }
+
+    return data;
+}
+
 // Gọi API có xác thực
 export async function fetchWithAuth(url, options = {}) {
     const headers = {
@@ -24,13 +75,7 @@ export async function fetchWithAuth(url, options = {}) {
         return null;
     }
 
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.message || "Something went wrong");
-    }
-
-    return data;
+    return parseJsonResponse(response);
 }
 
 // Gọi API không yêu cầu xác thực
@@ -50,13 +95,7 @@ export async function fetchWithoutAuth(url, options = {}) {
         return null;
     }
 
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.message || "Something went wrong");
-    }
-
-    return data;
+    return parseJsonResponse(response);
 }
 
 // Gọi API upload hoặc tải file

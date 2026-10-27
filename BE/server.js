@@ -35,6 +35,12 @@ app.get("/", (req, res) => {
 // API routes (aggregated via routes/index.js)
 app.use("/api", apiRoutes);
 
+app.use((req, res) => {
+    res.status(404).json({
+        message: `Cannot ${req.method} ${req.originalUrl}`
+    });
+});
+
 const { initManagerJobs } = require("./jobs/managerJobs");
 
 app.listen(PORT, async () => {

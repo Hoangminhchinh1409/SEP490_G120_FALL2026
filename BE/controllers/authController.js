@@ -1,4 +1,5 @@
 const authService = require("../services/authService");
+const crypto = require("crypto");
 
 const login = async (req, res) => {
     try {
@@ -54,9 +55,27 @@ const getMe = async (req, res) => {
     }
 };
 
+const updateProfile = async (req, res) => {
+    try {
+        const user = await authService.updateProfile(req.user.id, req.body || {});
+
+        return res.status(200).json({
+            message: "Cập nhật hồ sơ thành công",
+            user
+        });
+    } catch (error) {
+        if (!error.statusCode) {
+            console.error("updateProfile Error:", error);
+        }
+        return res.status(error.statusCode || 500).json({
+            message: error.message || "Internal server error"
+        });
+    }
+};
+
 const changePassword = async (req, res) => {
     try {
-        const { currentPassword, newPassword } = req.body;
+        const { currentPassword, newPassword } = req.body || {};
         const result = await authService.changePassword(
             req.user.id,
             currentPassword,
@@ -65,8 +84,75 @@ const changePassword = async (req, res) => {
 
         return res.status(200).json(result);
     } catch (error) {
+        if (!error.statusCode) {
+            console.error("changePassword Error:", error);
+        }
         return res.status(error.statusCode || 500).json({
+            message: error.statusCode ? error.message : "Internal server error",
+            code: error.code || null
+        });
+    }
+};
+
+const forgotPassword = async (req, res) => {
+    const requestId = crypto.randomUUID();
+    res.set("X-Request-Id", requestId);
+
+    console.info(`[forgotPassword:${requestId}] Request received`);
+
+    try {
+        const { email } = req.body || {};
+
+        if (
+            typeof email !== "string" ||
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+        ) {
+            return res.status(400).json({
+                message: "A valid email address is required"
+            });
+        }
+
+        console.info(`[forgotPassword:${requestId}] Calling service`);
+
+        const result = await authService.requestPasswordReset(
+            email.trim(),
+            requestId
+        );
+
+        console.info(
+            `[forgotPassword:${requestId}] Request completed`,
+            {
+                hasResetToken: Boolean(result.resetToken)
+            }
+        );
+
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error(`[forgotPassword:${requestId}] Request failed`, {
+            name: error.name,
+            code: error.code || null,
             message: error.message
+        });
+
+        return res.status(500).json({
+            message: "Unable to process password reset request",
+            requestId
+        });
+    }
+};
+
+const resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body || {};
+        const result = await authService.resetPassword(token, newPassword);
+
+        return res.status(200).json(result);
+    } catch (error) {
+        if (!error.statusCode) {
+            console.error("resetPassword Error:", error);
+        }
+        return res.status(error.statusCode || 500).json({
+            message: error.statusCode ? error.message : "Unable to reset password"
         });
     }
 };
@@ -90,6 +176,9 @@ const logout = async (req, res) => {
 module.exports = {
     login,
     getMe,
+    updateProfile,
     changePassword,
+    forgotPassword,
+    resetPassword,
     logout
 };
