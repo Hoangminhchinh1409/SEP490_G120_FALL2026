@@ -3,7 +3,10 @@ const supabase = require("../config/supabase");
 
 const ensureUUID = (val) => {
   if (!val) return crypto.randomUUID();
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)) return val;
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
+  )
+    return val;
   const hash = crypto.createHash("md5").update(String(val)).digest("hex");
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
 };
@@ -15,7 +18,8 @@ const ensureUUID = (val) => {
 const getDriverProfileByUserId = async (userId) => {
   const { data, error } = await supabase
     .from("driver_profiles")
-    .select(`
+    .select(
+      `
       id,
       user_account_id,
       license_number,
@@ -24,7 +28,8 @@ const getDriverProfileByUserId = async (userId) => {
       status,
       last_trip_ended_at,
       user:users!driver_profiles_user_account_id_fkey(id, username, full_name, phone, email, status)
-    `)
+    `,
+    )
     .eq("user_account_id", userId)
     .single();
 
@@ -38,7 +43,8 @@ const getDriverProfileByUserId = async (userId) => {
 const getDriverProfileById = async (driverProfileId) => {
   const { data, error } = await supabase
     .from("driver_profiles")
-    .select(`
+    .select(
+      `
       id,
       user_account_id,
       license_number,
@@ -47,7 +53,8 @@ const getDriverProfileById = async (driverProfileId) => {
       status,
       last_trip_ended_at,
       user:users!driver_profiles_user_account_id_fkey(id, username, full_name, phone, email, status)
-    `)
+    `,
+    )
     .eq("id", driverProfileId)
     .single();
 
@@ -80,12 +87,13 @@ const getActiveTrip = async (driverProfileId) => {
     return null;
   }
 
-  const tripIds = assignments.map(a => a.trip_id);
+  const tripIds = assignments.map((a) => a.trip_id);
 
   // 2. Lấy thông tin chuyến xe chưa kết thúc
   const { data: trips, error: tripErr } = await supabase
     .from("trips")
-    .select(`
+    .select(
+      `
       id,
       trip_code,
       planned_start,
@@ -138,24 +146,17 @@ const getActiveTrip = async (driverProfileId) => {
         order:orders(
           id,
           order_code,
-          hawb_number,
+          order_type,
           customer_id,
           agreed_price,
           status,
           receiver_name,
           receiver_phone,
-          cargos:order_cargos(
-            id,
-            cargo_name,
-            cargo_type,
-            quantity,
-            unit,
-            actual_weight_kg,
-            declared_value
-          )
+          cargos:order_cargos(*)
         )
       )
-    `)
+    `,
+    )
     .in("id", tripIds)
     .in("status", ["Assigned", "Dispatched", "Accepted", "In Progress"])
     .order("id", { ascending: false })
@@ -173,7 +174,9 @@ const getActiveTrip = async (driverProfileId) => {
       activeTrip.stops.sort((a, b) => a.sequence - b.sequence);
     }
     // Trích xuất xe đang gán hoạt động
-    const activeTruckAssign = (activeTrip.truck_assignments || []).find(ta => ta.truck) || activeTrip.truck_assignments?.[0];
+    const activeTruckAssign =
+      (activeTrip.truck_assignments || []).find((ta) => ta.truck) ||
+      activeTrip.truck_assignments?.[0];
     activeTrip.truck = activeTruckAssign ? activeTruckAssign.truck : null;
   }
 
@@ -195,11 +198,12 @@ const getTripHistory = async (driverProfileId, { page = 1, limit = 10 }) => {
     return { trips: [], total: 0, page, limit };
   }
 
-  const tripIds = [...new Set(assignments.map(a => a.trip_id))];
+  const tripIds = [...new Set(assignments.map((a) => a.trip_id))];
 
   const { data, count, error } = await supabase
     .from("trips")
-    .select(`
+    .select(
+      `
       id,
       trip_code,
       planned_start,
@@ -217,7 +221,9 @@ const getTripHistory = async (driverProfileId, { page = 1, limit = 10 }) => {
         status,
         location:locations(name, address)
       )
-    `, { count: "exact" })
+    `,
+      { count: "exact" },
+    )
     .in("id", tripIds)
     .in("status", ["Completed", "Cancelled"])
     .order("id", { ascending: false })
@@ -232,7 +238,7 @@ const getTripHistory = async (driverProfileId, { page = 1, limit = 10 }) => {
     trips: data || [],
     total: count || 0,
     page,
-    limit
+    limit,
   };
 };
 
@@ -251,7 +257,8 @@ const getTripDetail = async (tripId, driverProfileId) => {
 
   const { data: trip, error } = await supabase
     .from("trips")
-    .select(`
+    .select(
+      `
       id,
       trip_code,
       planned_start,
@@ -300,24 +307,17 @@ const getTripDetail = async (tripId, driverProfileId) => {
         order:orders(
           id,
           order_code,
-          hawb_number,
+          order_type,
           customer_id,
           agreed_price,
           status,
           receiver_name,
           receiver_phone,
-          cargos:order_cargos(
-            id,
-            cargo_name,
-            cargo_type,
-            quantity,
-            unit,
-            actual_weight_kg,
-            declared_value
-          )
+          cargos:order_cargos(*)
         )
       )
-    `)
+    `,
+    )
     .eq("id", tripId)
     .single();
 
@@ -330,7 +330,9 @@ const getTripDetail = async (tripId, driverProfileId) => {
     if (trip.stops) {
       trip.stops.sort((a, b) => a.sequence - b.sequence);
     }
-    const truckAssign = (trip.truck_assignments || []).find(ta => ta.truck) || trip.truck_assignments?.[0];
+    const truckAssign =
+      (trip.truck_assignments || []).find((ta) => ta.truck) ||
+      trip.truck_assignments?.[0];
     trip.truck = truckAssign ? truckAssign.truck : null;
   }
 
@@ -345,7 +347,7 @@ const updateTripStatus = async (tripId, status, extraFields = {}) => {
   const payload = {
     status,
     ...extraFields,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
   };
 
   const { data, error } = await supabase
@@ -364,7 +366,8 @@ const updateTripStatus = async (tripId, status, extraFields = {}) => {
 const getTripStopById = async (stopId, tripId) => {
   const { data, error } = await supabase
     .from("trip_stops")
-    .select(`
+    .select(
+      `
       id,
       trip_id,
       order_id,
@@ -391,7 +394,8 @@ const getTripStopById = async (stopId, tripId) => {
         order_code,
         status
       )
-    `)
+    `,
+    )
     .eq("id", stopId)
     .eq("trip_id", tripId)
     .single();
@@ -417,7 +421,12 @@ const updateTripStop = async (stopId, updateData) => {
   return data && data.length > 0 ? data[0] : null;
 };
 
-const updateOrdersStatus = async (orderIds, status, notes = "", changedBy = null) => {
+const updateOrdersStatus = async (
+  orderIds,
+  status,
+  notes = "",
+  changedBy = null,
+) => {
   if (!orderIds || orderIds.length === 0) return [];
 
   const { data, error } = await supabase
@@ -432,11 +441,11 @@ const updateOrdersStatus = async (orderIds, status, notes = "", changedBy = null
   }
 
   // Ghi lịch sử trạng thái đơn hàng (order_status_history)
-  const historyInserts = orderIds.map(orderId => ({
+  const historyInserts = orderIds.map((orderId) => ({
     order_id: orderId,
     to_status: status,
     notes,
-    changed_by: changedBy
+    changed_by: changedBy,
   }));
 
   try {
@@ -464,7 +473,11 @@ const updateTruckStatus = async (truckId, status) => {
   return data;
 };
 
-const updateDriverProfileStatus = async (driverProfileId, status, lastTripEndedAt = null) => {
+const updateDriverProfileStatus = async (
+  driverProfileId,
+  status,
+  lastTripEndedAt = null,
+) => {
   if (!driverProfileId) return null;
   const updatePayload = { status, updated_at: new Date().toISOString() };
   if (lastTripEndedAt) updatePayload.last_trip_ended_at = lastTripEndedAt;
@@ -493,7 +506,7 @@ const recordTripEvent = async ({
   latitude = null,
   longitude = null,
   outsideRadiusFlag = false,
-  payload = null
+  payload = null,
 }) => {
   const insertPayload = {
     client_action_id: ensureUUID(clientActionId),
@@ -506,7 +519,7 @@ const recordTripEvent = async ({
     latitude,
     longitude,
     outside_radius_flag: !!outsideRadiusFlag,
-    payload
+    payload,
   };
 
   const { data, error } = await supabase
@@ -531,7 +544,7 @@ const createIncident = async ({
   reportedBy,
   type = "Other",
   description,
-  photos = null
+  photos = null,
 }) => {
   const payload = {
     trip_id: tripId,
@@ -540,10 +553,14 @@ const createIncident = async ({
     type,
     status: "Reported",
     description,
-    photos: Array.isArray(photos) ? photos : (typeof photos === "string" && photos.trim() ? [photos] : null),
+    photos: Array.isArray(photos)
+      ? photos
+      : typeof photos === "string" && photos.trim()
+        ? [photos]
+        : null,
     reported_time: new Date().toISOString(),
     created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
   };
 
   const { data, error } = await supabase
@@ -585,20 +602,23 @@ const logDriverActivity = async ({
   targetId = 0,
   reason = null,
   changes = null,
-  clientActionId = null
+  clientActionId = null,
 }) => {
   try {
-    await supabase.from("activity_logs").insert([{
-      actor_id: actorId,
-      actor_type: actorType,
-      action,
-      target_type: targetType,
-      target_id: typeof targetId === "number" ? targetId : (parseInt(targetId) || 0),
-      reason,
-      changes: changes ? JSON.stringify(changes) : null,
-      created_time: new Date().toISOString(),
-      client_action_id: clientActionId
-    }]);
+    await supabase.from("activity_logs").insert([
+      {
+        actor_id: actorId,
+        actor_type: actorType,
+        action,
+        target_type: targetType,
+        target_id:
+          typeof targetId === "number" ? targetId : parseInt(targetId) || 0,
+        reason,
+        changes: changes ? JSON.stringify(changes) : null,
+        created_time: new Date().toISOString(),
+        client_action_id: clientActionId,
+      },
+    ]);
   } catch (err) {
     console.warn("logDriverActivity insert warning:", err.message);
   }
@@ -608,10 +628,14 @@ const logDriverActivity = async ({
 // 8. DRIVER SHIFTS (UC-20, BR-60)
 // ==========================================
 
-const getDriverShifts = async (driverProfileId, { from = null, to = null } = {}) => {
+const getDriverShifts = async (
+  driverProfileId,
+  { from = null, to = null } = {},
+) => {
   let query = supabase
     .from("driver_shifts")
-    .select(`
+    .select(
+      `
       id,
       driver_id,
       date,
@@ -624,7 +648,8 @@ const getDriverShifts = async (driverProfileId, { from = null, to = null } = {})
       reviewed_by,
       reviewed_at,
       created_at
-    `)
+    `,
+    )
     .eq("driver_id", driverProfileId)
     .order("date", { ascending: true })
     .order("start_time", { ascending: true });
@@ -675,7 +700,14 @@ const checkShiftOverlap = async (driverProfileId, date, startTime, endTime) => {
   return false;
 };
 
-const createDriverShift = async ({ driverId, date, startTime, endTime, note = null, registeredBy }) => {
+const createDriverShift = async ({
+  driverId,
+  date,
+  startTime,
+  endTime,
+  note = null,
+  registeredBy,
+}) => {
   const payload = {
     driver_id: driverId,
     date,
@@ -685,7 +717,7 @@ const createDriverShift = async ({ driverId, date, startTime, endTime, note = nu
     status: "Requested",
     registered_by: registeredBy,
     created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
   };
 
   const { data, error } = await supabase
@@ -704,14 +736,17 @@ const createDriverShift = async ({ driverId, date, startTime, endTime, note = nu
 // 9. CUSTOMER REFUSAL (BR-57)
 // ==========================================
 
-const updateOrderRefusal = async (orderId, { reason, photoUrl, changedBy = null }) => {
+const updateOrderRefusal = async (
+  orderId,
+  { reason, photoUrl, changedBy = null },
+) => {
   const { data, error } = await supabase
     .from("orders")
     .update({
       status: "Delivered (Exception)",
       refusal_reason: reason,
       refusal_photo: photoUrl,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     })
     .eq("id", orderId)
     .select("id, order_code, status, refusal_reason, refusal_photo");
@@ -723,12 +758,14 @@ const updateOrderRefusal = async (orderId, { reason, photoUrl, changedBy = null 
 
   // Ghi nhận lịch sử đơn hàng
   try {
-    await supabase.from("order_status_history").insert([{
-      order_id: orderId,
-      to_status: "Delivered (Exception)",
-      notes: `Khách từ chối nhận hàng: ${reason}`,
-      changed_by: changedBy
-    }]);
+    await supabase.from("order_status_history").insert([
+      {
+        order_id: orderId,
+        to_status: "Delivered (Exception)",
+        notes: `Khách từ chối nhận hàng: ${reason}`,
+        changed_by: changedBy,
+      },
+    ]);
   } catch (hErr) {
     console.warn("order_status_history insert warning:", hErr.message);
   }
@@ -747,7 +784,7 @@ const createProposedExtraFee = async ({
   amount,
   reason,
   photoUrl,
-  recordedBy
+  recordedBy,
 }) => {
   const payload = {
     trip_id: tripId,
@@ -760,7 +797,7 @@ const createProposedExtraFee = async ({
     source: "Driver",
     suggested_by_system: false,
     recorded_by: recordedBy,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
   };
 
   const { data, error } = await supabase
@@ -782,7 +819,9 @@ const createProposedExtraFee = async ({
 const getDriverNotifications = async (userAccountId) => {
   const { data, error } = await supabase
     .from("notifications")
-    .select("id, user_account_id, target_type, target_id, message, created_time, read_time")
+    .select(
+      "id, user_account_id, target_type, target_id, message, created_time, read_time",
+    )
     .eq("user_account_id", userAccountId)
     .order("id", { ascending: false })
     .limit(50);
@@ -824,15 +863,25 @@ const markAllNotificationsAsRead = async (userAccountId) => {
   return data || [];
 };
 
-const createSystemNotification = async ({ userAccountId, targetType = "TRIP", targetId = null, message }) => {
+const createSystemNotification = async ({
+  userAccountId,
+  targetType = "TRIP",
+  targetId = null,
+  message,
+}) => {
   try {
-    const { data } = await supabase.from("notifications").insert([{
-      user_account_id: userAccountId,
-      target_type: targetType,
-      target_id: targetId,
-      message,
-      created_time: new Date().toISOString()
-    }]).select();
+    const { data } = await supabase
+      .from("notifications")
+      .insert([
+        {
+          user_account_id: userAccountId,
+          target_type: targetType,
+          target_id: targetId,
+          message,
+          created_time: new Date().toISOString(),
+        },
+      ])
+      .select();
     return data && data.length > 0 ? data[0] : null;
   } catch (err) {
     console.warn("createSystemNotification warning:", err.message);
@@ -846,12 +895,20 @@ const createSystemNotification = async ({ userAccountId, targetType = "TRIP", ta
 
 const getDriverDrivingTimeStats = async (driverProfileId) => {
   const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const startOfDay = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).toISOString();
 
   // Bắt đầu tuần (Thứ hai)
   const dayOfWeek = now.getDay(); // 0 is Sunday
   const diffToMonday = (dayOfWeek + 6) % 7;
-  const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday).toISOString();
+  const startOfWeek = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - diffToMonday,
+  ).toISOString();
 
   // 1. Tính tổng thời gian các chuyến xe đã hoàn thành trong ngày & tuần
   const { data: assignments } = await supabase
@@ -859,7 +916,7 @@ const getDriverDrivingTimeStats = async (driverProfileId) => {
     .select("trip_id")
     .eq("driver_id", driverProfileId);
 
-  const tripIds = (assignments || []).map(a => a.trip_id);
+  const tripIds = (assignments || []).map((a) => a.trip_id);
 
   let todayDrivenMinutes = 0;
   let weekDrivenMinutes = 0;
@@ -868,7 +925,9 @@ const getDriverDrivingTimeStats = async (driverProfileId) => {
   if (tripIds.length > 0) {
     const { data: recentTrips } = await supabase
       .from("trips")
-      .select("id, actual_duration, status, planned_start, created_at, updated_at")
+      .select(
+        "id, actual_duration, status, planned_start, created_at, updated_at",
+      )
       .in("id", tripIds)
       .gte("created_at", startOfWeek);
 
@@ -887,10 +946,15 @@ const getDriverDrivingTimeStats = async (driverProfileId) => {
   const activeTrip = await getActiveTrip(driverProfileId);
   if (activeTrip && activeTrip.status === "In Progress") {
     // Tìm sự kiện Arrived đầu tiên
-    const firstStopArrive = (activeTrip.stops || []).find(s => s.actual_arrival);
+    const firstStopArrive = (activeTrip.stops || []).find(
+      (s) => s.actual_arrival,
+    );
     if (firstStopArrive && firstStopArrive.actual_arrival) {
       const startedAt = new Date(firstStopArrive.actual_arrival).getTime();
-      const currentActiveMin = Math.max(0, Math.round((now.getTime() - startedAt) / 60000));
+      const currentActiveMin = Math.max(
+        0,
+        Math.round((now.getTime() - startedAt) / 60000),
+      );
       continuousMinutes = currentActiveMin;
       todayDrivenMinutes += currentActiveMin;
       weekDrivenMinutes += currentActiveMin;
@@ -903,7 +967,10 @@ const getDriverDrivingTimeStats = async (driverProfileId) => {
 
   return {
     continuous_hours_driven: continuousHours,
-    continuous_hours_left: Math.max(0, Math.round((4.0 - continuousHours) * 10) / 10),
+    continuous_hours_left: Math.max(
+      0,
+      Math.round((4.0 - continuousHours) * 10) / 10,
+    ),
     continuous_limit: 4.0,
 
     daily_hours_driven: todayHours,
@@ -912,7 +979,7 @@ const getDriverDrivingTimeStats = async (driverProfileId) => {
 
     weekly_hours_driven: weekHours,
     weekly_hours_left: Math.max(0, Math.round((48.0 - weekHours) * 10) / 10),
-    weekly_limit: 48.0
+    weekly_limit: 48.0,
   };
 };
 
@@ -941,6 +1008,5 @@ module.exports = {
   markNotificationAsRead,
   markAllNotificationsAsRead,
   createSystemNotification,
-  getDriverDrivingTimeStats
+  getDriverDrivingTimeStats,
 };
-

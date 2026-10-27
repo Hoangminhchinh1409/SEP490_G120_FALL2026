@@ -1,17 +1,18 @@
 const supabase = require('../../config/supabase');
+const { saveOrderMeta } = require('../../services/orderHelperService');
 
 // 5. XÁC NHẬN ĐƠN HÀNG (CHUYỂN SANG READY_FOR_PLANNING)
 const confirmOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const { agreed_price } = req.body;
+    const { agreed_price } = req.body || {};
 
+    const nowIso = new Date().toISOString();
     const updates = {
       status: 'READY_FOR_PLANNING',
-      ready_for_planning_at: new Date().toISOString(),
-      docs_confirmed_at: new Date().toISOString(),
-      docs_confirmed_by: 3,
-      updated_at: new Date().toISOString()
+      document_status: 'APPROVED',
+      ready_for_planning_at: nowIso,
+      updated_at: nowIso
     };
 
     if (agreed_price && parseInt(agreed_price) > 0) {
@@ -32,9 +33,17 @@ const confirmOrder = async (req, res) => {
       return res.status(500).json({ message: 'Không thể xác nhận đơn hàng', error });
     }
 
+    const updatedOrder = data?.[0];
+    if (updatedOrder?.id) {
+      await saveOrderMeta(updatedOrder.id, {
+        docs_confirmed_at: nowIso,
+        docs_confirmed_by: req.user?.id || 3
+      }, req.user?.id || 3);
+    }
+
     return res.json({
       message: 'Đã xác nhận đơn hàng thành công! Đơn đã sẵn sàng để xếp xe.',
-      order: data?.[0]
+      order: updatedOrder
     });
   } catch (err) {
     console.error('confirmOrder Exception:', err);
@@ -78,14 +87,12 @@ const assignTrip = async (req, res) => {
 const cancelOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const { cancellation_reason, cancellation_fee } = req.body;
+    const { cancellation_reason, cancellation_fee } = req.body || {};
 
+    const nowIso = new Date().toISOString();
     const updates = {
-      status: 'CANCELLED', // Trạng thái CANCELLED chuẩn schema DB
-      cancel_reason: cancellation_reason || null,
-      cancel_fee: cancellation_fee ? parseInt(cancellation_fee) : 0,
-      cancelled_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      status: 'CANCELLED',
+      updated_at: nowIso
     };
 
     let query = supabase.from('orders').update(updates);
@@ -102,10 +109,19 @@ const cancelOrder = async (req, res) => {
       return res.status(500).json({ message: error.message || 'Không thể hủy đơn hàng trên hệ thống' });
     }
 
+    const updatedOrder = data?.[0];
+    if (updatedOrder?.id) {
+      await saveOrderMeta(updatedOrder.id, {
+        cancel_reason: cancellation_reason || null,
+        cancel_fee: cancellation_fee ? parseInt(cancellation_fee) : 0,
+        cancelled_at: nowIso
+      }, req.user?.id || 3);
+    }
+
     return res.json({
       message: 'Đã hủy đơn hàng thành công!',
       order: {
-        ...(data?.[0] || { id }),
+        ...(updatedOrder || { id }),
         status: 'CANCELLED',
         cancellation_reason,
         cancellation_fee
@@ -123,10 +139,10 @@ const closeOrder = async (req, res) => {
   try {
     const { id } = req.params;
 
+    const nowIso = new Date().toISOString();
     const updates = {
       status: 'CLOSED',
-      closed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: nowIso
     };
 
     let query = supabase.from('orders').update(updates);
@@ -142,10 +158,17 @@ const closeOrder = async (req, res) => {
       console.warn('closeOrder note (will fallback):', error.message);
     }
 
+    const updatedOrder = data?.[0];
+    if (updatedOrder?.id) {
+      await saveOrderMeta(updatedOrder.id, {
+        closed_at: nowIso
+      }, req.user?.id || 3);
+    }
+
     return res.json({
       message: 'Đã đóng đơn hàng thành công!',
       order: {
-        ...(data?.[0] || { id }),
+        ...(updatedOrder || { id }),
         status: 'CLOSED'
       }
     });

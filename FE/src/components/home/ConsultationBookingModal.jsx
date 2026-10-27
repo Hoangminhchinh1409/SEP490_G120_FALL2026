@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Select, Checkbox, Button, message, Result, Tooltip, Alert } from 'antd';
-import { Send, MapPin, Package, User, Plus, Trash2, FileText, ShieldCheck, PlaneTakeoff, PlaneLanding, Clock, Calendar, AlertTriangle } from 'lucide-react';
+import { Modal, Form, Input, InputNumber, Select, Checkbox, Button, message, Result, Tooltip } from 'antd';
+import { Send, MapPin, Package, User, Plus, Trash2, ShieldCheck, PlaneTakeoff, PlaneLanding } from 'lucide-react';
 import LocationSearchInput from '../common/LocationSearchInput';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
-import { calculateRouteEstimate, calculateAlsPricing, calculateExportPickupSuggestion, ALS_TARIFF_RATES, ALS_NOI_BAI_TERMINAL } from '../../data/dispatcherPresets';
+import { calculateRouteEstimate, calculateAlsPricing, calculateExportPickupSuggestion } from '../../data/dispatcherPresets';
 
 const { Option } = Select;
 
@@ -197,10 +197,11 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
   ]);
 
   // Gợi ý lịch lấy hàng xuất khẩu dựa trên khoảng cách và lịch bay
+  const flightDatetime = watchedValues?.flight_datetime;
   const exportPickupSuggestion = useMemo(() => {
-    if (shippingDirection !== 'EXPORT' || !watchedValues?.flight_datetime) return null;
-    return calculateExportPickupSuggestion(watchedValues.flight_datetime, routeInfo.distanceKm || 30);
-  }, [shippingDirection, watchedValues?.flight_datetime, routeInfo.distanceKm]);
+    if (shippingDirection !== 'EXPORT' || !flightDatetime) return null;
+    return calculateExportPickupSuggestion(flightDatetime, routeInfo.distanceKm || 30);
+  }, [shippingDirection, flightDatetime, routeInfo.distanceKm]);
 
   const handleAddCargoItem = () => {
     setCargoItems(prev => [

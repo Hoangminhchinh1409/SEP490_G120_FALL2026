@@ -32,11 +32,7 @@ app.get("/", (req, res) => {
     res.json({ message: "NEXLOG Express Backend is running!" });
 });
 
-// Original routes
-const managerRoutes = require("./routes/managerRoutes");
-app.use("/api/manager", managerRoutes);
-
-// API routes
+// API routes (aggregated via routes/index.js)
 app.use("/api", apiRoutes);
 
 const { initManagerJobs } = require("./jobs/managerJobs");

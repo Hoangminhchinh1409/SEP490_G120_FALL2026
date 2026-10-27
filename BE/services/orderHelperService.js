@@ -1,20 +1,19 @@
-const supabase = require('../../config/supabase');
+const supabase = require('../config/supabase');
 const crypto = require('crypto');
+
+const META_NOTE_PREFIX = '[META_JSON]:';
 
 // Helper map status từ DB sang FE
 const mapDbStatusToFe = (dbStatus, order) => {
-  // Nếu đơn hàng đã có ngày hủy hoặc có lý do hủy thì chắc chắn là CANCELLED
   if (dbStatus === 'CANCELLED' || dbStatus === 'CANCELLED_RETURNING' || (order?.cancelled_at && order?.cancel_reason)) {
     return 'CANCELLED';
   }
 
   switch (dbStatus) {
     case 'WAITING_FOR_DOCUMENTS':
-      // Đơn nháp: Chỉ áp dụng cho đơn từ Web/Homepage chưa chốt cước hoặc agreed_price = 0
       if (order?.source === 'HOMEPAGE' && (!order?.agreed_price || order.agreed_price === 0)) {
         return 'DRAFT';
       }
-      // Các đơn điều phối tự tạo hoặc đơn web đã chốt giá -> CONFIRMED (Cần kiểm duyệt chứng từ)
       return 'CONFIRMED';
     case 'READY_FOR_PLANNING':
       return 'READY_FOR_PLANNING';
@@ -83,9 +82,8 @@ const getOrCreateLocation = async ({
       if (alsHp && alsHp.length > 0) return alsHp[0].id;
     }
 
-    // 2. Kiểm tra xem địa chỉ này đã tồn tại trong database chưa (tránh nhân bản điểm)
+    // 2. Kiểm tra xem địa chỉ này đã tồn tại trong database chưa
     if (cleanAddr) {
-      // Ưu tiên trùng địa chỉ của cùng khách hàng hoặc trùng chính xác địa chỉ
       let query = supabase.from('locations').select('id, name, customer_id').eq('address', cleanAddr);
       if (customerId) {
         query = query.or(`customer_id.eq.${customerId},customer_id.is.null`);
@@ -97,10 +95,7 @@ const getOrCreateLocation = async ({
       }
     }
 
-    // 3. Nếu chưa có:
-    // Theo nghiệp vụ: Chỉ lưu địa điểm vào bảng locations đối với khách hàng mới (isNewCustomer = true).
-    // Nếu là khách hàng cũ tạo đơn có địa điểm giao nhận lẻ/tạm thời thì không tự động lưu vào danh bạ điểm giao nhận,
-    // mà liên kết tạm về kho mặc định 1 để tránh làm tràn danh bạ địa điểm.
+    // 3. Chỉ lưu địa điểm vào bảng locations đối với khách hàng mới
     if (!isNewCustomer) {
       return 1;
     }
@@ -140,9 +135,6 @@ const getOrCreateLocation = async ({
     return 1;
   }
 };
-
-
-const META_NOTE_PREFIX = '[META_JSON]:';
 
 // Đọc metadata từ order (ưu tiên ai_input_text nếu có, hoặc lấy từ order_notes có prefix [META_JSON]:)
 const parseOrderMeta = (order) => {
@@ -193,11 +185,14 @@ const loadOrderMeta = async (orderId, orderObj = null) => {
   return {};
 };
 
-// Lưu metadata vào order_notes (tương thích hoàn toàn khi bảng orders chưa có cột ai_input_text)
+// Lưu metadata vào order_notes (tự động merge với metadata hiện có)
 const saveOrderMeta = async (orderId, meta) => {
   if (!orderId || !meta) return;
-  const content = `${META_NOTE_PREFIX}${JSON.stringify(meta)}`;
   try {
+    const existingMeta = await loadOrderMeta(orderId);
+    const mergedMeta = { ...existingMeta, ...meta };
+    const content = `${META_NOTE_PREFIX}${JSON.stringify(mergedMeta)}`;
+
     const { data: existing } = await supabase
       .from('order_notes')
       .select('id')
@@ -230,3 +225,4 @@ module.exports = {
   loadOrderMeta,
   saveOrderMeta
 };
+

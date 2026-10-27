@@ -1,5 +1,5 @@
 const supabase = require('../../config/supabase');
-const { generateTrackingToken, getOrCreateLocation, saveOrderMeta } = require('./orderHelpers');
+const { generateTrackingToken, getOrCreateLocation, saveOrderMeta } = require('../../services/orderHelperService');
 
 // 2. KHÁCH HÀNG GỬI YÊU CẦU TƯ VẤN TỪ HOMEPAGE
 const createConsultationOrder = async (req, res) => {

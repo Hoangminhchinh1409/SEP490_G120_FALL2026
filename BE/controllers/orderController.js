@@ -5,14 +5,14 @@
  * - Creation: BE/controllers/order/orderCreationController.js
  * - Document & Pricing: BE/controllers/order/orderDocumentController.js
  * - Workflow (Confirm, Cancel, Close, Assign): BE/controllers/order/orderWorkflowController.js
- * - Helpers: BE/controllers/order/orderHelpers.js
+ * - Helper Service: BE/services/orderHelperService.js
  */
 
 const {
   mapDbStatusToFe,
   generateTrackingToken,
   getOrCreateLocation
-} = require('./order/orderHelpers');
+} = require('../services/orderHelperService');
 
 const {
   getAllOrders,

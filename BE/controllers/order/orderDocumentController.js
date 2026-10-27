@@ -1,6 +1,6 @@
 const supabase = require('../../config/supabase');
 const { sendOrderPriceConfirmationEmail, sendContractSigningEmail } = require('../../services/emailService');
-const { parseOrderMeta, saveOrderMeta } = require('./orderHelpers');
+const { parseOrderMeta, saveOrderMeta } = require('../../services/orderHelperService');
 
 // Helper tìm đơn hàng theo id hoặc order_code hoặc tracking_token
 const findOrderByIdentifier = async (identifier, includeRelations = false) => {
