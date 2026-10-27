@@ -218,8 +218,38 @@ export const CUSTOMS_CHANNELS = [
 export const getCoordsFromAddress = (addressStr = '', markerType = 'A') => {
   if (!addressStr) return null;
   const lower = addressStr.toLowerCase();
-  if (lower.includes('als nội bài') || lower.includes('ga hàng hóa als') || lower.includes('cảng hkqt nội bài')) {
+  if (lower.includes('als nội bài') || lower.includes('ga hàng hóa als') || lower.includes('cảng hkqt nội bài') || lower.includes('sân bay quốc tế nội bài')) {
     return { lat: ALS_NOI_BAI_TERMINAL.lat, lng: ALS_NOI_BAI_TERMINAL.lng };
+  }
+  if (lower.includes('nguyễn đức cảnh') || lower.includes('trần hưng đạo') || lower.includes('thái bình')) {
+    return { lat: 20.447962, lng: 106.326734 };
+  }
+  if (lower.includes('hưng yên') || lower.includes('phố nối') || lower.includes('thăng long ii')) {
+    return { lat: 20.9312, lng: 106.0325 };
+  }
+  if (lower.includes('quế võ')) {
+    return { lat: 21.1628, lng: 106.1285 };
+  }
+  if (lower.includes('yên phong')) {
+    return { lat: 21.1986, lng: 105.9951 };
+  }
+  if (lower.includes('vsip') || lower.includes('từ sơn') || lower.includes('tiên sơn') || lower.includes('bắc ninh')) {
+    return { lat: 21.1150, lng: 105.9750 };
+  }
+  if (lower.includes('bá thiện') || lower.includes('vĩnh phúc') || lower.includes('bình xuyên')) {
+    return { lat: 21.3185, lng: 105.6620 };
+  }
+  if (lower.includes('đồng văn') || lower.includes('hà nam')) {
+    return { lat: 20.6425, lng: 105.9225 };
+  }
+  if (lower.includes('hải phòng') || lower.includes('đình vũ') || lower.includes('nam cầu kiền')) {
+    return { lat: 20.8449, lng: 106.6881 };
+  }
+  if (lower.includes('thái nguyên') || lower.includes('yên bình')) {
+    return { lat: 21.4525, lng: 105.8752 };
+  }
+  if (lower.includes('long biên') || lower.includes('gia lâm') || lower.includes('đài tư')) {
+    return { lat: 21.0375, lng: 105.8942 };
   }
   return null;
 };

@@ -13,7 +13,9 @@ import {
   SPECIALIZED_CARGO_CATEGORIES, 
   getRecommendedDocsByCargo,
   getCoordsFromAddress,
-  calculateAlsPricing
+  calculateAlsPricing,
+  analyzeVehicleRecommendation,
+  getVehicleSpecByKey
 } from '../../data/dispatcherPresets';
 import { orderApi } from '../../api/orderApi';
 
@@ -74,9 +76,20 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   const [rejectDocReason, setRejectDocReason] = useState('Chứng từ chưa hợp lệ hoặc bị mờ, vui lòng tải lại tệp đúng quy định.');
   const [submittingRejectDoc, setSubmittingRejectDoc] = useState(false);
 
-  // State Giá thỏa thuận, Lý do điều chỉnh lại giá & Hợp đồng
+  // State Giá thỏa thuận, Phương án xe đề xuất, Lý do điều chỉnh lại giá & Hợp đồng
   const [currentAgreedPrice, setCurrentAgreedPrice] = useState(order.agreed_price || 0);
   const [adjustmentReason, setAdjustmentReason] = useState('');
+  const [proposedVehicleType, setProposedVehicleType] = useState(
+    order.proposed_vehicle_type ||
+    order.web_workflow?.proposed_vehicle_type ||
+    order.vehicle_type_required ||
+    'TRUCK_2.5T'
+  );
+  const [vehicleAnalysisNote, setVehicleAnalysisNote] = useState(
+    order.vehicle_analysis_note ||
+    order.web_workflow?.vehicle_analysis_note ||
+    ''
+  );
   const [contractUploaded, setContractUploaded] = useState(order.contract_uploaded || false);
   const [contractFile, setContractFile] = useState(order.contract_file || null);
   const [contractFileData, setContractFileData] = useState(order.contract_file_data || null);
@@ -145,11 +158,28 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   });
   const [newMessageText, setNewMessageText] = useState('');
 
-  // Tính giá cước sàn gợi ý theo Biểu giá chuẩn ALS (FedEx Express & Phụ phí)
+  // Phân tích gợi ý chọn xe dựa trên kích thước, thể tích & tải trọng thực tế của đơn hàng
+  const vehicleRecommendation = useMemo(() => {
+    return analyzeVehicleRecommendation({
+      actualWeightKg: parseFloat(order.weight || order.weight_kg || 0),
+      chargeableWeightKg: parseFloat(order.chargeable || order.chargeable_weight || order.weight || 0),
+      length_cm: parseFloat(order.length_cm || 0),
+      width_cm: parseFloat(order.width_cm || 0),
+      height_cm: parseFloat(order.height_cm || 0),
+      package_count: parseInt(order.package_count, 10) || 1,
+      items: order.items || [],
+      customerRequestedVehicle:
+        order.customer_requested_vehicle ||
+        order.vehicle_type_required ||
+        'TRUCK_2.5T'
+    });
+  }, [order]);
+
+  // Tính giá cước sàn gợi ý theo Biểu giá chuẩn ALS (FedEx Express & Phụ phí) dựa trên loại xe đề xuất
   const pricingBreakdown = useMemo(() => {
     const dist = parseFloat(routeInfo.distanceKm) || 35.5;
     const weight = parseFloat(order.chargeable || order.chargeable_weight || order.weight || 1000);
-    const vehicleType = order.vehicle_type_required || order.vehicle_type || 'TRUCK_2.5T';
+    const vehicleType = proposedVehicleType || order.vehicle_type_required || order.vehicle_type || 'TRUCK_2.5T';
     const timeSlot = order.operating_time_slot || 'FULL_DAY';
     const isUnloading = order.loading_unloading_required === true;
     const isCustoms = order.customs_service_required === true;
@@ -178,7 +208,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
       totalRaw: alsPricing.totalRate,
       totalRounded: alsPricing.totalRate
     };
-  }, [routeInfo, order]);
+  }, [routeInfo, order, proposedVehicleType]);
 
   const estimatedBaselineRate = pricingBreakdown.totalRounded;
 
@@ -231,30 +261,40 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
       const res = await orderApi.updateAgreedPrice(
         order.id || order.order_id,
         currentAgreedPrice,
-        adjustmentReason.trim()
+        adjustmentReason.trim(),
+        {
+          proposed_vehicle_type: proposedVehicleType,
+          vehicle_analysis_note: vehicleAnalysisNote.trim()
+        }
       );
       
       const isWebOrder = order.source === 'HOMEPAGE' || Boolean(order.customer_email);
+      const selectedSpec = getVehicleSpecByKey(proposedVehicleType);
       const updatedOrder = {
         ...order,
         status: isWebOrder ? 'DRAFT' : 'CONFIRMED',
         agreed_price: currentAgreedPrice,
+        vehicle_type_required: proposedVehicleType,
+        proposed_vehicle_type: proposedVehicleType,
+        vehicle_analysis_note: vehicleAnalysisNote.trim(),
         web_workflow: res?.web_workflow || {
           ...(order.web_workflow || {}),
           stage: 'PRICE_AGREED_BY_DISPATCHER',
           agreed_price: currentAgreedPrice,
+          proposed_vehicle_type: proposedVehicleType,
+          vehicle_analysis_note: vehicleAnalysisNote.trim(),
           adjustment_reason: adjustmentReason.trim() || order.web_workflow?.adjustment_reason
         }
       };
 
       onUpdateOrder?.(updatedOrder);
       if (isNegotiating) {
-        message.success(`Đã chốt lại giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ (Lý do: ${adjustmentReason.trim()}) và gửi lại báo giá cho khách hàng!`);
+        message.success(`Đã chốt lại phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ (Lý do: ${adjustmentReason.trim()}) và gửi lại cho khách hàng!`);
         setAdjustmentReason('');
       } else if (isWebOrder) {
-        message.success(`Đã chốt giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ và tự động gửi email báo giá cho khách hàng xác nhận!`);
+        message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ, đồng thời gửi email báo giá cho khách hàng xác nhận!`);
       } else {
-        message.success(`Đã chốt giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ! Đơn đã chuyển sang trạng thái Cần xác nhận chứng từ.`);
+        message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ! Đơn đã chuyển sang trạng thái Cần xác nhận chứng từ.`);
         setActiveTab('2');
       }
     } catch (err) {
@@ -678,6 +718,11 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           setCurrentAgreedPrice={setCurrentAgreedPrice}
           adjustmentReason={adjustmentReason}
           setAdjustmentReason={setAdjustmentReason}
+          proposedVehicleType={proposedVehicleType}
+          setProposedVehicleType={setProposedVehicleType}
+          vehicleAnalysisNote={vehicleAnalysisNote}
+          setVehicleAnalysisNote={setVehicleAnalysisNote}
+          vehicleRecommendation={vehicleRecommendation}
           savingPrice={savingPrice}
           handleConfirmPriceAndOrder={handleConfirmPriceAndOrder}
         />

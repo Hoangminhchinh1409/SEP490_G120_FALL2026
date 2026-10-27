@@ -11,9 +11,11 @@ import {
   ArrowRight,
   Info,
   MessageSquare,
-  RefreshCw
+  RefreshCw,
+  Truck
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
+import { VEHICLE_SPECS, getVehicleSpecByKey } from '../../../src/data/dispatcherPresets';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -61,7 +63,7 @@ export default function OrderConfirmationView() {
     };
     loadOrder();
 
-    // Polling tự động mỗi 3 giây để cập nhật ngay khi điều phối chốt lại giá
+    // Polling tự động mỗi 3 giây để cập nhật ngay khi điều phối chốt lại giá / xe
     const interval = setInterval(async () => {
       try {
         const latestData = await orderApi.getOrderByToken(token);
@@ -72,11 +74,13 @@ export default function OrderConfirmationView() {
               prev.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' &&
               latestData.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER';
             const priceChanged = prev.agreed_price !== latestData.agreed_price;
+            const vehicleChanged = prev.proposed_vehicle_type !== latestData.proposed_vehicle_type;
 
-            if (stageChangedToQuoted || priceChanged) {
+            if (stageChangedToQuoted || priceChanged || vehicleChanged) {
               setFeedbackSuccess(false);
+              const vSpec = getVehicleSpecByKey(latestData.proposed_vehicle_type || latestData.vehicle_type_required);
               message.info(
-                `Điều phối viên vừa chốt lại mức giá: ${Number(latestData.agreed_price).toLocaleString('vi-VN')} VNĐ${
+                `Điều phối viên vừa cập nhật phương án ${vSpec.label} & chốt lại mức giá: ${Number(latestData.agreed_price).toLocaleString('vi-VN')} VNĐ${
                   latestData.web_workflow?.adjustment_reason
                     ? ` (Lý do: ${latestData.web_workflow.adjustment_reason})`
                     : ''
@@ -98,7 +102,7 @@ export default function OrderConfirmationView() {
     try {
       setAgreeing(true);
       await orderApi.customerAgreeOrderPrice(token);
-      message.success('Quý khách đã đồng ý chốt đơn hàng và giá cước thành công!');
+      message.success('Quý khách đã đồng ý chốt Phương án xe & Giá cước thành công!');
       setAgreedSuccess(true);
       setTimeout(() => {
         router.push(`/customer/order-documents/${token}`);
@@ -116,6 +120,7 @@ export default function OrderConfirmationView() {
     negotiateForm.setFieldsValue({
       feedback_reason: 'Giá cước vượt ngân sách',
       proposed_price: order?.web_workflow?.negotiation?.proposed_price || undefined,
+      proposed_vehicle_type: order?.proposed_vehicle_type || order?.vehicle_type_required || '2.5T',
       customer_note: ''
     });
     setNegotiateModalOpen(true);
@@ -126,7 +131,7 @@ export default function OrderConfirmationView() {
       const values = await negotiateForm.validateFields();
       setSubmittingFeedback(true);
       await orderApi.customerNegotiateOrder(token, values);
-      message.success('Đã gửi yêu cầu thương lượng giá thành công! Điều phối viên sẽ phản hồi sớm nhất.');
+      message.success('Đã gửi yêu cầu thương lượng giá & phương án xe thành công! Điều phối viên sẽ phản hồi sớm nhất.');
       setFeedbackSuccess(true);
       setNegotiateModalOpen(false);
       // Reload order info
@@ -174,6 +179,12 @@ export default function OrderConfirmationView() {
     Boolean(order.web_workflow?.adjustment_reason) &&
     order.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER';
 
+  const customerInitialVehicleKey = order.customer_requested_vehicle || order.vehicle_type_required || '2.5T';
+  const proposedVehicleKey = order.agreed_vehicle_type || order.proposed_vehicle_type || order.vehicle_type_required || '2.5T';
+  const customerVehicleSpec = getVehicleSpecByKey(customerInitialVehicleKey);
+  const proposedVehicleSpec = getVehicleSpecByKey(proposedVehicleKey);
+  const isVehicleAdjustedByDispatcher = customerVehicleSpec.key !== proposedVehicleSpec.key;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50/50 via-slate-50 to-slate-100 py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto space-y-6">
@@ -184,21 +195,21 @@ export default function OrderConfirmationView() {
             <ShieldCheck size={14} className="text-indigo-600" /> Cổng Xác Nhận Dịch Vụ Vận Tải Trực Tuyến NEXLOG
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Xác Nhận Đơn Hàng &amp; Chốt Giá Cước
+            Xác Nhận Phương Án Xe &amp; Chốt Giá Cước
           </h1>
           <p className="text-sm text-slate-600 max-w-xl mx-auto">
-            Kính gửi <b>{order.customer_name}</b>, bộ phận Điều phối NEXLOG đã tiếp nhận và thẩm định lộ trình vận chuyển của Quý khách.
+            Kính gửi <b>{order.customer_name}</b>, bộ phận Điều phối NEXLOG đã phân tích kích thước/tải trọng hàng hóa và lập phương án xe tối ưu cho Quý khách.
           </p>
         </div>
 
-        {/* Thẻ Giá cước nổi bật */}
+        {/* Thẻ Giá cước & Phương án xe nổi bật */}
         <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-indigo-500/15 relative overflow-hidden">
           <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
           <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
-                  <DollarSign size={15} /> Giá cước trọn gói thỏa thuận
+                  <DollarSign size={15} /> Giá cước trọn gói ({proposedVehicleSpec.label})
                 </span>
                 {isCurrentlyNegotiating && (
                   <span className="text-[11px] bg-amber-400 text-slate-950 font-bold px-2.5 py-0.5 rounded-full">
@@ -210,7 +221,7 @@ export default function OrderConfirmationView() {
                 {(order.agreed_price || 0).toLocaleString()} <span className="text-xl font-normal text-indigo-200">VNĐ</span>
               </div>
               <p className="text-xs text-indigo-100/90 mt-1.5">
-                ✓ Đã bao gồm cước xe, bảo hiểm cơ bản &amp; theo dõi hành trình trực tuyến.
+                ✓ Phương tiện chốt vận chuyển: <b>{proposedVehicleSpec.label}</b> ({proposedVehicleSpec.boxText}, tải {proposedVehicleSpec.maxPayloadKg.toLocaleString('vi-VN')} kg)
               </p>
             </div>
             
@@ -244,12 +255,56 @@ export default function OrderConfirmationView() {
           </div>
         </div>
 
+        {/* KHỐI PHÂN TÍCH & ĐỀ XUẤT PHƯƠNG ÁN XE CỦA ĐIỀU PHỐI VIÊN */}
+        <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-indigo-200 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-sm font-bold text-indigo-950 flex items-center gap-2">
+              <Truck size={18} className="text-indigo-600" />
+              Phương án xếp xe &amp; Thẩm định kỹ thuật của Điều phối viên
+            </span>
+            {isVehicleAdjustedByDispatcher ? (
+              <Tag color="gold" className="m-0 font-bold text-[11px]">
+                Đề xuất điều chỉnh loại xe phù hợp kích thước / tải trọng
+              </Tag>
+            ) : (
+              <Tag color="green" className="m-0 font-bold text-[11px]">
+                Khớp với loại xe Quý khách chọn ban đầu
+              </Tag>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200">
+              <span className="text-[11px] font-bold text-slate-500 uppercase block">1. Xe Quý khách chọn ban đầu</span>
+              <div className="text-sm font-bold text-slate-800 mt-1">{customerVehicleSpec.label}</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {customerVehicleSpec.boxText} · Tối đa {customerVehicleSpec.maxPayloadKg.toLocaleString('vi-VN')} kg ({customerVehicleSpec.maxVolumeM3} m³)
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-indigo-50/80 border border-indigo-200">
+              <span className="text-[11px] font-bold text-indigo-700 uppercase block">2. Phương án xe Điều phối đề xuất chốt</span>
+              <div className="text-sm font-extrabold text-indigo-900 mt-1">{proposedVehicleSpec.label}</div>
+              <div className="text-[11px] text-indigo-700 mt-0.5">
+                {proposedVehicleSpec.boxText} · Tối đa {proposedVehicleSpec.maxPayloadKg.toLocaleString('vi-VN')} kg ({proposedVehicleSpec.maxVolumeM3} m³)
+              </div>
+            </div>
+          </div>
+
+          {order.vehicle_analysis_note && (
+            <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950">
+              <span className="font-bold block mb-0.5">💬 Phân tích &amp; tư vấn xếp xe từ Điều phối viên:</span>
+              <span>{order.vehicle_analysis_note}</span>
+            </div>
+          )}
+        </div>
+
         {/* Thông báo phản hồi giá mới từ Điều phối viên sau khi thương lượng */}
         {hasDispatcherRequoted && !agreedSuccess && (
           <Alert
             title={
               <span className="font-bold text-indigo-950">
-                Điều phối viên đã cập nhật &amp; chốt lại giá cước mới: {(order.agreed_price || 0).toLocaleString('vi-VN')} VNĐ
+                Điều phối viên đã cập nhật phương án {proposedVehicleSpec.label} &amp; chốt lại giá cước mới: {(order.agreed_price || 0).toLocaleString('vi-VN')} VNĐ
               </span>
             }
             description={
@@ -258,7 +313,7 @@ export default function OrderConfirmationView() {
                   • Lý do điều chỉnh / phản hồi từ Điều phối viên: <b>&ldquo;{order.web_workflow.adjustment_reason}&rdquo;</b>
                 </div>
                 <div className="text-slate-600 pt-0.5">
-                  Nếu Quý khách đồng ý với mức giá trên, vui lòng bấm <b>&ldquo;Đồng ý chốt đơn hàng &amp; Giá cước&rdquo;</b>. Nếu chưa ưng ý, Quý khách có thể bấm <b>&ldquo;Thương lượng lại giá (Deal lại)&rdquo;</b> bên dưới để tiếp tục đề xuất!
+                  Nếu Quý khách đồng ý với phương án xe và mức giá trên, vui lòng bấm <b>&ldquo;Đồng ý chốt Phương án xe &amp; Giá cước&rdquo;</b>. Nếu chưa ưng ý, Quý khách có thể bấm <b>&ldquo;Thương lượng lại giá (Deal lại)&rdquo;</b> bên dưới để tiếp tục đề xuất!
                 </div>
               </div>
             }
@@ -271,7 +326,7 @@ export default function OrderConfirmationView() {
         {/* Thông báo nếu đã chốt */}
         {agreedSuccess && (
           <Alert
-            title="Quý khách đã đồng ý chốt đơn hàng và giá cước thành công!"
+            title="Quý khách đã đồng ý chốt Phương án xe và Giá cước thành công!"
             description={
               <div className="space-y-2 mt-1 text-xs">
                 <span>Vui lòng chuyển tiếp tới bước <b>Nộp hồ sơ chứng từ</b> để điều phối viên hoàn tất thủ tục cấp hợp đồng.</span>
@@ -327,8 +382,16 @@ export default function OrderConfirmationView() {
           {/* Quy cách hàng & Trọng lượng */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
-              <span className="text-[11px] text-slate-500 block">Số lượng</span>
-              <span className="text-sm font-bold text-slate-800">{order.package_count || 1} kiện</span>
+              <span className="text-[11px] text-slate-500 block">Số lượng / Quy cách</span>
+              <span className="text-sm font-bold text-slate-800">
+                {order.package_count || 1} {order.package_unit || 'kiện'}
+              </span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+              <span className="text-[11px] text-slate-500 block">Kích thước (DxRxC)</span>
+              <span className="text-sm font-bold text-slate-800">
+                {order.length_cm || 0}×{order.width_cm || 0}×{order.height_cm || 0} cm
+              </span>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
               <span className="text-[11px] text-slate-500 block">Trọng lượng thực</span>
@@ -337,10 +400,6 @@ export default function OrderConfirmationView() {
             <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-150">
               <span className="text-[11px] text-indigo-700 block font-semibold">Tải trọng tính cước</span>
               <span className="text-sm font-extrabold text-indigo-700 font-mono">{order.chargeable_weight_kg || 0} kg</span>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
-              <span className="text-[11px] text-slate-500 block">Mã số thuế</span>
-              <span className="text-xs font-bold font-mono text-slate-800">{order.customer_tax_code || 'Chưa cung cấp'}</span>
             </div>
           </div>
 
@@ -352,13 +411,16 @@ export default function OrderConfirmationView() {
               </span>
               <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
                 {order.items.map((it, idx) => (
-                  <div key={idx} className="p-3 flex items-center justify-between text-xs bg-slate-50/50">
+                  <div key={idx} className="p-3 flex items-center justify-between text-xs bg-slate-50/50 flex-wrap gap-2">
                     <div>
                       <span className="font-bold text-slate-800">{idx + 1}. {it.cargo_name}</span>
                       <span className="ml-2 text-slate-500">({it.cargo_type})</span>
                     </div>
                     <div className="flex gap-4 text-slate-600">
                       <span>SL: <b>{it.package_count} {it.package_unit}</b></span>
+                      {(it.length_cm || it.width_cm || it.height_cm) ? (
+                        <span>KT: <b>{it.length_cm || 0}×{it.width_cm || 0}×{it.height_cm || 0} cm</b></span>
+                      ) : null}
                       <span>Trọng lượng: <b>{it.weight} kg</b></span>
                     </div>
                   </div>
@@ -392,7 +454,7 @@ export default function OrderConfirmationView() {
             <Alert
               title={
                 <span className="font-bold text-amber-950">
-                  Trạng thái: Đang thương lượng — Yêu cầu điều chỉnh giá của Quý khách đã được gửi tới Điều phối viên!
+                  Trạng thái: Đang thương lượng — Yêu cầu điều chỉnh giá / phương án xe của Quý khách đã được gửi tới Điều phối viên!
                 </span>
               }
               description={
@@ -401,11 +463,14 @@ export default function OrderConfirmationView() {
                   {order.web_workflow?.negotiation?.proposed_price && (
                     <div>• Mức giá Quý khách đề xuất: <b>{order.web_workflow.negotiation.proposed_price.toLocaleString('vi-VN')} VNĐ</b></div>
                   )}
+                  {order.web_workflow?.negotiation?.proposed_vehicle_type && (
+                    <div>• Loại xe Quý khách đề xuất: <b>{getVehicleSpecByKey(order.web_workflow.negotiation.proposed_vehicle_type).label}</b></div>
+                  )}
                   {order.web_workflow?.negotiation?.customer_note && (
                     <div>• Ghi chú: <i>&ldquo;{order.web_workflow.negotiation.customer_note}&rdquo;</i></div>
                   )}
                   <div className="pt-1 text-slate-600">
-                    Điều phối viên NEXLOG đang xem xét và sẽ chốt lại mức giá mới kèm lý do phản hồi ngay trên trang này (tự động cập nhật).
+                    Điều phối viên NEXLOG đang xem xét và sẽ chốt lại mức giá kèm phương án xe ngay trên trang này (tự động cập nhật).
                   </div>
                 </div>
               }
@@ -426,10 +491,10 @@ export default function OrderConfirmationView() {
                   className="border-amber-400 text-amber-800 hover:text-amber-900 hover:border-amber-500 bg-amber-50/60 font-semibold h-12 rounded-xl w-full sm:w-auto"
                 >
                   {hasDispatcherRequoted
-                    ? 'Chưa ưng giá này? Thương lượng lại (Deal lại)'
+                    ? 'Chưa ưng phương án / giá này? Thương lượng lại (Deal lại)'
                     : isCurrentlyNegotiating
                       ? 'Cập nhật lại đề xuất thương lượng'
-                      : 'Yêu cầu thương lượng lại giá / lịch trình'}
+                      : 'Yêu cầu thương lượng lại giá / phương án xe'}
                 </Button>
               </div>
 
@@ -441,7 +506,7 @@ export default function OrderConfirmationView() {
                 icon={<CheckCircle2 size={18} />}
                 className="bg-[#4f46e5] hover:bg-[#4338ca] text-white font-bold px-8 h-12 rounded-xl shadow-lg shadow-indigo-600/25 w-full sm:w-auto"
               >
-                Đồng ý chốt đơn hàng &amp; Giá cước
+                Đồng ý chốt Phương án xe &amp; Giá cước
               </Button>
             </div>
           ) : (
@@ -460,12 +525,12 @@ export default function OrderConfirmationView() {
 
         </div>
 
-        {/* MODAL YÊU CẦU ĐIỀU CHỈNH GIÁ / LỊCH TRÌNH */}
+        {/* MODAL YÊU CẦU ĐIỀU CHỈNH GIÁ / PHƯƠNG ÁN XE / LỊCH TRÌNH */}
         <Modal
           title={
             <div className="flex items-center gap-2 text-base font-bold text-slate-800">
               <MessageSquare size={18} className="text-amber-600" />
-              Thương lượng lại Giá cước / Lịch trình vận tải
+              Thương lượng lại Giá cước &amp; Phương án xe vận chuyển
             </div>
           }
           open={negotiateModalOpen}
@@ -480,7 +545,7 @@ export default function OrderConfirmationView() {
         >
           <div className="py-2 space-y-3">
             <p className="text-xs text-slate-600">
-              Nếu mức giá hiện tại <b>{(order.agreed_price || 0).toLocaleString()} VNĐ</b> chưa phù hợp với ngân sách của Quý khách, vui lòng gửi mức giá mong muốn bên dưới. Điều phối viên sẽ thẩm định và chốt lại giá cho Quý khách ngay:
+              Nếu mức giá hiện tại <b>{(order.agreed_price || 0).toLocaleString()} VNĐ</b> hoặc phương án xe <b>{proposedVehicleSpec.label}</b> chưa phù hợp, vui lòng gửi đề xuất bên dưới. Điều phối viên sẽ thẩm định và chốt lại cho Quý khách ngay:
             </p>
 
             <Form form={negotiateForm} layout="vertical" initialValues={{ feedback_reason: 'Giá cước vượt ngân sách' }}>
@@ -488,10 +553,20 @@ export default function OrderConfirmationView() {
                 <Select className="text-xs">
                   <Option value="Giá cước vượt ngân sách">💰 Giá cước vượt ngân sách dự toán</Option>
                   <Option value="Muốn thương lượng giảm thêm giá cước">🤝 Muốn thương lượng giảm thêm giá cước</Option>
+                  <Option value="Muốn đổi loại phương tiện">🚛 Muốn trao đổi lại loại xe tải vận chuyển</Option>
                   <Option value="Muốn thay đổi ngày/giờ lấy hàng">📅 Muốn thay đổi ngày / giờ lấy hàng</Option>
-                  <Option value="Muốn đổi loại phương tiện">🚛 Muốn đổi loại phương tiện / xe tải khác</Option>
                   <Option value="Thay đổi số lượng hoặc quy cách hàng">📦 Thay đổi số lượng / quy cách hàng</Option>
                   <Option value="Lý do khác">Khác (nhập chi tiết bên dưới)</Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item label={<span className="text-xs font-semibold">Phương án xe Quý khách mong muốn</span>} name="proposed_vehicle_type">
+                <Select className="text-xs">
+                  {VEHICLE_SPECS.map((v) => (
+                    <Option key={v.key} value={v.key}>
+                      {v.label} — {v.boxText} (Tối đa {v.maxPayloadKg.toLocaleString('vi-VN')} kg)
+                    </Option>
+                  ))}
                 </Select>
               </Form.Item>
 
@@ -506,7 +581,7 @@ export default function OrderConfirmationView() {
               </Form.Item>
 
               <Form.Item label={<span className="text-xs font-semibold">Ghi chú cụ thể gửi Điều phối viên (*)</span>} name="customer_note" rules={[{ required: true, message: 'Vui lòng nhập nội dung đề xuất của Quý khách' }]}>
-                <TextArea rows={3} placeholder="VD: Công ty mình có thể linh hoạt giao hàng vào buổi chiều, bên bạn xem xét giảm thêm 200k nhé..." className="text-xs" />
+                <TextArea rows={3} placeholder="VD: Hàng 20 thùng carton của mình xếp gọn được trên xe 2.5 tấn, bên bạn xem xét giảm cước nhé..." className="text-xs" />
               </Form.Item>
             </Form>
           </div>

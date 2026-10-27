@@ -4,7 +4,7 @@ import { Send, MapPin, Package, User, Plus, Trash2, ShieldCheck, PlaneTakeoff, P
 import LocationSearchInput from '../common/LocationSearchInput';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
-import { calculateRouteEstimate, calculateAlsPricing, calculateExportPickupSuggestion } from '../../data/dispatcherPresets';
+import { calculateRouteEstimate, calculateAlsPricing, calculateExportPickupSuggestion, analyzeVehicleRecommendation } from '../../data/dispatcherPresets';
 
 const { Option } = Select;
 
@@ -172,6 +172,16 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
   const watchedValues = Form.useWatch([], form);
 
+  // Phân tích gợi ý loại xe tự động dựa trên tải trọng và kích thước các mặt hàng
+  const vehicleRecommendation = useMemo(() => {
+    return analyzeVehicleRecommendation({
+      actualWeightKg: parseFloat(totals.actualWeight) || 0,
+      chargeableWeightKg: parseFloat(totals.chargeableWeight) || 0,
+      items: cargoItems,
+      customerRequestedVehicle: watchedValues?.vehicle_type_required || 'TRUCK_2.5T'
+    });
+  }, [totals.actualWeight, totals.chargeableWeight, cargoItems, watchedValues?.vehicle_type_required]);
+
   // Ước tính giá cước chính xác theo Biểu giá chuẩn ALS (Hợp đồng vận tải & Phụ phí)
   const estimatedPricing = useMemo(() => {
     return calculateAlsPricing({
@@ -255,8 +265,19 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
       setSubmitting(true);
 
+      const resolvedPickupAddr =
+        formValues.pickup_address ||
+        form.getFieldValue('pickup_address') ||
+        (shippingDirection === 'IMPORT' ? 'Nhà Ga Hàng Hóa ALS Nội Bài' : '');
+      const resolvedDeliveryAddr =
+        formValues.delivery_address ||
+        form.getFieldValue('delivery_address') ||
+        (shippingDirection === 'EXPORT' ? 'Nhà Ga Hàng Hóa ALS Nội Bài' : '');
+
       const payload = {
         ...formValues,
+        pickup_address: resolvedPickupAddr,
+        delivery_address: resolvedDeliveryAddr,
         required_pickup_date: shippingDirection === 'IMPORT' 
           ? (formValues.flight_arrival_date || formValues.required_pickup_date || null)
           : (formValues.required_pickup_date || null),
@@ -688,18 +709,48 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
                   className="mb-0"
                 >
                   <Select className="text-xs w-full" placeholder="Chọn loại xe">
-                    <Option value="TRUCK_1.25T">🚐 Xe tải 1.25 tấn (1.25T Truck)</Option>
-                    <Option value="TRUCK_2.5T">🚛 Xe tải 2.5 tấn (2.5T Truck)</Option>
-                    <Option value="TRUCK_3.5T">🚛 Xe tải 3.5 tấn (3.5T Truck)</Option>
-                    <Option value="TRUCK_5T">🚛 Xe tải 5 tấn (5T Truck)</Option>
-                    <Option value="CONTAINER_20">📦 Container 20ft</Option>
-                    <Option value="CONTAINER_40">📦 Container 40ft</Option>
+                    <Option value="TRUCK_1.25T">🚐 Xe tải 1.25 tấn (Thùng 3.1×1.6×1.6m)</Option>
+                    <Option value="TRUCK_2.5T">🚛 Xe tải 2.5 tấn (Thùng 4.2×1.9×1.9m)</Option>
+                    <Option value="TRUCK_3.5T">🚛 Xe tải 3.5 tấn (Thùng 5.0×2.05×2.05m)</Option>
+                    <Option value="TRUCK_5T">🚛 Xe tải 5 tấn (Thùng 6.2×2.2×2.2m)</Option>
+                    <Option value="CONTAINER_20">📦 Container 20ft (Thùng 5.9×2.35×2.39m)</Option>
+                    <Option value="CONTAINER_40">📦 Container 40ft (Thùng 12.0×2.35×2.39m)</Option>
                   </Select>
                 </Form.Item>
               </div>
 
+              {parseFloat(totals.actualWeight) > 0 && (
+                <div className={`mt-2.5 p-2.5 rounded-lg border text-xs flex flex-wrap items-center justify-between gap-2 ${
+                  vehicleRecommendation.status === 'UNDER_CAPACITY'
+                    ? 'bg-amber-50 border-amber-300 text-amber-900'
+                    : 'bg-white border-emerald-200 text-emerald-900'
+                }`}>
+                  <div>
+                    <span className="font-bold">💡 Gợi ý xếp xe theo hàng hóa: </span>
+                    <b className="text-indigo-700">{vehicleRecommendation.recommendedSpec.label}</b>{' '}
+                    <span className="text-gray-500">({vehicleRecommendation.recommendedSpec.boxDimText}, tải tối đa {vehicleRecommendation.recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg)</span>
+                    {vehicleRecommendation.status === 'UNDER_CAPACITY' && (
+                      <div className="text-[11px] text-amber-800 mt-0.5">
+                        ⚠️ {vehicleRecommendation.reason}
+                      </div>
+                    )}
+                  </div>
+                  {vehicleRecommendation.recommendedVehicleKey !== (watchedValues?.vehicle_type_required || 'TRUCK_2.5T') && (
+                    <Button
+                      size="small"
+                      type="primary"
+                      ghost
+                      className="text-[11px] font-semibold border-indigo-500 text-indigo-700"
+                      onClick={() => form.setFieldsValue({ vehicle_type_required: vehicleRecommendation.recommendedVehicleKey })}
+                    >
+                      Chọn {vehicleRecommendation.recommendedSpec.shortLabel}
+                    </Button>
+                  )}
+                </div>
+              )}
+
               <div className="mt-2 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-100">
-                ℹ️ <b>Lưu ý:</b> Điều phối viên ALS sẽ tiếp nhận yêu cầu, kiểm tra lộ trình theo biểu giá dịch vụ và liên hệ tư vấn báo giá chi tiết tới quý khách.
+                ℹ️ <b>Lưu ý:</b> Điều phối viên ALS sẽ tiếp nhận yêu cầu, phân tích phương án chọn xe tối ưu theo kích thước/tải trọng và liên hệ thống nhất cả loại xe &amp; giá cước với quý khách.
               </div>
             </div>
 
