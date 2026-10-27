@@ -1,10 +1,14 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 
 const userModel = require("../models/userModel");
 const driverModel = require("../models/driverModel");
 const supabase = require("../config/supabase");
+const { sendPasswordResetEmail } = require("./emailService");
 
+const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const ROLE_NAMES = {
     1: "ADMINISTRATOR",
     2: "MANAGER",
@@ -14,7 +18,6 @@ const ROLE_NAMES = {
 
 const login = async (identifier, password) => {
     const user = await userModel.findUserByIdentifier(identifier);
-
     if (!user) {
         throw new Error("Invalid username/email or password");
     }
@@ -128,8 +131,14 @@ const changePassword = async (userId, currentPassword, newPassword) => {
         throw error;
     }
 
-    if (newPassword.length < 6) {
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
         const error = new Error("Password must be at least 6 characters long");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (newPassword === currentPassword) {
+        const error = new Error("New password must be different from current password");
         error.statusCode = 400;
         throw error;
     }
@@ -159,8 +168,129 @@ const changePassword = async (userId, currentPassword, newPassword) => {
 };
 
 
+const requestPasswordReset = async (email, requestId) => {
+    try {
+        const normalizedEmail = email.trim().toLowerCase();
+
+        console.log("NODE_ENV =", process.env.NODE_ENV);
+        console.log(`[forgotPassword:${requestId}] Looking up account`);
+
+        const user = await userModel.findUserByEmail(normalizedEmail);
+
+        console.log("Password reset user found:", Boolean(user));
+
+        if (!user) {
+            console.log(`[forgotPassword:${requestId}] No account found`);
+
+            return {
+                message:
+                    "If an account exists for this email, password reset instructions will be sent."
+            };
+        }
+
+        // Sinh token mới
+        const rawToken = crypto.randomBytes(32).toString("hex");
+
+        // Chỉ lưu hash của token vào database
+        const tokenHash = crypto
+            .createHash("sha256")
+            .update(rawToken)
+            .digest("hex");
+
+        const expiresAt = new Date(
+            Date.now() + PASSWORD_RESET_TOKEN_TTL_MS
+        ).toISOString();
+
+        console.log(`[forgotPassword:${requestId}] Saving reset token`);
+
+        await userModel.createPasswordResetToken(
+            user.id,
+            tokenHash,
+            expiresAt
+        );
+
+        const response = {
+            message:
+                "If an account exists for this email, password reset instructions will be sent."
+        };
+
+        // Chỉ trả token trực tiếp khi test local
+        if (process.env.NODE_ENV === "development") {
+            response.resetToken = rawToken;
+            console.log("Reset token generated for development");
+
+            return response;
+        }
+
+        // Môi trường production: gửi token qua email
+        const resetPageUrl =
+            process.env.PASSWORD_RESET_URL ||
+            `${(process.env.FRONTEND_URL || "http://localhost:3000")
+                .replace(/\/+$/, "")}/reset-password`;
+
+        const resetUrl = new URL(resetPageUrl);
+        resetUrl.searchParams.set("token", rawToken);
+
+        console.log(`[forgotPassword:${requestId}] Sending reset email`);
+
+        await sendPasswordResetEmail({
+            email: normalizedEmail,
+            resetUrl: resetUrl.toString()
+        });
+
+        console.log(`[forgotPassword:${requestId}] Reset email sent`);
+
+        return response;
+    } catch (error) {
+        console.error(`[forgotPassword:${requestId}] Request failed`, {
+            name: error.name,
+            code: error.code,
+            message: error.message
+        });
+
+        throw error;
+    }
+};
+
+
+const resetPassword = async (token, newPassword) => {
+    if (typeof token !== "string" || !token.trim()) {
+        const error = new Error("Password reset token is required");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (typeof newPassword !== "string" || !newPassword) {
+        const error = new Error("New password is required");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+        const error = new Error("Password must be at least 6 characters long");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(token.trim()).digest("hex");
+    const resetToken = await userModel.consumePasswordResetToken(tokenHash);
+
+    if (!resetToken) {
+        const error = new Error("Password reset token is invalid or expired");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await userModel.updatePassword(resetToken.user_id, passwordHash);
+
+    return { message: "Password reset successfully" };
+};
+
 module.exports = {
     login,
     getCurrentUser,
-    changePassword
+    changePassword,
+    requestPasswordReset,
+    resetPassword
 };

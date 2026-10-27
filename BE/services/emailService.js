@@ -251,7 +251,36 @@ const sendContractSigningEmail = async ({
   }
 };
 
+const sendPasswordResetEmail = async ({ email, customerName, resetUrl }) => {
+  const mailTransporter = await getTransporter();
+  const fromAddress = process.env.SMTP_FROM || `NEXLOG Logistics <${process.env.SMTP_USER || 'no-reply@nexlog.vn'}>`;
+
+  const info = await mailTransporter.sendMail({
+    from: fromAddress,
+    to: email,
+    subject: '[NEXLOG] Yêu cầu đặt lại mật khẩu',
+    text: `Xin chào ${customerName || 'bạn'},\n\nĐể đặt lại mật khẩu NEXLOG, hãy mở liên kết sau (có hiệu lực trong 60 phút):\n${resetUrl}\n\nNếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 24px auto; color: #1e293b;">
+        <h2>Đặt lại mật khẩu NEXLOG</h2>
+        <p>Xin chào,</p>
+        <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn. Liên kết có hiệu lực trong 60 phút.</p>
+        <p><a href="${resetUrl}" style="display: inline-block; padding: 12px 20px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px;">Đặt lại mật khẩu</a></p>
+        <p>Nếu nút không hoạt động, hãy sao chép liên kết sau vào trình duyệt:<br><a href="${resetUrl}">${resetUrl}</a></p>
+        <p>Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.</p>
+      </div>
+    `
+  });
+
+  if (info.messageId && info.messageId.startsWith('mock-')) {
+    throw new Error('Password reset email was not delivered because SMTP is not configured');
+  }
+
+  return { success: true, messageId: info.messageId };
+};
+
 module.exports = {
   sendOrderPriceConfirmationEmail,
-  sendContractSigningEmail
+  sendContractSigningEmail,
+  sendPasswordResetEmail
 };
