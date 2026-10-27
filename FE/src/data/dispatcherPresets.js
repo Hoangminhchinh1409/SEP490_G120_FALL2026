@@ -423,3 +423,184 @@ export const getRecommendedDocsByCargo = (cargoName = '', cargoType = '', notes 
 
   return docs;
 };
+
+
+// Danh mục thông số kỹ thuật chuẩn đội xe ALS phục vụ phân tích gợi ý xe & xếp hàng 3D
+export const VEHICLE_SPECS = [
+  {
+    key: 'TRUCK_1.25T',
+    label: 'Xe tải 1.25 tấn',
+    shortLabel: 'Xe 1.25 tấn',
+    maxPayloadKg: 1250,
+    length_cm: 310,
+    width_cm: 160,
+    height_cm: 160,
+    volumeM3: 7.9,
+    boxDimText: 'Thùng 3,1 × 1,6 × 1,6 m',
+    samplePlate: '29H-112.34'
+  },
+  {
+    key: 'TRUCK_2.5T',
+    label: 'Xe tải 2.5 tấn',
+    shortLabel: 'Xe 2.5 tấn',
+    maxPayloadKg: 2500,
+    length_cm: 420,
+    width_cm: 190,
+    height_cm: 190,
+    volumeM3: 15.2,
+    boxDimText: 'Thùng 4,2 × 1,9 × 1,9 m',
+    samplePlate: '29C-456.78'
+  },
+  {
+    key: 'TRUCK_3.5T',
+    label: 'Xe tải 3.5 tấn',
+    shortLabel: 'Xe 3.5 tấn',
+    maxPayloadKg: 3500,
+    length_cm: 500,
+    width_cm: 205,
+    height_cm: 205,
+    volumeM3: 21.0,
+    boxDimText: 'Thùng 5,0 × 2,05 × 2,05 m',
+    samplePlate: '29H-995.72'
+  },
+  {
+    key: 'TRUCK_5T',
+    label: 'Xe tải 5 tấn',
+    shortLabel: 'Xe 5 tấn',
+    maxPayloadKg: 5000,
+    length_cm: 620,
+    width_cm: 220,
+    height_cm: 220,
+    volumeM3: 30.0,
+    boxDimText: 'Thùng 6,2 × 2,2 × 2,2 m',
+    samplePlate: '29H-767.99'
+  },
+  {
+    key: 'CONTAINER_20',
+    label: 'Container 20ft',
+    shortLabel: 'Cont 20ft',
+    maxPayloadKg: 12000,
+    length_cm: 590,
+    width_cm: 235,
+    height_cm: 239,
+    volumeM3: 33.1,
+    boxDimText: 'Cont 5,9 × 2,35 × 2,39 m',
+    samplePlate: '29R-020.88'
+  },
+  {
+    key: 'CONTAINER_40',
+    label: 'Container 40ft',
+    shortLabel: 'Cont 40ft',
+    maxPayloadKg: 25000,
+    length_cm: 1200,
+    width_cm: 235,
+    height_cm: 239,
+    volumeM3: 67.4,
+    boxDimText: 'Cont 12,0 × 2,35 × 2,39 m',
+    samplePlate: '29R-040.99'
+  }
+];
+
+export const getVehicleSpecByKey = (vehicleKey) => {
+  return (
+    VEHICLE_SPECS.find(v => v.key === vehicleKey) ||
+    VEHICLE_SPECS[1] // Mặc định TRUCK_2.5T
+  );
+};
+
+/**
+ * Phân tích thông số lô hàng (tải trọng thực, tải trọng tính cước, kích thước DxRxC, số kiện)
+ * để gợi ý loại xe tối ưu nhất (BR-03, BR-33) và đối chiếu với loại xe khách hàng chọn ban đầu.
+ */
+export const analyzeVehicleRecommendation = ({
+  actualWeightKg = 0,
+  chargeableWeightKg = 0,
+  length_cm = 0,
+  width_cm = 0,
+  height_cm = 0,
+  package_count = 1,
+  items = [],
+  customerRequestedVehicle = 'TRUCK_2.5T'
+}) => {
+  const effectiveWeight = Math.max(Number(actualWeightKg) || 0, Number(chargeableWeightKg) || 0);
+  let maxL = Number(length_cm) || 0;
+  let maxW = Number(width_cm) || 0;
+  let maxH = Number(height_cm) || 0;
+  let totalVolM3 = 0;
+
+  if (Array.isArray(items) && items.length > 0) {
+    items.forEach(it => {
+      const l = Number(it.length_cm) || 0;
+      const w = Number(it.width_cm) || 0;
+      const h = Number(it.height_cm) || 0;
+      const qty = Math.max(1, parseInt(it.package_count, 10) || 1);
+      if (l > maxL) maxL = l;
+      if (w > maxW) maxW = w;
+      if (h > maxH) maxH = h;
+      const singleBoxM3 = (l * w * h) / 1000000;
+      // Nếu khách nhập kích thước tổng của cả lô (VD: 200x200x200cm = 8m3 cho 20 thùng), không nhân 20 lần gây ảo thể tích
+      if (singleBoxM3 >= 1.5 && qty > 4) {
+        totalVolM3 += singleBoxM3;
+      } else {
+        totalVolM3 += singleBoxM3 * qty;
+      }
+    });
+  } else if (maxL > 0 && maxW > 0 && maxH > 0) {
+    const qty = Math.max(1, parseInt(package_count, 10) || 1);
+    const singleBoxM3 = (maxL * maxW * maxH) / 1000000;
+    totalVolM3 = (singleBoxM3 >= 1.5 && qty > 4) ? singleBoxM3 : singleBoxM3 * qty;
+  }
+
+  totalVolM3 = Number(totalVolM3.toFixed(2));
+
+  // Tìm xe nhỏ nhất trong đội xe chứa vừa cả tải trọng, kích thước bao và thể tích
+  let recommendedSpec = VEHICLE_SPECS.find(spec => {
+    const fitsWeight = spec.maxPayloadKg >= effectiveWeight;
+    const fitsDim =
+      (spec.length_cm >= maxL && spec.width_cm >= maxW && spec.height_cm >= maxH) ||
+      (spec.length_cm >= maxW && spec.width_cm >= maxL && spec.height_cm >= maxH);
+    const fitsVol = totalVolM3 === 0 || spec.volumeM3 * 0.9 >= totalVolM3;
+    return fitsWeight && fitsDim && fitsVol;
+  });
+
+  if (!recommendedSpec) {
+    recommendedSpec = VEHICLE_SPECS[VEHICLE_SPECS.length - 1];
+  }
+
+  const customerSpec = getVehicleSpecByKey(customerRequestedVehicle);
+  const recIdx = VEHICLE_SPECS.findIndex(v => v.key === recommendedSpec.key);
+  const custIdx = VEHICLE_SPECS.findIndex(v => v.key === customerSpec.key);
+
+  let status = 'OPTIMAL'; // 'OPTIMAL' | 'UNDER_CAPACITY' | 'OVER_CAPACITY'
+  let reason = `Loại xe ${customerSpec.label} (${customerSpec.boxDimText}, tải ${customerSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) hoàn toàn phù hợp với lô hàng (${effectiveWeight.toLocaleString('vi-VN')} kg${totalVolM3 > 0 ? `, ~${totalVolM3} m³` : ''}).`;
+
+  if (custIdx < recIdx) {
+    status = 'UNDER_CAPACITY';
+    const reasons = [];
+    if (effectiveWeight > customerSpec.maxPayloadKg) {
+      reasons.push(`tải trọng tính cước ${effectiveWeight.toLocaleString('vi-VN')} kg vượt tải cho phép của ${customerSpec.shortLabel} (${customerSpec.maxPayloadKg.toLocaleString('vi-VN')} kg)`);
+    }
+    if (maxL > customerSpec.length_cm || maxW > customerSpec.width_cm || maxH > customerSpec.height_cm) {
+      reasons.push(`kích thước hàng (${maxL}×${maxW}×${maxH} cm) vượt lòng thùng ${customerSpec.shortLabel} (${customerSpec.length_cm}×${customerSpec.width_cm}×${customerSpec.height_cm} cm)`);
+    }
+    if (totalVolM3 > customerSpec.volumeM3 * 0.9) {
+      reasons.push(`thể tích hàng (~${totalVolM3} m³) vượt dung tích xếp an toàn của ${customerSpec.shortLabel} (${customerSpec.volumeM3} m³)`);
+    }
+    reason = `Khách chọn ${customerSpec.label} nhưng ${reasons.join(' và ') || 'chưa đủ dung tích'}. Hệ thống đề xuất nâng lên ${recommendedSpec.label} (${recommendedSpec.boxDimText}, tải ${recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) và trao đổi chốt lại với khách.`;
+  } else if (custIdx > recIdx && effectiveWeight > 0) {
+    status = 'OVER_CAPACITY';
+    reason = `Khách yêu cầu ${customerSpec.label}, tuy nhiên theo phân tích tải trọng (${effectiveWeight.toLocaleString('vi-VN')} kg) và kích thước (${maxL}×${maxW}×${maxH} cm), chỉ cần ${recommendedSpec.label} (${recommendedSpec.boxDimText}) là đủ xếp hàng. Có thể tư vấn khách tối ưu chi phí hoặc giữ nguyên theo yêu cầu riêng của khách.`;
+  }
+
+  return {
+    recommendedVehicleKey: recommendedSpec.key,
+    recommendedSpec,
+    customerRequestedKey: customerSpec.key,
+    customerSpec,
+    effectiveWeightKg: effectiveWeight,
+    totalVolumeM3: totalVolM3,
+    maxDimensionsCm: { length: maxL, width: maxW, height: maxH },
+    status,
+    reason
+  };
+};
