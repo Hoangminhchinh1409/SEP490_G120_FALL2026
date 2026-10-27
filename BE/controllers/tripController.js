@@ -185,41 +185,45 @@ const getTripReplay = async (req, res) => {
 
     const tripId = trip.id;
 
-    const { data: stops } = await supabase
-      .from('trip_stops')
-      .select(`
-        id,
-        sequence,
-        stop_type,
-        location_id,
-        planned_arrival,
-        actual_arrival,
-        distance_from_previous_stop,
-        status,
-        location:locations(id, name, address, latitude, longitude)
-      `)
-      .eq('trip_id', tripId)
-      .order('sequence', { ascending: true });
-
-    const { data: points } = await supabase
-      .from('gps_points')
-      .select('*')
-      .eq('trip_id', tripId);
-
-    const { data: events } = await supabase
-      .from('trip_events')
-      .select(`
-        id,
-        event_type,
-        phone_time,
-        received_time,
-        latitude,
-        longitude,
-        outside_radius_flag,
-        payload
-      `)
-      .eq('trip_id', tripId)
-      .order('id', { ascending: true });
+    const [
+      { data: stops },
+      { data: points },
+      { data: events }
+    ] = await Promise.all([
+      supabase
+        .from('trip_stops')
+        .select(`
+          id,
+          sequence,
+          stop_type,
+          location_id,
+          planned_arrival,
+          actual_arrival,
+          distance_from_previous_stop,
+          status,
+          location:locations(id, name, address, latitude, longitude)
+        `)
+        .eq('trip_id', tripId)
+        .order('sequence', { ascending: true }),
+      supabase
+        .from('gps_points')
+        .select('*')
+        .eq('trip_id', tripId),
+      supabase
+        .from('trip_events')
+        .select(`
+          id,
+          event_type,
+          phone_time,
+          received_time,
+          latitude,
+          longitude,
+          outside_radius_flag,
+          payload
+        `)
+        .eq('trip_id', tripId)
+        .order('id', { ascending: true })
+    ]);
 
     return res.json({
       trip,

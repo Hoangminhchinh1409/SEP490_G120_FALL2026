@@ -1,21 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, Button, Result, Tag, Spin, message, Alert, Divider, Modal, Input, InputNumber, Select, Form } from 'antd';
+import { Card, Button, Result, Tag, Spin, message, Alert, Modal, Input, InputNumber, Select, Form } from 'antd';
 import { 
   Package, 
   MapPin, 
   CheckCircle2, 
   DollarSign, 
-  FileText, 
   ShieldCheck, 
-  Clock, 
   PhoneCall, 
   ArrowRight,
-  Send,
-  Building,
   Info,
   MessageSquare,
-  AlertCircle
+  RefreshCw
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
 
@@ -51,6 +47,11 @@ export default function OrderConfirmationView() {
             data.web_workflow?.stage === 'CONTRACT_SIGNED') {
           setAgreedSuccess(true);
         }
+        if (data.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') {
+          setFeedbackSuccess(true);
+        } else {
+          setFeedbackSuccess(false);
+        }
       } catch (err) {
         console.error('Failed to load order by token:', err);
         message.error('Không tìm thấy thông tin đơn hàng hoặc đường link đã hết hạn.');
@@ -60,16 +61,27 @@ export default function OrderConfirmationView() {
     };
     loadOrder();
 
-    // Polling tự động mỗi 3 giây nếu đơn đang chờ đàm phán hoặc chưa chốt để cập nhật giá ngay khi điều phối duyệt
+    // Polling tự động mỗi 3 giây để cập nhật ngay khi điều phối chốt lại giá
     const interval = setInterval(async () => {
       try {
         const latestData = await orderApi.getOrderByToken(token);
         if (latestData) {
           setOrder(prev => {
             if (!prev) return latestData;
-            // Nếu giá đã thay đổi hoặc stage thay đổi từ đàm phán sang đã chốt
-            if (prev.agreed_price !== latestData.agreed_price) {
-              message.info(`Điều phối viên vừa cập nhật mức giá mới: ${Number(latestData.agreed_price).toLocaleString('vi-VN')} VNĐ!`);
+            const stageChangedToQuoted =
+              prev.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' &&
+              latestData.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER';
+            const priceChanged = prev.agreed_price !== latestData.agreed_price;
+
+            if (stageChangedToQuoted || priceChanged) {
+              setFeedbackSuccess(false);
+              message.info(
+                `Điều phối viên vừa chốt lại mức giá: ${Number(latestData.agreed_price).toLocaleString('vi-VN')} VNĐ${
+                  latestData.web_workflow?.adjustment_reason
+                    ? ` (Lý do: ${latestData.web_workflow.adjustment_reason})`
+                    : ''
+                }!`
+              );
             }
             return latestData;
           });
@@ -99,12 +111,22 @@ export default function OrderConfirmationView() {
     }
   };
 
+  const handleOpenNegotiateModal = () => {
+    negotiateForm.resetFields();
+    negotiateForm.setFieldsValue({
+      feedback_reason: 'Giá cước vượt ngân sách',
+      proposed_price: order?.web_workflow?.negotiation?.proposed_price || undefined,
+      customer_note: ''
+    });
+    setNegotiateModalOpen(true);
+  };
+
   const handleNegotiateSubmit = async () => {
     try {
       const values = await negotiateForm.validateFields();
       setSubmittingFeedback(true);
       await orderApi.customerNegotiateOrder(token, values);
-      message.success('Đã gửi yêu cầu đàm phán thành công! Điều phối viên sẽ phản hồi sớm nhất.');
+      message.success('Đã gửi yêu cầu thương lượng giá thành công! Điều phối viên sẽ phản hồi sớm nhất.');
       setFeedbackSuccess(true);
       setNegotiateModalOpen(false);
       // Reload order info
@@ -146,6 +168,12 @@ export default function OrderConfirmationView() {
     );
   }
 
+  const isCurrentlyNegotiating = feedbackSuccess || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
+  const hasDispatcherRequoted =
+    !isCurrentlyNegotiating &&
+    Boolean(order.web_workflow?.adjustment_reason) &&
+    order.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER';
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50/50 via-slate-50 to-slate-100 py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto space-y-6">
@@ -168,9 +196,16 @@ export default function OrderConfirmationView() {
           <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
           <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
-                <DollarSign size={15} /> Giá cước trọn gói thỏa thuận
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
+                  <DollarSign size={15} /> Giá cước trọn gói thỏa thuận
+                </span>
+                {isCurrentlyNegotiating && (
+                  <span className="text-[11px] bg-amber-400 text-slate-950 font-bold px-2.5 py-0.5 rounded-full">
+                    Đang thương lượng
+                  </span>
+                )}
+              </div>
               <div className="text-3xl sm:text-4xl font-extrabold mt-1 font-mono tracking-tight">
                 {(order.agreed_price || 0).toLocaleString()} <span className="text-xl font-normal text-indigo-200">VNĐ</span>
               </div>
@@ -209,6 +244,30 @@ export default function OrderConfirmationView() {
           </div>
         </div>
 
+        {/* Thông báo phản hồi giá mới từ Điều phối viên sau khi thương lượng */}
+        {hasDispatcherRequoted && !agreedSuccess && (
+          <Alert
+            title={
+              <span className="font-bold text-indigo-950">
+                Điều phối viên đã cập nhật &amp; chốt lại giá cước mới: {(order.agreed_price || 0).toLocaleString('vi-VN')} VNĐ
+              </span>
+            }
+            description={
+              <div className="text-xs text-indigo-900 space-y-1 mt-1">
+                <div>
+                  • Lý do điều chỉnh / phản hồi từ Điều phối viên: <b>&ldquo;{order.web_workflow.adjustment_reason}&rdquo;</b>
+                </div>
+                <div className="text-slate-600 pt-0.5">
+                  Nếu Quý khách đồng ý với mức giá trên, vui lòng bấm <b>&ldquo;Đồng ý chốt đơn hàng &amp; Giá cước&rdquo;</b>. Nếu chưa ưng ý, Quý khách có thể bấm <b>&ldquo;Thương lượng lại giá (Deal lại)&rdquo;</b> bên dưới để tiếp tục đề xuất!
+                </div>
+              </div>
+            }
+            type="info"
+            showIcon
+            className="rounded-2xl border border-indigo-300 bg-indigo-50/90"
+          />
+        )}
+
         {/* Thông báo nếu đã chốt */}
         {agreedSuccess && (
           <Alert
@@ -241,7 +300,7 @@ export default function OrderConfirmationView() {
               <Package size={18} className="text-indigo-600" /> Chi Tiết Lô Hàng Đã Tạo
             </h3>
             <Tag color="purple" className="font-semibold text-xs py-0.5 px-2.5 rounded-full">
-              {order.source === 'HOMEPAGE' ? 'Đơn Đăng Ký Website' : order.source}
+              {order.source === 'HOMEPAGE' || order.source === 'Web' ? 'Đơn Đăng Ký Website' : order.source}
             </Tag>
           </div>
 
@@ -329,9 +388,13 @@ export default function OrderConfirmationView() {
           </div>
 
           {/* Thông báo nếu khách đang yêu cầu đàm phán lại */}
-          {(feedbackSuccess || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') && (
+          {isCurrentlyNegotiating && (
             <Alert
-              title="Yêu cầu điều chỉnh của Quý khách đã được gửi tới Điều phối viên!"
+              title={
+                <span className="font-bold text-amber-950">
+                  Trạng thái: Đang thương lượng — Yêu cầu điều chỉnh giá của Quý khách đã được gửi tới Điều phối viên!
+                </span>
+              }
               description={
                 <div className="text-xs text-amber-900 space-y-1 mt-1">
                   <div>• Lý do: <b>{order.web_workflow?.negotiation?.feedback_reason || 'Cần điều chỉnh thêm'}</b></div>
@@ -342,7 +405,7 @@ export default function OrderConfirmationView() {
                     <div>• Ghi chú: <i>&ldquo;{order.web_workflow.negotiation.customer_note}&rdquo;</i></div>
                   )}
                   <div className="pt-1 text-slate-600">
-                    Điều phối viên NEXLOG đang xem xét và sẽ liên hệ/cập nhật lại giá cước sớm nhất qua Email/SĐT của Quý khách.
+                    Điều phối viên NEXLOG đang xem xét và sẽ chốt lại mức giá mới kèm lý do phản hồi ngay trên trang này (tự động cập nhật).
                   </div>
                 </div>
               }
@@ -352,17 +415,21 @@ export default function OrderConfirmationView() {
             />
           )}
 
-          {/* Nút Hành Động Đồng Ý & Đàm Phán Lại */}
+          {/* Nút Hành Động Đồng Ý & Thương Lượng Lại (Có thể deal lại nhiều lần cho đến khi ưng ý) */}
           {!agreedSuccess ? (
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <Button
                   size="large"
-                  icon={<MessageSquare size={16} />}
-                  onClick={() => setNegotiateModalOpen(true)}
+                  icon={hasDispatcherRequoted ? <RefreshCw size={16} /> : <MessageSquare size={16} />}
+                  onClick={handleOpenNegotiateModal}
                   className="border-amber-400 text-amber-800 hover:text-amber-900 hover:border-amber-500 bg-amber-50/60 font-semibold h-12 rounded-xl w-full sm:w-auto"
                 >
-                  Yêu cầu điều chỉnh giá / lịch trình
+                  {hasDispatcherRequoted
+                    ? 'Chưa ưng giá này? Thương lượng lại (Deal lại)'
+                    : isCurrentlyNegotiating
+                      ? 'Cập nhật lại đề xuất thương lượng'
+                      : 'Yêu cầu thương lượng lại giá / lịch trình'}
                 </Button>
               </div>
 
@@ -398,28 +465,29 @@ export default function OrderConfirmationView() {
           title={
             <div className="flex items-center gap-2 text-base font-bold text-slate-800">
               <MessageSquare size={18} className="text-amber-600" />
-              Yêu cầu Điều chỉnh Giá cước / Lịch trình vận tải
+              Thương lượng lại Giá cước / Lịch trình vận tải
             </div>
           }
           open={negotiateModalOpen}
           onCancel={() => setNegotiateModalOpen(false)}
           onOk={handleNegotiateSubmit}
           confirmLoading={submittingFeedback}
-          okText="Gửi yêu cầu tới Điều phối"
+          okText="Gửi đề xuất thương lượng"
           cancelText="Đóng"
           okButtonProps={{ className: 'bg-[#4f46e5] font-semibold' }}
-          destroyOnClose
+          destroyOnHidden
           centered
         >
           <div className="py-2 space-y-3">
             <p className="text-xs text-slate-600">
-              Nếu mức giá <b>{(order.agreed_price || 0).toLocaleString()} VNĐ</b> hoặc lịch trình chưa phù hợp, Quý khách vui lòng gửi đề xuất bên dưới. Điều phối viên sẽ hỗ trợ thẩm định lại ngay:
+              Nếu mức giá hiện tại <b>{(order.agreed_price || 0).toLocaleString()} VNĐ</b> chưa phù hợp với ngân sách của Quý khách, vui lòng gửi mức giá mong muốn bên dưới. Điều phối viên sẽ thẩm định và chốt lại giá cho Quý khách ngay:
             </p>
 
             <Form form={negotiateForm} layout="vertical" initialValues={{ feedback_reason: 'Giá cước vượt ngân sách' }}>
-              <Form.Item label={<span className="text-xs font-semibold">Lý do điều chỉnh (*)</span>} name="feedback_reason" rules={[{ required: true }]}>
+              <Form.Item label={<span className="text-xs font-semibold">Lý do thương lượng (*)</span>} name="feedback_reason" rules={[{ required: true }]}>
                 <Select className="text-xs">
                   <Option value="Giá cước vượt ngân sách">💰 Giá cước vượt ngân sách dự toán</Option>
+                  <Option value="Muốn thương lượng giảm thêm giá cước">🤝 Muốn thương lượng giảm thêm giá cước</Option>
                   <Option value="Muốn thay đổi ngày/giờ lấy hàng">📅 Muốn thay đổi ngày / giờ lấy hàng</Option>
                   <Option value="Muốn đổi loại phương tiện">🚛 Muốn đổi loại phương tiện / xe tải khác</Option>
                   <Option value="Thay đổi số lượng hoặc quy cách hàng">📦 Thay đổi số lượng / quy cách hàng</Option>
@@ -429,7 +497,7 @@ export default function OrderConfirmationView() {
 
               <Form.Item label={<span className="text-xs font-semibold">Mức giá Quý khách đề xuất (VNĐ)</span>} name="proposed_price">
                 <InputNumber
-                  placeholder="VD: 1,200,000"
+                  placeholder="VD: 2,300,000"
                   formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={(val) => val.replace(/\$\s?|(,*)/g, '')}
                   className="w-full font-bold text-indigo-700"

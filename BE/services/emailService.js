@@ -221,12 +221,101 @@ const sendOrderPriceConfirmationEmail = async ({
       html: htmlContent
     });
     console.log('[EmailService] Order confirmation email sent:', info.messageId);
-    if (nodemailer.getTestMessageUrl && info) {
-      console.log('[EmailService] Ethereal Preview URL:', nodemailer.getTestMessageUrl(info));
+    const previewUrl = nodemailer.getTestMessageUrl ? nodemailer.getTestMessageUrl(info) : null;
+    if (previewUrl) {
+      console.log('[EmailService] Ethereal Preview URL:', previewUrl);
     }
-    return { success: true, messageId: info.messageId, previewUrl: nodemailer.getTestMessageUrl ? nodemailer.getTestMessageUrl(info) : null };
+    return { success: true, messageId: info.messageId, previewUrl: previewUrl || null };
   } catch (error) {
     console.error('[EmailService] Error sending confirmation email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Gửi email thông báo từ chối chứng từ & yêu cầu khách hàng tải lại chứng từ
+ */
+const sendDocumentRejectionEmail = async ({
+  customerEmail,
+  customerName,
+  orderCode,
+  rejectedDocName,
+  rejectReason,
+  reuploadUrl
+}) => {
+  const mailTransporter = await getTransporter();
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; color: #1e293b; }
+        .container { max-width: 620px; margin: 20px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+        .header { background: linear-gradient(135deg, #dc2626 0%, #ea580c 100%); padding: 28px 24px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 22px; font-weight: 700; }
+        .content { padding: 28px; }
+        .reject-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; margin: 18px 0; color: #991b1b; }
+        .btn-container { text-align: center; margin: 28px 0 12px; }
+        .btn { display: inline-block; background: #dc2626; color: #ffffff !important; padding: 14px 32px; border-radius: 10px; font-weight: 700; font-size: 14px; text-decoration: none; }
+        .footer { background: #f8fafc; padding: 18px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>YÊU CẦU CẬP NHẬT LẠI CHỨNG TỪ</h1>
+          <p>Đơn hàng vận chuyển #${orderCode}</p>
+        </div>
+        <div class="content">
+          <p style="font-size: 14px; line-height: 1.6;">
+            Kính gửi Quý khách <b>${customerName || 'Quý khách'}</b>,<br/>
+            Trong quá trình kiểm duyệt hồ sơ pháp lý cho đơn hàng <b>#${orderCode}</b>, Bộ phận Điều phối NEXLOG phát hiện chứng từ sau cần được cung cấp lại:
+          </p>
+
+          <div class="reject-box">
+            <div style="font-size: 14px; font-weight: 700; margin-bottom: 6px;">
+              ❌ Chứng từ bị từ chối: ${rejectedDocName}
+            </div>
+            <div style="font-size: 13px;">
+              <b>Lý do yêu cầu tải lại:</b> ${rejectReason || 'Tệp đính kèm chưa hợp lệ hoặc bị mờ, vui lòng tải lại tệp đúng quy định.'}
+            </div>
+          </div>
+
+          <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+            Quý khách vui lòng nhấn vào đường liên kết bên dưới để tải lại tệp mới cho mục <b>${rejectedDocName}</b>. Sau khi nhận được tệp bổ sung hợp lệ, Điều phối viên sẽ phê duyệt và gửi Hợp đồng điện tử ngay lập tức:
+          </p>
+
+          <div class="btn-container">
+            <a href="${reuploadUrl}" class="btn" target="_blank">Tải Lại Chứng Từ Ngay</a>
+          </div>
+
+          <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 16px;">
+            Link cập nhật chứng từ trực tiếp:<br/>
+            <a href="${reuploadUrl}" style="color: #dc2626; word-break: break-all;">${reuploadUrl}</a>
+          </p>
+        </div>
+        <div class="footer">
+          <p>NEXLOG Logistics - Hotline Điều phối: 1900 6868</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const fromAddress = process.env.SMTP_FROM || `NEXLOG Logistics <${process.env.SMTP_USER || 'no-reply@nexlog.vn'}>`;
+    const info = await mailTransporter.sendMail({
+      from: fromAddress,
+      to: customerEmail || 'khachhang@example.com',
+      subject: `[NEXLOG] Yêu cầu tải lại chứng từ "${rejectedDocName}" - Đơn hàng #${orderCode}`,
+      html: htmlContent
+    });
+    console.log('[EmailService] Document rejection email sent:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('[EmailService] Error sending document rejection email:', error);
     return { success: false, error: error.message };
   }
 };
@@ -304,13 +393,14 @@ const sendContractSigningEmail = async ({
       html: htmlContent
     });
     console.log('[EmailService] Contract signing email sent:', info.messageId);
-    if (nodemailer.getTestMessageUrl && info) {
-      console.log('[EmailService] Ethereal Preview URL:', nodemailer.getTestMessageUrl(info));
+    const previewUrl = nodemailer.getTestMessageUrl ? nodemailer.getTestMessageUrl(info) : null;
+    if (previewUrl) {
+      console.log('[EmailService] Ethereal Preview URL:', previewUrl);
     }
     return {
       success: true,
       messageId: info.messageId,
-      previewUrl: nodemailer.getTestMessageUrl ? nodemailer.getTestMessageUrl(info) : null
+      previewUrl: previewUrl || null
     };
   } catch (error) {
     console.error('[EmailService] Error sending contract signing email:', error);
@@ -348,6 +438,7 @@ const sendPasswordResetEmail = async ({ email, customerName, resetUrl }) => {
 
 module.exports = {
   sendOrderPriceConfirmationEmail,
+  sendDocumentRejectionEmail,
   sendContractSigningEmail,
   sendPasswordResetEmail
 };

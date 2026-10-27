@@ -40,14 +40,19 @@ export const orderApi = {
     }
   },
 
-  // 4. Chốt giá cước thỏa thuận
-  updateAgreedPrice: async (orderId, agreedPrice) => {
+  // 4. Chốt giá cước thỏa thuận & Phương án xe (hoặc Chốt lại giá kèm lý do điều chỉnh)
+  updateAgreedPrice: async (orderId, agreedPrice, adjustmentReason = '', extraOptions = {}) => {
     try {
       const data = await fetchWithoutAuth(`/orders/${orderId}/price`, {
         method: 'PATCH',
-        body: JSON.stringify({ agreed_price: agreedPrice })
+        body: JSON.stringify({
+          agreed_price: agreedPrice,
+          adjustment_reason: adjustmentReason,
+          proposed_vehicle_type: extraOptions.proposed_vehicle_type || null,
+          vehicle_analysis_note: extraOptions.vehicle_analysis_note || null
+        })
       });
-      return data.order;
+      return data;
     } catch (error) {
       console.error('orderApi.updateAgreedPrice Error:', error);
       throw error;
@@ -161,6 +166,20 @@ export const orderApi = {
     }
   },
 
+  // 11b. Điều phối viên: Từ chối 1 chứng từ & tự động gửi email yêu cầu khách tải lại
+  rejectOrderDocument: async (orderId, { doc_key, reject_reason, documents }) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/reject-document`, {
+        method: 'POST',
+        body: JSON.stringify({ doc_key, reject_reason, documents })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.rejectOrderDocument Error:', error);
+      throw error;
+    }
+  },
+
   // 12. Điều phối viên: Kiểm duyệt chứng từ cho đơn web & Tự động gửi email kèm hợp đồng điện tử & Link ký số
   approveWebOrderDocuments: async (orderId, approvedDocuments) => {
     try {
@@ -231,4 +250,3 @@ export const orderApi = {
     }
   }
 };
-

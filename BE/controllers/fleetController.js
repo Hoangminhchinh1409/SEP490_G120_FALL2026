@@ -167,41 +167,44 @@ const updateAccountStatus = async (req, res) => {
 
 const getVehicles = async (req, res) => {
   try {
-    const { data: trucksResult, error: trucksErr } = await supabase
-      .from('trucks')
-      .select(`
-        id, 
-        plate_number, 
-        model,
-        allowed_payload,
-        box_length, 
-        box_width, 
-        box_height,
-        required_license_class,
-        inspection_expiry,
-        insurance_expiry,
-        gps_device_id,
-        status,
-        created_at,
-        updated_at
-      `)
-      .order('id', { ascending: true });
+    const [
+      { data: trucksResult, error: trucksErr },
+      { data: driversResult, error: driversErr }
+    ] = await Promise.all([
+      supabase
+        .from('trucks')
+        .select(`
+          id, 
+          plate_number, 
+          model,
+          allowed_payload,
+          box_length, 
+          box_width, 
+          box_height,
+          required_license_class,
+          inspection_expiry,
+          insurance_expiry,
+          gps_device_id,
+          status,
+          created_at,
+          updated_at
+        `)
+        .order('id', { ascending: true }),
+      supabase
+        .from('driver_profiles')
+        .select(`
+          id, 
+          user_account_id, 
+          license_number,
+          license_class, 
+          license_expiry, 
+          status,
+          user:users!driver_profiles_user_account_id_fkey(id, full_name, phone, username, email)
+        `)
+        .order('id', { ascending: true })
+    ]);
 
     if (trucksErr) throw trucksErr;
-
-    const { data: driversResult, error: driversErr } = await supabase
-      .from('driver_profiles')
-      .select(`
-        id, 
-        user_account_id, 
-        license_number,
-        license_class, 
-        license_expiry, 
-        status,
-        user:users!driver_profiles_user_account_id_fkey(id, full_name, phone, username, email)
-      `)
-      .order('id', { ascending: true });
-
     if (driversErr) throw driversErr;
 
     const formattedTrucks = (trucksResult || []).map((t) => {

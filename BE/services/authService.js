@@ -29,7 +29,6 @@ const login = async (identifier, password) => {
     }
 
     // Kiểm tra Chế độ bảo trì hệ thống (SRS v2 - MSG86)
-    // Khi bật bảo trì, chỉ duy nhất Administrator (role_id = 1) được phép đăng nhập
     if (Number(user.role_id) !== 1) {
         const { data: maintenanceSetting } = await supabase
             .from("system_settings")
@@ -219,16 +218,9 @@ const requestPasswordReset = async (email, requestId) => {
     try {
         const normalizedEmail = email.trim().toLowerCase();
 
-        console.log("NODE_ENV =", process.env.NODE_ENV);
-        console.log(`[forgotPassword:${requestId}] Looking up account`);
-
         const user = await userModel.findUserByEmail(normalizedEmail);
 
-        console.log("Password reset user found:", Boolean(user));
-
         if (!user) {
-            console.log(`[forgotPassword:${requestId}] No account found`);
-
             return {
                 message:
                     "If an account exists for this email, password reset instructions will be sent."
@@ -248,8 +240,6 @@ const requestPasswordReset = async (email, requestId) => {
             Date.now() + PASSWORD_RESET_TOKEN_TTL_MS
         ).toISOString();
 
-        console.log(`[forgotPassword:${requestId}] Saving reset token`);
-
         await userModel.createPasswordResetToken(
             user.id,
             tokenHash,
@@ -261,15 +251,7 @@ const requestPasswordReset = async (email, requestId) => {
                 "If an account exists for this email, password reset instructions will be sent."
         };
 
-        // Chỉ trả token trực tiếp khi test local
-        if (process.env.NODE_ENV === "development") {
-            response.resetToken = rawToken;
-            console.log("Reset token generated for development");
-
-            return response;
-        }
-
-        // Môi trường production: gửi token qua email
+        // Gửi link đặt lại mật khẩu qua email
         const resetPageUrl =
             process.env.PASSWORD_RESET_URL ||
             `${(process.env.FRONTEND_URL || "http://localhost:3000")
@@ -278,14 +260,15 @@ const requestPasswordReset = async (email, requestId) => {
         const resetUrl = new URL(resetPageUrl);
         resetUrl.searchParams.set("token", rawToken);
 
-        console.log(`[forgotPassword:${requestId}] Sending reset email`);
-
         await sendPasswordResetEmail({
             email: normalizedEmail,
+            customerName: user.full_name,
             resetUrl: resetUrl.toString()
         });
 
-        console.log(`[forgotPassword:${requestId}] Reset email sent`);
+        if (process.env.NODE_ENV === "development") {
+            response.resetToken = rawToken;
+        }
 
         return response;
     } catch (error) {

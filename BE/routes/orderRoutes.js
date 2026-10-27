@@ -12,6 +12,7 @@ const {
   customerAgreeOrderPrice,
   customerNegotiateOrder,
   customerUploadDocuments,
+  rejectOrderDocument,
   approveWebOrderDocuments,
   customerSignContract,
   uploadContractFile,
@@ -38,6 +39,9 @@ router.post('/customer-negotiate/:token', customerNegotiateOrder);
 
 // 5. Khách hàng: Upload hồ sơ chứng từ liên quan (Public)
 router.post('/customer-upload-docs/:token', customerUploadDocuments);
+
+// 5b. Điều phối viên: Từ chối 1 chứng từ & tự động gửi email yêu cầu khách tải lại
+router.post('/:id/reject-document', rejectOrderDocument);
 
 // 6. Điều phối viên: Kiểm duyệt chứng từ cho đơn web & Tự động gửi email kèm hợp đồng điện tử & Link ký số
 router.post('/:id/approve-web-docs', approveWebOrderDocuments);
@@ -73,4 +77,3 @@ router.post('/:id/cancel', cancelOrder);
 router.post('/:id/close', closeOrder);
 
 module.exports = router;
-

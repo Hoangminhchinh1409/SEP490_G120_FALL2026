@@ -51,6 +51,19 @@ async function parseJsonResponse(response) {
     return data;
 }
 
+async function fetchWithRetry(fullUrl, fetchOptions, retries = 2, delayMs = 800) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            return await fetch(fullUrl, fetchOptions);
+        } catch (err) {
+            if (attempt === retries) {
+                throw err;
+            }
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+}
+
 // Gọi API có xác thực
 export async function fetchWithAuth(url, options = {}) {
     const headers = {
@@ -65,7 +78,7 @@ export async function fetchWithAuth(url, options = {}) {
         headers["Content-Type"] = "application/json";
     }
 
-    const response = await fetch(`${API_URL}${url}`, {
+    const response = await fetchWithRetry(`${API_URL}${url}`, {
         ...options,
         headers,
         credentials: "include",
@@ -85,7 +98,7 @@ export async function fetchWithoutAuth(url, options = {}) {
         ...options.headers,
     };
 
-    const response = await fetch(`${API_URL}${url}`, {
+    const response = await fetchWithRetry(`${API_URL}${url}`, {
         ...options,
         headers,
         credentials: "include",
@@ -100,7 +113,7 @@ export async function fetchWithoutAuth(url, options = {}) {
 
 // Gọi API upload hoặc tải file
 export async function fetchWithAuthFile(url, options = {}) {
-    const response = await fetch(`${API_URL}${url}`, {
+    const response = await fetchWithRetry(`${API_URL}${url}`, {
         ...options,
         credentials: "include",
     });

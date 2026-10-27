@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tag, Button, InputNumber, Popover } from 'antd';
+import { Tag, Button, InputNumber, Input, Popover } from 'antd';
 import { 
   AlertTriangle, 
   PhoneCall, 
@@ -8,7 +8,9 @@ import {
   DollarSign, 
   Calculator, 
   Route, 
-  Package 
+  Package,
+  RefreshCw,
+  CheckCircle2
 } from 'lucide-react';
 import RouteMapPicker from '../../common/RouteMapPicker';
 
@@ -24,15 +26,94 @@ export default function OrderOverviewTab({
   estimatedBaselineRate,
   currentAgreedPrice,
   setCurrentAgreedPrice,
+  adjustmentReason,
+  setAdjustmentReason,
   savingPrice,
   handleConfirmPriceAndOrder
 }) {
   const cleanPhone = (order.customer_phone || '').replace(/[^0-9]/g, '');
+  const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
+  const canEditPrice = order.status === 'DRAFT' || isNegotiating;
+  const negotiation = order.web_workflow?.negotiation;
+  const negotiationHistory = Array.isArray(order.web_workflow?.negotiation_history)
+    ? order.web_workflow.negotiation_history
+    : [];
 
   return (
     <div className="space-y-4">
-      {/* Banner hướng dẫn luồng xử lý đối với đơn DRAFT */}
-      {order.status === 'DRAFT' && (
+      {/* 1. ĐẶT LÊN TRÊN CÙNG (TRƯỚC LIÊN HỆ KHÁCH HÀNG & CHỐT CƯỚC): Khối Khách hàng muốn thương lượng lại giá */}
+      {isNegotiating && negotiation && (
+        <div className="p-4 bg-amber-50 rounded-xl border-2 border-amber-300 text-xs space-y-2.5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
+            <span className="font-bold text-amber-950 text-sm flex items-center gap-1.5">
+              <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+              <span>Khách hàng yêu cầu thương lượng lại giá cước{negotiation.round > 1 ? ` (Lần ${negotiation.round})` : ''}:</span>
+            </span>
+            <span className="text-xs bg-amber-200/80 text-amber-900 px-2.5 py-0.5 rounded-full font-bold border border-amber-300">
+              Đang thương lượng
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-gray-800">
+            <div>
+              • Lý do khách yêu cầu: <b className="text-amber-950">{negotiation.feedback_reason || 'Giá cước vượt ngân sách'}</b>
+            </div>
+            {negotiation.proposed_price ? (
+              <div className="flex items-center flex-wrap gap-1.5">
+                <span>• Giá khách mong muốn:</span>
+                <b className="text-emerald-700 text-sm font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  {Number(negotiation.proposed_price).toLocaleString('vi-VN')} đ
+                </b>
+                <button
+                  type="button"
+                  onClick={() => setCurrentAgreedPrice(negotiation.proposed_price)}
+                  className="text-[11px] text-indigo-600 underline font-bold hover:text-indigo-800 cursor-pointer"
+                >
+                  [Áp dụng mức giá này]
+                </button>
+              </div>
+            ) : (
+              <div>• Giá báo trước đó: <b className="font-mono">{(order.agreed_price || 0).toLocaleString('vi-VN')} đ</b></div>
+            )}
+            {negotiation.proposed_pickup_date && (
+              <div>• Ngày lấy hàng khách đề xuất: <b>{negotiation.proposed_pickup_date}</b></div>
+            )}
+            {negotiation.customer_note && (
+              <div className="sm:col-span-2 bg-white p-2.5 rounded-lg border border-amber-200 text-gray-700">
+                <span className="font-semibold text-amber-900 not-italic mr-1">Ghi chú từ khách hàng:</span>
+                <span className="italic">&ldquo;{negotiation.customer_note}&rdquo;</span>
+              </div>
+            )}
+          </div>
+
+          {/* Lịch sử các lần thương lượng trước (nếu khách deal nhiều lần) */}
+          {negotiationHistory.length > 0 && (
+            <div className="pt-2 border-t border-amber-200/70 space-y-1">
+              <div className="text-[11px] font-bold text-amber-900">Lịch sử thương lượng trước đó ({negotiationHistory.length} lần):</div>
+              <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                {negotiationHistory.map((item, idx) => (
+                  <div key={idx} className="text-[11px] bg-white/80 px-2.5 py-1.5 rounded border border-amber-100 flex flex-wrap justify-between gap-2">
+                    <span>
+                      <b>Lần {item.round || idx + 1}:</b> Khách đề xuất{' '}
+                      <b className="text-emerald-700">
+                        {item.customer_proposed_price ? `${Number(item.customer_proposed_price).toLocaleString('vi-VN')} đ` : 'điều chỉnh'}
+                      </b>{' '}
+                      ({item.customer_feedback_reason})
+                    </span>
+                    <span>
+                      → Đã chốt lại: <b className="text-indigo-700">{Number(item.dispatcher_new_price || 0).toLocaleString('vi-VN')} đ</b>{' '}
+                      <span className="italic text-gray-500">({item.dispatcher_adjustment_reason})</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Banner hướng dẫn luồng xử lý đối với đơn DRAFT chưa thương lượng */}
+      {order.status === 'DRAFT' && !isNegotiating && (
         <div className="p-3.5 bg-gradient-to-r from-amber-50 to-indigo-50 rounded-xl border border-amber-200">
           <div className="flex items-center gap-2 font-bold text-amber-900 text-xs mb-1">
             <AlertTriangle size={15} className="text-amber-600" />
@@ -41,49 +122,12 @@ export default function OrderOverviewTab({
           <div className="text-xs text-gray-700 space-y-0.5">
             <p>1. Quan sát <b>hình ảnh bản đồ tuyến đường, số km và cước tham chiếu</b> bên dưới để chuẩn bị phương án báo giá.</p>
             <p>2. <b>Gọi điện / nhắn Zalo</b> cho khách hàng để tư vấn lộ trình và thống nhất giá cước thỏa thuận.</p>
-            <p>3. Nhập giá đã chốt và bấm <b>&quot;Chốt giá &amp; Xác nhận đơn&quot;</b> để chuyển sang bước kiểm duyệt chứng từ và ký hợp đồng.</p>
+            <p>3. Nhập giá đã chốt và bấm <b>&quot;Chốt giá &amp; Xác nhận đơn&quot;</b> để gửi báo giá cho khách xác nhận.</p>
           </div>
         </div>
       )}
 
-      {/* Hiển thị Yêu cầu đàm phán / Phản hồi từ Khách hàng nếu có */}
-      {order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' && order.web_workflow?.negotiation && (
-        <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-300 text-xs space-y-1.5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-amber-900 flex items-center gap-1.5">
-              <span>⚠️</span> Khách hàng yêu cầu điều chỉnh giá / lịch trình:
-            </span>
-            <span className="text-[11px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
-              Đang thương lượng
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-gray-700 pt-1">
-            <div>• Lý do: <b className="text-amber-950">{order.web_workflow.negotiation.feedback_reason}</b></div>
-            {order.web_workflow.negotiation.proposed_price && (
-              <div>
-                • Giá khách mong muốn: <b className="text-emerald-700 text-sm font-mono">{order.web_workflow.negotiation.proposed_price.toLocaleString('vi-VN')} đ</b>
-                <button
-                  type="button"
-                  onClick={() => setCurrentAgreedPrice(order.web_workflow.negotiation.proposed_price)}
-                  className="ml-2 text-[10px] text-blue-600 underline font-semibold hover:text-blue-800"
-                >
-                  [Áp dụng giá này]
-                </button>
-              </div>
-            )}
-            {order.web_workflow.negotiation.proposed_pickup_date && (
-              <div>• Ngày lấy hàng khách đề xuất: <b>{order.web_workflow.negotiation.proposed_pickup_date}</b></div>
-            )}
-            {order.web_workflow.negotiation.customer_note && (
-              <div className="sm:col-span-2 italic text-gray-600 bg-white/70 p-2 rounded border border-amber-100">
-                &ldquo;{order.web_workflow.negotiation.customer_note}&rdquo;
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Box Liên hệ khách hàng & Chốt giá cước thỏa thuận */}
+      {/* 2. Box Liên hệ khách hàng & Chốt giá cước thỏa thuận */}
       <div className="bg-gradient-to-r from-blue-50/60 to-indigo-50/60 p-4 rounded-xl border border-indigo-100 space-y-3">
         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
           <div>
@@ -125,119 +169,156 @@ export default function OrderOverviewTab({
         </div>
 
         {/* Ô Chốt giá cước thỏa thuận */}
-        <div className="p-3 bg-white rounded-lg border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-50 text-[#7367f0] rounded-lg">
-              <DollarSign size={18} />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-gray-800">Giá cước thỏa thuận:</div>
-              <div className="text-[11px] text-gray-400">
-                {order.status === 'DRAFT' ? (
-                  <span className="flex items-center gap-1 flex-wrap">
-                    <span>Cước phí chốt với khách sau khi tư vấn (Giá gợi ý hệ thống:</span>
-                    <Popover
-                      title={
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-700 py-0.5 border-b border-indigo-50">
-                          <Calculator size={14} /> Chi tiết công thức tính giá gợi ý hệ thống
-                        </div>
-                      }
-                      content={
-                        <div className="text-xs space-y-2.5 p-1 w-80">
-                          <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-100 space-y-1.5 font-mono text-[11px]">
-                            <div className="flex justify-between items-center text-gray-700 font-semibold border-b border-gray-200 pb-1 mb-1">
-                              <span>Loại xe: {pricingBreakdown.vehicleType || 'TRUCK_2.5T'}</span>
-                              <span className="text-indigo-600">{pricingBreakdown.timeSlot === 'AFTERNOON' ? 'Ca chiều (12-17h)' : 'Ca ngày (8-17h)'}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-gray-600">
-                              <span>1. {pricingBreakdown.isFixedRoute ? `Tuyến cố định (${pricingBreakdown.routeName}):` : `Cước vận tải (${pricingBreakdown.dist} km):`}</span>
-                              <span className="font-semibold text-gray-800">{(pricingBreakdown.baseFare || 0).toLocaleString()} đ</span>
-                            </div>
-                            <div className="flex justify-between items-center text-gray-600">
-                              <span>2. Phí dịch vụ làm thủ tục hải quan:</span>
-                              <span className="font-semibold text-gray-800">{(pricingBreakdown.customsFee || 0).toLocaleString()} đ</span>
-                            </div>
-                            <div className="border-t border-gray-200 pt-1.5 mt-1 flex justify-between items-center text-gray-500 text-[10px]">
-                              <span>Tổng dự toán hệ thống:</span>
-                              <span className="font-bold text-gray-700">{(pricingBreakdown.totalRaw || 0).toLocaleString()} đ</span>
-                            </div>
+        <div className="p-3.5 bg-white rounded-lg border border-indigo-100 space-y-3 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-indigo-50 text-[#7367f0] rounded-lg">
+                <DollarSign size={18} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-gray-800">
+                  {isNegotiating ? 'Điều chỉnh & Chốt lại giá cước:' : 'Giá cước thỏa thuận:'}
+                </div>
+                <div className="text-[11px] text-gray-400">
+                  {canEditPrice ? (
+                    <span className="flex items-center gap-1 flex-wrap">
+                      <span>Cước phí chốt với khách sau khi tư vấn (Giá gợi ý hệ thống:</span>
+                      <Popover
+                        title={
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-700 py-0.5 border-b border-indigo-50">
+                            <Calculator size={14} /> Chi tiết công thức tính giá gợi ý hệ thống
                           </div>
+                        }
+                        content={
+                          <div className="text-xs space-y-2.5 p-1 w-80">
+                            <div className="bg-gray-50 p-2.5 rounded-lg border border-gray-100 space-y-1.5 font-mono text-[11px]">
+                              <div className="flex justify-between items-center text-gray-700 font-semibold border-b border-gray-200 pb-1 mb-1">
+                                <span>Loại xe: {pricingBreakdown.vehicleType || 'TRUCK_2.5T'}</span>
+                                <span className="text-indigo-600">{pricingBreakdown.timeSlot === 'AFTERNOON' ? 'Ca chiều (12-17h)' : 'Ca ngày (8-17h)'}</span>
+                              </div>
+                              <div className="flex justify-between items-center text-gray-600">
+                                <span>1. {pricingBreakdown.isFixedRoute ? `Tuyến cố định (${pricingBreakdown.routeName}):` : `Cước vận tải (${pricingBreakdown.dist} km):`}</span>
+                                <span className="font-semibold text-gray-800">{(pricingBreakdown.baseFare || 0).toLocaleString()} đ</span>
+                              </div>
+                              <div className="flex justify-between items-center text-gray-600">
+                                <span>2. Phí dịch vụ làm thủ tục hải quan:</span>
+                                <span className="font-semibold text-gray-800">{(pricingBreakdown.customsFee || 0).toLocaleString()} đ</span>
+                              </div>
+                              <div className="border-t border-gray-200 pt-1.5 mt-1 flex justify-between items-center text-gray-500 text-[10px]">
+                                <span>Tổng dự toán hệ thống:</span>
+                                <span className="font-bold text-gray-700">{(pricingBreakdown.totalRaw || 0).toLocaleString()} đ</span>
+                              </div>
+                            </div>
 
-                          <div className="p-2 bg-indigo-50/70 border border-indigo-100 rounded-lg flex items-center justify-between">
-                            <span className="font-semibold text-indigo-900 text-xs">Giá gợi ý hệ thống:</span>
-                            <span className="font-bold text-sm text-indigo-700 font-mono">
-                              {(estimatedBaselineRate || 0).toLocaleString()} VNĐ
-                            </span>
-                          </div>
+                            <div className="p-2 bg-indigo-50/70 border border-indigo-100 rounded-lg flex items-center justify-between">
+                              <span className="font-semibold text-indigo-900 text-xs">Giá gợi ý hệ thống:</span>
+                              <span className="font-bold text-sm text-indigo-700 font-mono">
+                                {(estimatedBaselineRate || 0).toLocaleString()} VNĐ
+                              </span>
+                            </div>
 
-                          <div className="text-[10px] text-gray-400 italic">
-                            * Tính theo biểu giá vận tải chính thức của ALS (Hợp đồng FedEx Express). Điều phối viên có thể dựa vào mức giá sàn này để thương lượng và chốt giá cuối cùng.
+                            <div className="text-[10px] text-gray-400 italic">
+                              * Tính theo biểu giá vận tải chính thức của ALS (Hợp đồng FedEx Express). Điều phối viên có thể dựa vào mức giá sàn này để thương lượng và chốt giá cuối cùng.
+                            </div>
                           </div>
-                        </div>
-                      }
-                      trigger="click"
-                      placement="bottomLeft"
-                    >
-                      <button 
-                        type="button"
-                        className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer bg-indigo-50/70 hover:bg-indigo-100/70 px-1.5 py-0.5 rounded transition-all"
-                        title="Bấm để xem công thức tính chi tiết"
+                        }
+                        trigger="click"
+                        placement="bottomLeft"
                       >
-                        <span>{estimatedBaselineRate.toLocaleString()} đ</span>
-                        <Calculator size={12} className="text-indigo-500" />
-                      </button>
-                    </Popover>
-                    <span>)</span>
-                  </span>
-                ) : (
-                  <>Giá cước cố định đã chốt với khách hàng và ghi nhận vào hợp đồng</>
-                )}
+                        <button 
+                          type="button"
+                          className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer bg-indigo-50/70 hover:bg-indigo-100/70 px-1.5 py-0.5 rounded transition-all"
+                          title="Bấm để xem công thức tính chi tiết"
+                        >
+                          <span>{estimatedBaselineRate.toLocaleString()} đ</span>
+                          <Calculator size={12} className="text-indigo-500" />
+                        </button>
+                      </Popover>
+                      <span>)</span>
+                    </span>
+                  ) : (
+                    <>Giá cước cố định đã chốt với khách hàng và ghi nhận vào hợp đồng</>
+                  )}
+                </div>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              {canEditPrice ? (
+                <>
+                  <InputNumber 
+                    className="w-44 font-bold text-blue-700"
+                    value={currentAgreedPrice}
+                    onChange={val => setCurrentAgreedPrice(val || 0)}
+                    formatter={val => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    parser={val => val.replace(/\$\s?|(,*)/g, '')}
+                    placeholder="Nhập giá cước..."
+                    min={0}
+                  />
+                  <span className="text-xs text-gray-500 font-medium">VNĐ</span>
+                  <Button 
+                    type="primary" 
+                    size="middle" 
+                    loading={savingPrice}
+                    icon={isNegotiating ? <RefreshCw size={14} /> : <CheckCircle2 size={14} />}
+                    className={
+                      isNegotiating
+                        ? 'bg-amber-600 hover:bg-amber-700 border-amber-600 font-bold text-xs shadow-xs'
+                        : 'bg-indigo-600 hover:bg-indigo-700 font-semibold text-xs shadow-xs'
+                    }
+                    onClick={handleConfirmPriceAndOrder}
+                  >
+                    {isNegotiating ? 'Chốt lại giá' : 'Chốt giá & Xác nhận đơn'}
+                  </Button>
+                </>
+              ) : (
+                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                  <span className="font-bold text-sm text-blue-700 font-mono bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-200">
+                    {currentAgreedPrice > 0 ? `${currentAgreedPrice.toLocaleString()} VNĐ` : 'Chưa nhập'}
+                  </span>
+                  {(order.status === 'CANCELLED' || order.status === 'CLOSED') && (order.cancel_reason || order.cancellation_reason) ? (
+                    <div className="flex flex-col items-end gap-0.5">
+                      <Tag color="red" className="font-semibold text-xs py-0.5 px-2 m-0">
+                        Đơn đã hủy
+                      </Tag>
+                      <span className="text-[11px] text-red-600 font-medium max-w-[260px] text-right truncate" title={order.cancel_reason || order.cancellation_reason}>
+                        Lý do: <span className="italic">{order.cancel_reason || order.cancellation_reason}</span>
+                      </span>
+                    </div>
+                  ) : (
+                    <Tag color="blue" className="font-medium text-xs py-0.5 px-2">Đã chốt giá</Tag>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {order.status === 'DRAFT' ? (
-              <>
-                <InputNumber 
-                  className="w-44 font-bold text-blue-700"
-                  value={currentAgreedPrice}
-                  onChange={val => setCurrentAgreedPrice(val || 0)}
-                  formatter={val => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={val => val.replace(/\$\s?|(,*)/g, '')}
-                  placeholder="Nhập giá cước..."
-                  min={0}
-                />
-                <span className="text-xs text-gray-500 font-medium">VNĐ</span>
-                <Button 
-                  type="primary" 
-                  size="middle" 
-                  loading={savingPrice}
-                  className="bg-indigo-600 hover:bg-indigo-700 font-semibold text-xs shadow-xs"
-                  onClick={handleConfirmPriceAndOrder}
-                >
-                  Chốt giá &amp; Xác nhận đơn
-                </Button>
-              </>
-            ) : (
-              <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
-                <span className="font-bold text-sm text-blue-700 font-mono bg-blue-50/80 px-3 py-1.5 rounded-lg border border-blue-200">
-                  {currentAgreedPrice > 0 ? `${currentAgreedPrice.toLocaleString()} VNĐ` : 'Chưa nhập'}
-                </span>
-                {(order.status === 'CANCELLED' || order.status === 'CLOSED') && (order.cancel_reason || order.cancellation_reason) ? (
-                  <div className="flex flex-col items-end gap-0.5">
-                    <Tag color="red" className="font-semibold text-xs py-0.5 px-2 m-0">
-                      Đơn đã hủy
-                    </Tag>
-                    <span className="text-[11px] text-red-600 font-medium max-w-[260px] text-right truncate" title={order.cancel_reason || order.cancellation_reason}>
-                      Lý do: <span className="italic">{order.cancel_reason || order.cancellation_reason}</span>
-                    </span>
-                  </div>
-                ) : (
-                  <Tag color="blue" className="font-medium text-xs py-0.5 px-2">Đã chốt giá</Tag>
-                )}
-              </div>
-            )}
-          </div>
+
+          {/* Ô bắt buộc nhập Lý do điều chỉnh lại giá khi đang ở trạng thái Đang thương lượng */}
+          {isNegotiating && (
+            <div className="pt-2.5 border-t border-indigo-50 space-y-1.5">
+              <label className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                <span>Lý do điều chỉnh lại giá cước</span>
+                <span className="text-red-500">* (Bắt buộc)</span>
+              </label>
+              <Input
+                value={adjustmentReason}
+                onChange={(e) => setAdjustmentReason(e.target.value)}
+                placeholder="Nhập rõ lý do điều chỉnh hoặc phản hồi báo giá cho khách (VD: Đã hỗ trợ giảm 200.000đ theo đề xuất ghép chuyến chiều của khách)..."
+                className="text-xs border-amber-300 focus:border-amber-500"
+              />
+            </div>
+          )}
+
+          {/* Hiển thị lý do điều chỉnh gần nhất nếu đã chốt lại giá và đang chờ khách phản hồi */}
+          {!isNegotiating && order.web_workflow?.adjustment_reason && (
+            <div className="pt-2 border-t border-gray-100 text-[11px] text-gray-600 flex items-center justify-between flex-wrap gap-2">
+              <span>
+                • Lý do chốt lại giá gần nhất: <b className="text-indigo-700">{order.web_workflow.adjustment_reason}</b>
+              </span>
+              {order.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' && (
+                <Tag color="processing" className="text-[10px] m-0">Đang chờ khách xác nhận giá mới</Tag>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -339,11 +420,12 @@ export default function OrderOverviewTab({
         </div>
       )}
 
-      {/* Ghi chú yêu cầu của khách */}
+      {/* Ghi chú yêu cầu của khách (chỉ hiển thị ghi chú gốc khi đặt đơn, không lặp lại ghi chú đàm phán) */}
       {order.order_notes && 
        order.order_notes.trim().length > 0 && 
        !order.order_notes.includes('Đơn hàng nhận tư vấn từ Website') && 
-       !order.order_notes.includes('Cần liên hệ tư vấn lộ trình') && (
+       !order.order_notes.includes('Cần liên hệ tư vấn lộ trình') &&
+       !order.order_notes.includes('[Khách hàng phản hồi đàm phán]') && (
         <div className="p-3 bg-yellow-50/80 rounded-xl border border-yellow-200 text-xs text-yellow-900">
           <div className="font-bold flex items-center gap-1 mb-1">
             <AlertTriangle size={14} /> Ghi chú yêu cầu của khách:

@@ -1,11 +1,13 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { Table, Tag, Button, Row, Col, Space } from 'antd';
 import { Users, Plus, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell, RefreshCw } from 'lucide-react';
-import OrderFormModal from '../../components/dispatcher/OrderFormModal';
-import Chart from 'react-apexcharts';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
+
+const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
+const OrderFormModal = dynamic(() => import('../../components/dispatcher/OrderFormModal'), { ssr: false });
 
 const FONT_FAMILY = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 

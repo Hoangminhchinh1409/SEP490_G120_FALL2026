@@ -1,18 +1,18 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, Button, Result, Tag, Spin, message, Alert, Table, Tooltip, Progress } from 'antd';
+import { Button, Tag, Spin, message, Alert, Table, Tooltip, Progress } from 'antd';
 import { 
   FileText, 
   Upload, 
-  CheckCircle2, 
   Clock, 
   ArrowLeft, 
   ShieldCheck, 
   AlertCircle,
   FileCheck,
   Send,
-  Sparkles
+  ArrowRight,
+  RefreshCw
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
 import { getRecommendedDocsByCargo } from '../../../src/data/dispatcherPresets';
@@ -43,7 +43,15 @@ export default function OrderDocumentsView() {
         const existingDocs = data.web_workflow?.documents;
         if (existingDocs && existingDocs.length > 0) {
           setDocuments(existingDocs);
-          if (data.web_workflow?.stage === 'DOCS_UPLOADED' || data.web_workflow?.stage === 'DOCS_APPROVED' || data.web_workflow?.stage === 'CONTRACT_SIGNED') {
+          const hasAnyRejected = existingDocs.some(d => d.status === 'REJECTED') || data.web_workflow?.stage === 'DOCS_REJECTED';
+          if (hasAnyRejected) {
+            // Nếu có chứng từ bị từ chối -> Mở khóa để khách hàng upload lại
+            setSubmitted(false);
+          } else if (
+            data.web_workflow?.stage === 'DOCS_UPLOADED' ||
+            data.web_workflow?.stage === 'DOCS_APPROVED' ||
+            data.web_workflow?.stage === 'CONTRACT_SIGNED'
+          ) {
             setSubmitted(true);
           }
         } else {
@@ -62,6 +70,37 @@ export default function OrderDocumentsView() {
       }
     };
     loadOrder();
+
+    // Polling mỗi 4 giây để tự động cập nhật khi Điều phối viên duyệt hoặc từ chối giấy tờ
+    const interval = setInterval(async () => {
+      try {
+        const latestData = await orderApi.getOrderByToken(token);
+        if (!latestData) return;
+
+        setOrder(prev => {
+          const prevStage = prev?.web_workflow?.stage;
+          const nextStage = latestData.web_workflow?.stage;
+          const latestDocs = latestData.web_workflow?.documents || [];
+          const hasAnyRejected = latestDocs.some(d => d.status === 'REJECTED') || nextStage === 'DOCS_REJECTED';
+
+          // Nếu điều phối vừa từ chối 1 chứng từ
+          if (hasAnyRejected && prevStage !== 'DOCS_REJECTED') {
+            setDocuments(latestDocs);
+            setSubmitted(false);
+            message.warning('Điều phối viên vừa yêu cầu tải lại một số chứng từ chưa hợp lệ!');
+          } else if (nextStage === 'DOCS_APPROVED' && prevStage !== 'DOCS_APPROVED') {
+            setDocuments(latestDocs);
+            setSubmitted(true);
+            message.success('Hồ sơ chứng từ đã được Điều phối viên phê duyệt hoàn tất!');
+          }
+          return latestData;
+        });
+      } catch (e) {
+        // ignore polling error
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
   }, [token]);
 
   const triggerUpload = (docKey) => {
@@ -96,13 +135,14 @@ export default function OrderDocumentsView() {
             file_data: base64Data,
             size: sizeFormatted,
             uploadDate: nowFormatted,
-            status: 'PENDING_REVIEW'
+            status: 'PENDING_REVIEW',
+            reuploaded: d.status === 'REJECTED' ? true : d.reuploaded
           };
         }
         return d;
       }));
 
-      message.success(`Đã đính kèm tệp: ${file.name}`);
+      message.success(`Đã cập nhật tệp mới: ${file.name}`);
       setUploadingDocKey(null);
     };
 
@@ -110,7 +150,16 @@ export default function OrderDocumentsView() {
   };
 
   const handleSubmitAllDocs = async () => {
-    // Khách hàng không cần nộp Tờ khai hải quan (do điều phối chuẩn bị)
+    // 1. Kiểm tra xem còn chứng từ nào đang ở trạng thái REJECTED chưa được khách chọn tệp mới không
+    const stillRejectedDocs = documents.filter(d => d.status === 'REJECTED');
+    if (stillRejectedDocs.length > 0) {
+      message.error(
+        `Quý khách còn ${stillRejectedDocs.length} chứng từ bị từ chối (${stillRejectedDocs.map(d => d.name).join(', ')}) chưa được tải tệp mới lên. Vui lòng bấm "Upload lại tệp mới" trước khi gửi!`
+      );
+      return;
+    }
+
+    // 2. Khách hàng không cần nộp Tờ khai hải quan (do điều phối chuẩn bị)
     const missingDocs = documents.filter(d => {
       const isCustomsDeclaration = d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan');
       if (isCustomsDeclaration) return false;
@@ -125,8 +174,10 @@ export default function OrderDocumentsView() {
     try {
       setSubmitting(true);
       await orderApi.customerUploadDocuments(token, documents);
-      message.success('Đã gửi toàn bộ hồ sơ chứng từ thành công! Điều phối viên đang tiến hành kiểm duyệt.');
+      message.success('Đã gửi hồ sơ chứng từ thành công! Điều phối viên đang tiến hành kiểm duyệt.');
       setSubmitted(true);
+      const latest = await orderApi.getOrderByToken(token);
+      if (latest) setOrder(latest);
     } catch (err) {
       console.error('Submit docs error:', err);
       message.error(err.message || 'Lỗi khi gửi hồ sơ chứng từ');
@@ -136,8 +187,12 @@ export default function OrderDocumentsView() {
   };
 
   const customerRequiredDocs = documents.filter(d => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan')));
-  const uploadedCount = customerRequiredDocs.filter(d => d.file !== 'Chờ tải lên').length;
+  const uploadedCount = customerRequiredDocs.filter(d => d.file !== 'Chờ tải lên' && d.status !== 'REJECTED').length;
   const progressPercent = customerRequiredDocs.length > 0 ? Math.round((uploadedCount / customerRequiredDocs.length) * 100) : 100;
+  const rejectedDocs = documents.filter(d => d.status === 'REJECTED');
+  const isDocsApproved =
+    rejectedDocs.length === 0 &&
+    (order?.web_workflow?.stage === 'DOCS_APPROVED' || order?.web_workflow?.stage === 'CONTRACT_SIGNED');
 
   if (loading) {
     return (
@@ -169,6 +224,12 @@ export default function OrderDocumentsView() {
             <div className="text-[11px] text-slate-500 mt-0.5">
               {isCustomsDeclaration ? 'Điều phối viên NEXLOG sẽ chuẩn bị tờ khai hải quan cho quý khách.' : record.description}
             </div>
+            {record.status === 'REJECTED' && record.reject_reason && (
+              <div className="mt-1.5 p-2 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-700 font-medium flex items-start gap-1.5">
+                <AlertCircle size={13} className="text-red-600 shrink-0 mt-0.5" />
+                <span><b>Lý do từ chối:</b> {record.reject_reason}</span>
+              </div>
+            )}
           </div>
         );
       }
@@ -177,7 +238,7 @@ export default function OrderDocumentsView() {
       title: 'Tệp đã tải lên',
       dataIndex: 'file',
       key: 'file',
-      width: '35%',
+      width: '36%',
       render: (text, record) => {
         const isCustomsDeclaration = record.preparedBy === 'DISPATCHER' || record.key === 'doc-basic-1' || record.name?.toLowerCase().includes('tờ khai hải quan');
         
@@ -211,6 +272,29 @@ export default function OrderDocumentsView() {
           );
         }
 
+        // Nếu chứng từ bị TỪ CHỐI -> Hiển thị nút đỏ yêu cầu Upload lại tệp mới
+        if (record.status === 'REJECTED') {
+          return (
+            <div className="space-y-1.5">
+              {text && text !== 'Chờ tải lên' && (
+                <div className="text-[11px] text-red-500 line-through font-mono truncate max-w-[200px]">
+                  {text} (Bị từ chối)
+                </div>
+              )}
+              <Button
+                size="small"
+                type="primary"
+                danger
+                icon={<RefreshCw size={12} />}
+                onClick={() => triggerUpload(record.key)}
+                className="text-xs font-semibold rounded-lg"
+              >
+                Upload lại tệp mới
+              </Button>
+            </div>
+          );
+        }
+
         return text === 'Chờ tải lên' || record.status === 'WAITING_UPLOAD' ? (
           <Button
             size="small"
@@ -240,7 +324,7 @@ export default function OrderDocumentsView() {
               <FileCheck size={14} className="text-emerald-600 shrink-0" />
               <span className="truncate font-semibold">{text}</span>
             </div>
-            {!submitted && (
+            {!submitted && record.status !== 'APPROVED' && (
               <Tooltip title="Chọn tệp khác">
                 <Button 
                   type="text" 
@@ -275,7 +359,9 @@ export default function OrderDocumentsView() {
         ) : st === 'APPROVED' ? (
           <Tag color="success" className="text-[11px] font-bold">ĐÃ HỢP LỆ</Tag>
         ) : st === 'REJECTED' ? (
-          <Tag color="error" className="text-[11px] font-bold">YÊU CẦU LẠI</Tag>
+          <Tag color="error" className="text-[11px] font-bold">CẦN UPLOAD LẠI</Tag>
+        ) : record.reuploaded ? (
+          <Tag color="processing" className="text-[11px] font-bold">ĐÃ TẢI LẠI TỆP MỚI</Tag>
         ) : (
           <Tag color="processing" className="text-[11px]">ĐÃ TẢI LÊN</Tag>
         );
@@ -326,15 +412,68 @@ export default function OrderDocumentsView() {
         <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200 space-y-3">
           <div className="flex items-center justify-between text-xs">
             <span className="font-bold text-slate-700">
-              Tiến độ nộp tệp: <b>{uploadedCount}/{documents.length}</b> chứng từ
+              Tiến độ hoàn thiện chứng từ hợp lệ: <b>{uploadedCount}/{customerRequiredDocs.length}</b> chứng từ khách nộp
             </span>
             <span className="font-bold text-indigo-600 font-mono text-sm">{progressPercent}%</span>
           </div>
-          <Progress percent={progressPercent} strokeColor="#4f46e5" showInfo={false} />
+          <Progress percent={progressPercent} strokeColor={rejectedDocs.length > 0 ? '#dc2626' : '#4f46e5'} showInfo={false} />
         </div>
 
-        {/* Thông báo nếu đã nộp */}
-        {submitted && (
+        {/* Cảnh báo nếu có chứng từ bị Điều phối viên từ chối yêu cầu tải lại */}
+        {(rejectedDocs.length > 0 || order?.web_workflow?.stage === 'DOCS_REJECTED') && !isDocsApproved && (
+          <Alert
+            title={
+              <span className="font-bold text-red-900">
+                Yêu cầu cập nhật lại chứng từ: Có {rejectedDocs.length} chứng từ bị từ chối cần Upload lại!
+              </span>
+            }
+            description={
+              <div className="text-xs text-red-800 space-y-1 mt-1">
+                {rejectedDocs.map((d) => (
+                  <div key={d.key}>
+                    • <b>{d.name}:</b> {d.reject_reason || 'Tệp chưa hợp lệ, vui lòng tải lại tệp mới.'}
+                  </div>
+                ))}
+                <div className="pt-1 font-semibold">
+                  Vui lòng bấm nút &ldquo;Upload lại tệp mới&rdquo; ở dòng tương ứng bên dưới, sau đó nhấn &ldquo;Gửi Lại Hồ Sơ Cho Điều Phối Duyệt&rdquo;.
+                </div>
+              </div>
+            }
+            type="error"
+            showIcon
+            className="rounded-2xl border border-red-300 bg-red-50/90"
+          />
+        )}
+
+        {/* Thông báo nếu đã được duyệt toàn bộ chứng từ -> chuyển sang ký hợp đồng */}
+        {isDocsApproved && (
+          <Alert
+            title="Toàn bộ hồ sơ chứng từ đã được phê duyệt hợp lệ!"
+            description={
+              <div className="space-y-2 text-xs text-slate-700 mt-1">
+                <p className="m-0">
+                  Bộ phận Điều phối NEXLOG đã phê duyệt hồ sơ pháp lý và gửi Hợp đồng điện tử tới email <b>{order?.customer_email}</b> của Quý khách.
+                </p>
+                <div className="pt-1">
+                  <Button
+                    type="primary"
+                    icon={<ArrowRight size={14} />}
+                    onClick={() => router.push(`/customer/contract-sign/${token}`)}
+                    className="bg-emerald-600 hover:bg-emerald-700 font-bold"
+                  >
+                    Chuyển sang Ký Hợp Đồng Điện Tử Ngay
+                  </Button>
+                </div>
+              </div>
+            }
+            type="success"
+            showIcon
+            className="rounded-2xl border border-emerald-300 bg-emerald-50/90"
+          />
+        )}
+
+        {/* Thông báo nếu đã nộp và đang chờ duyệt */}
+        {submitted && !isDocsApproved && rejectedDocs.length === 0 && (
           <Alert
             title="Hồ sơ chứng từ đã được nộp thành công!"
             description={
@@ -364,7 +503,7 @@ export default function OrderDocumentsView() {
             className="rounded-xl overflow-hidden"
           />
 
-          {!submitted ? (
+          {!submitted && !isDocsApproved ? (
             <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
               <span className="text-xs text-slate-500">
                 Chấp nhận định dạng: PDF, JPG, PNG, DOC (Tối đa 15MB/tệp).
@@ -377,7 +516,21 @@ export default function OrderDocumentsView() {
                 icon={<Send size={16} />}
                 className="bg-[#4f46e5] hover:bg-[#4338ca] text-white font-bold px-8 h-12 rounded-xl shadow-lg shadow-indigo-600/25 w-full sm:w-auto"
               >
-                Gửi Hồ Sơ Cho Điều Phối Duyệt
+                {order?.web_workflow?.stage === 'DOCS_REJECTED'
+                  ? 'Gửi Lại Hồ Sơ Cho Điều Phối Duyệt'
+                  : 'Gửi Hồ Sơ Cho Điều Phối Duyệt'}
+              </Button>
+            </div>
+          ) : isDocsApproved ? (
+            <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+              <Button
+                type="primary"
+                size="large"
+                icon={<ArrowRight size={16} />}
+                onClick={() => router.push(`/customer/contract-sign/${token}`)}
+                className="bg-emerald-600 hover:bg-emerald-700 font-bold px-8 h-12 rounded-xl"
+              >
+                Tiến hành Ký Chữ Ký Số Hợp Đồng
               </Button>
             </div>
           ) : (

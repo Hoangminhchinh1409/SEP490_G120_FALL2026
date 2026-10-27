@@ -58,18 +58,28 @@ function parsePeriodRange(periodStr) {
 
 const getDispatcherDashboardStats = async (req, res) => {
   try {
-    const { data: orders } = await supabase
-      .from('orders')
-      .select(`
-        id,
-        order_code,
-        status,
-        agreed_price,
-        customer_id,
-        created_at,
-        cargos:order_cargos(*),
-        order_notes(content)
-      `);
+    const [
+      { data: orders },
+      { data: trucks },
+      { data: trips },
+      { data: incidents }
+    ] = await Promise.all([
+      supabase
+        .from('orders')
+        .select(`
+          id,
+          order_code,
+          status,
+          agreed_price,
+          customer_id,
+          created_at,
+          cargos:order_cargos(*),
+          order_notes(content)
+        `),
+      supabase.from('trucks').select('status'),
+      supabase.from('trips').select('status'),
+      supabase.from('incidents').select('status')
+    ]);
 
     const orderList = (orders || []).map((o) => {
       const meta = parseOrderMeta(o);
@@ -109,7 +119,6 @@ const getDispatcherDashboardStats = async (req, res) => {
       CANCELLED: orderList.filter((o) => isCancelled(o)).length
     };
 
-    const { data: trucks } = await supabase.from('trucks').select('status');
     const truckList = trucks || [];
     const fleetStats = {
       total: truckList.length,
@@ -118,11 +127,9 @@ const getDispatcherDashboardStats = async (req, res) => {
       maintenance: truckList.filter((t) => t.status === 'MAINTENANCE').length
     };
 
-    const { data: trips } = await supabase.from('trips').select('status');
     const tripList = trips || [];
     const activeTripsCount = tripList.filter((t) => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED').length;
 
-    const { data: incidents } = await supabase.from('incidents').select('status');
     const incidentList = incidents || [];
     const pendingIncidentsCount = incidentList.filter((i) => i.status === 'REPORTED' || i.status === 'Reported').length;
 
@@ -419,36 +426,42 @@ const getDriverPerformance = async (req, res) => {
     const period = req.query.period;
     const dateRange = parsePeriodRange(period);
 
-    const { data: drivers, error: driversErr } = await supabase
-      .from('driver_profiles')
-      .select(`
-        id,
-        license_number,
-        license_class,
-        status,
-        user:users!driver_profiles_user_account_id_fkey(id, username, full_name, phone)
-      `);
-
-    if (driversErr) throw driversErr;
-
     let incidentsQuery = supabase.from('incidents').select('id, reported_by, fault, type, created_at');
     if (dateRange) {
       incidentsQuery = incidentsQuery.gte('created_at', dateRange.start).lt('created_at', dateRange.end);
     }
-    const { data: incidents } = await incidentsQuery;
 
-    let eventsQuery = supabase.from('trip_events').select('id, driver_id, outside_radius_flag, event_type, occurred_at');
+    let eventsQuery = supabase.from('trip_events').select('id, driver_id, outside_radius_flag, event_type, phone_time');
     if (dateRange) {
-      eventsQuery = eventsQuery.gte('occurred_at', dateRange.start).lt('occurred_at', dateRange.end);
+      eventsQuery = eventsQuery.gte('phone_time', dateRange.start).lt('phone_time', dateRange.end);
     }
-    const { data: events } = await eventsQuery;
 
-    const { data: tripDrivers } = await supabase
-      .from('trip_drivers')
-      .select(`
-        driver_id,
-        trip:trips(id, trip_code, status, actual_distance, actual_duration, planned_distance, planned_duration, planned_start, created_at, updated_at)
-      `);
+    const [
+      { data: drivers, error: driversErr },
+      { data: incidents },
+      { data: events },
+      { data: tripDrivers }
+    ] = await Promise.all([
+      supabase
+        .from('driver_profiles')
+        .select(`
+          id,
+          license_number,
+          license_class,
+          status,
+          user:users!driver_profiles_user_account_id_fkey(id, username, full_name, phone)
+        `),
+      incidentsQuery,
+      eventsQuery,
+      supabase
+        .from('trip_drivers')
+        .select(`
+          driver_id,
+          trip:trips(id, trip_code, status, actual_distance, actual_duration, planned_distance, planned_duration, planned_start, created_at, updated_at)
+        `)
+    ]);
+
+    if (driversErr) throw driversErr;
 
     const performanceList = (drivers || []).map((d) => {
       const driverName = d.user?.full_name || d.user?.username || `Tài xế #${d.id}`;
@@ -525,36 +538,39 @@ const getDriverPerformance = async (req, res) => {
 
 const getOrderWorkload = async (req, res) => {
   try {
-    const { data: dispatchersData, error: dispErr } = await supabase
-      .from('users')
-      .select('id, username, full_name, email, phone, role_id, status')
-      .or('role_id.eq.3,username.ilike.%disp%')
-      .order('id', { ascending: true });
+    const [
+      { data: dispatchersData, error: dispErr },
+      { data: ordersData, error: ordersErr }
+    ] = await Promise.all([
+      supabase
+        .from('users')
+        .select('id, username, full_name, email, phone, role_id, status')
+        .or('role_id.eq.3,username.ilike.%disp%')
+        .order('id', { ascending: true }),
+      supabase
+        .from('orders')
+        .select(`
+          id, 
+          order_code, 
+          order_type,
+          status, 
+          document_status,
+          responsible_dispatcher_id, 
+          agreed_price, 
+          receiver_name,
+          receiver_phone,
+          tracking_token,
+          vendor_id,
+          waiting_too_long,
+          late_risk,
+          created_at, 
+          updated_at,
+          dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name)
+        `)
+        .order('id', { ascending: false })
+    ]);
 
     if (dispErr) throw dispErr;
-
-    const { data: ordersData, error: ordersErr } = await supabase
-      .from('orders')
-      .select(`
-        id, 
-        order_code, 
-        order_type,
-        status, 
-        document_status,
-        responsible_dispatcher_id, 
-        agreed_price, 
-        receiver_name,
-        receiver_phone,
-        tracking_token,
-        vendor_id,
-        waiting_too_long,
-        late_risk,
-        created_at, 
-        updated_at,
-        dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name)
-      `)
-      .order('id', { ascending: false });
-
     if (ordersErr) throw ordersErr;
 
     const now = new Date();
