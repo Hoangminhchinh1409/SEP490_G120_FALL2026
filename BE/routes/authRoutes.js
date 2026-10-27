@@ -13,6 +13,12 @@ router.post("/reset-password", authController.resetPassword);
 
 router.get("/me", requireAuth, authController.getMe);
 
+router.post("/update-profile", requireAuth, authController.updateProfile);
+router.patch("/update-profile", requireAuth, authController.updateProfile);
+router.put("/update-profile", requireAuth, authController.updateProfile);
+router.patch("/me", requireAuth, authController.updateProfile);
+router.put("/me", requireAuth, authController.updateProfile);
+
 router.patch("/change-password", requireAuth, authController.changePassword);
 
 router.post("/logout", authController.logout);

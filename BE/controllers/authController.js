@@ -55,6 +55,24 @@ const getMe = async (req, res) => {
     }
 };
 
+const updateProfile = async (req, res) => {
+    try {
+        const user = await authService.updateProfile(req.user.id, req.body || {});
+
+        return res.status(200).json({
+            message: "Cập nhật hồ sơ thành công",
+            user
+        });
+    } catch (error) {
+        if (!error.statusCode) {
+            console.error("updateProfile Error:", error);
+        }
+        return res.status(error.statusCode || 500).json({
+            message: error.message || "Internal server error"
+        });
+    }
+};
+
 const changePassword = async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body || {};
@@ -70,7 +88,8 @@ const changePassword = async (req, res) => {
             console.error("changePassword Error:", error);
         }
         return res.status(error.statusCode || 500).json({
-            message: error.statusCode ? error.message : "Internal server error"
+            message: error.statusCode ? error.message : "Internal server error",
+            code: error.code || null
         });
     }
 };
@@ -157,6 +176,7 @@ const logout = async (req, res) => {
 module.exports = {
     login,
     getMe,
+    updateProfile,
     changePassword,
     forgotPassword,
     resetPassword,

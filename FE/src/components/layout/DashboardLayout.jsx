@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, Menu, X, Bell, Search, Truck } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Settings, LogOut, Menu, X, Bell, Search, UserRound } from 'lucide-react';
 import { useAuth } from '../../providers/AuthProvider';
 
 export default function DashboardLayout({
@@ -35,6 +35,8 @@ export default function DashboardLayout({
 
   const items = menuItems.length > 0 ? menuItems : defaultItems;
   const isMapPage = pathname && pathname.includes("tracking");
+  const profileHref = `/${role}/profile`;
+  const isProfileActive = pathname === profileHref || Boolean(pathname?.startsWith(`${profileHref}/`));
 
   useEffect(() => {
     if (!loading && !user) {
@@ -132,6 +134,21 @@ export default function DashboardLayout({
               </Link>
             );
           })}
+
+          <div className="mx-2 my-2 border-t border-slate-100" />
+
+          <Link
+            href={profileHref}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 group text-sm ${
+              isProfileActive
+                ? 'bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/20'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'
+            }`}
+            title={!sidebarOpen ? 'Hồ sơ cá nhân' : undefined}
+          >
+            <UserRound className={`w-4.5 h-4.5 shrink-0 transition-colors ${isProfileActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+            {sidebarOpen && <span className="whitespace-nowrap">Hồ sơ cá nhân</span>}
+          </Link>
         </div>
 
         {/* Gateway sync indicator ở đáy sidebar (giống Manager, bỏ nút logout đỏ ở đây) */}

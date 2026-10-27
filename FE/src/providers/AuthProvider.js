@@ -124,6 +124,12 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const refreshUser = async () => {
+        const data = await fetchWithAuth(API_ENDPOINTS.AUTH.ME);
+        setUser(data.user);
+        return data.user;
+    };
+
     // Kiểm tra quyền
     const hasRole = (allowedRoles) => {
         if (!user) return false;
@@ -139,6 +145,8 @@ export const AuthProvider = ({ children }) => {
                 logout,
                 loading,
                 hasRole,
+                refreshUser,
+                setUser,
             }}
         >
             {children}

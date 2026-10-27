@@ -1,14 +1,11 @@
 "use client";
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '../../providers/AuthProvider';
-import Header from '../../components/common/Header';
-import { Mail, Lock, Eye, EyeOff, CheckCircle2, ArrowRight, Truck } from 'lucide-react';
+import AuthSplitLayout from '../../components/auth/AuthSplitLayout';
+import { Mail, Lock, Eye, EyeOff, CheckCircle2, ArrowRight } from 'lucide-react';
 
 const LoginPage = () => {
-  const navigate = useRouter();
-
   const [form, setForm] = useState({
     identifier: '',
     password: '',
@@ -18,6 +15,10 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [resetDone] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('reset') === '1';
+  });
 
   const applyFieldChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -44,70 +45,7 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
-
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-8 relative overflow-hidden">
-        {/* Background Decorative Elements */}
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-400/20 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-cyan-400/20 rounded-full blur-[120px] pointer-events-none" />
-
-        <div className="w-full max-w-5xl bg-white/80 backdrop-blur-xl border border-white/50 rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col md:flex-row relative z-10">
-
-          {/* Left Side: Branding & Info */}
-          <div
-            className="md:w-5/12 p-10 flex flex-col justify-between relative overflow-hidden hidden md:flex"
-            style={{
-              backgroundImage: 'url("https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop")',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center'
-            }}
-          >
-            {/* Overlay Pattern */}
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-600/40 to-blue-900/60 z-0"></div>
-            <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay z-0"></div>
-
-            <div className="relative z-10">
-              <div className="inline-flex items-center gap-3 bg-white px-4 py-2.5 rounded-2xl shadow-lg border border-white/50 backdrop-blur-md mb-8">
-                <div className="w-10 h-10 flex items-center justify-center shrink-0">
-                  <img src="/logo-icon.png" alt="NEXLOG Logo" className="w-full h-full object-contain" />
-                </div>
-                <div className="flex flex-col justify-center">
-                  <img src="/logo-text.png" alt="NEXLOG" className="h-6 w-auto object-contain object-left" />
-                  <span className="text-[9px] text-slate-400 font-bold tracking-widest uppercase leading-none mt-0.5">LOGISTICS OS</span>
-                </div>
-              </div>
-
-              <h1 className="text-4xl font-bold mb-4 text-white leading-tight drop-shadow-sm">
-                Hệ thống Điều phối Vận tải Thông minh
-              </h1>
-              <p className="text-blue-100 text-lg mb-12 font-medium">
-                Smart Logistics Tracking and Dispatch System
-              </p>
-
-              <ul className="space-y-5">
-                {[
-                  'Quản lý đơn hàng hiệu quả & tối ưu',
-                  'Theo dõi trạng thái theo thời gian thực',
-                  'Đồng bộ Offline-First cho tài xế'
-                ].map((text, i) => (
-                  <li key={i} className="flex items-center gap-3.5 text-blue-50">
-                    <div className="bg-blue-400/30 p-1 rounded-full border border-blue-400/50">
-                      <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
-                    </div>
-                    <span className="font-medium text-white">{text}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="relative z-10 text-sm text-blue-200/80 font-semibold tracking-wide">
-              © {new Date().getFullYear()} NEXLOG SYSTEM.
-            </div>
-          </div>
-
-          {/* Right Side: Login Form */}
-          <div className="w-full md:w-7/12 p-8 sm:p-12 md:p-16 flex flex-col justify-center bg-white">
-            <div className="max-w-md w-full mx-auto">
+    <AuthSplitLayout>
               <div className="mb-10">
                 <h2 className="text-3xl font-bold text-slate-800 mb-3 tracking-tight">Chào mừng trở lại</h2>
                 <p className="text-slate-500 text-lg">Đăng nhập vào hệ thống để tiếp tục công việc của bạn.</p>
@@ -176,10 +114,16 @@ const LoginPage = () => {
                     </div>
                     <span className="font-medium select-none">Ghi nhớ đăng nhập</span>
                   </label>
-                  <Link href="#" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors hover:underline underline-offset-4">
+                  <Link href="/forgot-password" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors hover:underline underline-offset-4">
                     Quên mật khẩu?
                   </Link>
                 </div>
+
+                {resetDone && !error && (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-sm font-medium">
+                    Đã đặt mật khẩu mới. Vui lòng đăng nhập lại.
+                  </div>
+                )}
 
                 {error && (
                   <div className="p-4 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium flex items-start gap-3 animate-in fade-in slide-in-from-top-1">
@@ -203,11 +147,7 @@ const LoginPage = () => {
                   )}
                 </button>
               </form>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
+    </AuthSplitLayout>
   );
 };
 

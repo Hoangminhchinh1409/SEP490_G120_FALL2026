@@ -7,7 +7,7 @@ const driverModel = require("../models/driverModel");
 const supabase = require("../config/supabase");
 const { sendPasswordResetEmail } = require("./emailService");
 
-const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const ROLE_NAMES = {
     1: "ADMINISTRATOR",
@@ -67,16 +67,7 @@ const login = async (identifier, password) => {
 
     return {
         token,
-        user: {
-            id: updatedUser.id,
-            username: updatedUser.username,
-            full_name: updatedUser.full_name,
-            email: updatedUser.email,
-            phone: updatedUser.phone,
-            zalo_link: updatedUser.zalo_link,
-            role_id: updatedUser.role_id,
-            status: updatedUser.status
-        }
+        user: await getCurrentUser(updatedUser.id)
     };
 };
 
@@ -118,6 +109,59 @@ const getCurrentUser = async (userId) => {
     };
 };
 
+const normalizePhone = (phone) => {
+    if (typeof phone !== "string") return "";
+    return phone.trim().replace(/[.\s()-]/g, "");
+};
+
+const updateProfile = async (userId, payload = {}) => {
+    const fullName = typeof payload.full_name === "string"
+        ? payload.full_name.trim()
+        : "";
+    const phone = normalizePhone(payload.phone);
+    const zaloLink = typeof payload.zalo_link === "string"
+        ? payload.zalo_link.trim()
+        : "";
+
+    if (!fullName) {
+        const error = new Error("Họ và tên không được để trống");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (phone && !/^\+?\d{9,15}$/.test(phone)) {
+        const error = new Error("Số điện thoại không hợp lệ");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const updated = await userModel.updateProfile(userId, {
+        full_name: fullName,
+        phone: phone || null,
+        zalo_link: zaloLink || null
+    });
+
+    try {
+        return await getCurrentUser(userId);
+    } catch (error) {
+        console.error("getCurrentUser after updateProfile failed:", error.message);
+        return {
+            id: updated.id,
+            username: updated.username,
+            full_name: updated.full_name,
+            email: updated.email,
+            phone: updated.phone,
+            zalo_link: updated.zalo_link || null,
+            role_id: updated.role_id,
+            role_name: ROLE_NAMES[Number(updated.role_id)] || null,
+            created_at: updated.created_at,
+            updated_at: updated.updated_at,
+            last_login_at: updated.last_login_at,
+            driver_profile: null
+        };
+    }
+};
+
 const changePassword = async (userId, currentPassword, newPassword) => {
     if (typeof currentPassword !== "string" || !currentPassword) {
         const error = new Error("Current password is required");
@@ -132,14 +176,16 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     }
 
     if (newPassword.length < PASSWORD_MIN_LENGTH) {
-        const error = new Error("Password must be at least 6 characters long");
+        const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
         error.statusCode = 400;
+        error.code = "MSG59";
         throw error;
     }
 
     if (newPassword === currentPassword) {
-        const error = new Error("New password must be different from current password");
+        const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
         error.statusCode = 400;
+        error.code = "MSG59";
         throw error;
     }
 
@@ -156,15 +202,16 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     );
 
     if (!isCurrentPasswordValid) {
-        const error = new Error("Current password is incorrect");
+        const error = new Error("Mật khẩu hiện tại không đúng.");
         error.statusCode = 400;
+        error.code = "MSG58";
         throw error;
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await userModel.updatePassword(userId, passwordHash);
 
-    return { message: "Password changed successfully" };
+    return { message: "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại." };
 };
 
 
@@ -266,8 +313,8 @@ const resetPassword = async (token, newPassword) => {
         throw error;
     }
 
-    if (newPassword.length < PASSWORD_MIN_LENGTH) {
-        const error = new Error("Password must be at least 6 characters long");
+    if (newPassword.length < 8) {
+        const error = new Error("Password must be at least 8 characters long");
         error.statusCode = 400;
         throw error;
     }
@@ -290,6 +337,7 @@ const resetPassword = async (token, newPassword) => {
 module.exports = {
     login,
     getCurrentUser,
+    updateProfile,
     changePassword,
     requestPasswordReset,
     resetPassword

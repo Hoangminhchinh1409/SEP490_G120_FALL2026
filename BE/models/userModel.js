@@ -117,6 +117,62 @@ const updateLastLogin = async (id) => {
     return data;
 };
 
+const PROFILE_SELECT =
+    "id, username, full_name, email, phone, zalo_link, role_id, status, created_at, updated_at, last_login_at";
+
+const updateProfile = async (id, payload) => {
+    const fieldsToUpdate = {
+        full_name: payload.full_name,
+        phone: payload.phone,
+        updated_at: new Date().toISOString()
+    };
+
+    if (payload.zalo_link !== undefined) {
+        fieldsToUpdate.zalo_link = payload.zalo_link;
+    }
+
+    const runUpdate = async (fields, selectColumns) => {
+        const { data, error } = await supabase
+            .from("users")
+            .update(fields)
+            .eq("id", id)
+            .select(selectColumns)
+            .maybeSingle();
+
+        if (error) {
+            const err = new Error(error.message || "Không thể cập nhật hồ sơ");
+            err.statusCode = 400;
+            err.code = error.code;
+            throw err;
+        }
+
+        return data;
+    };
+
+    try {
+        const data = await runUpdate(fieldsToUpdate, PROFILE_SELECT);
+        if (data) return data;
+    } catch (error) {
+        if (!/zalo_link/i.test(error.message || "")) {
+            throw error;
+        }
+    }
+
+    const { zalo_link, ...fieldsWithoutZalo } = fieldsToUpdate;
+    const data = await runUpdate(
+        fieldsWithoutZalo,
+        "id, username, full_name, email, phone, role_id, status, created_at, updated_at, last_login_at"
+    );
+
+    if (!data) {
+        const err = new Error("Không tìm thấy tài khoản để cập nhật");
+        err.statusCode = 404;
+        throw err;
+    }
+
+    return data;
+};
+
 const updatePassword = async (id, passwordHash) => {
     const { data, error } = await supabase
         .from("users")
@@ -143,5 +199,6 @@ module.exports = {
     createPasswordResetToken,
     consumePasswordResetToken,
     updateLastLogin,
+    updateProfile,
     updatePassword
 };
