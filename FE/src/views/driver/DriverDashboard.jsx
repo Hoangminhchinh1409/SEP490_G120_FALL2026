@@ -508,8 +508,8 @@ export default function DriverDashboard() {
         <div className="absolute top-20 left-[-50px] w-48 h-48 bg-indigo-500 rounded-full blur-[60px] opacity-40"></div>
       </div>
 
-      {/* PWA Connection Status Bar */}
-      <div className={`fixed top-0 left-0 w-full z-40 px-4 py-2 text-center text-xs font-bold text-white transition-all backdrop-blur-md border-b flex items-center justify-center gap-2 ${
+      {/* PWA Connection Status Bar with Safe Area support */}
+      <div className={`fixed top-0 left-0 w-full z-40 px-4 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-2 text-center text-xs font-bold text-white transition-all backdrop-blur-md border-b flex items-center justify-center gap-2 ${
         isOffline 
           ? "bg-red-500/80 border-red-500/50" 
           : "bg-emerald-500/80 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
@@ -521,7 +521,7 @@ export default function DriverDashboard() {
         )}
       </div>
 
-      <div className="max-w-md mx-auto pt-14 px-4 relative z-10">
+      <div className="max-w-md mx-auto pt-[calc(3.5rem+env(safe-area-inset-top,0px))] px-4 relative z-10">
         
         {/* Header Section */}
         <div className="mb-4 flex items-center justify-between">
@@ -933,6 +933,9 @@ export default function DriverDashboard() {
       {/* MODAL 0: XÁC NHẬN NHẬN CHUYẾN (MSG17, BR-09) */}
       <Modal
         open={acceptModalOpen}
+        centered
+        width="94%"
+        style={{ maxWidth: 440 }}
         onCancel={() => setAcceptModalOpen(false)}
         title={<span className="font-bold text-slate-800">Xác nhận nhận chuyến xe</span>}
         okText="Tôi đồng ý nhận chuyến"
@@ -952,6 +955,9 @@ export default function DriverDashboard() {
       {/* MODAL 1: BỐC HÀNG & NIÊM CHÌ 3 BƯỚC (BR-11, BR-31, BR-33, MSG45) */}
       <Modal 
         open={sealModalOpen} 
+        centered
+        width="94%"
+        style={{ maxWidth: 460 }}
         onCancel={() => setSealModalOpen(false)} 
         title={<span className="font-bold text-slate-800">Lấy hàng & Niêm chì 3 Bước (BR-11)</span>} 
         okText="Lưu lấy hàng (BR-11)"
@@ -1064,6 +1070,9 @@ export default function DriverDashboard() {
       {/* MODAL 2: GIAO HÀNG & BIÊN BẢN POD (BR-12, BR-39, BR-24) */}
       <Modal 
         open={podModalOpen} 
+        centered
+        width="94%"
+        style={{ maxWidth: 460 }}
         onCancel={() => setPodModalOpen(false)} 
         title={<span className="font-bold text-slate-800">Biên bản Giao nhận Hàng POD (BR-12)</span>} 
         okText="Lưu giao hàng (BR-12)"
@@ -1172,6 +1181,9 @@ export default function DriverDashboard() {
       {/* MODAL 3: KHÁCH KHÔNG NHẬN HÀNG (Screen 6.2 (9), BR-57, MSG74, MSG75) */}
       <Modal
         open={refusalModalOpen}
+        centered
+        width="94%"
+        style={{ maxWidth: 460 }}
         onCancel={() => setRefusalModalOpen(false)}
         title={<span className="font-bold text-red-600 flex items-center gap-1.5"><Ban size={18}/> Khách không nhận hàng (BR-57)</span>}
         okText="Gửi báo cáo từ chối"
@@ -1228,6 +1240,9 @@ export default function DriverDashboard() {
       {/* MODAL 4: ĐỀ XUẤT PHỤ PHÍ (Screen 6.2 (10), BR-30, MSG85) */}
       <Modal
         open={extraFeeModalOpen}
+        centered
+        width="94%"
+        style={{ maxWidth: 460 }}
         onCancel={() => setExtraFeeModalOpen(false)}
         title={<span className="font-bold text-amber-600 flex items-center gap-1.5"><DollarSign size={18}/> Đề xuất Phụ phí (BR-30)</span>}
         okText="Gửi đề xuất phí (MSG85)"
@@ -1299,6 +1314,9 @@ export default function DriverDashboard() {
       {/* MODAL 5: CHỨNG TỪ CHUYẾN XE (Screen 6.1 (5), 6.2 (2)) */}
       <Modal
         open={docsModalOpen}
+        centered
+        width="94%"
+        style={{ maxWidth: 460 }}
         onCancel={() => setDocsModalOpen(false)}
         title={<span className="font-bold text-slate-800 flex items-center gap-1.5"><FileText size={18}/> Chứng từ chuyến xe</span>}
         footer={[
