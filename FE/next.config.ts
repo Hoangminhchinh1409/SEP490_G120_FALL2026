@@ -1,10 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  // Fix Next.js blocking WebSocket from local IP
+  reactStrictMode: false,
   experimental: {
-    optimizePackageImports: ["antd", "lucide-react", "react-apexcharts", "apexcharts"],
+    optimizePackageImports: [
+      "antd",
+      "lucide-react",
+      "react-apexcharts",
+      "apexcharts",
+      "leaflet",
+      "react-leaflet",
+    ],
   },
   turbopack: {
     root: __dirname,

@@ -1,114 +1,84 @@
-const express = require("express");
-const { 
-    getDashboardStats, 
-    getVehicles, 
-    createDriver,
-    getOrders, 
-    reassignOrder,
-    getVendors, 
-    approveVendor,
-    getApprovals,
-    decideApproval,
-    getBlogs,
-    createBlog,
-    updateBlog,
-    approveBlog,
-    deleteBlog
-} = require("../controllers/managerController");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
+const express = require('express');
+const { requireAuth, requireRole } = require('../middlewares/authMiddleware');
+
+const fleetController = require('../controllers/fleetController');
+const oversightController = require('../controllers/oversightController');
+const incidentController = require('../controllers/incidentController');
+const tripController = require('../controllers/tripController');
+const contractController = require('../controllers/contractController');
+const locationController = require('../controllers/locationController');
+const blogController = require('../controllers/blogController');
 
 const router = express.Router();
 
 // Tất cả các route trong file này đều yêu cầu đăng nhập và có quyền MANAGER hoặc ADMIN
 router.use(requireAuth);
-router.use(requireRole(["MANAGER", "ADMINISTRATOR", "ADMIN"]));
+router.use(requireRole(['MANAGER', 'ADMINISTRATOR', 'ADMIN']));
 
-const staffAccountController = require("../controllers/staffAccountController");
-const managerFleetController = require("../controllers/manager/managerFleetController");
-const managerShiftController = require("../controllers/manager/managerShiftController");
-const managerOrderController = require("../controllers/manager/managerOrderController");
-const managerIncidentController = require("../controllers/manager/managerIncidentController");
-const managerDashboardController = require("../controllers/manager/managerDashboardController");
+// NHÓM 1: FLEET, DRIVERS, SHIFTS & STAFF ACCOUNTS (UC-17, UC-18, UC-19, UC-20)
+router.get('/accounts', fleetController.getStaffAccounts);
+router.get('/accounts/:id', fleetController.getStaffAccountDetail);
+router.post('/accounts', fleetController.createStaffAccount);
+router.put('/accounts/:id', fleetController.updateStaffAccount);
+router.patch('/accounts/:id/status', fleetController.updateAccountStatus);
 
-// NHÓM 5: REPORTING & DRIVER PERFORMANCE (UC-27 V2, UC-43 V2 - Screen 16 & Screen 41)
-router.get("/dashboard/stats", managerDashboardController.getDashboardStats);
-router.get("/drivers/performance", managerDashboardController.getDriverPerformance);
+router.get('/vehicles', fleetController.getVehicles);
+router.get('/trucks', fleetController.getVehicles);
+router.post('/trucks', fleetController.createTruck);
+router.put('/trucks/:id', fleetController.updateTruck);
+router.patch('/trucks/:id/status', fleetController.updateTruckStatus);
+router.delete('/trucks/:id', fleetController.deleteTruck);
 
-// NHÓM 2: FLEET & DRIVERS (UC-18, UC-19)
-router.get("/vehicles", managerFleetController.getVehicles);
-router.get("/trucks", managerFleetController.getVehicles);
-router.post("/trucks", managerFleetController.createTruck);
-router.put("/trucks/:id", managerFleetController.updateTruck);
-router.patch("/trucks/:id/status", managerFleetController.updateTruckStatus);
-router.delete("/trucks/:id", managerFleetController.deleteTruck);
+router.post('/drivers', fleetController.createDriver);
+router.put('/drivers/:id', fleetController.updateDriverProfile);
 
-router.post("/drivers", managerFleetController.createDriver);
-router.put("/drivers/:id", managerFleetController.updateDriverProfile);
+router.get('/shifts', fleetController.getShifts);
+router.post('/shifts', fleetController.createShift);
+router.patch('/shifts/:id/approve', fleetController.approveShift);
+router.patch('/shifts/:id/reject', fleetController.rejectShift);
+router.delete('/shifts/:id', fleetController.deleteShift);
 
-// NHÓM 2: DRIVER SHIFTS (UC-20 V2 - Screen 25)
-router.get("/shifts", managerShiftController.getShifts);
-router.post("/shifts", managerShiftController.createShift);
-router.patch("/shifts/:id/approve", managerShiftController.approveShift);
-router.patch("/shifts/:id/reject", managerShiftController.rejectShift);
-router.delete("/shifts/:id", managerShiftController.deleteShift);
+// NHÓM 2: MANAGER OVERSIGHT — WORKLOAD, REASSIGN, DASHBOARD & DRIVER PERFORMANCE (UC-21, UC-22, UC-27, UC-43)
+router.get('/orders', oversightController.getOrderWorkload);
+router.get('/orders/workload', oversightController.getOrderWorkload);
+router.get('/orders/:id', oversightController.getOrderDetailReadOnly);
+router.patch('/orders/:id/reassign', oversightController.reassignOrder);
 
-// NHÓM 3: ORDER WORKLOAD & REASSIGN (UC-21, UC-22 V2 - Screen 18 & Screen 09)
-router.get("/orders", managerOrderController.getOrderWorkload);
-router.get("/orders/workload", managerOrderController.getOrderWorkload);
-router.get("/orders/:id", managerOrderController.getOrderDetailReadOnly);
-router.patch("/orders/:id/reassign", managerOrderController.reassignOrder);
+router.get('/dashboard/stats', oversightController.getDashboardStats);
+router.get('/drivers/performance', oversightController.getDriverPerformance);
 
-// NHÓM 4: MAJOR INCIDENTS, CLAIMS & TRIP REPLAY (UC-25, UC-26 V2, UC-42 - Screen 17, 14, 19, 20, 40)
-router.get("/incidents", managerIncidentController.getIncidents);
-router.get("/incidents/:id", managerIncidentController.getIncidentById);
-router.post("/incidents/:id/resolve", managerIncidentController.resolveIncident);
+// NHÓM 3: MAJOR INCIDENTS & COMPENSATION CLAIMS (UC-25, UC-26)
+router.get('/incidents', incidentController.getIncidents);
+router.get('/incidents/:id', incidentController.getIncidentById);
+router.post('/incidents/:id/resolve', incidentController.resolveIncident);
 
-router.get("/claims", managerIncidentController.getClaims);
-router.post("/claims/:id/decide", managerIncidentController.decideClaim);
+router.get('/claims', incidentController.getClaims);
+router.post('/claims/:id/decide', incidentController.decideClaim);
+router.get('/approvals', incidentController.getApprovals);
+router.post('/approvals/:id/decide', incidentController.decideApproval);
 
-// Trip Replay (Screen 40)
-router.get("/trips/:id/replay", managerIncidentController.getTripReplay);
+// NHÓM 4: TRIP REPLAY (UC-42)
+router.get('/trips/:id/replay', tripController.getTripReplay);
 
-// Legacy approval aliases
-router.get("/approvals", managerIncidentController.getClaims);
-router.post("/approvals/:id/decide", managerIncidentController.decideClaim);
+// NHÓM 5: VENDORS & TRANSPORT CONTRACTS (UC-23, UC-24)
+router.get('/vendors', contractController.getVendors);
+router.get('/vendors/:id', contractController.getVendorById);
+router.post('/vendors', contractController.createVendor);
+router.put('/vendors/:id', contractController.updateVendor);
+router.patch('/vendors/:id/status', contractController.updateVendorStatus);
+router.patch('/vendors/:id/approve', contractController.approveVendor);
+router.get('/contracts', contractController.getContracts);
 
-const managerVendorController = require("../controllers/manager/managerVendorController");
+// NHÓM 6: LOCATIONS READ-ONLY (UC-40)
+router.get('/locations', locationController.getLocations);
 
-// NHÓM 6: VENDORS & CONTRACTS (UC-23 - Screen 28, 29, 30, 31, 37)
-router.get("/vendors", managerVendorController.getVendors);
-router.get("/vendors/:id", managerVendorController.getVendorById);
-router.post("/vendors", managerVendorController.createVendor);
-router.put("/vendors/:id", managerVendorController.updateVendor);
-router.patch("/vendors/:id/status", managerVendorController.updateVendorStatus);
-router.patch("/vendors/:id/approve", (req, res) => {
-  req.body = { ...req.body, status: 'APPROVED' };
-  return managerVendorController.updateVendorStatus(req, res);
-});
-
-// Tra cứu Hợp đồng & Địa điểm Read-only (Screen 30, 31, 37)
-router.get("/contracts", managerVendorController.getContracts);
-router.get("/locations", managerVendorController.getLocations);
-
-const managerBlogController = require("../controllers/manager/managerBlogController");
-
-// NHÓM 7: QUẢN LÝ TIN TỨC WEBSITE (UC-44 - Screen 46 & Screen 47)
-router.get("/blogs", managerBlogController.getBlogs);
-router.get("/blogs/:id", managerBlogController.getBlogById);
-router.post("/blogs", managerBlogController.createBlog);
-router.put("/blogs/:id", managerBlogController.updateBlog);
-router.patch("/blogs/:id/status", managerBlogController.updateBlogStatus);
-router.patch("/blogs/:id/approve", (req, res) => {
-  req.body = { ...req.body, status: 'PUBLISHED' };
-  return managerBlogController.updateBlogStatus(req, res);
-});
-router.delete("/blogs/:id", managerBlogController.deleteBlog);
-
-// NHÓM 1: ACCOUNTS (Manage Dispatcher & Driver Accounts - Screen 26 & Screen 27)
-router.get("/accounts", staffAccountController.getStaffAccounts);
-router.get("/accounts/:id", staffAccountController.getStaffAccountDetail);
-router.post("/accounts", staffAccountController.createStaffAccount);
-router.put("/accounts/:id", staffAccountController.updateStaffAccount);
-router.patch("/accounts/:id/status", staffAccountController.updateAccountStatus);
+// NHÓM 7: WEBSITE NEWS MANAGEMENT (UC-44)
+router.get('/blogs', blogController.getBlogs);
+router.get('/blogs/:id', blogController.getBlogById);
+router.post('/blogs', blogController.createBlog);
+router.put('/blogs/:id', blogController.updateBlog);
+router.patch('/blogs/:id/status', blogController.updateBlogStatus);
+router.patch('/blogs/:id/approve', blogController.approveBlog);
+router.delete('/blogs/:id', blogController.deleteBlog);
 
 module.exports = router;

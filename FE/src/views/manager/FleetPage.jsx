@@ -115,35 +115,39 @@ export default function FleetPage() {
   // ==========================================
   const handleOpenCreateTruck = () => {
     setEditingTruck(null);
-    truckForm.resetFields();
-    truckForm.setFieldsValue({
-      status: 'AVAILABLE',
-      required_license_class: 'C',
-      allowed_payload: 5000,
-      box_length: 620,
-      box_width: 210,
-      box_height: 220
-    });
     setIsTruckModalOpen(true);
+    setTimeout(() => {
+      truckForm.resetFields();
+      truckForm.setFieldsValue({
+        status: 'AVAILABLE',
+        required_license_class: 'C',
+        allowed_payload: 5000,
+        box_length: 620,
+        box_width: 210,
+        box_height: 220
+      });
+    }, 0);
   };
 
   const handleOpenEditTruck = (truck) => {
     setEditingTruck(truck);
-    truckForm.resetFields();
-    truckForm.setFieldsValue({
-      plate_number: truck.plate_number,
-      model: truck.model,
-      allowed_payload: truck.payload_kg || truck.allowed_payload,
-      box_length: truck.box_length || truck.box_length_cm,
-      box_width: truck.box_width || truck.box_width_cm,
-      box_height: truck.box_height || truck.box_height_cm,
-      required_license_class: truck.required_license_class,
-      gps_device_id: truck.gps_device_id,
-      inspection_expiry: truck.inspection_expiry ? dayjs(truck.inspection_expiry) : null,
-      insurance_expiry: truck.insurance_expiry ? dayjs(truck.insurance_expiry) : null,
-      status: truck.status
-    });
     setIsTruckModalOpen(true);
+    setTimeout(() => {
+      truckForm.resetFields();
+      truckForm.setFieldsValue({
+        plate_number: truck.plate_number,
+        model: truck.model,
+        allowed_payload: truck.payload_kg || truck.allowed_payload,
+        box_length: truck.box_length || truck.box_length_cm,
+        box_width: truck.box_width || truck.box_width_cm,
+        box_height: truck.box_height || truck.box_height_cm,
+        required_license_class: truck.required_license_class,
+        gps_device_id: truck.gps_device_id,
+        inspection_expiry: truck.inspection_expiry ? dayjs(truck.inspection_expiry) : null,
+        insurance_expiry: truck.insurance_expiry ? dayjs(truck.insurance_expiry) : null,
+        status: truck.status
+      });
+    }, 0);
   };
 
   const handleSaveTruck = async (values) => {
@@ -166,10 +170,10 @@ export default function FleetPage() {
 
       if (editingTruck) {
         await managerApi.updateTruck(editingTruck.id, payload);
-        message.success(`Cập nhật thông tin xe ${values.plate_number} thành công (MSG07).`);
+        message.success(`Cập nhật thông tin xe ${values.plate_number} thành công.`);
       } else {
         await managerApi.createTruck(payload);
-        message.success(`Thêm mới xe tải ${values.plate_number} thành công (MSG07).`);
+        message.success(`Thêm mới xe tải ${values.plate_number} thành công.`);
       }
 
       setIsTruckModalOpen(false);
@@ -209,26 +213,30 @@ export default function FleetPage() {
   // ==========================================
   const handleOpenCreateDriver = () => {
     setEditingDriver(null);
-    driverForm.resetFields();
-    driverForm.setFieldsValue({
-      license_class: 'C',
-      status: 'ACTIVE'
-    });
     setIsDriverModalOpen(true);
+    setTimeout(() => {
+      driverForm.resetFields();
+      driverForm.setFieldsValue({
+        license_class: 'C',
+        status: 'ACTIVE'
+      });
+    }, 0);
   };
 
   const handleOpenEditDriver = (driver) => {
     setEditingDriver(driver);
-    driverForm.resetFields();
-    driverForm.setFieldsValue({
-      full_name: driver.name || driver.full_name,
-      phone: driver.phone,
-      license_number: driver.license_number,
-      license_class: driver.license_class || driver.license,
-      expiry: driver.expiry || driver.license_expiry ? dayjs(driver.expiry || driver.license_expiry) : null,
-      status: driver.status || 'ACTIVE'
-    });
     setIsDriverModalOpen(true);
+    setTimeout(() => {
+      driverForm.resetFields();
+      driverForm.setFieldsValue({
+        full_name: driver.name || driver.full_name,
+        phone: driver.phone,
+        license_number: driver.license_number,
+        license_class: driver.license_class || driver.license,
+        expiry: driver.expiry || driver.license_expiry ? dayjs(driver.expiry || driver.license_expiry) : null,
+        status: driver.status || 'ACTIVE'
+      });
+    }, 0);
   };
 
   const handleSaveDriver = async (values) => {
@@ -246,10 +254,10 @@ export default function FleetPage() {
 
       if (editingDriver) {
         await managerApi.updateDriverProfile(editingDriver.id, payload);
-        message.success('Cập nhật hồ sơ tài xế thành công (MSG07).');
+        message.success('Cập nhật hồ sơ tài xế thành công.');
       } else {
         await managerApi.createDriver(payload);
-        message.success('Đăng ký tài xế mới thành công (MSG07).');
+        message.success('Đăng ký tài xế mới thành công.');
       }
 
       setIsDriverModalOpen(false);
@@ -268,7 +276,7 @@ export default function FleetPage() {
   const handleApproveShift = async (shift) => {
     try {
       const res = await managerApi.approveShift(shift.id);
-      message.success(res.message || 'Đã duyệt ca làm việc thành công (MSG80).');
+      message.success(res.message || 'Đã duyệt ca làm việc thành công.');
       if (res.warning) {
         message.warning(res.warning, 6);
       }
@@ -282,7 +290,7 @@ export default function FleetPage() {
   const handleConfirmRejectShift = async () => {
     try {
       await managerApi.rejectShift(rejectModal.shiftId, rejectModal.reason);
-      message.success('Đã từ chối ca làm việc (MSG80).');
+      message.success('Đã từ chối ca làm việc.');
       setRejectModal({ open: false, shiftId: null, reason: '' });
       fetchShifts();
     } catch (error) {
@@ -378,12 +386,12 @@ export default function FleetPage() {
             {expiredTrucks > 0 && (
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 text-red-700 font-semibold text-xs border border-red-200">
                 <span className="material-symbols-outlined text-sm">warning</span>
-                {expiredTrucks} xe hết hạn đăng kiểm (BR-24)
+                {expiredTrucks} xe hết hạn đăng kiểm
               </span>
             )}
           </div>
           <p className="text-sm text-slate-500 mt-1 max-w-3xl">
-            Khai báo thông số kỹ thuật xe tải, giám sát hạn kiểm định (BR-24), quản lý hồ sơ tài xế và phê duyệt ca làm việc tuần (UC-20 V2).
+            Khai báo thông số kỹ thuật xe tải, giám sát hạn kiểm định, quản lý hồ sơ tài xế và phê duyệt ca làm việc tuần.
           </p>
         </div>
 
@@ -412,12 +420,14 @@ export default function FleetPage() {
           {activeTab === 'SHIFTS' && (
             <button
               onClick={() => {
-                shiftForm.resetFields();
-                shiftForm.setFieldsValue({
-                  date: dayjs(),
-                  time_range: [dayjs().hour(8).minute(0), dayjs().hour(17).minute(0)]
-                });
                 setIsShiftModalOpen(true);
+                setTimeout(() => {
+                  shiftForm.resetFields();
+                  shiftForm.setFieldsValue({
+                    date: dayjs(),
+                    time_range: [dayjs().hour(8).minute(0), dayjs().hour(17).minute(0)]
+                  });
+                }, 0);
               }}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold shadow hover:bg-indigo-700 active:scale-95 transition-all cursor-pointer"
             >
@@ -440,7 +450,7 @@ export default function FleetPage() {
             }`}
           >
             <span className="material-symbols-outlined text-[19px]">local_shipping</span>
-            <span>Đội xe tải (Screen 21 &amp; 22)</span>
+            <span>Đội xe tải</span>
             <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 font-mono">
               {trucks.length}
             </span>
@@ -455,7 +465,7 @@ export default function FleetPage() {
             }`}
           >
             <span className="material-symbols-outlined text-[19px]">badge</span>
-            <span>Hồ sơ tài xế (Screen 23 &amp; 24)</span>
+            <span>Hồ sơ tài xế</span>
             <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 font-mono">
               {drivers.length}
             </span>
@@ -470,7 +480,7 @@ export default function FleetPage() {
             }`}
           >
             <span className="material-symbols-outlined text-[19px]">calendar_month</span>
-            <span>Lịch ca trực &amp; Phê duyệt (Screen 25 V2)</span>
+            <span>Lịch ca trực &amp; Phê duyệt</span>
             {pendingShifts.length > 0 && (
               <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500 text-white font-bold animate-bounce">
                 {pendingShifts.length} chờ duyệt
@@ -522,12 +532,12 @@ export default function FleetPage() {
                 <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="py-3 px-4">Biển số &amp; Model</th>
-                    <th className="py-3 px-4">Tải trọng (BR-33)</th>
+                    <th className="py-3 px-4">Tải trọng</th>
                     <th className="py-3 px-4">Kích thước Thùng (D×R×C)</th>
                     <th className="py-3 px-4">Hạng bằng yêu cầu</th>
-                    <th className="py-3 px-4">Hạn đăng kiểm (BR-24)</th>
+                    <th className="py-3 px-4">Hạn đăng kiểm</th>
                     <th className="py-3 px-4">Hạn bảo hiểm</th>
-                    <th className="py-3 px-4 text-center">Trạng thái (BR-24)</th>
+                    <th className="py-3 px-4 text-center">Trạng thái</th>
                     <th className="py-3 px-4 text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -580,7 +590,7 @@ export default function FleetPage() {
                                   {new Date(truck.inspection_expiry).toLocaleDateString('vi-VN')}
                                 </span>
                                 {isExpired && (
-                                  <Tooltip title="Đăng kiểm đã hết hạn! Hệ thống chặn trạng thái Sẵn sàng theo BR-24">
+                                  <Tooltip title="Đăng kiểm đã hết hạn! Phương tiện tạm thời ngưng hoạt động">
                                     <span className="material-symbols-outlined text-red-500 text-[16px]">error</span>
                                   </Tooltip>
                                 )}
@@ -611,7 +621,7 @@ export default function FleetPage() {
 
                           <td className="py-3.5 px-4 text-right">
                             <div className="inline-flex items-center gap-1">
-                              <Tooltip title="Cập nhật chi tiết xe (Screen 22)">
+                              <Tooltip title="Cập nhật chi tiết xe">
                                 <button
                                   onClick={() => handleOpenEditTruck(truck)}
                                   className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
@@ -716,7 +726,7 @@ export default function FleetPage() {
                           className="px-3 py-1.5 rounded-lg text-blue-600 hover:bg-blue-50 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
                         >
                           <span className="material-symbols-outlined text-[16px]">edit</span>
-                          <span>Chi tiết (Screen 24)</span>
+                          <span>Chi tiết</span>
                         </button>
                       </td>
                     </tr>
@@ -733,199 +743,203 @@ export default function FleetPage() {
       {/* ========================================================= */}
       {activeTab === 'SHIFTS' && (
         <div className="space-y-6">
-          {/* Cụm Ca Chờ Duyệt (Pending Shifts - PWA Submitted) */}
-          <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-600 text-[22px]">pending_actions</span>
-                <h2 className="font-bold text-slate-900 text-base">
-                  Yêu Cầu Đăng Ký Ca Trực Chờ Quản Lý Duyệt (UC-20 V2)
-                </h2>
-                <Badge count={pendingShifts.length} overflowCount={99} className="ml-2" />
-              </div>
-              <span className="text-xs text-amber-800">
-                Tài xế chủ động đăng ký ca qua Driver PWA. Duyệt hoặc Từ chối sẽ tự động gửi thông báo <strong>MSG80</strong>.
-              </span>
+          {/* HEADER LỊCH CA TÀI XẾ & ĐIỀU HƯỚNG TUẦN (KHỚP FIGURE 45 - ①) */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-container-lowest p-5 rounded-2xl shadow-sm border border-outline-variant/30">
+            <div>
+              <h2 className="text-xl font-black text-primary tracking-tight">
+                Lịch ca tài xế
+              </h2>
+              <p className="text-xs text-on-surface-variant mt-0.5">
+                Quản lý lịch ca trực tuần, phê duyệt ca do tài xế đăng ký và kiểm soát giờ lái (BR-34).
+              </p>
             </div>
 
-            {pendingShifts.length === 0 ? (
-              <div className="bg-white/80 p-6 rounded-xl text-center text-slate-400 text-sm">
-                Hiện không có ca trực nào đang chờ duyệt trong tuần này.
+            {/* Bộ chọn tuần chuẩn Figure 45: [◀] Tuần [T2] – [CN] [▶] */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentWeekStart(currentWeekStart.subtract(1, 'week'))}
+                className="w-8 h-8 rounded-xl border border-surface-container bg-surface-container-low text-primary flex items-center justify-center hover:bg-surface-container cursor-pointer transition-colors"
+                title="Tuần trước"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+              </button>
+              <div className="px-4 py-1.5 rounded-xl bg-surface-container-low border border-surface-container font-bold text-xs text-primary font-mono">
+                Tuần {weekDays[0].displayDate} – {weekDays[6].displayDate}/{currentWeekStart.format('YYYY')}
               </div>
+              <button
+                onClick={() => setCurrentWeekStart(currentWeekStart.add(1, 'week'))}
+                className="w-8 h-8 rounded-xl border border-surface-container bg-surface-container-low text-primary flex items-center justify-center hover:bg-surface-container cursor-pointer transition-colors"
+                title="Tuần sau"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              </button>
+            </div>
+          </div>
+
+          {/* BẢNG 1: LƯỚI MA TRẬN TÀI XẾ × 7 NGÀY (KHỚP CHUẨN FIGURE 45 - ②) */}
+          <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 border border-outline-variant/30 space-y-4">
+            {shiftLoading ? (
+              <div className="py-16 text-center"><Spin size="large" /></div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {pendingShifts.map((shift) => (
-                  <div key={shift.id} className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <span className="font-bold text-slate-900 text-sm block">{shift.driver_name}</span>
-                          <span className="text-xs text-slate-500 font-mono">{shift.driver_phone} • Hạng {shift.license_class}</span>
-                        </div>
-                        <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-xs">
-                          Chờ duyệt
-                        </span>
-                      </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider border-b border-surface-container">
+                      <th className="py-3 px-3 min-w-[140px]">Tài xế</th>
+                      {weekDays.map((d) => (
+                        <th key={d.dateStr} className={`py-3 px-2 text-center text-xs font-bold min-w-[110px] ${d.isToday ? 'bg-primary/10 text-primary' : ''}`}>
+                          {d.dayName} {d.displayDate}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container text-xs">
+                    {drivers.map((drv) => {
+                      const driverShifts = shifts.filter((s) => Number(s.driver_id) === Number(drv.id));
+                      return (
+                        <tr key={drv.id} className="hover:bg-surface-container-low/40 transition-colors">
+                          <td className="py-3 px-3 font-bold text-primary">
+                            <div>{drv.name}</div>
+                            <div className="text-[10px] text-on-surface-variant font-mono">Hạng {drv.license_class}</div>
+                          </td>
+                          {weekDays.map((d) => {
+                            const shiftOnDay = driverShifts.find((s) => s.date === d.dateStr && s.status !== 'Rejected');
+                            const isOverLimit = shiftOnDay && shiftOnDay.duration_hours > 10;
+                            const isPending = shiftOnDay && shiftOnDay.status === 'Requested';
 
-                      <div className="mt-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 text-xs space-y-1">
-                        <div className="flex justify-between text-slate-700">
-                          <span className="text-slate-400">Ngày trực:</span>
-                          <span className="font-semibold font-mono">{shift.date}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-700">
-                          <span className="text-slate-400">Thời gian:</span>
-                          <span className="font-bold text-blue-700 font-mono">
-                            {dayjs(shift.start_time).format('HH:mm')} - {dayjs(shift.end_time).format('HH:mm')} ({shift.duration_hours}h)
-                          </span>
-                        </div>
-                        {shift.note && (
-                          <div className="text-slate-500 italic pt-1 border-t border-slate-200">
-                            &quot;{shift.note}&quot;
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                            return (
+                              <td
+                                key={d.dateStr}
+                                onClick={() => {
+                                  setIsShiftModalOpen(true);
+                                  setTimeout(() => {
+                                    shiftForm.resetFields();
+                                    shiftForm.setFieldsValue({
+                                      driver_id: drv.id,
+                                      date: d.dayMoment,
+                                      time_range: [d.dayMoment.hour(8).minute(0), d.dayMoment.hour(17).minute(0)]
+                                    });
+                                  }, 0);
+                                }}
+                                className={`py-2.5 px-2 text-center cursor-pointer transition-colors border-l border-surface-container/50 ${
+                                  isOverLimit
+                                    ? 'bg-amber-100 text-amber-900 font-bold'
+                                    : isPending
+                                    ? 'bg-amber-50/80 text-amber-800'
+                                    : shiftOnDay
+                                    ? 'bg-emerald-50 text-emerald-800 font-medium'
+                                    : 'hover:bg-surface-container-low/80'
+                                }`}
+                                title="Bấm để thêm hoặc sửa ca"
+                              >
+                                {shiftOnDay ? (
+                                  <div className="text-[11px] font-mono leading-tight">
+                                    <span>{isPending ? '⏳ ' : ''}</span>
+                                    <span>{dayjs(shiftOnDay.start_time).format('HH:mm')}–{dayjs(shiftOnDay.end_time).format('HH:mm')}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-outline text-[11px] opacity-0 hover:opacity-100">+</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-                    <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
-                      <button
-                        onClick={() => setRejectModal({ open: true, shiftId: shift.id, reason: '' })}
-                        className="flex-1 py-1.5 px-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold cursor-pointer transition-colors"
-                      >
-                        Từ chối
-                      </button>
-                      <button
-                        onClick={() => handleApproveShift(shift)}
-                        className="flex-1 py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition-colors shadow-sm"
-                      >
-                        Duyệt ca (MSG80)
-                      </button>
-                    </div>
-                  </div>
-                ))}
+            {/* BANNER CẢNH BÁO VƯỢT GIỜ LÁI (KHỚP FIGURE 45 - ③) */}
+            {shifts.some((s) => s.duration_hours > 10) && (
+              <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl text-amber-900 text-xs font-medium">
+                {(() => {
+                  const overShift = shifts.find((s) => s.duration_hours > 10);
+                  return `Ca của ${overShift?.driver_name || 'Tài xế'} ngày ${overShift?.date ? dayjs(overShift.date).format('DD/MM') : ''} dài ${overShift?.duration_hours} giờ, vượt giới hạn giờ lái theo luật. Ca vẫn được lưu. (BR-34)`;
+                })()}
               </div>
             )}
           </div>
 
-          {/* Lưới Tuần Phân Ca (Screen 25 - Weekly Grid T2 -> CN) */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
-            {/* Header Tuần */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-900 text-base">Bảng Lưới Ca Trực Tuần</span>
-                <span className="text-xs text-slate-500 font-mono">
-                  ({weekDays[0].displayDate} - {weekDays[6].displayDate})
+          {/* BẢNG 2: CA CHỜ DUYỆT (KHỚP CHUẨN FIGURE 45 - ④) */}
+          <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 border border-outline-variant/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-extrabold text-primary flex items-center gap-2">
+                <span>Ca chờ duyệt</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-xs font-black">
+                  {pendingShifts.length}
                 </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentWeekStart(currentWeekStart.subtract(1, 'week'))}
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                  title="Tuần trước"
-                >
-                  <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-                </button>
-                <button
-                  onClick={() => setCurrentWeekStart(dayjs().startOf('week').add(1, 'day'))}
-                  className="px-3 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 cursor-pointer"
-                >
-                  Tuần hiện tại
-                </button>
-                <button
-                  onClick={() => setCurrentWeekStart(currentWeekStart.add(1, 'week'))}
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
-                  title="Tuần sau"
-                >
-                  <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-                </button>
-              </div>
+              </h3>
             </div>
 
-            {/* Cột 7 Ngày trong Tuần */}
-            {shiftLoading ? (
-              <div className="py-16 text-center">
-                <Spin size="large" />
+            {pendingShifts.length === 0 ? (
+              <div className="py-6 text-center text-on-surface-variant text-xs italic bg-surface-container-low/40 rounded-xl">
+                Không có ca trực nào đang chờ duyệt trong tuần này.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
-                {weekDays.map((day) => {
-                  const dayShifts = shifts.filter(s => s.date === day.dateStr);
-                  return (
-                    <div
-                      key={day.dateStr}
-                      className={`rounded-xl border p-3 min-h-[280px] flex flex-col justify-between ${
-                        day.isToday ? 'bg-blue-50/40 border-blue-300' : 'bg-slate-50/60 border-slate-200'
-                      }`}
-                    >
-                      <div>
-                        {/* Day Header */}
-                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200">
-                          <div>
-                            <span className={`font-bold text-xs ${day.isToday ? 'text-blue-700' : 'text-slate-800'}`}>
-                              {day.dayName}
-                            </span>
-                            <span className="block text-[11px] text-slate-400 font-mono">{day.displayDate}</span>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-[11px] font-bold border-b border-surface-container">
+                      <th className="py-2.5 px-3">Tài xế</th>
+                      <th className="py-2.5 px-3">Ngày</th>
+                      <th className="py-2.5 px-3">Giờ</th>
+                      <th className="py-2.5 px-3">Gửi lúc</th>
+                      <th className="py-2.5 px-3">Ghi chú</th>
+                      <th className="py-2.5 px-3 text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container">
+                    {pendingShifts.map((sh) => (
+                      <tr key={sh.id} className="hover:bg-surface-container-low/50">
+                        <td className="py-2.5 px-3 font-bold text-primary">
+                          {sh.driver_name}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono">
+                          {sh.date ? dayjs(sh.date).format('DD/MM/YYYY') : 'N/A'}
+                        </td>
+                        <td className="py-2.5 px-3 font-mono font-bold text-primary">
+                          {dayjs(sh.start_time).format('HH:mm')}–{dayjs(sh.end_time).format('HH:mm')}
+                        </td>
+                        <td className="py-2.5 px-3 text-on-surface-variant">
+                          {sh.created_at ? dayjs(sh.created_at).format('DD/MM HH:mm') : 'N/A'}
+                        </td>
+                        <td className="py-2.5 px-3 text-on-surface-variant">
+                          {sh.note || '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApproveShift(sh)}
+                              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer transition-colors shadow-2xs"
+                            >
+                              Duyệt
+                            </button>
+                            <span className="text-outline">·</span>
+                            <button
+                              type="button"
+                              onClick={() => setRejectModal({ open: true, shiftId: sh.id, reason: '' })}
+                              className="text-error font-bold hover:underline cursor-pointer"
+                            >
+                              Từ chối
+                            </button>
                           </div>
-                          {day.isToday && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-600 text-white font-bold">
-                              Hôm nay
-                            </span>
-                          )}
-                        </div>
-
-                        {/* List Shifts in Day */}
-                        <div className="space-y-2">
-                          {dayShifts.length === 0 ? (
-                            <span className="text-[11px] text-slate-400 italic block py-4 text-center">Không có ca</span>
-                          ) : (
-                            dayShifts.map((sh) => (
-                              <div
-                                key={sh.id}
-                                className={`p-2 rounded-lg text-xs border shadow-2xs ${
-                                  sh.status === 'Approved'
-                                    ? 'bg-white border-emerald-200 text-slate-800'
-                                    : sh.status === 'Requested'
-                                    ? 'bg-amber-50 border-amber-300 text-amber-900'
-                                    : 'bg-slate-100 border-slate-200 text-slate-400 line-through'
-                                }`}
-                              >
-                                <div className="font-bold truncate">{sh.driver_name}</div>
-                                <div className="font-mono text-[11px] font-semibold text-blue-700 mt-0.5">
-                                  {dayjs(sh.start_time).format('HH:mm')} - {dayjs(sh.end_time).format('HH:mm')}
-                                </div>
-                                <div className="flex items-center justify-between mt-1 text-[10px]">
-                                  <span className="text-slate-500">{sh.duration_hours} giờ</span>
-                                  <span className={`font-semibold ${
-                                    sh.status === 'Approved' ? 'text-emerald-600' : 'text-amber-600'
-                                  }`}>
-                                    {sh.status === 'Approved' ? 'Đã duyệt' : sh.status === 'Requested' ? 'Chờ duyệt' : 'Từ chối'}
-                                  </span>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Nút xếp nhanh ca vào ngày này */}
-                      <button
-                        onClick={() => {
-                          shiftForm.resetFields();
-                          shiftForm.setFieldsValue({
-                            date: day.dayMoment,
-                            time_range: [day.dayMoment.hour(8).minute(0), day.dayMoment.hour(17).minute(0)]
-                          });
-                          setIsShiftModalOpen(true);
-                        }}
-                        className="w-full mt-2 py-1 text-[11px] rounded bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 font-medium cursor-pointer transition-colors"
-                      >
-                        + Xếp ca
-                      </button>
-                    </div>
-                  );
-                })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
+
+            {/* Chú thích chân trang chuẩn Figure 45 */}
+            <div className="pt-2 text-xs italic text-on-surface-variant">
+              Bấm một ô để thêm hoặc sửa ca (ca do Quản lý thêm được duyệt luôn). ⏳ = chờ duyệt. Hai ca của một tài xế không được chồng nhau.
+            </div>
           </div>
         </div>
       )}
@@ -938,14 +952,14 @@ export default function FleetPage() {
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <span className="material-symbols-outlined text-blue-600">local_shipping</span>
             <span className="font-bold text-slate-900 text-base">
-              {editingTruck ? `Cập nhật thông tin Xe tải ${editingTruck.plate_number}` : 'Khai báo thông số Xe tải mới (Screen 22)'}
+              {editingTruck ? `Cập nhật thông tin Xe tải ${editingTruck.plate_number}` : 'Khai báo thông số Xe tải mới'}
             </span>
           </div>
         }
         open={isTruckModalOpen}
         onCancel={() => setIsTruckModalOpen(false)}
         footer={null}
-        destroyOnHidden
+        forceRender
         width={680}
       >
         <Form form={truckForm} layout="vertical" onFinish={handleSaveTruck} className="mt-4">
@@ -953,7 +967,7 @@ export default function FleetPage() {
             <Form.Item
               name="plate_number"
               label={<span className="font-semibold text-slate-700">Biển số xe (Plate number - Bắt buộc)</span>}
-              rules={[{ required: true, message: 'Vui lòng nhập biển số xe (MSG02)' }]}
+              rules={[{ required: true, message: 'Vui lòng nhập biển số xe' }]}
             >
               <Input placeholder="VD: 29H-889.99" className="h-10 rounded-lg uppercase font-mono font-bold" />
             </Form.Item>
@@ -970,9 +984,9 @@ export default function FleetPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Form.Item
               name="allowed_payload"
-              label={<span className="font-semibold text-slate-700">Tải trọng tối đa (kg) - BR-33</span>}
+              label={<span className="font-semibold text-slate-700">Tải trọng tối đa (kg)</span>}
               rules={[{ required: true, message: 'Nhập tải trọng cho phép' }]}
-              extra="Chặn quá tải khi gán đơn hàng (BR-33)."
+              extra="Giới hạn tải trọng tối đa khi gán đơn hàng."
             >
               <Input type="number" placeholder="5000" className="h-10 rounded-lg font-mono font-bold" />
             </Form.Item>
@@ -996,7 +1010,7 @@ export default function FleetPage() {
           {/* Kích thước thùng D x R x C */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
             <span className="font-semibold text-slate-800 text-xs uppercase tracking-wider block mb-2">
-              Kích thước thùng xe (cm) - Phục vụ mô phỏng 3D Load Plan (BR-43)
+              Kích thước thùng xe (cm)
             </span>
             <div className="grid grid-cols-3 gap-3">
               <Form.Item name="box_length" label="Chiều Dài (cm)" className="mb-0" rules={[{ required: true }]}>
@@ -1014,8 +1028,8 @@ export default function FleetPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Form.Item
               name="inspection_expiry"
-              label={<span className="font-semibold text-slate-700">Hạn đăng kiểm (BR-24)</span>}
-              extra="Nếu hết hạn, xe tự động bị khóa không thể bật Available."
+              label={<span className="font-semibold text-slate-700">Hạn đăng kiểm</span>}
+              extra="Nếu hết hạn, xe tự động bị khóa không thể bật Sẵn sàng."
             >
               <DatePicker className="w-full h-10 rounded-lg" format="DD/MM/YYYY" placeholder="Chọn ngày hết hạn" />
             </Form.Item>
@@ -1065,7 +1079,7 @@ export default function FleetPage() {
               disabled={submittingTruck}
               className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 cursor-pointer shadow-sm"
             >
-              {submittingTruck ? 'Đang lưu...' : 'Lưu thông số xe (MSG07)'}
+              {submittingTruck ? 'Đang lưu...' : 'Lưu thông số xe'}
             </button>
           </div>
         </Form>
@@ -1086,7 +1100,7 @@ export default function FleetPage() {
         open={isDriverModalOpen}
         onCancel={() => setIsDriverModalOpen(false)}
         footer={null}
-        destroyOnHidden
+        forceRender
       >
         <Form form={driverForm} layout="vertical" onFinish={handleSaveDriver} className="mt-4">
           <Form.Item
@@ -1132,7 +1146,7 @@ export default function FleetPage() {
 
           <Form.Item
             name="expiry"
-            label={<span className="font-semibold text-slate-700">Ngày hết hạn GPLX (BR-08)</span>}
+            label={<span className="font-semibold text-slate-700">Ngày hết hạn GPLX</span>}
           >
             <DatePicker className="w-full h-10 rounded-lg" format="DD/MM/YYYY" placeholder="Chọn ngày hết hạn" />
           </Form.Item>
@@ -1179,18 +1193,18 @@ export default function FleetPage() {
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <span className="material-symbols-outlined text-indigo-600">more_time</span>
             <span className="font-bold text-slate-900 text-base">
-              Xếp Ca Làm Việc Mới Cho Tài Xế (Screen 25 - Manager)
+              Xếp Ca Làm Việc Mới Cho Tài Xế
             </span>
           </div>
         }
         open={isShiftModalOpen}
         onCancel={() => setIsShiftModalOpen(false)}
         footer={null}
-        destroyOnHidden
+        forceRender
       >
         <Form form={shiftForm} layout="vertical" onFinish={handleCreateManagerShift} className="mt-4">
           <Alert
-            message="Ràng buộc ATGT (BR-34):"
+            title="Lưu ý an toàn lái xe:"
             description="Tổng giờ lái trong ngày không được vượt quá 10 giờ và 48 giờ/tuần. Hệ thống sẽ cảnh báo vàng nếu xếp ca vượt mức."
             type="info"
             showIcon
@@ -1224,7 +1238,7 @@ export default function FleetPage() {
             name="time_range"
             label={<span className="font-semibold text-slate-700">Khung giờ ca trực (Start - End)</span>}
             rules={[{ required: true, message: 'Chọn giờ bắt đầu và kết thúc' }]}
-            extra="Quy định BR-08: Hệ thống sẽ từ chối nếu có 2 ca chồng lấn giờ của cùng 1 tài xế."
+            extra="Hệ thống sẽ từ chối nếu có 2 ca chồng lấn giờ của cùng 1 tài xế."
           >
             <TimePicker.RangePicker className="w-full h-10 rounded-lg" format="HH:mm" />
           </Form.Item>
@@ -1261,7 +1275,7 @@ export default function FleetPage() {
         open={rejectModal.open}
         onCancel={() => setRejectModal({ open: false, shiftId: null, reason: '' })}
         onOk={handleConfirmRejectShift}
-        okText="Xác nhận từ chối (MSG80)"
+        okText="Xác nhận từ chối"
         cancelText="Hủy"
         okButtonProps={{ danger: true }}
       >

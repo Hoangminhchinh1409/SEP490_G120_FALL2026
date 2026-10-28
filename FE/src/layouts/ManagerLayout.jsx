@@ -11,13 +11,13 @@ export default function ManagerLayout({ children }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const navItems = [
-    { href: '/manager', icon: 'insights', name: 'Tổng quan Hiệu suất' },
+    { href: '/manager', icon: 'insights', name: 'Tổng quan' },
+    { href: '/manager/orders', icon: 'package_2', name: 'Khối lượng đơn' },
+    { href: '/manager/approvals', icon: 'fact_check', name: 'Sự cố & Bồi thường' },
+    { href: '/manager/fleet', icon: 'local_shipping', name: 'Đội xe' },
+    { href: '/manager/vendors', icon: 'handshake', name: 'Nhà xe & Hợp đồng' },
+    { href: '/manager/blogs', icon: 'newspaper', name: 'Tin tức' },
     { href: '/manager/accounts', icon: 'manage_accounts', name: 'Tài khoản nhân viên' },
-    { href: '/manager/orders', icon: 'package_2', name: 'Quản lý Đơn hàng' },
-    { href: '/manager/fleet', icon: 'local_shipping', name: 'Quản lý Đội xe' },
-    { href: '/manager/vendors', icon: 'handshake', name: 'Quản lý Đối tác' },
-    { href: '/manager/approvals', icon: 'fact_check', name: 'Duyệt yêu cầu' },
-    { href: '/manager/blogs', icon: 'newspaper', name: 'Quản lý tin tức' },
   ];
 
   const isActive = (href) => {

@@ -11,6 +11,7 @@ const { RangePicker } = DatePicker;
 
 const statusColors = {
   'DRAFT': 'default',
+  'NEGOTIATING': 'warning',
   'CONFIRMED': 'blue', 
   'READY_FOR_PLANNING': 'cyan', 
   'ASSIGNED': 'orange',
@@ -22,6 +23,7 @@ const statusColors = {
 
 const statusLabels = {
   'DRAFT': 'Đơn nháp',
+  'NEGOTIATING': 'Đang thương lượng',
   'CONFIRMED': 'Đã xác nhận',
   'READY_FOR_PLANNING': 'Sẵn sàng xếp xe',
   'ASSIGNED': 'Đã gán xe',
@@ -78,6 +80,33 @@ const OrderManagement = () => {
 
     loadInitialData();
 
+    // Tự động kiểm tra cập nhật mỗi 5 giây để phát hiện ngay khi khách gửi yêu cầu đàm phán
+    const pollInterval = setInterval(async () => {
+      try {
+        const latestOrders = await orderApi.getAllOrders();
+        if (isSubscribed && Array.isArray(latestOrders)) {
+          setOrders(prev => {
+            const prevNegotiating = prev.filter(o => o.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' || o.status === 'NEGOTIATING').map(o => `${o.id}-${o.web_workflow?.negotiation?.submitted_at || ''}`);
+            const newNegotiating = latestOrders.filter(o => (o.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' || o.status === 'NEGOTIATING') && !prevNegotiating.includes(`${o.id}-${o.web_workflow?.negotiation?.submitted_at || ''}`));
+            if (newNegotiating.length > 0) {
+              message.warning({
+                content: `⚡ Khách hàng vừa gửi yêu cầu thương lượng giá cho đơn #${newNegotiating[0].order_id || newNegotiating[0].order_code}!`,
+                duration: 5
+              });
+            }
+            return latestOrders;
+          });
+          setSelectedOrderForDetails(prevSelected => {
+            if (!prevSelected) return null;
+            const found = latestOrders.find(o => o.id === prevSelected.id || o.order_id === prevSelected.order_id);
+            return found ? { ...prevSelected, ...found } : prevSelected;
+          });
+        }
+      } catch (e) {
+        // bỏ qua lỗi polling
+      }
+    }, 5000);
+
     const handleStorageChange = () => {
       fetchOrders(true);
     };
@@ -85,6 +114,7 @@ const OrderManagement = () => {
     window.addEventListener('nexlog_orders_updated', handleStorageChange);
     return () => {
       isSubscribed = false;
+      clearInterval(pollInterval);
       window.removeEventListener('nexlog_orders_updated', handleStorageChange);
     };
   }, [fetchOrders]);
@@ -107,7 +137,7 @@ const OrderManagement = () => {
   const handleUpdateOrder = (updatedOrder) => {
     setOrders(prev => prev.map(o => (o.id === updatedOrder.id || o.order_id === updatedOrder.order_id) ? { ...o, ...updatedOrder } : o));
     setSelectedOrderForDetails(updatedOrder);
-    fetchOrders();
+    fetchOrders(true);
   };
 
   const handleConfirmCancel = async (cancelData) => {
@@ -144,7 +174,9 @@ const OrderManagement = () => {
       
       let matchStatus = true;
       if (filterStatus !== 'all') {
-        if (filterStatus === 'CLOSED') {
+        if (filterStatus === 'NEGOTIATING') {
+          matchStatus = item.status === 'NEGOTIATING' || item.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
+        } else if (filterStatus === 'CLOSED') {
           matchStatus = item.status === 'CLOSED' || item.status === 'DELIVERED' || item.status === 'CANCELLED';
         } else if (filterStatus === 'DELIVERED') {
           matchStatus = (item.status === 'DELIVERED' || item.status === 'CLOSED') && !item.cancel_reason && !item.cancellation_reason;
@@ -272,6 +304,37 @@ const OrderManagement = () => {
             </Tag>
           );
         }
+        if (record.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' || status === 'NEGOTIATING') {
+          return (
+            <Tag color="warning" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap border-amber-400 text-amber-800 bg-amber-50">
+              Đang thương lượng
+            </Tag>
+          );
+        }
+        if (status === 'CONFIRMED') {
+          const hasRej = record.web_workflow?.stage === 'DOCS_REJECTED' || (record.documents || []).some(d => d.status === 'REJECTED');
+          if (hasRej) {
+            return (
+              <Tag color="error" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                Chờ nộp lại chứng từ
+              </Tag>
+            );
+          }
+          if (record.web_workflow?.stage === 'DOCS_APPROVED') {
+            return (
+              <Tag color="cyan" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                Đã duyệt CT - Chờ ký HĐ
+              </Tag>
+            );
+          }
+          if (record.web_workflow?.stage === 'DOCS_UPLOADED') {
+            return (
+              <Tag color="processing" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                Chờ duyệt chứng từ
+              </Tag>
+            );
+          }
+        }
         return (
           <Tag color={statusColors[status] || 'default'} className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
             {statusLabels[status] || status}
@@ -285,7 +348,28 @@ const OrderManagement = () => {
       width: '14%',
       render: (_, record) => (
         <Space size="small" wrap>
-          {record.status === 'DRAFT' ? (
+          {(record.status === 'NEGOTIATING' || record.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') ? (
+            <>
+              <Tooltip title="Xem yêu cầu thương lượng của khách & Chốt lại giá">
+                <Button 
+                  size="small" 
+                  type="primary"
+                  className="text-xs bg-amber-600 hover:bg-amber-700 border-amber-600 font-semibold"
+                  onClick={() => setSelectedOrderForDetails({ ...record, targetTab: '1' })}
+                >
+                  Chốt lại giá
+                </Button>
+              </Tooltip>
+              <Tooltip title="Hủy đơn (Miễn phí)">
+                <Button 
+                  size="small" 
+                  danger
+                  icon={<XCircle size={13} />}
+                  onClick={() => setSelectedOrderForCancel(record)}
+                />
+              </Tooltip>
+            </>
+          ) : record.status === 'DRAFT' ? (
             <>
               <Tooltip title="Xử lý đơn nháp">
                 <Button 
@@ -309,14 +393,14 @@ const OrderManagement = () => {
             </>
           ) : record.status === 'CONFIRMED' ? (
             <>
-              <Tooltip title="Kiểm duyệt & Xác nhận danh mục chứng từ">
+              <Tooltip title={record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Xem hợp đồng đã gửi cho khách ký số' : 'Kiểm duyệt & Xác nhận danh mục chứng từ'}>
                 <Button 
                   size="small" 
                   type="primary"
-                  className="text-xs bg-indigo-600 hover:bg-indigo-700 font-semibold"
-                  onClick={() => setSelectedOrderForDetails({ ...record, targetTab: '2' })}
+                  className={`text-xs font-semibold ${record.web_workflow?.stage === 'DOCS_APPROVED' ? 'bg-cyan-600 hover:bg-cyan-700 border-cyan-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                  onClick={() => setSelectedOrderForDetails({ ...record, targetTab: record.web_workflow?.stage === 'DOCS_APPROVED' ? '3' : '2' })}
                 >
-                  Xác nhận chứng từ
+                  {record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Hợp đồng & Chờ ký' : 'Xác nhận chứng từ'}
                 </Button>
               </Tooltip>
               <Tooltip title="Hủy đơn (Miễn phí)">
@@ -430,7 +514,7 @@ const OrderManagement = () => {
             <Button 
               icon={<RefreshCw size={15} className={loading ? "animate-spin text-indigo-600" : "text-gray-600"} />} 
               className="h-10 px-3 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium"
-              onClick={fetchOrders}
+              onClick={() => fetchOrders()}
               loading={loading}
             >
               Làm mới
@@ -469,6 +553,7 @@ const OrderManagement = () => {
                 options={[
                   { value: 'all', label: 'Tất cả trạng thái' },
                   { value: 'DRAFT', label: 'Đơn nháp' },
+                  { value: 'NEGOTIATING', label: 'Đang thương lượng' },
                   { value: 'CONFIRMED', label: 'Đã xác nhận' },
                   { value: 'READY_FOR_PLANNING', label: 'Sẵn sàng xếp xe' },
                   { value: 'ASSIGNED', label: 'Đã gán xe' },

@@ -7,10 +7,18 @@ import {
   Trash2,
   Package,
   Truck,
-  ShieldCheck
+  ShieldCheck,
+  PlaneTakeoff,
+  PlaneLanding,
+  Clock,
+  Calendar,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   calculateRouteEstimate, 
+  calculateAlsPricing,
+  calculateExportPickupSuggestion,
+  ALS_TARIFF_RATES,
   getCoordsFromAddress,
   ALS_NOI_BAI_TERMINAL,
   ALS_ICD_LOCATIONS
@@ -195,14 +203,38 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
     return { actualWeight: totalActual.toFixed(2), chargeableWeight: totalChargeable.toFixed(2), totalCount };
   }, [cargoItems]);
 
-  const estimatedBaselineRate = useMemo(() => {
-    if (!routeInfo.distanceKm) return 0;
-    const dist = routeInfo.distanceKm;
-    const weight = parseFloat(totals.chargeableWeight) || 0;
-    const base = Math.round((1500000 + dist * 45000 + weight * 850) / 50000) * 50000;
-    const customs = customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0;
-    return base + customs;
-  }, [routeInfo, totals.chargeableWeight, customsServiceRequired]);
+  const watchedValues = Form.useWatch([], form);
+
+  // Tính giá cước theo Biểu giá chuẩn ALS (tuyến cố định FedEx/Compal/Wistron & phụ phí)
+  const estimatedPricing = useMemo(() => {
+    return calculateAlsPricing({
+      distanceKm: routeInfo.distanceKm,
+      chargeableWeightKg: parseFloat(totals.chargeableWeight) || 0,
+      vehicleType: watchedValues?.vehicle_type_required || 'TRUCK_2.5T',
+      timeSlot: watchedValues?.operating_time_slot || 'FULL_DAY',
+      pickupAddress: watchedValues?.pickup_address || '',
+      deliveryAddress: watchedValues?.delivery_address || '',
+      loadingUnloadingRequired: watchedValues?.loading_unloading_required === true,
+      customsServiceRequired: customsServiceRequired
+    });
+  }, [
+    routeInfo.distanceKm,
+    totals.chargeableWeight,
+    watchedValues?.vehicle_type_required,
+    watchedValues?.operating_time_slot,
+    watchedValues?.pickup_address,
+    watchedValues?.delivery_address,
+    watchedValues?.loading_unloading_required,
+    customsServiceRequired
+  ]);
+
+  const estimatedBaselineRate = estimatedPricing.totalRate || 0;
+
+  // Gợi ý lịch lấy hàng xuất khẩu dựa trên khoảng cách và lịch bay
+  const exportPickupSuggestion = useMemo(() => {
+    if (shippingDirection !== 'EXPORT' || !watchedValues?.flight_datetime) return null;
+    return calculateExportPickupSuggestion(watchedValues.flight_datetime, routeInfo.distanceKm || 30);
+  }, [shippingDirection, watchedValues?.flight_datetime, routeInfo.distanceKm]);
 
   // Cập nhật giá thỏa thuận mặc định khi cước tham chiếu thay đổi
   useEffect(() => {
@@ -228,6 +260,14 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
 
       onSubmit({
         ...fieldValues,
+        required_pickup_date: shippingDirection === 'IMPORT'
+          ? (fieldValues.flight_arrival_date || fieldValues.required_pickup_date || null)
+          : (fieldValues.required_pickup_date || null),
+        required_delivery_date: fieldValues.required_delivery_date || fieldValues.required_pickup_date || null,
+        flight_arrival_date: fieldValues.flight_arrival_date || null,
+        flight_arrival_time: fieldValues.flight_arrival_time || null,
+        flight_datetime: fieldValues.flight_datetime || null,
+        export_pickup_suggestion: exportPickupSuggestion?.latestPickupFormatted || null,
         shipping_direction: shippingDirection,
         customs_service_required: customsServiceRequired,
         customs_fee: customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0,
@@ -306,11 +346,12 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           source: 'HOTLINE',
           status: 'READY_FOR_PLANNING',
           is_new_customer: false,
-          address_same_as_customer: true,
+          address_same_as_customer: false,
           pickup_address: '',
           delivery_address: '',
           customer_address: '',
-          vehicle_type_required: 'TRUCK_2T',
+          vehicle_type_required: 'TRUCK_2.5T',
+          operating_time_slot: 'FULL_DAY',
           loading_unloading_required: false
         }}
       >
@@ -472,19 +513,99 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
                     </div>
                   )}
 
-                  {/* Ngày lấy hàng tách riêng gắn liền với Điểm lấy hàng sân bay */}
+                  {/* Lịch trình hàng hóa: Nhập khẩu (Hàng xuống máy bay) vs Xuất khẩu (Lịch bay & Giờ lấy hàng) */}
                   <div className="mt-2.5 pt-2 border-t border-blue-100">
-                    <Form.Item
-                      label={<span className="text-[11px] font-semibold text-blue-900">Ngày lấy hàng</span>}
-                      name="required_pickup_date"
-                      className="mb-0"
-                    >
-                      <Input
-                        type="date"
-                        className="text-xs bg-white"
-                        min={new Date().toISOString().split('T')[0]}
-                      />
-                    </Form.Item>
+                    {shippingDirection === 'IMPORT' ? (
+                      <div>
+                        <div className="text-[11px] font-semibold text-blue-900 mb-1.5 flex items-center gap-1">
+                          <PlaneLanding size={13} className="text-blue-600" />
+                          <span>Thời gian hàng xuống khỏi máy bay (Flight Arrival Time) <span className="text-red-500">*</span></span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <Form.Item
+                            label={<span className="text-[10px] text-gray-500">Ngày máy bay hạ cánh</span>}
+                            name="flight_arrival_date"
+                            rules={[{ required: true, message: 'Chọn ngày hàng hạ cánh' }]}
+                            className="mb-0"
+                          >
+                            <Input
+                              type="date"
+                              className="text-xs bg-white"
+                              min={new Date().toISOString().split('T')[0]}
+                            />
+                          </Form.Item>
+                          <Form.Item
+                            label={<span className="text-[10px] text-gray-500">Giờ máy bay hạ cánh</span>}
+                            name="flight_arrival_time"
+                            rules={[{ required: true, message: 'Nhập giờ hạ cánh' }]}
+                            className="mb-0"
+                          >
+                            <Input
+                              type="time"
+                              className="text-xs bg-white"
+                            />
+                          </Form.Item>
+                        </div>
+                        <div className="mt-1.5 p-1.5 bg-blue-100/60 rounded text-[10px] text-blue-800 flex items-center gap-1">
+                          <span>ℹ️</span> Điều phối sẽ tự động điều xe đến cửa kho ALS lấy hàng ngay sau khi hàng hoàn tất dỡ khỏi máy bay và nhập kho.
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="text-[11px] font-semibold text-indigo-900 mb-1.5 flex items-center gap-1">
+                          <PlaneTakeoff size={13} className="text-indigo-600" />
+                          <span>Lịch bay dự kiến của hàng xuất (Flight ETD) <span className="text-red-500">*</span></span>
+                        </div>
+                        <Form.Item
+                          name="flight_datetime"
+                          rules={[{ required: true, message: 'Vui lòng chọn ngày giờ bay dự kiến' }]}
+                          className="mb-1"
+                        >
+                          <Input
+                            type="datetime-local"
+                            className="text-xs bg-white"
+                            min={new Date().toISOString().slice(0, 16)}
+                          />
+                        </Form.Item>
+
+                        <div className="mt-2 pt-2 border-t border-dashed border-blue-200">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-semibold text-blue-900 flex items-center gap-1">
+                              <Calendar size={12} className="text-blue-600" /> Lịch chốt xe đến lấy hàng tại kho khách:
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <Form.Item
+                              name="required_pickup_date"
+                              rules={[{ required: true, message: 'Chọn ngày lấy hàng' }]}
+                              className="mb-0"
+                            >
+                              <Input
+                                type="date"
+                                className="text-xs bg-white"
+                                min={new Date().toISOString().split('T')[0]}
+                              />
+                            </Form.Item>
+                            <Form.Item
+                              name="operating_time_slot"
+                              className="mb-0"
+                            >
+                              <Select className="text-xs w-full bg-white">
+                                <Option value="FULL_DAY">☀️ Ca ngày (8:00 - 17:00)</Option>
+                                <Option value="AFTERNOON">🌤️ Ca chiều (12:00 - 17:00)</Option>
+                              </Select>
+                            </Form.Item>
+                          </div>
+                        </div>
+
+                        {/* Box gợi ý ngắn gọn cho điều phối */}
+                        {exportPickupSuggestion && (
+                          <div className="mt-1.5 p-1.5 bg-amber-50 rounded border border-amber-200 text-[10px] text-amber-900">
+                            ⏱️ <b>Khuyến nghị lấy trước {exportPickupSuggestion.latestPickupFormatted}</b> (cách {routeInfo.distanceKm} km, đã gồm {exportPickupSuggestion.travelHours}h xe chạy + 4h cut-off kho). Khách tự chịu phí nếu chốt muộn hơn.
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -571,15 +692,15 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
               </div>
             </div>
 
-            {/* ── PHẦN 3: Người liên hệ & Lịch trình & Loại xe ── */}
+            {/* ── PHẦN 3: Người liên hệ & Loại xe ── */}
             <div className="flex items-center gap-2 mb-2">
               <Truck size={14} className="text-emerald-600" />
               <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
-                3. Thông tin người nhận &amp; Thời gian giao hàng tới nơi &amp; Loại xe
+                3. Thông tin người nhận &amp; Loại xe
               </div>
             </div>
             <div className="bg-emerald-50/30 p-3.5 rounded-xl border border-emerald-100 mb-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {/* Nhập khẩu: Tên, SĐT người nhận hàng */}
                 {/* Xuất khẩu: Tên, SĐT người liên hệ */}
                 <Form.Item 
@@ -614,31 +735,36 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
                   />
                 </Form.Item>
 
-                <Form.Item label={<span className="text-xs font-semibold">Ngày giao hàng tới nơi</span>}
-                  name="required_delivery_date" className="mb-0">
-                  <Input type="date" className="text-xs" min={new Date().toISOString().split('T')[0]} />
-                </Form.Item>
-
                 <Form.Item label={<span className="text-xs font-semibold">Loại xe yêu cầu</span>}
                   name="vehicle_type_required" className="mb-0">
-                  <Select className="text-xs w-full">
-                    <Option value="TRUCK_1T">🚐 Xe tải 1 tấn</Option>
-                    <Option value="TRUCK_2T">🚛 Xe tải 2 tấn</Option>
-                    <Option value="TRUCK_5T">🚛 Xe tải 5 tấn</Option>
-                    <Option value="TRUCK_10T">🚛 Xe tải 10 tấn</Option>
+                  <Select className="text-xs w-full" placeholder="Chọn loại xe">
+                    <Option value="TRUCK_1.25T">🚐 Xe tải 1.25 tấn (1.25T Truck)</Option>
+                    <Option value="TRUCK_2.5T">🚛 Xe tải 2.5 tấn (2.5T Truck)</Option>
+                    <Option value="TRUCK_3.5T">🚛 Xe tải 3.5 tấn (3.5T Truck)</Option>
+                    <Option value="TRUCK_5T">🚛 Xe tải 5 tấn (5T Truck)</Option>
                     <Option value="CONTAINER_20">📦 Container 20ft</Option>
                     <Option value="CONTAINER_40">📦 Container 40ft</Option>
                   </Select>
                 </Form.Item>
-
-                <Form.Item label={<span className="text-xs font-semibold">Yêu cầu bốc xếp?</span>}
-                  name="loading_unloading_required" className="mb-0">
-                  <Select className="text-xs w-full">
-                    <Option value={false}>Không cần (tự bốc xếp)</Option>
-                    <Option value={true}>Có — Cần nhân công bốc xếp</Option>
-                  </Select>
-                </Form.Item>
               </div>
+
+              {/* Bảng chi tiết tính giá cước theo Biểu giá chuẩn ALS */}
+              {estimatedPricing.totalRate > 0 && (
+                <div className="mt-3 p-2.5 bg-white/90 rounded-lg border border-emerald-200 text-xs">
+                  <div className="flex flex-wrap items-center justify-between font-semibold text-emerald-900 border-b border-emerald-100 pb-1.5 mb-1.5">
+                    <span className="flex items-center gap-1">
+                      🏷️ {estimatedPricing.isFixedRoute ? `Tuyến cố định ALS: ${estimatedPricing.routeName}` : `Cước vận chuyển ước tính (${routeInfo.distanceKm} km)`}
+                    </span>
+                    <span className="text-sm font-bold text-emerald-700">
+                      Tổng tham chiếu: {estimatedPricing.totalRate.toLocaleString('vi-VN')} đ
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-gray-600">
+                    <div>• Cước vận tải xe: <b className="text-gray-800">{estimatedPricing.baseTransportFee.toLocaleString('vi-VN')} đ</b></div>
+                    <div>• Phí hải quan: <b className="text-gray-800">{estimatedPricing.customsFee > 0 ? `${estimatedPricing.customsFee.toLocaleString('vi-VN')} đ` : '0 đ'}</b></div>
+                  </div>
+                </div>
+              )}
             </div>
 
         {/* ── PHẦN 4: Hàng hóa ── */}
@@ -762,13 +888,15 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         </div>
 
         <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
-          <div className="p-2.5 bg-indigo-50/50 rounded-lg border border-indigo-100 mb-3 flex items-center justify-between">
+          <div className="p-2.5 bg-indigo-50/50 rounded-lg border border-indigo-100 mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Calculator size={16} className="text-indigo-600" />
-              <span className="text-xs text-gray-600">Cước tham chiếu theo lộ trình:</span>
+              <span className="text-xs text-gray-700 font-medium">
+                Cước tham chiếu ({estimatedPricing.isFixedRoute ? estimatedPricing.routeName : `${routeInfo.distanceKm} km`}):
+              </span>
               {customsServiceRequired && (
                 <span className="text-[11px] text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded font-medium">
-                  (Đã gồm +500.000đ hải quan)
+                  (+500.000đ hải quan)
                 </span>
               )}
             </div>

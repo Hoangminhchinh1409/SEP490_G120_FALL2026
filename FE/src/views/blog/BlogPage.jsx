@@ -185,13 +185,7 @@ const BlogPage = () => {
                     </div>
 
                     <div className="flex items-center gap-space-sm">
-                        <Link
-                            className="px-space-md py-2 rounded-xl bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md transition-colors shadow-sm flex items-center gap-1.5"
-                            href="/login"
-                        >
-                            <span className="material-symbols-outlined text-base">login</span>
-                            <span>Đăng nhập hệ thống</span>
-                        </Link>
+                        {/* Đã gỡ nút Đăng nhập hệ thống trên trang tin tức công khai cho khách hàng */}
                     </div>
                 </div>
             </header>

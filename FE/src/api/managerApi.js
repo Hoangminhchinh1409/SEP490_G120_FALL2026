@@ -2,9 +2,9 @@ import { fetchWithAuth } from './apiClient';
 
 export const managerApi = {
   // 1. Thống kê Dashboard (Screen 16 V2)
-  getDashboardStats: async (period = 'MONTH') => {
+  getDashboardStats: async (period = 'Tháng 10/2026') => {
     try {
-      const data = await fetchWithAuth(`/manager/dashboard/stats?period=${period}`);
+      const data = await fetchWithAuth(`/manager/dashboard/stats?period=${encodeURIComponent(period)}`);
       return data.stats;
     } catch (error) {
       console.error('managerApi.getDashboardStats Error:', error);
@@ -13,9 +13,10 @@ export const managerApi = {
   },
 
   // Báo cáo hiệu suất tài xế (Screen 41 V2)
-  getDriverPerformance: async () => {
+  getDriverPerformance: async (period) => {
     try {
-      const data = await fetchWithAuth('/manager/drivers/performance');
+      const url = period ? `/manager/drivers/performance?period=${encodeURIComponent(period)}` : '/manager/drivers/performance';
+      const data = await fetchWithAuth(url);
       return data;
     } catch (error) {
       console.error('managerApi.getDriverPerformance Error:', error);

@@ -200,7 +200,7 @@ export default function VendorsPage() {
             </span>
           </div>
           <p className="font-body-md text-sm text-on-surface-variant max-w-3xl">
-            Thẩm định, phê duyệt và đình chỉ nhà xe vận chuyển ngoài (Vendor - UC-23), tra cứu điều khoản hợp đồng vận tải và mạng lưới kho bãi hàng không ALS (Read-only).
+            Thẩm định, phê duyệt và đình chỉ nhà xe vận chuyển ngoài (Vendor), tra cứu điều khoản hợp đồng vận tải và mạng lưới kho bãi hàng không ALS.
           </p>
         </div>
 
@@ -295,7 +295,7 @@ export default function VendorsPage() {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">local_shipping</span>
-          <span>Danh Sách Nhà Xe Đối Tác (Screen 28) ({vendors.length})</span>
+          <span>Danh Sách Nhà Xe Đối Tác ({vendors.length})</span>
         </button>
 
         <button
@@ -307,7 +307,7 @@ export default function VendorsPage() {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">description</span>
-          <span>Hợp Đồng Vận Tải (Screen 30, 31 Read-only)</span>
+          <span>Hợp Đồng Vận Tải</span>
         </button>
 
         <button
@@ -319,7 +319,7 @@ export default function VendorsPage() {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">location_on</span>
-          <span>Kho Bãi & Địa Điểm (Screen 37 Read-only)</span>
+          <span>Kho Bãi & Địa Điểm</span>
         </button>
       </div>
 
@@ -392,7 +392,7 @@ export default function VendorsPage() {
                     <th className="py-3 px-space-md">SỐ ĐIỆN THOẠI</th>
                     <th className="py-3 px-space-md">LOẠI ĐỘI XE</th>
                     <th className="py-3 px-space-md">HỢP ĐỒNG LIÊN KẾT</th>
-                    <th className="py-3 px-space-md">TRẠNG THÁI (UC-23)</th>
+                    <th className="py-3 px-space-md">TRẠNG THÁI</th>
                     <th className="py-3 px-space-md text-right">THAO TÁC</th>
                   </tr>
                 </thead>
@@ -475,10 +475,10 @@ export default function VendorsPage() {
           <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container pb-space-sm">
             <div>
               <h3 className="text-lg font-bold text-primary">
-                Hợp Đồng Vận Tải (Chế Độ Chỉ Đọc - Screen 30, 31)
+                Hợp Đồng Vận Tải (Chế Độ Chỉ Đọc)
               </h3>
               <p className="text-xs text-outline">
-                Manager tra cứu các điều khoản trần bồi thường (BR-37), phí chờ và thời hạn hợp đồng để đối chiếu nghiệp vụ
+                Tra cứu các điều khoản trần bồi thường, phí chờ và thời hạn hợp đồng để đối chiếu nghiệp vụ
               </p>
             </div>
 
@@ -508,7 +508,7 @@ export default function VendorsPage() {
                     <th className="py-3 px-space-md">SỐ HỢP ĐỒNG</th>
                     <th className="py-3 px-space-md">ĐỐI TÁC / KHÁCH HÀNG</th>
                     <th className="py-3 px-space-md">LOẠI ĐỐI TÁC</th>
-                    <th className="py-3 px-space-md">TRẦN TRÁCH NHIỆM (BR-37)</th>
+                    <th className="py-3 px-space-md">TRẦN TRÁCH NHIỆM</th>
                     <th className="py-3 px-space-md">PHÍ CHỜ / GIỜ</th>
                     <th className="py-3 px-space-md">HIỆU LỰC</th>
                     <th className="py-3 px-space-md">TRẠNG THÁI</th>
@@ -559,7 +559,7 @@ export default function VendorsPage() {
           <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container pb-space-sm">
             <div>
               <h3 className="text-lg font-bold text-primary">
-                Mạng Lưới Địa Điểm & Kho Bãi Ga Hàng (Chế Độ Chỉ Đọc - Screen 37)
+                Mạng Lưới Địa Điểm & Kho Bãi Ga Hàng (Chế Độ Chỉ Đọc)
               </h3>
               <p className="text-xs text-outline">
                 Danh sách các điểm dừng, ga hàng không ALS và ICD phục vụ trung chuyển hàng hóa
@@ -630,7 +630,7 @@ export default function VendorsPage() {
         title={
           <div className="flex items-center gap-2 text-primary font-headline-sm font-bold">
             <span className="material-symbols-outlined text-secondary">domain</span>
-            <span>{editingVendor ? 'Cập Nhật Nhà Xe Đối Tác (Screen 29)' : 'Khai Báo Nhà Xe Đối Tác Mới (Screen 29)'}</span>
+            <span>{editingVendor ? 'Cập Nhật Nhà Xe Đối Tác' : 'Khai Báo Nhà Xe Đối Tác Mới'}</span>
           </div>
         }
         open={isVendorModalOpen}
