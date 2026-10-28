@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
+import OfflineSyncStatus from "./components/OfflineSyncStatus";
+import { cacheTripDocuments, getCachedTripDocuments } from "../../utils/offlineQueue";
 
 export default function DriverDashboard() {
   const [isOffline, setIsOffline] = useState(() => {
@@ -68,15 +70,23 @@ export default function DriverDashboard() {
         setProfile(profileRes.value.profile || profileRes.value);
       }
 
-      if (activeTripRes.status === "fulfilled") {
+      if (activeTripRes.status === "fulfilled" && activeTripRes.value?.trip) {
         setTripData(activeTripRes.value);
+        // Lưu cache chứng từ chuyến xe ngoại tuyến (Mục 6781)
+        await cacheTripDocuments(activeTripRes.value.trip.id, activeTripRes.value);
+      } else if (isOffline) {
+        // Nếu ngoại tuyến và không lấy được từ server -> Đọc từ cache
+        const cached = await getCachedTripDocuments("active");
+        if (cached) {
+          setTripData(cached);
+        }
       }
     } catch (err) {
       console.error("fetchDashboardData error:", err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isOffline]);
 
   // 2. Lắng nghe trạng thái Online / Offline & Tự động đồng bộ (BR-27)
   useEffect(() => {
@@ -182,6 +192,78 @@ export default function DriverDashboard() {
     }
   };
 
+  // 4b. Workflow Action: Bắt đầu bốc/dỡ hàng (Loading Started - BR-30, BR-36)
+  const handleStartLoading = async (tripId, stopId) => {
+    try {
+      setActionLoading(true);
+      const coords = await getCurrentGps();
+      const clientActionId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined;
+
+      if (isOffline) {
+        await queueOfflineAction({
+          type: "RECORD_STOP_EVENT",
+          tripId,
+          stopId,
+          payload: { eventType: "Loading Started", ...coords, clientActionId, phoneTime: new Date().toISOString() }
+        });
+        message.info("Đã ghi nhận bắt đầu bốc/dỡ (Ngoại tuyến).");
+      } else {
+        const res = await driverApi.recordStopEvent(tripId, stopId, {
+          eventType: "Loading Started",
+          ...coords,
+          clientActionId
+        });
+
+        if (res.suggestedWaitingFee && res.suggestedWaitingFee > 0) {
+          message.warning(`Thời gian chờ ${res.waitingMinutes}p vượt hạn mức (${res.freeWaitingMinutes}p). Gợi ý phụ phí chờ: ${res.suggestedWaitingFee.toLocaleString('vi-VN')} đ (BR-30)`);
+          setFeeType("Bốc xếp thêm");
+          setFeeAmount(res.suggestedWaitingFee);
+          setFeeReason(`Phí chờ bốc dỡ quá hạn ${res.waitingMinutes} phút tại điểm dừng #${currentStop?.sequence || ''}`);
+          setActiveStopTarget(currentStop);
+          setExtraFeeModalOpen(true);
+        } else {
+          message.success(`Đã bắt đầu bốc/dỡ hàng. Thời gian chờ: ${res.waitingMinutes || 0} phút.`);
+        }
+      }
+      fetchDashboardData();
+    } catch (err) {
+      message.error(err.message || "Không thể cập nhật bắt đầu bốc/dỡ");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 4c. Workflow Action: Rời khỏi điểm dừng (Left - BR-36)
+  const handleLeftStop = async (tripId, stopId) => {
+    try {
+      setActionLoading(true);
+      const coords = await getCurrentGps();
+      const clientActionId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined;
+
+      if (isOffline) {
+        await queueOfflineAction({
+          type: "RECORD_STOP_EVENT",
+          tripId,
+          stopId,
+          payload: { eventType: "Left", ...coords, clientActionId, phoneTime: new Date().toISOString() }
+        });
+        message.info("Đã ghi nhận rời đi (Ngoại tuyến).");
+      } else {
+        await driverApi.recordStopEvent(tripId, stopId, {
+          eventType: "Left",
+          ...coords,
+          clientActionId
+        });
+        message.success("Đã ghi nhận rời đi, tiếp tục hành trình!");
+      }
+      fetchDashboardData();
+    } catch (err) {
+      message.error(err.message || "Không thể cập nhật rời đi");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // 5. Workflow Action: Bốc Hàng & Niêm Chì 3 Bước (BR-11, BR-33, MSG45)
   const handleSubmitPickup = async () => {
     if (!activeStopTarget || !tripData?.trip?.id) return;
@@ -224,6 +306,7 @@ export default function DriverDashboard() {
         message.info("Đã lưu bốc hàng và niêm chì (Ngoại tuyến).");
       } else {
         await driverApi.recordPickup(tripData.trip.id, activeStopTarget.id, payload);
+        await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, { eventType: "Loading Done" });
         message.success("Ghi nhận lấy hàng và niêm chì thành công! (BR-11)");
       }
       setSealModalOpen(false);
@@ -281,6 +364,7 @@ export default function DriverDashboard() {
         message.info("Đã lưu biên bản giao nhận POD (Ngoại tuyến).");
       } else {
         const res = await driverApi.recordDelivery(tripData.trip.id, activeStopTarget.id, payload);
+        await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, { eventType: "Loading Done" });
         if (res.isTripCompleted) {
           message.success("Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe (BR-24)!");
         } else {
@@ -460,6 +544,20 @@ export default function DriverDashboard() {
             <RefreshCw className="w-5 h-5" />
           </button>
         </div>
+
+        {/* OFFLINE SYNC STATUS & MANUAL SYNC BUTTON (BR-27, BR-37, MSG39) */}
+        <OfflineSyncStatus onSyncCompleted={fetchDashboardData} />
+
+        {/* CẢNH BÁO GIỚI HẠN GIỜ LÁI XE TỨC THỜI (BR-34, MSG65) */}
+        {drivingHours && Number(drivingHours.continuous_hours_left) <= 0.5 && (
+          <div className="mb-4 p-3.5 bg-amber-500/20 border border-amber-500/50 rounded-2xl flex items-center gap-3 text-amber-200 shadow-lg animate-pulse">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div className="text-xs">
+              <span className="font-bold block text-amber-300">CẢNH BÁO GIỚI HẠN GIỜ LÁI XE (MSG65)</span>
+              Tài xế sắp vượt giới hạn lái xe (4 giờ). Cần nghỉ ngơi trước {new Date(Date.now() + 30 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+            </div>
+          </div>
+        )}
 
         {/* WIDGET: Giờ lái an toàn còn lại (Screen 6.1 (4), BR-34) */}
         {drivingHours && (
@@ -677,7 +775,62 @@ export default function DriverDashboard() {
                     </button>
                   </div>
 
-                  {/* Step A: If Pending -> Arrive Button */}
+                  {/* 4-Step Progress Stepper (BR-36, Workflow Spec Giai đoạn 3) */}
+                  <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-700/80 mb-2">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
+                      <span>Tiến trình điểm dừng #{currentStop.sequence} (Chuỗi 4 bước)</span>
+                      <span className="text-blue-300 font-mono">{currentStop.status}</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
+                      {/* Step 1: Arrived */}
+                      <div className={`p-2 rounded-xl border transition-all ${
+                        currentStop.status !== 'Pending' 
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' 
+                          : 'bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse'
+                      }`}>
+                        <span className="block text-xs mb-0.5">{currentStop.status !== 'Pending' ? '✓' : '1'}</span>
+                        <span>Đã đến</span>
+                      </div>
+
+                      {/* Step 2: Loading Started */}
+                      <div className={`p-2 rounded-xl border transition-all ${
+                        ['Loading Started', 'Loading Done', 'Done'].includes(currentStop.status)
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                          : currentStop.status === 'Arrived'
+                          ? 'bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse'
+                          : 'bg-slate-800 border-slate-700 text-slate-500'
+                      }`}>
+                        <span className="block text-xs mb-0.5">{['Loading Started', 'Loading Done', 'Done'].includes(currentStop.status) ? '✓' : '2'}</span>
+                        <span>Bắt đầu</span>
+                      </div>
+
+                      {/* Step 3: Loading Done */}
+                      <div className={`p-2 rounded-xl border transition-all ${
+                        ['Loading Done', 'Done'].includes(currentStop.status)
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                          : currentStop.status === 'Loading Started'
+                          ? 'bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse'
+                          : 'bg-slate-800 border-slate-700 text-slate-500'
+                      }`}>
+                        <span className="block text-xs mb-0.5">{['Loading Done', 'Done'].includes(currentStop.status) ? '✓' : '3'}</span>
+                        <span>{currentStop.stop_type === 'Pickup' ? 'Bốc/Chì' : 'Dỡ/POD'}</span>
+                      </div>
+
+                      {/* Step 4: Left */}
+                      <div className={`p-2 rounded-xl border transition-all ${
+                        currentStop.status === 'Done'
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                          : currentStop.status === 'Loading Done'
+                          ? 'bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse'
+                          : 'bg-slate-800 border-slate-700 text-slate-500'
+                      }`}>
+                        <span className="block text-xs mb-0.5">{currentStop.status === 'Done' ? '✓' : '4'}</span>
+                        <span>Rời đi</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 1: If Pending -> Arrive Button */}
                   {currentStop.status === "Pending" && (
                     <Button 
                       type="primary" 
@@ -686,12 +839,25 @@ export default function DriverDashboard() {
                       onClick={() => handleArriveStop(trip.id, currentStop.id)}
                       className="w-full bg-blue-600 hover:bg-blue-500 border-none font-black rounded-xl h-12 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
                     >
-                      <MapPin size={18}/> ĐÃ ĐẾN NƠI (ĐIỂM #{currentStop.sequence})
+                      <MapPin size={18}/> BƯỚC 1: ĐÃ ĐẾN NƠI (ARRIVED)
                     </Button>
                   )}
 
-                  {/* Step B: If Arrived & Pickup -> Bốc hàng & Niêm chì Modal (BR-11) */}
-                  {currentStop.status === "Arrived" && currentStop.stop_type === "Pickup" && (
+                  {/* Step 2: If Arrived -> Bắt đầu bốc / dỡ (Loading Started - BR-30) */}
+                  {currentStop.status === "Arrived" && (
+                    <Button 
+                      type="primary" 
+                      size="large"
+                      loading={actionLoading}
+                      onClick={() => handleStartLoading(trip.id, currentStop.id)}
+                      className="w-full bg-amber-600 hover:bg-amber-500 border-none font-black rounded-xl h-12 shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2"
+                    >
+                      <Clock size={18}/> BƯỚC 2: BẮT ĐẦU BỐC / DỠ HÀNG (LOADING STARTED)
+                    </Button>
+                  )}
+
+                  {/* Step 3: If Loading Started & Pickup -> Bốc hàng & Niêm chì Modal (BR-11) */}
+                  {currentStop.status === "Loading Started" && currentStop.stop_type === "Pickup" && (
                     <Button 
                       type="primary" 
                       size="large"
@@ -701,12 +867,12 @@ export default function DriverDashboard() {
                       }}
                       className="w-full bg-indigo-600 hover:bg-indigo-500 border-none font-black rounded-xl h-12 shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
                     >
-                      <Camera size={18}/> BỐC HÀNG & CHỤP ẢNH NIÊM CHÌ (BR-11)
+                      <Camera size={18}/> BƯỚC 3: BỐC HÀNG & CHỤP ẢNH NIÊM CHÌ (BR-11)
                     </Button>
                   )}
 
-                  {/* Step C: If Arrived & Drop-off -> Giao hàng & POD Modal / Từ chối (BR-12, BR-57) */}
-                  {currentStop.status === "Arrived" && currentStop.stop_type === "Drop-off" && (
+                  {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal / Từ chối (BR-12, BR-57) */}
+                  {currentStop.status === "Loading Started" && currentStop.stop_type === "Drop-off" && (
                     <div className="grid grid-cols-3 gap-2">
                       <Button 
                         type="primary" 
@@ -717,7 +883,7 @@ export default function DriverDashboard() {
                         }}
                         className="col-span-2 bg-emerald-600 hover:bg-emerald-500 border-none font-black rounded-xl h-12 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 text-xs"
                       >
-                        <Camera size={16}/> GIAO HÀNG & POD (BR-12)
+                        <Camera size={16}/> BƯỚC 3: GIAO HÀNG & POD (BR-12)
                       </Button>
 
                       <Button 
@@ -732,6 +898,19 @@ export default function DriverDashboard() {
                         <Ban size={14}/> KHÁCH TỪ CHỐI (BR-57)
                       </Button>
                     </div>
+                  )}
+
+                  {/* Step 4: If Loading Done -> Rời khỏi điểm dừng (Left - BR-36) */}
+                  {currentStop.status === "Loading Done" && (
+                    <Button 
+                      type="primary" 
+                      size="large"
+                      loading={actionLoading}
+                      onClick={() => handleLeftStop(trip.id, currentStop.id)}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 border-none font-black rounded-xl h-12 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={18}/> BƯỚC 4: RỜI ĐI (LEFT - TIẾP TỤC LỘ TRÌNH)
+                    </Button>
                   )}
                 </div>
               )}

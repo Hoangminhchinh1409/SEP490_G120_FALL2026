@@ -30,7 +30,7 @@ const login = async (req, res) => {
         });
 
     } catch (error) {
-        return res.status(401).json({
+        return res.status(error.statusCode || 401).json({
             message: error.message,
             code: error.code || null
         });
@@ -66,11 +66,37 @@ const changePassword = async (req, res) => {
         return res.status(200).json(result);
     } catch (error) {
         return res.status(error.statusCode || 500).json({
-            message: error.message
+            message: error.message,
+            code: error.code || null
         });
     }
 };
 
+const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        const result = await authService.requestPasswordReset(email);
+        return res.status(200).json(result);
+    } catch (error) {
+        return res.status(error.statusCode || 500).json({
+            message: error.message,
+            code: error.code || null
+        });
+    }
+};
+
+const resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+        const result = await authService.resetPasswordWithToken(token, newPassword);
+        return res.status(200).json(result);
+    } catch (error) {
+        return res.status(error.statusCode || 400).json({
+            message: error.message,
+            code: error.code || null
+        });
+    }
+};
 
 const logout = async (req, res) => {
     res.clearCookie("token", {
@@ -91,5 +117,7 @@ module.exports = {
     login,
     getMe,
     changePassword,
+    forgotPassword,
+    resetPassword,
     logout
 };

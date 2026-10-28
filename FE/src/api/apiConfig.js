@@ -8,6 +8,8 @@ export const API_ENDPOINTS = {
         LOGOUT: "/auth/logout",
         ME: "/auth/me",// lấy thông tin người dùng hiện tại
         CHANGE_PASSWORD: "/auth/change-password",// thay đổi mật khẩu
+        FORGOT_PASSWORD: "/auth/forgot-password",
+        RESET_PASSWORD: "/auth/reset-password",
     },
 
     USERS: {

@@ -45,9 +45,8 @@ export default function SettingsPage() {
           document_retention_days: settingsMap.document_retention_days || 730,
           gps_track_retention_days: settingsMap.gps_track_retention_days || 90,
           file_size_limit_mb: settingsMap.file_size_limit_mb || 10,
-          // Bảo mật & AI
-          password_reset_expiry_minutes: settingsMap.password_reset_expiry_minutes || 30,
-          document_assistant_enabled: settingsMap.document_assistant_enabled ?? true
+          // Bảo mật
+          password_reset_expiry_minutes: settingsMap.password_reset_expiry_minutes || 30
         });
       } catch (error) {
         console.error('Lỗi khi tải cấu hình hệ thống:', error);
@@ -233,15 +232,11 @@ export default function SettingsPage() {
           <Divider />
 
           <div className="flex items-center gap-2 text-emerald-600 font-bold text-base mb-4 border-b border-slate-100 pb-2">
-            <Clock size={18} /> Bảo mật & Tiện ích AI
+            <Clock size={18} /> Bảo mật & Khôi phục Mật khẩu
           </div>
 
           <Form.Item name="password_reset_expiry_minutes" label="Thời hạn hiệu lực link đặt lại mật khẩu (phút)">
             <InputNumber min={5} max={120} className="w-36 h-10 rounded-lg" />
-          </Form.Item>
-
-          <Form.Item name="document_assistant_enabled" label="Bật Trợ lý AI OCR bóc tách chứng từ" valuePropName="checked">
-            <Switch checkedChildren="BẬT" unCheckedChildren="TẮT" />
           </Form.Item>
         </div>
 

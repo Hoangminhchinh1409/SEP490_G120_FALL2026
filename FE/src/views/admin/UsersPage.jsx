@@ -4,9 +4,16 @@ import { Table, Tag, Button, Input, Select, Modal, Form, Switch, message, Popcon
 import { Search, Plus, Edit, Lock, Unlock, RotateCcw, User, Mail, Phone, Shield } from 'lucide-react';
 import { adminApi } from '../../api/adminApi';
 
+const SYSTEM_ROLES = [
+  { id: 1, name: 'ADMINISTRATOR (Quản trị viên)' },
+  { id: 2, name: 'MANAGER (Quản lý Vận hành)' },
+  { id: 3, name: 'DISPATCHER (Điều phối viên)' },
+  { id: 4, name: 'DRIVER (Tài xế)' }
+];
+
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
-  const [roles, setRoles] = useState([]);
+  const [roles, setRoles] = useState(SYSTEM_ROLES);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('CREATE'); // 'CREATE' | 'EDIT'
@@ -38,7 +45,7 @@ export default function UsersPage() {
           email: selectedUser.email,
           phone: selectedUser.phone,
           zalo_link: selectedUser.zalo_link,
-          role_id: selectedUser.role_id,
+          role_id: Number(selectedUser.role_id),
           status: selectedUser.status === 'ACTIVE',
           password: '',
           confirmPassword: ''
@@ -53,12 +60,23 @@ export default function UsersPage() {
     }
   }, [modalVisible, modalMode, selectedUser, form]);
 
-  // 1. Tải danh mục Roles
+  // 1. Tải danh mục Roles từ backend (nếu có bổ sung vai trò mới)
   useEffect(() => {
     const fetchRoles = async () => {
       try {
         const rolesData = await adminApi.getRoles();
-        setRoles(rolesData || []);
+        if (Array.isArray(rolesData) && rolesData.length > 0) {
+          const roleLabels = {
+            1: 'ADMINISTRATOR (Quản trị viên)',
+            2: 'MANAGER (Quản lý Vận hành)',
+            3: 'DISPATCHER (Điều phối viên)',
+            4: 'DRIVER (Tài xế)'
+          };
+          setRoles(rolesData.map(r => ({
+            id: Number(r.id),
+            name: roleLabels[r.id] || r.name
+          })));
+        }
       } catch (error) {
         console.error('Lỗi tải danh mục vai trò:', error);
       }
@@ -541,7 +559,7 @@ export default function UsersPage() {
           >
             <Select
               className="h-10"
-              options={roles.map(r => ({ value: r.id, label: r.name }))}
+              options={roles.map(r => ({ value: Number(r.id), label: r.name }))}
               placeholder="Chọn vai trò..."
             />
           </Form.Item>

@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const driverModel = require("../models/driverModel");
+const supabase = require("../config/supabase");
 
 // ==========================================
 // 1. PROFILE & OVERVIEW
@@ -527,6 +528,19 @@ const reportIncident = async (userId, incidentData) => {
 // 7. STOP EVENTS & GEOFENCE (BR-36)
 // ==========================================
 
+// Kiểm tra độ lệch đồng hồ (BR-27)
+const validatePhoneTime = (phoneTime) => {
+  const now = Date.now();
+  if (!phoneTime) return { time: new Date(now).toISOString(), timeFlagged: false };
+  const clientTs = new Date(phoneTime).getTime();
+  const driftMinutes = (clientTs - now) / 60000;
+  // BR-27: Nếu phone_time vượt quá 5 phút so với đồng hồ server hoặc quá 24h trong quá khứ
+  if (driftMinutes > 5 || driftMinutes < -1440) {
+    return { time: new Date(now).toISOString(), timeFlagged: true };
+  }
+  return { time: new Date(clientTs).toISOString(), timeFlagged: false };
+};
+
 const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = null, phoneLng = null, phoneTime = null, clientActionId = null, payload = null } = {}) => {
   const actionId = clientActionId || crypto.randomUUID();
   if (await driverModel.checkIdempotency(actionId)) {
@@ -558,24 +572,118 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
     }
   }
 
-  const recordedTime = phoneTime || new Date().toISOString();
+  // BR-27 Clock validation
+  const { time: recordedTime, timeFlagged } = validatePhoneTime(phoneTime);
+
+  const normalizedEventType = (eventType || "Stop Event").trim();
+  let eventPayload = {
+    ...(payload || {}),
+    time_flagged: timeFlagged
+  };
+
+  let waitingMinutes = 0;
+  let suggestedWaitingFee = 0;
+  let freeWaitingMinutes = 60;
+
+  // Xử lý chuỗi 4 sự kiện chuẩn (Report 4 & Workflow Specification)
+  if (normalizedEventType === "Loading Started") {
+    // 1. Tính thời gian chờ (Waiting time: từ lúc Arrived đến lúc Loading Started)
+    let arrivalTime = stop.actual_arrival;
+    if (!arrivalTime) {
+      const { data: arrEvents } = await supabase
+        .from("trip_events")
+        .select("phone_time, created_at")
+        .eq("trip_stop_id", stopId)
+        .eq("event_type", "Arrived")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (arrEvents && arrEvents.length > 0) {
+        arrivalTime = arrEvents[0].phone_time || arrEvents[0].created_at;
+      }
+    }
+
+    if (arrivalTime) {
+      const arrTs = new Date(arrivalTime).getTime();
+      const startTs = new Date(recordedTime).getTime();
+      waitingMinutes = Math.max(0, Math.round((startTs - arrTs) / 60000));
+
+      // Lấy thời gian chờ miễn phí từ system_settings
+      const { data: waitSetting } = await supabase
+        .from("system_settings")
+        .select("value")
+        .eq("key", "waiting_too_long_minutes")
+        .maybeSingle();
+
+      if (waitSetting && !isNaN(Number(waitSetting.value))) {
+        freeWaitingMinutes = Number(waitSetting.value);
+      }
+
+      // BR-30: Nếu thời gian chờ vượt định mức hợp đồng/hệ thống -> Gợi ý phí chờ
+      if (waitingMinutes > freeWaitingMinutes) {
+        const excessMinutes = waitingMinutes - freeWaitingMinutes;
+        suggestedWaitingFee = Math.ceil(excessMinutes / 30) * 100000; // 100k mỗi block 30p
+      }
+    }
+
+    eventPayload.waiting_minutes = waitingMinutes;
+    eventPayload.free_waiting_minutes = freeWaitingMinutes;
+    eventPayload.suggested_waiting_fee = suggestedWaitingFee;
+
+    await driverModel.updateTripStop(stopId, { status: "Loading Started" });
+
+  } else if (normalizedEventType === "Loading Done") {
+    await driverModel.updateTripStop(stopId, { status: "Loading Done" });
+
+  } else if (normalizedEventType === "Left") {
+    await driverModel.updateTripStop(stopId, { status: "Done" });
+
+    // Nếu điểm dừng là lấy hàng và có đơn hàng, chuyển trạng thái đơn sang In Transit
+    if (stop.stop_type === "Pickup" && stop.order_id) {
+      await driverModel.updateOrdersStatus(
+        [stop.order_id],
+        "In Transit",
+        `Đã rời điểm lấy hàng #${stop.sequence}, đang vận chuyển trên đường`,
+        userId
+      );
+    }
+
+    // Kiểm tra xem đây có phải điểm dừng cuối cùng của chuyến không
+    const remainingStops = trip.stops?.filter(s => s.id !== stopId && s.status !== "Done") || [];
+    if (remainingStops.length === 0) {
+      // Đã hoàn thành điểm dừng cuối -> Chuyến xe hoàn thành (Completed)
+      await driverModel.updateTripStatus(tripId, "Completed");
+      if (trip.truck?.id) {
+        await driverModel.updateTruckStatus(trip.truck.id, "Available");
+      }
+      await driverModel.updateDriverProfileStatus(profile.id, "Available");
+      await supabase
+        .from("driver_profiles")
+        .update({ last_trip_ended_at: recordedTime })
+        .eq("id", profile.id);
+    }
+  }
+
   const event = await driverModel.recordTripEvent({
     clientActionId: actionId,
     tripId,
     tripStopId: stopId,
     driverId: profile.id,
-    eventType: eventType || "Stop Event",
+    eventType: normalizedEventType,
     phoneTime: recordedTime,
     latitude: phoneLat,
     longitude: phoneLng,
     outsideRadiusFlag: isOutsideRadius,
-    payload
+    payload: eventPayload
   });
 
   return {
     success: true,
-    message: `Đã ghi nhận sự kiện ${eventType || "điểm dừng"}`,
+    message: `Đã ghi nhận sự kiện ${normalizedEventType}`,
     isOutsideRadius,
+    timeFlagged,
+    waitingMinutes,
+    suggestedWaitingFee,
+    freeWaitingMinutes,
     event
   };
 };

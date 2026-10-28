@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 
 const userModel = require("../models/userModel");
 const driverModel = require("../models/driverModel");
@@ -25,7 +26,7 @@ const login = async (identifier, password) => {
         throw error;
     }
 
-    // Kiểm tra Chế độ bảo trì hệ thống (SRS v2 - MSG86)
+    // Kiểm tra Chế độ bảo trì hệ thống (SRS v2 / Report 4 - MSG86)
     // Khi bật bảo trì, chỉ duy nhất Administrator (role_id = 1) được phép đăng nhập
     if (Number(user.role_id) !== 1) {
         const { data: maintenanceSetting } = await supabase
@@ -35,7 +36,10 @@ const login = async (identifier, password) => {
             .maybeSingle();
 
         if (maintenanceSetting && (maintenanceSetting.value === "true" || maintenanceSetting.value === true)) {
-            throw new Error("Hệ thống đang bảo trì. Vui lòng quay lại sau.");
+            const error = new Error("Hệ thống đang bảo trì. Vui lòng quay lại sau.");
+            error.code = "MSG86";
+            error.statusCode = 403;
+            throw error;
         }
     }
 
@@ -117,19 +121,15 @@ const getCurrentUser = async (userId) => {
 
 const changePassword = async (userId, currentPassword, newPassword) => {
     if (typeof currentPassword !== "string" || !currentPassword) {
-        const error = new Error("Current password is required");
+        const error = new Error("Mật khẩu hiện tại không đúng.");
+        error.code = "MSG58";
         error.statusCode = 400;
         throw error;
     }
 
-    if (typeof newPassword !== "string" || !newPassword) {
-        const error = new Error("New password is required");
-        error.statusCode = 400;
-        throw error;
-    }
-
-    if (newPassword.length < 6) {
-        const error = new Error("Password must be at least 6 characters long");
+    if (typeof newPassword !== "string" || !newPassword || newPassword.length < 8) {
+        const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
+        error.code = "MSG59";
         error.statusCode = 400;
         throw error;
     }
@@ -147,7 +147,15 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     );
 
     if (!isCurrentPasswordValid) {
-        const error = new Error("Current password is incorrect");
+        const error = new Error("Mật khẩu hiện tại không đúng.");
+        error.code = "MSG58";
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (currentPassword === newPassword) {
+        const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
+        error.code = "MSG59";
         error.statusCode = 400;
         throw error;
     }
@@ -155,12 +163,127 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await userModel.updatePassword(userId, passwordHash);
 
-    return { message: "Password changed successfully" };
+    return {
+        message: "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.",
+        code: "MSG60"
+    };
 };
 
+const requestPasswordReset = async (email) => {
+    if (!email || typeof email !== "string") {
+        return {
+            message: "Nếu email có trong hệ thống, link đặt lại mật khẩu đã được gửi.",
+            code: "MSG70"
+        };
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const { data: user } = await supabase
+        .from("users")
+        .select("id, email, username, status")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+
+    if (user && user.status === "ACTIVE") {
+        // Lấy thời hạn link reset từ system_settings (BR-49, mặc định 30 phút)
+        let expiryMinutes = 30;
+        const { data: expirySetting } = await supabase
+            .from("system_settings")
+            .select("value")
+            .eq("key", "password_reset_expiry_minutes")
+            .maybeSingle();
+
+        if (expirySetting && !isNaN(Number(expirySetting.value))) {
+            expiryMinutes = Number(expirySetting.value);
+        }
+
+        const token = crypto.randomBytes(32).toString("hex");
+        const expiryDate = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
+
+        await supabase
+            .from("users")
+            .update({
+                password_reset_token: token,
+                password_reset_expiry: expiryDate,
+                updated_at: new Date().toISOString()
+            })
+            .eq("id", user.id);
+
+        console.log(`[PASSWORD_RESET] Generated reset token for ${user.email}: ${token} (expires in ${expiryMinutes}m at ${expiryDate})`);
+    }
+
+    return {
+        message: "Nếu email có trong hệ thống, link đặt lại mật khẩu đã được gửi.",
+        code: "MSG70"
+    };
+};
+
+const resetPasswordWithToken = async (token, newPassword) => {
+    if (!token || typeof token !== "string") {
+        const error = new Error("Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu link mới.");
+        error.code = "MSG61";
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (!newPassword || typeof newPassword !== "string" || newPassword.length < 8) {
+        const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
+        error.code = "MSG59";
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const { data: user, error: findError } = await supabase
+        .from("users")
+        .select("id, password_hash, password_reset_expiry")
+        .eq("password_reset_token", token)
+        .maybeSingle();
+
+    if (findError || !user) {
+        const error = new Error("Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu link mới.");
+        error.code = "MSG61";
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const isExpired = !user.password_reset_expiry || new Date(user.password_reset_expiry).getTime() < Date.now();
+    if (isExpired) {
+        const error = new Error("Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu link mới.");
+        error.code = "MSG61";
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const isSamePassword = await bcrypt.compare(newPassword, user.password_hash);
+    if (isSamePassword) {
+        const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
+        error.code = "MSG59";
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await supabase
+        .from("users")
+        .update({
+            password_hash: passwordHash,
+            password_reset_token: null,
+            password_reset_expiry: null,
+            password_changed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        })
+        .eq("id", user.id);
+
+    return {
+        message: "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.",
+        code: "MSG60"
+    };
+};
 
 module.exports = {
     login,
     getCurrentUser,
-    changePassword
+    changePassword,
+    requestPasswordReset,
+    resetPasswordWithToken
 };

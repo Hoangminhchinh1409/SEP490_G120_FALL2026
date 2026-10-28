@@ -1,47 +1,20 @@
 import { fetchWithAuth } from "./apiClient";
+import { enqueueAction, getPendingActions, clearOfflineQueue } from "../utils/offlineQueue";
 
 // ==========================================
-// 1. OFFLINE STORAGE QUEUE (BR-27)
+// 1. OFFLINE STORAGE QUEUE (BR-27, BR-37, MSG39)
 // ==========================================
 
-const OFFLINE_QUEUE_KEY = "nexlog_driver_offline_actions";
-
-export const getOfflineActions = () => {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error("Failed to read offline actions", e);
-    return [];
-  }
+export const getOfflineActions = async () => {
+  return await getPendingActions();
 };
 
-export const queueOfflineAction = (action) => {
-  if (typeof window === "undefined") return;
-  try {
-    const actions = getOfflineActions();
-    if (actions.length >= 50) {
-      throw new Error("Đã đạt giới hạn 50 thao tác ngoại tuyến chưa đồng bộ. (MSG39)");
-    }
-    actions.push({
-      ...action,
-      queuedAt: new Date().toISOString()
-    });
-    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(actions));
-  } catch (e) {
-    console.error("Failed to queue offline action", e);
-    throw e;
-  }
+export const queueOfflineAction = async (action) => {
+  return await enqueueAction(action);
 };
 
-export const clearOfflineActions = () => {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.removeItem(OFFLINE_QUEUE_KEY);
-  } catch (e) {
-    console.error("Failed to clear offline actions", e);
-  }
+export const clearOfflineActions = async () => {
+  return await clearOfflineQueue();
 };
 
 // ==========================================
@@ -202,7 +175,7 @@ export const driverApi = {
 
   // Hàm tự động đồng bộ hàng đợi ngoại tuyến khi có mạng
   syncPendingQueue: async () => {
-    const pendingActions = getOfflineActions();
+    const pendingActions = await getOfflineActions();
     if (!pendingActions || pendingActions.length === 0) {
       return { success: true, syncedCount: 0 };
     }
@@ -212,7 +185,7 @@ export const driverApi = {
         method: "POST",
         body: JSON.stringify({ actions: pendingActions })
       });
-      clearOfflineActions();
+      await clearOfflineActions();
       return res;
     } catch (err) {
       console.error("Error flushing offline queue:", err);

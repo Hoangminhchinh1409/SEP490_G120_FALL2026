@@ -1,6 +1,31 @@
 const jwt = require('jsonwebtoken');
+const supabase = require('../config/supabase');
 
-const requireAuth = (req, res, next) => {
+let maintenanceCache = {
+    value: false,
+    timestamp: 0
+};
+
+const isMaintenanceActive = async () => {
+    const now = Date.now();
+    if (now - maintenanceCache.timestamp < 5000) {
+        return maintenanceCache.value;
+    }
+    try {
+        const { data } = await supabase
+            .from("system_settings")
+            .select("value")
+            .eq("key", "maintenance_mode")
+            .maybeSingle();
+        maintenanceCache.value = data && (data.value === "true" || data.value === true);
+        maintenanceCache.timestamp = now;
+        return maintenanceCache.value;
+    } catch (err) {
+        return false;
+    }
+};
+
+const requireAuth = async (req, res, next) => {
     try {
         let token = req.cookies?.token;
 
@@ -20,6 +45,17 @@ const requireAuth = (req, res, next) => {
         );
 
         req.user = decoded;
+
+        // Kiểm tra chế độ bảo trì hệ thống (Report 4 / MSG86)
+        if (Number(decoded.role_id) !== 1) {
+            const maintenance = await isMaintenanceActive();
+            if (maintenance) {
+                return res.status(403).json({
+                    message: "Hệ thống đang bảo trì. Vui lòng quay lại sau.",
+                    code: "MSG86"
+                });
+            }
+        }
 
         next();
 

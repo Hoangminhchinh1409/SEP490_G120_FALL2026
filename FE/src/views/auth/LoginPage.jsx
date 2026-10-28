@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../providers/AuthProvider';
 import Header from '../../components/common/Header';
-import { Mail, Lock, Eye, EyeOff, CheckCircle2, ArrowRight, Truck } from 'lucide-react';
+import { API_ENDPOINTS } from '../../api/apiConfig';
+import { fetchWithoutAuth } from '../../api/apiClient';
+import { Mail, Lock, Eye, EyeOff, CheckCircle2, ArrowRight, Truck, KeyRound, X } from 'lucide-react';
 
 const LoginPage = () => {
   const navigate = useRouter();
@@ -19,9 +21,61 @@ const LoginPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Modal quên mật khẩu
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotTab, setForgotTab] = useState('request'); // 'request' | 'reset'
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMsg, setForgotMsg] = useState({ type: '', text: '' });
+
   const applyFieldChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
     setError('');
+  };
+
+  const handleRequestReset = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail) return;
+    setForgotLoading(true);
+    setForgotMsg({ type: '', text: '' });
+    try {
+      const data = await fetchWithoutAuth(API_ENDPOINTS.AUTH.FORGOT_PASSWORD, {
+        method: 'POST',
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      setForgotMsg({ type: 'success', text: data.message || 'Nếu email có trong hệ thống, link đặt lại mật khẩu đã được gửi. (MSG70)' });
+    } catch (err) {
+      setForgotMsg({ type: 'error', text: err.message || 'Không thể gửi yêu cầu đặt lại mật khẩu.' });
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!resetToken || !newPassword) return;
+    setForgotLoading(true);
+    setForgotMsg({ type: '', text: '' });
+    try {
+      const data = await fetchWithoutAuth(API_ENDPOINTS.AUTH.RESET_PASSWORD, {
+        method: 'POST',
+        body: JSON.stringify({ token: resetToken, newPassword })
+      });
+      setForgotMsg({ type: 'success', text: data.message || 'Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại. (MSG60)' });
+      setTimeout(() => {
+        setShowForgotModal(false);
+        setForgotMsg({ type: '', text: '' });
+        setResetToken('');
+        setNewPassword('');
+      }, 2500);
+    } catch (err) {
+      setForgotMsg({ type: 'error', text: err.message || 'Đổi mật khẩu thất bại.' });
+    } finally {
+      setForgotLoading(false);
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -176,15 +230,22 @@ const LoginPage = () => {
                     </div>
                     <span className="font-medium select-none">Ghi nhớ đăng nhập</span>
                   </label>
-                  <Link href="#" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors hover:underline underline-offset-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotModal(true);
+                      setForgotMsg({ type: '', text: '' });
+                    }}
+                    className="text-blue-600 hover:text-blue-700 font-semibold transition-colors hover:underline underline-offset-4"
+                  >
                     Quên mật khẩu?
-                  </Link>
+                  </button>
                 </div>
 
                 {error && (
-                  <div className="p-4 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-sm font-medium flex items-start gap-3 animate-in fade-in slide-in-from-top-1">
-                    <span className="block mt-0.5 text-red-500">⚠️</span>
-                    <span>{error}</span>
+                  <div className="p-4 bg-red-500/10 border border-red-500/30 text-red-600 rounded-xl text-sm font-semibold flex items-start gap-3 animate-in fade-in slide-in-from-top-1">
+                    <span className="block mt-0.5 text-red-500 text-base">⚠️</span>
+                    <span className="leading-relaxed">{error}</span>
                   </div>
                 )}
 
@@ -206,6 +267,171 @@ const LoginPage = () => {
             </div>
           </div>
         </div>
+
+        {/* Forgot Password Modal */}
+        {showForgotModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full p-6 sm:p-8 relative animate-in fade-in zoom-in-95">
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                className="absolute top-5 right-5 p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center">
+                  <KeyRound className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">Khôi phục mật khẩu</h3>
+                  <p className="text-xs text-slate-500">Bảo mật tài khoản NEXLOG (BR-49)</p>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex border-b border-slate-200 mb-6">
+                <button
+                  type="button"
+                  onClick={() => { setForgotTab('request'); setForgotMsg({ type: '', text: '' }); }}
+                  className={`pb-3 px-4 text-sm font-semibold border-b-2 transition-all ${
+                    forgotTab === 'request'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  1. Yêu cầu mã link
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setForgotTab('reset'); setForgotMsg({ type: '', text: '' }); }}
+                  className={`pb-3 px-4 text-sm font-semibold border-b-2 transition-all ${
+                    forgotTab === 'reset'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  2. Đặt lại mật khẩu
+                </button>
+              </div>
+
+              {/* Feedback Alert */}
+              {forgotMsg.text && (
+                <div
+                  className={`p-4 rounded-xl text-sm font-medium mb-5 flex items-start gap-3 ${
+                    forgotMsg.type === 'success'
+                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                      : 'bg-red-50 border border-red-200 text-red-700'
+                  }`}
+                >
+                  <span className="block mt-0.5">{forgotMsg.type === 'success' ? '✓' : '⚠️'}</span>
+                  <span className="leading-relaxed">{forgotMsg.text}</span>
+                </div>
+              )}
+
+              {forgotTab === 'request' ? (
+                <form onSubmit={handleRequestReset} className="space-y-4">
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Nhập địa chỉ email đăng ký tài khoản. Hệ thống sẽ tạo liên kết đặt lại mật khẩu có hiệu lực trong 30 phút.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                      Email đăng ký
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="name@company.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="pt-2 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="flex-1 py-3 border border-slate-200 text-slate-700 font-semibold text-sm rounded-xl hover:bg-slate-50 transition-colors"
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="flex-1 py-3 bg-blue-600 text-white font-bold text-sm rounded-xl hover:bg-blue-500 transition-all shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
+                    >
+                      {forgotLoading ? (
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <span>Gửi link đặt lại</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleResetPassword} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                      Mã Token bảo mật
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nhập mã token từ email"
+                      value={resetToken}
+                      onChange={(e) => setResetToken(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                      Mật khẩu mới (tối thiểu 8 ký tự - MSG59)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        required
+                        minLength={8}
+                        placeholder="••••••••"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-12"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="pt-2 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="flex-1 py-3 border border-slate-200 text-slate-700 font-semibold text-sm rounded-xl hover:bg-slate-50 transition-colors"
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="flex-1 py-3 bg-blue-600 text-white font-bold text-sm rounded-xl hover:bg-blue-500 transition-all shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
+                    >
+                      {forgotLoading ? (
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <span>Xác nhận đổi mật khẩu</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
