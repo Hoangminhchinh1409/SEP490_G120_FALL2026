@@ -1,54 +1,26 @@
 // FE/src/views/driver/components/OfflineSyncStatus.jsx
 "use client";
-import React, { useState, useEffect } from "react";
-import { CloudOff, Cloud, RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { CloudOff, Cloud, RefreshCw } from "lucide-react";
 import { getPendingCount, clearOfflineQueue, getPendingActions } from "../../../utils/offlineQueue";
 import { driverApi } from "../../../api/driverApi";
 import { message } from "antd";
 
 export default function OfflineSyncStatus({ onSyncCompleted }) {
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => (typeof window !== "undefined" ? navigator.onLine : true));
   const [pendingCount, setPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
 
-  const refreshCount = async () => {
+  const refreshCount = useCallback(async () => {
     try {
       const count = await getPendingCount();
       setPendingCount(count);
-    } catch (e) {
+    } catch {
       setPendingCount(0);
     }
-  };
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsOnline(navigator.onLine);
-    }
-
-    refreshCount();
-
-    const handleOnline = () => {
-      setIsOnline(true);
-      triggerSync(false);
-    };
-
-    const handleOffline = () => {
-      setIsOnline(false);
-      refreshCount();
-    };
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    const interval = setInterval(refreshCount, 4000);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-      clearInterval(interval);
-    };
   }, []);
 
-  const triggerSync = async (isManual = true) => {
+  const triggerSync = useCallback(async (isManual = true) => {
     if (syncing) return;
     const actions = await getPendingActions();
     if (!actions || actions.length === 0) {
@@ -56,7 +28,7 @@ export default function OfflineSyncStatus({ onSyncCompleted }) {
       return;
     }
 
-    if (!navigator.onLine) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       if (isManual) message.warning("Thiết bị đang ngoại tuyến. Vui lòng kết nối mạng để đồng bộ.");
       return;
     }
@@ -74,7 +46,38 @@ export default function OfflineSyncStatus({ onSyncCompleted }) {
     } finally {
       setSyncing(false);
     }
-  };
+  }, [syncing, refreshCount, onSyncCompleted]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void refreshCount();
+    }, 0);
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      void triggerSync(false);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      void refreshCount();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", handleOnline);
+      window.addEventListener("offline", handleOffline);
+    }
+    const interval = setInterval(refreshCount, 4000);
+
+    return () => {
+      clearTimeout(timer);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
+      }
+      clearInterval(interval);
+    };
+  }, [refreshCount, triggerSync]);
 
   return (
     <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700/70 rounded-2xl p-3 mb-4 flex items-center justify-between shadow-lg">

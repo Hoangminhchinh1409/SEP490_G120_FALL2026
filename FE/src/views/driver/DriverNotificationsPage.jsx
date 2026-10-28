@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
-import { Button, Tag, message, Spin, Empty } from "antd";
-import { Bell, CheckCheck, Clock, ArrowRight, ShieldAlert, Calendar, Truck } from "lucide-react";
+import { Button, message, Spin, Empty } from "antd";
+import { Bell, CheckCheck, Clock, ArrowRight, Calendar, Truck } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/vi";
@@ -30,7 +30,10 @@ export default function DriverNotificationsPage() {
   }, []);
 
   useEffect(() => {
-    fetchNotifications();
+    const timer = setTimeout(() => {
+      void fetchNotifications();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchNotifications]);
 
   const handleMarkRead = async (id) => {

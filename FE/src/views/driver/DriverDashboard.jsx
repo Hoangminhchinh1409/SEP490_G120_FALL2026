@@ -1,14 +1,40 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
-import { Tag, Button, Modal, Upload, Input, InputNumber, message, Spin, Progress, Checkbox, Select } from "antd";
-import { 
-  MapPin, Camera, CheckCircle, AlertTriangle, CloudOff, Cloud, 
-  Package, Navigation2, Truck, RefreshCw, Clock, FileText, DollarSign, Ban, ChevronRight
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  Tag,
+  Button,
+  Modal,
+  Upload,
+  Input,
+  InputNumber,
+  message,
+  Spin,
+  Progress,
+  Checkbox,
+  Select,
+} from "antd";
+import {
+  MapPin,
+  Camera,
+  CheckCircle,
+  AlertTriangle,
+  CloudOff,
+  Cloud,
+  Package,
+  Navigation2,
+  Truck,
+  RefreshCw,
+  Clock,
+  FileText,
+  DollarSign,
+  Ban,
 } from "lucide-react";
-import Link from "next/link";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
 import OfflineSyncStatus from "./components/OfflineSyncStatus";
-import { cacheTripDocuments, getCachedTripDocuments } from "../../utils/offlineQueue";
+import {
+  cacheTripDocuments,
+  getCachedTripDocuments,
+} from "../../utils/offlineQueue";
 
 export default function DriverDashboard() {
   const [isOffline, setIsOffline] = useState(() => {
@@ -32,38 +58,60 @@ export default function DriverDashboard() {
   const [activeStopTarget, setActiveStopTarget] = useState(null);
 
   // Form Inputs for Pickup (BR-11, BR-33)
-  const [cargoPhotoUrl, setCargoPhotoUrl] = useState("https://cdn.nexlog.vn/cargo-check-sample.jpg");
-  const [loadedCargoPhotoUrl, setLoadedCargoPhotoUrl] = useState("https://cdn.nexlog.vn/cargo-loaded-sample.jpg");
-  const [sealPhotoUrl, setSealPhotoUrl] = useState("https://cdn.nexlog.vn/seal-sample.jpg");
+  const [cargoPhotoUrl, setCargoPhotoUrl] = useState(
+    "https://cdn.nexlog.vn/cargo-check-sample.jpg",
+  );
+  const [loadedCargoPhotoUrl, setLoadedCargoPhotoUrl] = useState(
+    "https://cdn.nexlog.vn/cargo-loaded-sample.jpg",
+  );
+  const [sealPhotoUrl, setSealPhotoUrl] = useState(
+    "https://cdn.nexlog.vn/seal-sample.jpg",
+  );
   const [sealNumber, setSealNumber] = useState("");
   const [loadedPackages, setLoadedPackages] = useState(50);
   const [loadedWeight, setLoadedWeight] = useState(500);
 
   // Form Inputs for POD & Delivery (BR-12)
-  const [podPhotoUrl, setPodPhotoUrl] = useState("https://cdn.nexlog.vn/pod-sample.jpg");
-  const [cutSealPhotoUrl, setCutSealPhotoUrl] = useState("https://cdn.nexlog.vn/cut-seal-sample.jpg");
-  const [unloadedCargoPhotoUrl, setUnloadedCargoPhotoUrl] = useState("https://cdn.nexlog.vn/unloaded-sample.jpg");
+  const [podPhotoUrl, setPodPhotoUrl] = useState(
+    "https://cdn.nexlog.vn/pod-sample.jpg",
+  );
+  const [cutSealPhotoUrl, setCutSealPhotoUrl] = useState(
+    "https://cdn.nexlog.vn/cut-seal-sample.jpg",
+  );
+  const [unloadedCargoPhotoUrl, setUnloadedCargoPhotoUrl] = useState(
+    "https://cdn.nexlog.vn/unloaded-sample.jpg",
+  );
   const [receiverName, setReceiverName] = useState("");
   const [docsHandedOver, setDocsHandedOver] = useState(true);
   const [deliveredPackages, setDeliveredPackages] = useState(50);
 
   // Form Inputs for Customer Refusal (BR-57)
   const [refusalReason, setRefusalReason] = useState("");
-  const [refusalCargoPhoto, setRefusalCargoPhoto] = useState("https://cdn.nexlog.vn/refusal-sample.jpg");
+  const [refusalCargoPhoto, setRefusalCargoPhoto] = useState(
+    "https://cdn.nexlog.vn/refusal-sample.jpg",
+  );
   const [refusalNote, setRefusalNote] = useState("");
 
   // Form Inputs for Extra Fee (BR-30)
   const [feeType, setFeeType] = useState("Bốc xếp thêm");
   const [feeAmount, setFeeAmount] = useState(200000);
   const [feeReason, setFeeReason] = useState("");
-  const [feePhotoUrl, setFeePhotoUrl] = useState("https://cdn.nexlog.vn/fee-receipt.jpg");
+  const [feePhotoUrl, setFeePhotoUrl] = useState(
+    "https://cdn.nexlog.vn/fee-receipt.jpg",
+  );
+
+  const restDeadlineText = useMemo(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() + 30);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }, []);
 
   // 1. Tải dữ liệu chuyến xe hiện tại & hồ sơ tài xế
   const fetchDashboardData = useCallback(async () => {
     try {
       const [profileRes, activeTripRes] = await Promise.allSettled([
         driverApi.getMyProfile(),
-        driverApi.getActiveTrip()
+        driverApi.getActiveTrip(),
       ]);
 
       if (profileRes.status === "fulfilled") {
@@ -73,7 +121,10 @@ export default function DriverDashboard() {
       if (activeTripRes.status === "fulfilled" && activeTripRes.value?.trip) {
         setTripData(activeTripRes.value);
         // Lưu cache chứng từ chuyến xe ngoại tuyến (Mục 6781)
-        await cacheTripDocuments(activeTripRes.value.trip.id, activeTripRes.value);
+        await cacheTripDocuments(
+          activeTripRes.value.trip.id,
+          activeTripRes.value,
+        );
       } else if (isOffline) {
         // Nếu ngoại tuyến và không lấy được từ server -> Đọc từ cache
         const cached = await getCachedTripDocuments("active");
@@ -90,31 +141,40 @@ export default function DriverDashboard() {
 
   // 2. Lắng nghe trạng thái Online / Offline & Tự động đồng bộ (BR-27)
   useEffect(() => {
-    fetchDashboardData();
+    const initTimer = setTimeout(() => {
+      void fetchDashboardData();
+    }, 0);
 
     const handleOnline = async () => {
       setIsOffline(false);
-      message.success("Đã kết nối lại Internet. Đang đồng bộ dữ liệu ngoại tuyến (BR-27)...");
+      message.success(
+        "Đã kết nối lại Internet. Đang đồng bộ dữ liệu ngoại tuyến (BR-27)...",
+      );
       try {
         const syncRes = await driverApi.syncPendingQueue();
         if (syncRes && syncRes.syncedCount > 0) {
-          message.success(`Đã đồng bộ thành công ${syncRes.syncedCount} tác vụ lên máy chủ!`);
+          message.success(
+            `Đã đồng bộ thành công ${syncRes.syncedCount} tác vụ lên máy chủ!`,
+          );
         }
       } catch (e) {
         console.error("Auto sync failed", e);
       }
-      fetchDashboardData();
+      void fetchDashboardData();
     };
 
     const handleOffline = () => {
       setIsOffline(true);
-      message.warning("Mất kết nối Internet. Chế độ Ngoại tuyến (Offline-First) đã được kích hoạt.");
+      message.warning(
+        "Mất kết nối Internet. Chế độ Ngoại tuyến (Offline-First) đã được kích hoạt.",
+      );
     };
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
     return () => {
+      clearTimeout(initTimer);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
@@ -125,9 +185,13 @@ export default function DriverDashboard() {
     return new Promise((resolve) => {
       if (typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-          (pos) => resolve({ phoneLat: pos.coords.latitude, phoneLng: pos.coords.longitude }),
+          (pos) =>
+            resolve({
+              phoneLat: pos.coords.latitude,
+              phoneLng: pos.coords.longitude,
+            }),
           () => resolve({ phoneLat: null, phoneLng: null }),
-          { timeout: 5000, enableHighAccuracy: true }
+          { timeout: 5000, enableHighAccuracy: true },
         );
       } else {
         resolve({ phoneLat: null, phoneLng: null });
@@ -139,13 +203,16 @@ export default function DriverDashboard() {
   const handleAcceptTrip = async (tripId) => {
     try {
       setActionLoading(true);
-      const clientActionId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined;
-      
+      const clientActionId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : undefined;
+
       if (isOffline) {
         queueOfflineAction({
           type: "ACCEPT_TRIP",
           tripId,
-          payload: { clientActionId, phoneTime: new Date().toISOString() }
+          payload: { clientActionId, phoneTime: new Date().toISOString() },
         });
         message.info("Đã ghi nhận nhận chuyến xe (Ngoại tuyến).");
       } else {
@@ -166,20 +233,32 @@ export default function DriverDashboard() {
     try {
       setActionLoading(true);
       const coords = await getCurrentGps();
-      const clientActionId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined;
+      const clientActionId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : undefined;
 
       if (isOffline) {
         queueOfflineAction({
           type: "ARRIVE_STOP",
           tripId,
           stopId,
-          payload: { ...coords, clientActionId, phoneTime: new Date().toISOString() }
+          payload: {
+            ...coords,
+            clientActionId,
+            phoneTime: new Date().toISOString(),
+          },
         });
         message.info("Đã ghi nhận đến điểm dừng (Ngoại tuyến).");
       } else {
-        const res = await driverApi.arriveStop(tripId, stopId, { ...coords, clientActionId });
+        const res = await driverApi.arriveStop(tripId, stopId, {
+          ...coords,
+          clientActionId,
+        });
         if (res.isOutsideRadius) {
-          message.warning("Đã ghi nhận đến nơi. Cảnh báo: Tọa độ ngoài bán kính cho phép (MSG50)!");
+          message.warning(
+            "Đã ghi nhận đến nơi. Cảnh báo: Tọa độ ngoài bán kính cho phép (MSG50)!",
+          );
         } else {
           message.success("Đã ghi nhận đến điểm dừng!");
         }
@@ -197,32 +276,46 @@ export default function DriverDashboard() {
     try {
       setActionLoading(true);
       const coords = await getCurrentGps();
-      const clientActionId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined;
+      const clientActionId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : undefined;
 
       if (isOffline) {
         await queueOfflineAction({
           type: "RECORD_STOP_EVENT",
           tripId,
           stopId,
-          payload: { eventType: "Loading Started", ...coords, clientActionId, phoneTime: new Date().toISOString() }
+          payload: {
+            eventType: "Loading Started",
+            ...coords,
+            clientActionId,
+            phoneTime: new Date().toISOString(),
+          },
         });
         message.info("Đã ghi nhận bắt đầu bốc/dỡ (Ngoại tuyến).");
       } else {
         const res = await driverApi.recordStopEvent(tripId, stopId, {
           eventType: "Loading Started",
           ...coords,
-          clientActionId
+          clientActionId,
         });
 
         if (res.suggestedWaitingFee && res.suggestedWaitingFee > 0) {
-          message.warning(`Thời gian chờ ${res.waitingMinutes}p vượt hạn mức (${res.freeWaitingMinutes}p). Gợi ý phụ phí chờ: ${res.suggestedWaitingFee.toLocaleString('vi-VN')} đ (BR-30)`);
+          message.warning(
+            `Thời gian chờ ${res.waitingMinutes}p vượt hạn mức (${res.freeWaitingMinutes}p). Gợi ý phụ phí chờ: ${res.suggestedWaitingFee.toLocaleString("vi-VN")} đ (BR-30)`,
+          );
           setFeeType("Bốc xếp thêm");
           setFeeAmount(res.suggestedWaitingFee);
-          setFeeReason(`Phí chờ bốc dỡ quá hạn ${res.waitingMinutes} phút tại điểm dừng #${currentStop?.sequence || ''}`);
+          setFeeReason(
+            `Phí chờ bốc dỡ quá hạn ${res.waitingMinutes} phút tại điểm dừng #${currentStop?.sequence || ""}`,
+          );
           setActiveStopTarget(currentStop);
           setExtraFeeModalOpen(true);
         } else {
-          message.success(`Đã bắt đầu bốc/dỡ hàng. Thời gian chờ: ${res.waitingMinutes || 0} phút.`);
+          message.success(
+            `Đã bắt đầu bốc/dỡ hàng. Thời gian chờ: ${res.waitingMinutes || 0} phút.`,
+          );
         }
       }
       fetchDashboardData();
@@ -238,21 +331,29 @@ export default function DriverDashboard() {
     try {
       setActionLoading(true);
       const coords = await getCurrentGps();
-      const clientActionId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined;
+      const clientActionId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : undefined;
 
       if (isOffline) {
         await queueOfflineAction({
           type: "RECORD_STOP_EVENT",
           tripId,
           stopId,
-          payload: { eventType: "Left", ...coords, clientActionId, phoneTime: new Date().toISOString() }
+          payload: {
+            eventType: "Left",
+            ...coords,
+            clientActionId,
+            phoneTime: new Date().toISOString(),
+          },
         });
         message.info("Đã ghi nhận rời đi (Ngoại tuyến).");
       } else {
         await driverApi.recordStopEvent(tripId, stopId, {
           eventType: "Left",
           ...coords,
-          clientActionId
+          clientActionId,
         });
         message.success("Đã ghi nhận rời đi, tiếp tục hành trình!");
       }
@@ -268,17 +369,23 @@ export default function DriverDashboard() {
   const handleSubmitPickup = async () => {
     if (!activeStopTarget || !tripData?.trip?.id) return;
     if (!sealNumber.trim()) {
-      message.error("Hãy chụp rõ số chì và biển số xe, rồi nhập số chì (MSG18)");
+      message.error(
+        "Hãy chụp rõ số chì và biển số xe, rồi nhập số chì (MSG18)",
+      );
       return;
     }
     if (!loadedPackages || !loadedWeight) {
-      message.error("Vui lòng nhập số kiện và khối lượng hàng bốc thực tế (MSG02)");
+      message.error(
+        "Vui lòng nhập số kiện và khối lượng hàng bốc thực tế (MSG02)",
+      );
       return;
     }
 
     const truckPayload = tripData.trip.truck?.allowed_payload || 5000;
     if (parseFloat(loadedWeight) > truckPayload) {
-      message.error(`Tổng khối lượng ${loadedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe. (MSG45)`);
+      message.error(
+        `Tổng khối lượng ${loadedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe. (MSG45)`,
+      );
       return;
     }
 
@@ -293,7 +400,10 @@ export default function DriverDashboard() {
         loaded_packages: loadedPackages,
         loaded_weight: loadedWeight,
         ...coords,
-        clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined
+        clientActionId:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : undefined,
       };
 
       if (isOffline) {
@@ -301,12 +411,18 @@ export default function DriverDashboard() {
           type: "RECORD_PICKUP",
           tripId: tripData.trip.id,
           stopId: activeStopTarget.id,
-          payload
+          payload,
         });
         message.info("Đã lưu bốc hàng và niêm chì (Ngoại tuyến).");
       } else {
-        await driverApi.recordPickup(tripData.trip.id, activeStopTarget.id, payload);
-        await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, { eventType: "Loading Done" });
+        await driverApi.recordPickup(
+          tripData.trip.id,
+          activeStopTarget.id,
+          payload,
+        );
+        await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, {
+          eventType: "Loading Done",
+        });
         message.success("Ghi nhận lấy hàng và niêm chì thành công! (BR-11)");
       }
       setSealModalOpen(false);
@@ -325,7 +441,9 @@ export default function DriverDashboard() {
 
     if (isExport) {
       if (!cutSealPhotoUrl || !unloadedCargoPhotoUrl) {
-        message.error("Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng (BR-12)");
+        message.error(
+          "Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng (BR-12)",
+        );
         return;
       }
     } else {
@@ -351,7 +469,10 @@ export default function DriverDashboard() {
         documents_handed_over: true,
         delivered_packages: deliveredPackages,
         ...coords,
-        clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined
+        clientActionId:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : undefined,
       };
 
       if (isOffline) {
@@ -359,14 +480,22 @@ export default function DriverDashboard() {
           type: "RECORD_DELIVERY",
           tripId: tripData.trip.id,
           stopId: activeStopTarget.id,
-          payload
+          payload,
         });
         message.info("Đã lưu biên bản giao nhận POD (Ngoại tuyến).");
       } else {
-        const res = await driverApi.recordDelivery(tripData.trip.id, activeStopTarget.id, payload);
-        await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, { eventType: "Loading Done" });
+        const res = await driverApi.recordDelivery(
+          tripData.trip.id,
+          activeStopTarget.id,
+          payload,
+        );
+        await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, {
+          eventType: "Loading Done",
+        });
         if (res.isTripCompleted) {
-          message.success("Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe (BR-24)!");
+          message.success(
+            "Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe (BR-24)!",
+          );
         } else {
           message.success("Ghi nhận giao hàng và lưu POD thành công!");
         }
@@ -400,7 +529,10 @@ export default function DriverDashboard() {
         cargo_photo: refusalCargoPhoto.trim(),
         note: refusalNote.trim() || undefined,
         ...coords,
-        clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined
+        clientActionId:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : undefined,
       };
 
       if (isOffline) {
@@ -408,12 +540,18 @@ export default function DriverDashboard() {
           type: "REFUSE_CARGO",
           tripId: tripData.trip.id,
           stopId: activeStopTarget.id,
-          payload
+          payload,
         });
         message.info("Đã lưu báo cáo khách không nhận hàng (Ngoại tuyến).");
       } else {
-        const res = await driverApi.reportCustomerRefusal(tripData.trip.id, activeStopTarget.id, payload);
-        message.success(res.message || "Đã ghi nhận khách không nhận hàng. (MSG74)");
+        const res = await driverApi.reportCustomerRefusal(
+          tripData.trip.id,
+          activeStopTarget.id,
+          payload,
+        );
+        message.success(
+          res.message || "Đã ghi nhận khách không nhận hàng. (MSG74)",
+        );
       }
       setRefusalModalOpen(false);
       setRefusalReason("");
@@ -450,19 +588,24 @@ export default function DriverDashboard() {
         reason: feeReason.trim(),
         photo_url: feePhotoUrl.trim(),
         order_id: activeStopTarget?.order_id || undefined,
-        clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined
+        clientActionId:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : undefined,
       };
 
       if (isOffline) {
         queueOfflineAction({
           type: "PROPOSE_EXTRA_FEE",
           tripId: tripData.trip.id,
-          payload
+          payload,
         });
         message.info("Đã lưu đề xuất phụ phí (Ngoại tuyến).");
       } else {
         const res = await driverApi.proposeExtraFee(tripData.trip.id, payload);
-        message.success(res.message || "Đã gửi đề xuất phụ phí cho Điều phối viên! (MSG85)");
+        message.success(
+          res.message || "Đã gửi đề xuất phụ phí cho Điều phối viên! (MSG85)",
+        );
       }
       setExtraFeeModalOpen(false);
       setFeeReason("");
@@ -477,9 +620,15 @@ export default function DriverDashboard() {
   // Mở Google Maps dẫn đường
   const handleOpenNavigation = (destinationAddress, lat, lng) => {
     if (lat && lng) {
-      window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, "_blank");
+      window.open(
+        `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+        "_blank",
+      );
     } else if (destinationAddress) {
-      window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destinationAddress)}`, "_blank");
+      window.open(
+        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destinationAddress)}`,
+        "_blank",
+      );
     } else {
       message.info("Không có thông tin địa chỉ để mở bản đồ");
     }
@@ -489,7 +638,9 @@ export default function DriverDashboard() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-slate-200 p-6">
         <Spin size="large" />
-        <p className="mt-4 font-semibold text-slate-300">Đang tải dữ liệu chuyến xe...</p>
+        <p className="mt-4 font-semibold text-slate-300">
+          Đang tải dữ liệu chuyến xe...
+        </p>
       </div>
     );
   }
@@ -509,26 +660,34 @@ export default function DriverDashboard() {
       </div>
 
       {/* PWA Connection Status Bar with Safe Area support */}
-      <div className={`fixed top-0 left-0 w-full z-40 px-4 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-2 text-center text-xs font-bold text-white transition-all backdrop-blur-md border-b flex items-center justify-center gap-2 ${
-        isOffline 
-          ? "bg-red-500/80 border-red-500/50" 
-          : "bg-emerald-500/80 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-      }`}>
+      <div
+        className={`fixed top-0 left-0 w-full z-40 px-4 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-2 text-center text-xs font-bold text-white transition-all backdrop-blur-md border-b flex items-center justify-center gap-2 ${
+          isOffline
+            ? "bg-red-500/80 border-red-500/50"
+            : "bg-emerald-500/80 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+        }`}
+      >
         {isOffline ? (
-          <><CloudOff size={14}/> LƯU TẠM (OFFLINE FIRST - BR-27)</>
+          <>
+            <CloudOff size={14} /> LƯU TẠM (OFFLINE FIRST - BR-27)
+          </>
         ) : (
-          <><Cloud size={14}/> KẾT NỐI MẠNG ỔN ĐỊNH</>
+          <>
+            <Cloud size={14} /> KẾT NỐI MẠNG ỔN ĐỊNH
+          </>
         )}
       </div>
 
       <div className="max-w-md mx-auto pt-[calc(3.5rem+env(safe-area-inset-top,0px))] px-4 relative z-10">
-        
         {/* Header Section */}
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white drop-shadow-md">NEXLOG Driver</h1>
+            <h1 className="text-2xl font-black tracking-tight text-white drop-shadow-md">
+              NEXLOG Driver
+            </h1>
             <p className="text-blue-200 text-sm font-medium">
-              Xin chào, {profile?.user?.full_name || profile?.user?.username || "Tài xế"}
+              Xin chào,{" "}
+              {profile?.user?.full_name || profile?.user?.username || "Tài xế"}
             </p>
             {profile?.license_number && (
               <span className="text-[11px] text-blue-300/80 font-mono">
@@ -536,8 +695,8 @@ export default function DriverDashboard() {
               </span>
             )}
           </div>
-          <button 
-            onClick={fetchDashboardData} 
+          <button
+            onClick={fetchDashboardData}
             className="w-11 h-11 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl border border-white/20 flex items-center justify-center shadow-lg active:scale-95 transition-all text-white"
             title="Làm mới"
           >
@@ -553,8 +712,11 @@ export default function DriverDashboard() {
           <div className="mb-4 p-3.5 bg-amber-500/20 border border-amber-500/50 rounded-2xl flex items-center gap-3 text-amber-200 shadow-lg animate-pulse">
             <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
             <div className="text-xs">
-              <span className="font-bold block text-amber-300">CẢNH BÁO GIỚI HẠN GIỜ LÁI XE (MSG65)</span>
-              Tài xế sắp vượt giới hạn lái xe (4 giờ). Cần nghỉ ngơi trước {new Date(Date.now() + 30 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+              <span className="font-bold block text-amber-300">
+                CẢNH BÁO GIỚI HẠN GIỜ LÁI XE (MSG65)
+              </span>
+              Tài xế sắp vượt giới hạn lái xe (4 giờ). Cần nghỉ ngơi trước{" "}
+              {restDeadlineText}.
             </div>
           </div>
         )}
@@ -564,47 +726,75 @@ export default function DriverDashboard() {
           <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-3xl p-4 mb-4 shadow-xl">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <Clock size={14} className="text-blue-400" /> Giờ lái còn lại (BR-34)
+                <Clock size={14} className="text-blue-400" /> Giờ lái còn lại
+                (BR-34)
               </span>
               <span className="text-[10px] text-slate-400">Luật ATGT</span>
             </div>
-            
+
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="bg-slate-900/60 p-2.5 rounded-2xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-medium">Liên tục (max 4h)</span>
-                <span className={`text-base font-black ${drivingHours.continuous_hours_left < 1 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                <span className="text-[10px] text-slate-400 block font-medium">
+                  Liên tục (max 4h)
+                </span>
+                <span
+                  className={`text-base font-black ${drivingHours.continuous_hours_left < 1 ? "text-amber-400" : "text-emerald-400"}`}
+                >
                   {drivingHours.continuous_hours_left}h
                 </span>
-                <Progress 
-                  percent={Math.min(100, Math.round(((4 - drivingHours.continuous_hours_left) / 4) * 100))} 
-                  size="small" 
-                  showInfo={false} 
-                  strokeColor={drivingHours.continuous_hours_left < 1 ? '#f59e0b' : '#3b82f6'}
+                <Progress
+                  percent={Math.min(
+                    100,
+                    Math.round(
+                      ((4 - drivingHours.continuous_hours_left) / 4) * 100,
+                    ),
+                  )}
+                  size="small"
+                  showInfo={false}
+                  strokeColor={
+                    drivingHours.continuous_hours_left < 1
+                      ? "#f59e0b"
+                      : "#3b82f6"
+                  }
                 />
               </div>
 
               <div className="bg-slate-900/60 p-2.5 rounded-2xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-medium">Hôm nay (max 10h)</span>
+                <span className="text-[10px] text-slate-400 block font-medium">
+                  Hôm nay (max 10h)
+                </span>
                 <span className="text-base font-black text-blue-400">
                   {drivingHours.daily_hours_left}h
                 </span>
-                <Progress 
-                  percent={Math.min(100, Math.round(((10 - drivingHours.daily_hours_left) / 10) * 100))} 
-                  size="small" 
-                  showInfo={false} 
+                <Progress
+                  percent={Math.min(
+                    100,
+                    Math.round(
+                      ((10 - drivingHours.daily_hours_left) / 10) * 100,
+                    ),
+                  )}
+                  size="small"
+                  showInfo={false}
                   strokeColor="#3b82f6"
                 />
               </div>
 
               <div className="bg-slate-900/60 p-2.5 rounded-2xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-medium">Tuần này (max 48h)</span>
+                <span className="text-[10px] text-slate-400 block font-medium">
+                  Tuần này (max 48h)
+                </span>
                 <span className="text-base font-black text-indigo-400">
                   {drivingHours.weekly_hours_left}h
                 </span>
-                <Progress 
-                  percent={Math.min(100, Math.round(((48 - drivingHours.weekly_hours_left) / 48) * 100))} 
-                  size="small" 
-                  showInfo={false} 
+                <Progress
+                  percent={Math.min(
+                    100,
+                    Math.round(
+                      ((48 - drivingHours.weekly_hours_left) / 48) * 100,
+                    ),
+                  )}
+                  size="small"
+                  showInfo={false}
                   strokeColor="#6366f1"
                 />
               </div>
@@ -616,12 +806,15 @@ export default function DriverDashboard() {
         {!trip ? (
           <div className="bg-slate-800/80 backdrop-blur-md border border-slate-700/60 rounded-3xl p-8 text-center shadow-2xl mt-4">
             <Package className="w-16 h-16 text-slate-500 mx-auto mb-4 opacity-50" />
-            <h3 className="text-lg font-bold text-white mb-2">Hiện chưa có chuyến xe</h3>
+            <h3 className="text-lg font-bold text-white mb-2">
+              Hiện chưa có chuyến xe
+            </h3>
             <p className="text-slate-400 text-sm mb-6">
-              Bạn đang ở trạng thái sẵn sàng. Khi có chuyến xe mới được phân bổ, thông tin sẽ xuất hiện ngay tại đây.
+              Bạn đang ở trạng thái sẵn sàng. Khi có chuyến xe mới được phân bổ,
+              thông tin sẽ xuất hiện ngay tại đây.
             </p>
-            <Button 
-              type="primary" 
+            <Button
+              type="primary"
               onClick={fetchDashboardData}
               className="bg-blue-600 font-bold rounded-xl h-11 px-6 shadow-lg shadow-blue-600/30"
             >
@@ -632,7 +825,9 @@ export default function DriverDashboard() {
           <>
             {/* Trip Info Header */}
             <div className="mb-3 flex justify-between items-center">
-              <h2 className="text-lg font-bold text-white tracking-wide">Chuyến xe hiện tại</h2>
+              <h2 className="text-lg font-bold text-white tracking-wide">
+                Chuyến xe hiện tại
+              </h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setDocsModalOpen(true)}
@@ -651,13 +846,19 @@ export default function DriverDashboard() {
             <div className="bg-white/10 backdrop-blur-xl border border-white/15 rounded-3xl p-4 mb-4 shadow-2xl relative overflow-hidden">
               <div className="flex justify-between items-start border-b border-white/10 pb-3 mb-3">
                 <div>
-                  <p className="text-[10px] text-blue-200/80 font-bold uppercase tracking-widest mb-0.5">Mã Chuyến</p>
-                  <h3 className="text-xl font-black text-white tracking-tight">{trip.trip_code}</h3>
+                  <p className="text-[10px] text-blue-200/80 font-bold uppercase tracking-widest mb-0.5">
+                    Mã Chuyến
+                  </p>
+                  <h3 className="text-xl font-black text-white tracking-tight">
+                    {trip.trip_code}
+                  </h3>
                   {truck && (
                     <div className="flex items-center gap-1.5 text-xs text-blue-200 font-semibold mt-1">
-                      <Truck size={14}/>
+                      <Truck size={14} />
                       <span>Xe: {truck.plate_number}</span>
-                      <span className="text-blue-300/70">({truck.model} - Tải trọng: {truck.allowed_payload} kg)</span>
+                      <span className="text-blue-300/70">
+                        ({truck.model} - Tải trọng: {truck.allowed_payload} kg)
+                      </span>
                     </div>
                   )}
                 </div>
@@ -670,7 +871,7 @@ export default function DriverDashboard() {
               {/* Stop Timeline */}
               <div className="space-y-3 relative pl-2">
                 <div className="absolute left-[15px] top-4 bottom-4 w-0.5 bg-gradient-to-b from-blue-400 to-indigo-500 opacity-50 z-0"></div>
-                
+
                 {stops.map((stop) => {
                   const isDone = stop.status === "Done";
                   const isArrived = stop.status === "Arrived";
@@ -678,34 +879,54 @@ export default function DriverDashboard() {
 
                   return (
                     <div key={stop.id} className="flex gap-3 relative z-10">
-                      <div className={`w-3.5 h-3.5 rounded-full flex-shrink-0 mt-1 shadow-lg ${
-                        isDone 
-                          ? "bg-emerald-500 border-2 border-emerald-300" 
-                          : isArrived 
-                            ? "bg-amber-400 border-2 border-amber-200 animate-ping" 
-                            : isPickup 
-                              ? "bg-slate-900 border-[2.5px] border-blue-400" 
-                              : "bg-slate-900 border-[2.5px] border-indigo-400"
-                      }`} />
+                      <div
+                        className={`w-3.5 h-3.5 rounded-full flex-shrink-0 mt-1 shadow-lg ${
+                          isDone
+                            ? "bg-emerald-500 border-2 border-emerald-300"
+                            : isArrived
+                              ? "bg-amber-400 border-2 border-amber-200 animate-ping"
+                              : isPickup
+                                ? "bg-slate-900 border-[2.5px] border-blue-400"
+                                : "bg-slate-900 border-[2.5px] border-indigo-400"
+                        }`}
+                      />
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold tracking-wide uppercase text-blue-200/80">
-                            #{stop.sequence} {isPickup ? "LẤY HÀNG (PICKUP)" : "GIAO HÀNG (DROP-OFF)"}
+                            #{stop.sequence}{" "}
+                            {isPickup
+                              ? "LẤY HÀNG (PICKUP)"
+                              : "GIAO HÀNG (DROP-OFF)"}
                           </p>
-                          <Tag color={isDone ? "success" : isArrived ? "warning" : "default"} className="text-[10px] font-bold m-0 py-0 px-1.5">
+                          <Tag
+                            color={
+                              isDone
+                                ? "success"
+                                : isArrived
+                                  ? "warning"
+                                  : "default"
+                            }
+                            className="text-[10px] font-bold m-0 py-0 px-1.5"
+                          >
                             {stop.status}
                           </Tag>
                         </div>
                         <p className="font-semibold text-white leading-tight text-xs mt-0.5">
-                          {stop.location?.name || stop.location?.address || "Kho hàng"}
+                          {stop.location?.name ||
+                            stop.location?.address ||
+                            "Kho hàng"}
                         </p>
                         <p className="text-[11px] text-slate-300/80">
                           {stop.location?.address}
                         </p>
                         {stop.order && (
                           <div className="text-[10px] text-blue-200 mt-0.5 flex items-center gap-2">
-                            <span>Đơn: <b>{stop.order.order_code}</b></span>
-                            {stop.order.receiver_name && <span>• Nhận: {stop.order.receiver_name}</span>}
+                            <span>
+                              Đơn: <b>{stop.order.order_code}</b>
+                            </span>
+                            {stop.order.receiver_name && (
+                              <span>• Nhận: {stop.order.receiver_name}</span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -719,7 +940,8 @@ export default function DriverDashboard() {
             <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/60 rounded-3xl p-4 mb-4 shadow-2xl">
               <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <Navigation2 className="w-4 h-4 text-indigo-400" /> Thao tác Chuyến xe
+                  <Navigation2 className="w-4 h-4 text-indigo-400" /> Thao tác
+                  Chuyến xe
                 </span>
                 {/* Propose Fee Button (Screen 6.2 (10)) */}
                 <button
@@ -737,10 +959,11 @@ export default function DriverDashboard() {
               {trip.status === "Assigned" && (
                 <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-center">
                   <p className="text-xs text-blue-200 font-semibold mb-3">
-                    Chuyến xe đã được điều phối cho bạn. Xác nhận nhận chuyến để bắt đầu.
+                    Chuyến xe đã được điều phối cho bạn. Xác nhận nhận chuyến để
+                    bắt đầu.
                   </p>
-                  <Button 
-                    type="primary" 
+                  <Button
+                    type="primary"
                     size="large"
                     loading={actionLoading}
                     onClick={() => setAcceptModalOpen(true)}
@@ -752,168 +975,231 @@ export default function DriverDashboard() {
               )}
 
               {/* Case 2: Trip Accepted or In Progress -> Process active stop */}
-              {(trip.status === "Accepted" || trip.status === "In Progress") && currentStop && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700 flex justify-between items-center">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase">Điểm dừng tiếp theo</span>
-                        <Tag color="processing" className="font-bold text-[10px] m-0 py-0">#{currentStop.sequence}</Tag>
+              {(trip.status === "Accepted" || trip.status === "In Progress") &&
+                currentStop && (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700 flex justify-between items-center">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase">
+                            Điểm dừng tiếp theo
+                          </span>
+                          <Tag
+                            color="processing"
+                            className="font-bold text-[10px] m-0 py-0"
+                          >
+                            #{currentStop.sequence}
+                          </Tag>
+                        </div>
+                        <p className="text-white font-bold text-xs">
+                          {currentStop.location?.name ||
+                            currentStop.location?.address}
+                        </p>
                       </div>
-                      <p className="text-white font-bold text-xs">{currentStop.location?.name || currentStop.location?.address}</p>
+                      <button
+                        onClick={() =>
+                          handleOpenNavigation(
+                            currentStop.location?.address,
+                            currentStop.location?.latitude,
+                            currentStop.location?.longitude,
+                          )
+                        }
+                        className="p-2.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 rounded-xl border border-blue-500/40"
+                        title="Mở Google Maps"
+                      >
+                        <MapPin size={18} />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleOpenNavigation(
-                        currentStop.location?.address,
-                        currentStop.location?.latitude,
-                        currentStop.location?.longitude
+
+                    {/* 4-Step Progress Stepper (BR-36, Workflow Spec Giai đoạn 3) */}
+                    <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-700/80 mb-2">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
+                        <span>
+                          Tiến trình điểm dừng #{currentStop.sequence} (Chuỗi 4
+                          bước)
+                        </span>
+                        <span className="text-blue-300 font-mono">
+                          {currentStop.status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
+                        {/* Step 1: Arrived */}
+                        <div
+                          className={`p-2 rounded-xl border transition-all ${
+                            currentStop.status !== "Pending"
+                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                              : "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
+                          }`}
+                        >
+                          <span className="block text-xs mb-0.5">
+                            {currentStop.status !== "Pending" ? "✓" : "1"}
+                          </span>
+                          <span>Đã đến</span>
+                        </div>
+
+                        {/* Step 2: Loading Started */}
+                        <div
+                          className={`p-2 rounded-xl border transition-all ${
+                            [
+                              "Loading Started",
+                              "Loading Done",
+                              "Done",
+                            ].includes(currentStop.status)
+                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                              : currentStop.status === "Arrived"
+                                ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
+                                : "bg-slate-800 border-slate-700 text-slate-500"
+                          }`}
+                        >
+                          <span className="block text-xs mb-0.5">
+                            {[
+                              "Loading Started",
+                              "Loading Done",
+                              "Done",
+                            ].includes(currentStop.status)
+                              ? "✓"
+                              : "2"}
+                          </span>
+                          <span>Bắt đầu</span>
+                        </div>
+
+                        {/* Step 3: Loading Done */}
+                        <div
+                          className={`p-2 rounded-xl border transition-all ${
+                            ["Loading Done", "Done"].includes(
+                              currentStop.status,
+                            )
+                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                              : currentStop.status === "Loading Started"
+                                ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
+                                : "bg-slate-800 border-slate-700 text-slate-500"
+                          }`}
+                        >
+                          <span className="block text-xs mb-0.5">
+                            {["Loading Done", "Done"].includes(
+                              currentStop.status,
+                            )
+                              ? "✓"
+                              : "3"}
+                          </span>
+                          <span>
+                            {currentStop.stop_type === "Pickup"
+                              ? "Bốc/Chì"
+                              : "Dỡ/POD"}
+                          </span>
+                        </div>
+
+                        {/* Step 4: Left */}
+                        <div
+                          className={`p-2 rounded-xl border transition-all ${
+                            currentStop.status === "Done"
+                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                              : currentStop.status === "Loading Done"
+                                ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
+                                : "bg-slate-800 border-slate-700 text-slate-500"
+                          }`}
+                        >
+                          <span className="block text-xs mb-0.5">
+                            {currentStop.status === "Done" ? "✓" : "4"}
+                          </span>
+                          <span>Rời đi</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 1: If Pending -> Arrive Button */}
+                    {currentStop.status === "Pending" && (
+                      <Button
+                        type="primary"
+                        size="large"
+                        loading={actionLoading}
+                        onClick={() =>
+                          handleArriveStop(trip.id, currentStop.id)
+                        }
+                        className="w-full bg-blue-600 hover:bg-blue-500 border-none font-black rounded-xl h-12 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
+                      >
+                        <MapPin size={18} /> BƯỚC 1: ĐÃ ĐẾN NƠI (ARRIVED)
+                      </Button>
+                    )}
+
+                    {/* Step 2: If Arrived -> Bắt đầu bốc / dỡ (Loading Started - BR-30) */}
+                    {currentStop.status === "Arrived" && (
+                      <Button
+                        type="primary"
+                        size="large"
+                        loading={actionLoading}
+                        onClick={() =>
+                          handleStartLoading(trip.id, currentStop.id)
+                        }
+                        className="w-full bg-amber-600 hover:bg-amber-500 border-none font-black rounded-xl h-12 shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2"
+                      >
+                        <Clock size={18} /> BƯỚC 2: BẮT ĐẦU BỐC / DỠ HÀNG
+                        (LOADING STARTED)
+                      </Button>
+                    )}
+
+                    {/* Step 3: If Loading Started & Pickup -> Bốc hàng & Niêm chì Modal (BR-11) */}
+                    {currentStop.status === "Loading Started" &&
+                      currentStop.stop_type === "Pickup" && (
+                        <Button
+                          type="primary"
+                          size="large"
+                          onClick={() => {
+                            setActiveStopTarget(currentStop);
+                            setSealModalOpen(true);
+                          }}
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 border-none font-black rounded-xl h-12 shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
+                        >
+                          <Camera size={18} /> BƯỚC 3: BỐC HÀNG & CHỤP ẢNH NIÊM
+                          CHÌ (BR-11)
+                        </Button>
                       )}
-                      className="p-2.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 rounded-xl border border-blue-500/40"
-                      title="Mở Google Maps"
-                    >
-                      <MapPin size={18} />
-                    </button>
-                  </div>
 
-                  {/* 4-Step Progress Stepper (BR-36, Workflow Spec Giai đoạn 3) */}
-                  <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-700/80 mb-2">
-                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
-                      <span>Tiến trình điểm dừng #{currentStop.sequence} (Chuỗi 4 bước)</span>
-                      <span className="text-blue-300 font-mono">{currentStop.status}</span>
-                    </div>
-                    <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
-                      {/* Step 1: Arrived */}
-                      <div className={`p-2 rounded-xl border transition-all ${
-                        currentStop.status !== 'Pending' 
-                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' 
-                          : 'bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse'
-                      }`}>
-                        <span className="block text-xs mb-0.5">{currentStop.status !== 'Pending' ? '✓' : '1'}</span>
-                        <span>Đã đến</span>
-                      </div>
+                    {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal / Từ chối (BR-12, BR-57) */}
+                    {currentStop.status === "Loading Started" &&
+                      currentStop.stop_type === "Drop-off" && (
+                        <div className="grid grid-cols-3 gap-2">
+                          <Button
+                            type="primary"
+                            size="large"
+                            onClick={() => {
+                              setActiveStopTarget(currentStop);
+                              setPodModalOpen(true);
+                            }}
+                            className="col-span-2 bg-emerald-600 hover:bg-emerald-500 border-none font-black rounded-xl h-12 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 text-xs"
+                          >
+                            <Camera size={16} /> BƯỚC 3: GIAO HÀNG & POD (BR-12)
+                          </Button>
 
-                      {/* Step 2: Loading Started */}
-                      <div className={`p-2 rounded-xl border transition-all ${
-                        ['Loading Started', 'Loading Done', 'Done'].includes(currentStop.status)
-                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                          : currentStop.status === 'Arrived'
-                          ? 'bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse'
-                          : 'bg-slate-800 border-slate-700 text-slate-500'
-                      }`}>
-                        <span className="block text-xs mb-0.5">{['Loading Started', 'Loading Done', 'Done'].includes(currentStop.status) ? '✓' : '2'}</span>
-                        <span>Bắt đầu</span>
-                      </div>
+                          <Button
+                            danger
+                            size="large"
+                            onClick={() => {
+                              setActiveStopTarget(currentStop);
+                              setRefusalModalOpen(true);
+                            }}
+                            className="col-span-1 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold rounded-xl h-12 flex flex-col items-center justify-center text-[10px]"
+                          >
+                            <Ban size={14} /> KHÁCH TỪ CHỐI (BR-57)
+                          </Button>
+                        </div>
+                      )}
 
-                      {/* Step 3: Loading Done */}
-                      <div className={`p-2 rounded-xl border transition-all ${
-                        ['Loading Done', 'Done'].includes(currentStop.status)
-                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                          : currentStop.status === 'Loading Started'
-                          ? 'bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse'
-                          : 'bg-slate-800 border-slate-700 text-slate-500'
-                      }`}>
-                        <span className="block text-xs mb-0.5">{['Loading Done', 'Done'].includes(currentStop.status) ? '✓' : '3'}</span>
-                        <span>{currentStop.stop_type === 'Pickup' ? 'Bốc/Chì' : 'Dỡ/POD'}</span>
-                      </div>
-
-                      {/* Step 4: Left */}
-                      <div className={`p-2 rounded-xl border transition-all ${
-                        currentStop.status === 'Done'
-                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                          : currentStop.status === 'Loading Done'
-                          ? 'bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse'
-                          : 'bg-slate-800 border-slate-700 text-slate-500'
-                      }`}>
-                        <span className="block text-xs mb-0.5">{currentStop.status === 'Done' ? '✓' : '4'}</span>
-                        <span>Rời đi</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Step 1: If Pending -> Arrive Button */}
-                  {currentStop.status === "Pending" && (
-                    <Button 
-                      type="primary" 
-                      size="large"
-                      loading={actionLoading}
-                      onClick={() => handleArriveStop(trip.id, currentStop.id)}
-                      className="w-full bg-blue-600 hover:bg-blue-500 border-none font-black rounded-xl h-12 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
-                    >
-                      <MapPin size={18}/> BƯỚC 1: ĐÃ ĐẾN NƠI (ARRIVED)
-                    </Button>
-                  )}
-
-                  {/* Step 2: If Arrived -> Bắt đầu bốc / dỡ (Loading Started - BR-30) */}
-                  {currentStop.status === "Arrived" && (
-                    <Button 
-                      type="primary" 
-                      size="large"
-                      loading={actionLoading}
-                      onClick={() => handleStartLoading(trip.id, currentStop.id)}
-                      className="w-full bg-amber-600 hover:bg-amber-500 border-none font-black rounded-xl h-12 shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2"
-                    >
-                      <Clock size={18}/> BƯỚC 2: BẮT ĐẦU BỐC / DỠ HÀNG (LOADING STARTED)
-                    </Button>
-                  )}
-
-                  {/* Step 3: If Loading Started & Pickup -> Bốc hàng & Niêm chì Modal (BR-11) */}
-                  {currentStop.status === "Loading Started" && currentStop.stop_type === "Pickup" && (
-                    <Button 
-                      type="primary" 
-                      size="large"
-                      onClick={() => {
-                        setActiveStopTarget(currentStop);
-                        setSealModalOpen(true);
-                      }}
-                      className="w-full bg-indigo-600 hover:bg-indigo-500 border-none font-black rounded-xl h-12 shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
-                    >
-                      <Camera size={18}/> BƯỚC 3: BỐC HÀNG & CHỤP ẢNH NIÊM CHÌ (BR-11)
-                    </Button>
-                  )}
-
-                  {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal / Từ chối (BR-12, BR-57) */}
-                  {currentStop.status === "Loading Started" && currentStop.stop_type === "Drop-off" && (
-                    <div className="grid grid-cols-3 gap-2">
-                      <Button 
-                        type="primary" 
+                    {/* Step 4: If Loading Done -> Rời khỏi điểm dừng (Left - BR-36) */}
+                    {currentStop.status === "Loading Done" && (
+                      <Button
+                        type="primary"
                         size="large"
-                        onClick={() => {
-                          setActiveStopTarget(currentStop);
-                          setPodModalOpen(true);
-                        }}
-                        className="col-span-2 bg-emerald-600 hover:bg-emerald-500 border-none font-black rounded-xl h-12 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 text-xs"
+                        loading={actionLoading}
+                        onClick={() => handleLeftStop(trip.id, currentStop.id)}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 border-none font-black rounded-xl h-12 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2"
                       >
-                        <Camera size={16}/> BƯỚC 3: GIAO HÀNG & POD (BR-12)
+                        <CheckCircle size={18} /> BƯỚC 4: RỜI ĐI (LEFT - TIẾP
+                        TỤC LỘ TRÌNH)
                       </Button>
-
-                      <Button 
-                        danger
-                        size="large"
-                        onClick={() => {
-                          setActiveStopTarget(currentStop);
-                          setRefusalModalOpen(true);
-                        }}
-                        className="col-span-1 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold rounded-xl h-12 flex flex-col items-center justify-center text-[10px]"
-                      >
-                        <Ban size={14}/> KHÁCH TỪ CHỐI (BR-57)
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* Step 4: If Loading Done -> Rời khỏi điểm dừng (Left - BR-36) */}
-                  {currentStop.status === "Loading Done" && (
-                    <Button 
-                      type="primary" 
-                      size="large"
-                      loading={actionLoading}
-                      onClick={() => handleLeftStop(trip.id, currentStop.id)}
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 border-none font-black rounded-xl h-12 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle size={18}/> BƯỚC 4: RỜI ĐI (LEFT - TIẾP TỤC LỘ TRÌNH)
-                    </Button>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
 
               {/* Case 3: Completed */}
               {trip.status === "Completed" && (
@@ -922,7 +1208,10 @@ export default function DriverDashboard() {
                   <p className="text-sm text-emerald-200 font-bold">
                     Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe.
                   </p>
-                  <p className="text-xs text-slate-400 mt-1">Xe và hồ sơ tài xế đã được giải phóng về trạng thái sẵn sàng (BR-24).</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Xe và hồ sơ tài xế đã được giải phóng về trạng thái sẵn sàng
+                    (BR-24).
+                  </p>
                 </div>
               )}
             </div>
@@ -937,7 +1226,11 @@ export default function DriverDashboard() {
         width="94%"
         style={{ maxWidth: 440 }}
         onCancel={() => setAcceptModalOpen(false)}
-        title={<span className="font-bold text-slate-800">Xác nhận nhận chuyến xe</span>}
+        title={
+          <span className="font-bold text-slate-800">
+            Xác nhận nhận chuyến xe
+          </span>
+        }
         okText="Tôi đồng ý nhận chuyến"
         cancelText="Đóng"
         confirmLoading={actionLoading}
@@ -945,21 +1238,27 @@ export default function DriverDashboard() {
         onOk={() => handleAcceptTrip(trip?.id)}
       >
         <p className="text-sm text-slate-600 my-2">
-          Bạn có chắc chắn muốn nhận chuyến xe <b>{trip?.trip_code}</b> không? (MSG17)
+          Bạn có chắc chắn muốn nhận chuyến xe <b>{trip?.trip_code}</b> không?
+          (MSG17)
         </p>
         <p className="text-xs text-slate-400">
-          Sau khi xác nhận, chuyến xe sẽ chuyển sang trạng thái Đã nhận (Accepted).
+          Sau khi xác nhận, chuyến xe sẽ chuyển sang trạng thái Đã nhận
+          (Accepted).
         </p>
       </Modal>
 
       {/* MODAL 1: BỐC HÀNG & NIÊM CHÌ 3 BƯỚC (BR-11, BR-31, BR-33, MSG45) */}
-      <Modal 
-        open={sealModalOpen} 
+      <Modal
+        open={sealModalOpen}
         centered
         width="94%"
         style={{ maxWidth: 460 }}
-        onCancel={() => setSealModalOpen(false)} 
-        title={<span className="font-bold text-slate-800">Lấy hàng & Niêm chì 3 Bước (BR-11)</span>} 
+        onCancel={() => setSealModalOpen(false)}
+        title={
+          <span className="font-bold text-slate-800">
+            Lấy hàng & Niêm chì 3 Bước (BR-11)
+          </span>
+        }
         okText="Lưu lấy hàng (BR-11)"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-blue-600 font-bold" }}
@@ -967,62 +1266,93 @@ export default function DriverDashboard() {
       >
         <div className="space-y-3 py-2 text-xs">
           <p className="text-slate-500">
-            Bắt buộc chụp đủ 3 ảnh: Hàng trước bốc, Hàng trong thùng xe, và Niêm chì kèm biển số xe.
+            Bắt buộc chụp đủ 3 ảnh: Hàng trước bốc, Hàng trong thùng xe, và Niêm
+            chì kèm biển số xe.
           </p>
 
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="font-bold text-slate-700 block mb-1">1. Hàng trước bốc (*)</label>
-              <Upload 
-                listType="picture-card" 
-                maxCount={1} 
+              <label className="font-bold text-slate-700 block mb-1">
+                1. Hàng trước bốc (*)
+              </label>
+              <Upload
+                listType="picture-card"
+                maxCount={1}
                 beforeUpload={() => false}
-                defaultFileList={[{ uid: "-1", name: "cargo.jpg", status: "done", url: cargoPhotoUrl }]}
+                defaultFileList={[
+                  {
+                    uid: "-1",
+                    name: "cargo.jpg",
+                    status: "done",
+                    url: cargoPhotoUrl,
+                  },
+                ]}
                 onChange={(i) => {
                   const f = i.fileList[0];
                   if (f) setCargoPhotoUrl(f.thumbUrl || f.url || cargoPhotoUrl);
                 }}
               >
                 <div className="flex flex-col items-center text-slate-400">
-                  <Camera size={16}/>
+                  <Camera size={16} />
                   <span className="text-[10px]">Trước bốc</span>
                 </div>
               </Upload>
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 block mb-1">2. Hàng trên xe (*)</label>
-              <Upload 
-                listType="picture-card" 
-                maxCount={1} 
+              <label className="font-bold text-slate-700 block mb-1">
+                2. Hàng trên xe (*)
+              </label>
+              <Upload
+                listType="picture-card"
+                maxCount={1}
                 beforeUpload={() => false}
-                defaultFileList={[{ uid: "-2", name: "loaded.jpg", status: "done", url: loadedCargoPhotoUrl }]}
+                defaultFileList={[
+                  {
+                    uid: "-2",
+                    name: "loaded.jpg",
+                    status: "done",
+                    url: loadedCargoPhotoUrl,
+                  },
+                ]}
                 onChange={(i) => {
                   const f = i.fileList[0];
-                  if (f) setLoadedCargoPhotoUrl(f.thumbUrl || f.url || loadedCargoPhotoUrl);
+                  if (f)
+                    setLoadedCargoPhotoUrl(
+                      f.thumbUrl || f.url || loadedCargoPhotoUrl,
+                    );
                 }}
               >
                 <div className="flex flex-col items-center text-slate-400">
-                  <Camera size={16}/>
+                  <Camera size={16} />
                   <span className="text-[10px]">Trong thùng</span>
                 </div>
               </Upload>
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 block mb-1">3. Chì & Biển số (*)</label>
-              <Upload 
-                listType="picture-card" 
-                maxCount={1} 
+              <label className="font-bold text-slate-700 block mb-1">
+                3. Chì & Biển số (*)
+              </label>
+              <Upload
+                listType="picture-card"
+                maxCount={1}
                 beforeUpload={() => false}
-                defaultFileList={[{ uid: "-3", name: "seal.jpg", status: "done", url: sealPhotoUrl }]}
+                defaultFileList={[
+                  {
+                    uid: "-3",
+                    name: "seal.jpg",
+                    status: "done",
+                    url: sealPhotoUrl,
+                  },
+                ]}
                 onChange={(i) => {
                   const f = i.fileList[0];
                   if (f) setSealPhotoUrl(f.thumbUrl || f.url || sealPhotoUrl);
                 }}
               >
                 <div className="flex flex-col items-center text-slate-400">
-                  <Camera size={16}/>
+                  <Camera size={16} />
                   <span className="text-[10px]">Chì & biển</span>
                 </div>
               </Upload>
@@ -1030,51 +1360,62 @@ export default function DriverDashboard() {
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Số chì niêm phong (*)</label>
-            <Input 
-              value={sealNumber} 
-              onChange={(e) => setSealNumber(e.target.value)} 
-              placeholder="VD: SEAL-998811" 
+            <label className="font-bold text-slate-700 block mb-1">
+              Số chì niêm phong (*)
+            </label>
+            <Input
+              value={sealNumber}
+              onChange={(e) => setSealNumber(e.target.value)}
+              placeholder="VD: SEAL-998811"
               className="py-1.5 font-mono font-bold"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Số kiện bốc (*)</label>
-              <InputNumber 
-                min={1} 
-                value={loadedPackages} 
-                onChange={setLoadedPackages} 
+              <label className="font-bold text-slate-700 block mb-1">
+                Số kiện bốc (*)
+              </label>
+              <InputNumber
+                min={1}
+                value={loadedPackages}
+                onChange={setLoadedPackages}
                 className="w-full"
               />
             </div>
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Khối lượng (kg) (*)</label>
-              <InputNumber 
-                min={1} 
-                value={loadedWeight} 
-                onChange={setLoadedWeight} 
+              <label className="font-bold text-slate-700 block mb-1">
+                Khối lượng (kg) (*)
+              </label>
+              <InputNumber
+                min={1}
+                value={loadedWeight}
+                onChange={setLoadedWeight}
                 className="w-full"
               />
             </div>
           </div>
           {tripData?.trip?.truck && (
             <span className="text-[11px] text-slate-400 block">
-              Tải trọng cho phép của xe: <b>{tripData.trip.truck.allowed_payload} kg</b> (BR-33)
+              Tải trọng cho phép của xe:{" "}
+              <b>{tripData.trip.truck.allowed_payload} kg</b> (BR-33)
             </span>
           )}
         </div>
       </Modal>
 
       {/* MODAL 2: GIAO HÀNG & BIÊN BẢN POD (BR-12, BR-39, BR-24) */}
-      <Modal 
-        open={podModalOpen} 
+      <Modal
+        open={podModalOpen}
         centered
         width="94%"
         style={{ maxWidth: 460 }}
-        onCancel={() => setPodModalOpen(false)} 
-        title={<span className="font-bold text-slate-800">Biên bản Giao nhận Hàng POD (BR-12)</span>} 
+        onCancel={() => setPodModalOpen(false)}
+        title={
+          <span className="font-bold text-slate-800">
+            Biên bản Giao nhận Hàng POD (BR-12)
+          </span>
+        }
         okText="Lưu giao hàng (BR-12)"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-emerald-600 font-bold" }}
@@ -1083,40 +1424,66 @@ export default function DriverDashboard() {
         <div className="space-y-3 py-2 text-xs">
           {activeStopTarget?.order?.order_type === "Export" ? (
             <div>
-              <p className="text-blue-600 font-bold mb-2">Đơn hàng Xuất Khẩu: Chụp ảnh cắt chì & ảnh dỡ hàng</p>
+              <p className="text-blue-600 font-bold mb-2">
+                Đơn hàng Xuất Khẩu: Chụp ảnh cắt chì & ảnh dỡ hàng
+              </p>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Ảnh cắt chì (*)</label>
-                  <Upload 
-                    listType="picture-card" 
-                    maxCount={1} 
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Ảnh cắt chì (*)
+                  </label>
+                  <Upload
+                    listType="picture-card"
+                    maxCount={1}
                     beforeUpload={() => false}
-                    defaultFileList={[{ uid: "-1", name: "cut.jpg", status: "done", url: cutSealPhotoUrl }]}
+                    defaultFileList={[
+                      {
+                        uid: "-1",
+                        name: "cut.jpg",
+                        status: "done",
+                        url: cutSealPhotoUrl,
+                      },
+                    ]}
                     onChange={(i) => {
                       const f = i.fileList[0];
-                      if (f) setCutSealPhotoUrl(f.thumbUrl || f.url || cutSealPhotoUrl);
+                      if (f)
+                        setCutSealPhotoUrl(
+                          f.thumbUrl || f.url || cutSealPhotoUrl,
+                        );
                     }}
                   >
                     <div className="flex flex-col items-center text-slate-400">
-                      <Camera size={16}/>
+                      <Camera size={16} />
                       <span className="text-[10px]">Cắt chì</span>
                     </div>
                   </Upload>
                 </div>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Ảnh dỡ hàng (*)</label>
-                  <Upload 
-                    listType="picture-card" 
-                    maxCount={1} 
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Ảnh dỡ hàng (*)
+                  </label>
+                  <Upload
+                    listType="picture-card"
+                    maxCount={1}
                     beforeUpload={() => false}
-                    defaultFileList={[{ uid: "-2", name: "unloaded.jpg", status: "done", url: unloadedCargoPhotoUrl }]}
+                    defaultFileList={[
+                      {
+                        uid: "-2",
+                        name: "unloaded.jpg",
+                        status: "done",
+                        url: unloadedCargoPhotoUrl,
+                      },
+                    ]}
                     onChange={(i) => {
                       const f = i.fileList[0];
-                      if (f) setUnloadedCargoPhotoUrl(f.thumbUrl || f.url || unloadedCargoPhotoUrl);
+                      if (f)
+                        setUnloadedCargoPhotoUrl(
+                          f.thumbUrl || f.url || unloadedCargoPhotoUrl,
+                        );
                     }}
                   >
                     <div className="flex flex-col items-center text-slate-400">
-                      <Camera size={16}/>
+                      <Camera size={16} />
                       <span className="text-[10px]">Dỡ hàng</span>
                     </div>
                   </Upload>
@@ -1125,28 +1492,39 @@ export default function DriverDashboard() {
             </div>
           ) : (
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Ảnh biên bản POD có ký nhận (*)</label>
-              <Upload 
-                listType="picture-card" 
-                maxCount={1} 
+              <label className="font-bold text-slate-700 block mb-1">
+                Ảnh biên bản POD có ký nhận (*)
+              </label>
+              <Upload
+                listType="picture-card"
+                maxCount={1}
                 beforeUpload={() => false}
-                defaultFileList={[{ uid: "-1", name: "pod.jpg", status: "done", url: podPhotoUrl }]}
+                defaultFileList={[
+                  {
+                    uid: "-1",
+                    name: "pod.jpg",
+                    status: "done",
+                    url: podPhotoUrl,
+                  },
+                ]}
                 onChange={(i) => {
                   const f = i.fileList[0];
                   if (f) setPodPhotoUrl(f.thumbUrl || f.url || podPhotoUrl);
                 }}
               >
                 <div className="flex flex-col items-center text-slate-400">
-                  <Camera size={16}/>
+                  <Camera size={16} />
                   <span className="text-[10px]">Chụp POD</span>
                 </div>
               </Upload>
               <div>
-                <label className="font-bold text-slate-700 block mb-1 mt-2">Họ tên người nhận hàng (*)</label>
-                <Input 
-                  value={receiverName} 
-                  onChange={(e) => setReceiverName(e.target.value)} 
-                  placeholder="VD: Nguyễn Văn C" 
+                <label className="font-bold text-slate-700 block mb-1 mt-2">
+                  Họ tên người nhận hàng (*)
+                </label>
+                <Input
+                  value={receiverName}
+                  onChange={(e) => setReceiverName(e.target.value)}
+                  placeholder="VD: Nguyễn Văn C"
                   className="py-1.5"
                 />
               </div>
@@ -1154,21 +1532,26 @@ export default function DriverDashboard() {
           )}
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Số kiện đã giao thực tế</label>
-            <InputNumber 
-              min={1} 
-              value={deliveredPackages} 
-              onChange={setDeliveredPackages} 
+            <label className="font-bold text-slate-700 block mb-1">
+              Số kiện đã giao thực tế
+            </label>
+            <InputNumber
+              min={1}
+              value={deliveredPackages}
+              onChange={setDeliveredPackages}
               className="w-full"
             />
             <span className="text-[11px] text-slate-500 block mt-0.5">
-              Hiển thị: <b>{deliveredPackages} trên tổng {loadedPackages} kiện</b>
+              Hiển thị:{" "}
+              <b>
+                {deliveredPackages} trên tổng {loadedPackages} kiện
+              </b>
             </span>
           </div>
 
           <div className="pt-1">
-            <Checkbox 
-              checked={docsHandedOver} 
+            <Checkbox
+              checked={docsHandedOver}
               onChange={(e) => setDocsHandedOver(e.target.checked)}
               className="font-bold text-slate-700"
             >
@@ -1185,7 +1568,11 @@ export default function DriverDashboard() {
         width="94%"
         style={{ maxWidth: 460 }}
         onCancel={() => setRefusalModalOpen(false)}
-        title={<span className="font-bold text-red-600 flex items-center gap-1.5"><Ban size={18}/> Khách không nhận hàng (BR-57)</span>}
+        title={
+          <span className="font-bold text-red-600 flex items-center gap-1.5">
+            <Ban size={18} /> Khách không nhận hàng (BR-57)
+          </span>
+        }
         okText="Gửi báo cáo từ chối"
         confirmLoading={actionLoading}
         okButtonProps={{ danger: true, className: "font-bold" }}
@@ -1193,45 +1580,63 @@ export default function DriverDashboard() {
       >
         <div className="space-y-3 py-2 text-xs">
           <p className="text-slate-500">
-            Ghi nhận khách từ chối nhận hàng tại điểm giao. Đơn hàng sẽ được chuyển sang <b>Delivered (Exception)</b> và gửi cảnh báo cho Điều phối viên (MSG75).
+            Ghi nhận khách từ chối nhận hàng tại điểm giao. Đơn hàng sẽ được
+            chuyển sang <b>Delivered (Exception)</b> và gửi cảnh báo cho Điều
+            phối viên (MSG75).
           </p>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Lý do từ chối (*) (Bắt buộc)</label>
-            <Input 
-              value={refusalReason} 
-              onChange={(e) => setRefusalReason(e.target.value)} 
-              placeholder="VD: Hàng móp méo, khách không nhận; sai địa chỉ..." 
+            <label className="font-bold text-slate-700 block mb-1">
+              Lý do từ chối (*) (Bắt buộc)
+            </label>
+            <Input
+              value={refusalReason}
+              onChange={(e) => setRefusalReason(e.target.value)}
+              placeholder="VD: Hàng móp méo, khách không nhận; sai địa chỉ..."
               className="py-1.5"
             />
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Ảnh hiện trường hàng hóa (*) (Bắt buộc)</label>
-            <Upload 
-              listType="picture-card" 
-              maxCount={1} 
+            <label className="font-bold text-slate-700 block mb-1">
+              Ảnh hiện trường hàng hóa (*) (Bắt buộc)
+            </label>
+            <Upload
+              listType="picture-card"
+              maxCount={1}
               beforeUpload={() => false}
-              defaultFileList={[{ uid: "-1", name: "refusal.jpg", status: "done", url: refusalCargoPhoto }]}
+              defaultFileList={[
+                {
+                  uid: "-1",
+                  name: "refusal.jpg",
+                  status: "done",
+                  url: refusalCargoPhoto,
+                },
+              ]}
               onChange={(i) => {
                 const f = i.fileList[0];
-                if (f) setRefusalCargoPhoto(f.thumbUrl || f.url || refusalCargoPhoto);
+                if (f)
+                  setRefusalCargoPhoto(
+                    f.thumbUrl || f.url || refusalCargoPhoto,
+                  );
               }}
             >
               <div className="flex flex-col items-center text-slate-400">
-                <Camera size={16}/>
+                <Camera size={16} />
                 <span className="text-[10px]">Ảnh hàng</span>
               </div>
             </Upload>
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Ghi chú bổ sung (Tùy chọn)</label>
-            <Input.TextArea 
+            <label className="font-bold text-slate-700 block mb-1">
+              Ghi chú bổ sung (Tùy chọn)
+            </label>
+            <Input.TextArea
               rows={2}
-              value={refusalNote} 
-              onChange={(e) => setRefusalNote(e.target.value)} 
-              placeholder="Ý kiến của khách, thời gian chờ..." 
+              value={refusalNote}
+              onChange={(e) => setRefusalNote(e.target.value)}
+              placeholder="Ý kiến của khách, thời gian chờ..."
             />
           </div>
         </div>
@@ -1244,7 +1649,11 @@ export default function DriverDashboard() {
         width="94%"
         style={{ maxWidth: 460 }}
         onCancel={() => setExtraFeeModalOpen(false)}
-        title={<span className="font-bold text-amber-600 flex items-center gap-1.5"><DollarSign size={18}/> Đề xuất Phụ phí (BR-30)</span>}
+        title={
+          <span className="font-bold text-amber-600 flex items-center gap-1.5">
+            <DollarSign size={18} /> Đề xuất Phụ phí (BR-30)
+          </span>
+        }
         okText="Gửi đề xuất phí (MSG85)"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-amber-600 font-bold" }}
@@ -1252,58 +1661,74 @@ export default function DriverDashboard() {
       >
         <div className="space-y-3 py-2 text-xs">
           <p className="text-slate-500">
-            Phụ phí đề xuất sẽ ở trạng thái <b>Proposed</b>. Điều phối viên sẽ nhận được thông báo để xác nhận hoặc từ chối (BR-30).
+            Phụ phí đề xuất sẽ ở trạng thái <b>Proposed</b>. Điều phối viên sẽ
+            nhận được thông báo để xác nhận hoặc từ chối (BR-30).
           </p>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Loại phụ phí (*) (Bắt buộc)</label>
-            <Select 
-              value={feeType} 
-              onChange={setFeeType} 
-              className="w-full"
-            >
+            <label className="font-bold text-slate-700 block mb-1">
+              Loại phụ phí (*) (Bắt buộc)
+            </label>
+            <Select value={feeType} onChange={setFeeType} className="w-full">
               <Select.Option value="Bốc xếp thêm">Bốc xếp thêm</Select.Option>
               <Select.Option value="Nâng hạ">Nâng hạ</Select.Option>
-              <Select.Option value="Trả kho thay khách">Trả kho thay khách</Select.Option>
+              <Select.Option value="Trả kho thay khách">
+                Trả kho thay khách
+              </Select.Option>
             </Select>
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Số tiền đề xuất (VND) (*)</label>
-            <InputNumber 
-              min={1000} 
-              step={10000} 
-              value={feeAmount} 
-              onChange={setFeeAmount} 
-              formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+            <label className="font-bold text-slate-700 block mb-1">
+              Số tiền đề xuất (VND) (*)
+            </label>
+            <InputNumber
+              min={1000}
+              step={10000}
+              value={feeAmount}
+              onChange={setFeeAmount}
+              formatter={(val) =>
+                `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+              }
               className="w-full"
             />
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Lý do phát sinh (*) (Bắt buộc)</label>
-            <Input 
-              value={feeReason} 
-              onChange={(e) => setFeeReason(e.target.value)} 
-              placeholder="VD: Không có xe nâng, phải thuê nhân công bốc dỡ ngoài..." 
+            <label className="font-bold text-slate-700 block mb-1">
+              Lý do phát sinh (*) (Bắt buộc)
+            </label>
+            <Input
+              value={feeReason}
+              onChange={(e) => setFeeReason(e.target.value)}
+              placeholder="VD: Không có xe nâng, phải thuê nhân công bốc dỡ ngoài..."
               className="py-1.5"
             />
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Ảnh chứng từ / Biên lai (*) (Bắt buộc)</label>
-            <Upload 
-              listType="picture-card" 
-              maxCount={1} 
+            <label className="font-bold text-slate-700 block mb-1">
+              Ảnh chứng từ / Biên lai (*) (Bắt buộc)
+            </label>
+            <Upload
+              listType="picture-card"
+              maxCount={1}
               beforeUpload={() => false}
-              defaultFileList={[{ uid: "-1", name: "receipt.jpg", status: "done", url: feePhotoUrl }]}
+              defaultFileList={[
+                {
+                  uid: "-1",
+                  name: "receipt.jpg",
+                  status: "done",
+                  url: feePhotoUrl,
+                },
+              ]}
               onChange={(i) => {
                 const f = i.fileList[0];
                 if (f) setFeePhotoUrl(f.thumbUrl || f.url || feePhotoUrl);
               }}
             >
               <div className="flex flex-col items-center text-slate-400">
-                <Camera size={16}/>
+                <Camera size={16} />
                 <span className="text-[10px]">Chứng từ</span>
               </div>
             </Upload>
@@ -1318,33 +1743,58 @@ export default function DriverDashboard() {
         width="94%"
         style={{ maxWidth: 460 }}
         onCancel={() => setDocsModalOpen(false)}
-        title={<span className="font-bold text-slate-800 flex items-center gap-1.5"><FileText size={18}/> Chứng từ chuyến xe</span>}
+        title={
+          <span className="font-bold text-slate-800 flex items-center gap-1.5">
+            <FileText size={18} /> Chứng từ chuyến xe
+          </span>
+        }
         footer={[
-          <Button key="close" type="primary" onClick={() => setDocsModalOpen(false)}>
+          <Button
+            key="close"
+            type="primary"
+            onClick={() => setDocsModalOpen(false)}
+          >
             Đóng
-          </Button>
+          </Button>,
         ]}
       >
         <div className="py-2 text-xs space-y-3">
           <div className="bg-slate-100 p-3 rounded-xl border border-slate-200">
-            <span className="font-bold text-slate-800 block mb-1">1. Giấy vận tải điện tử (Waybill)</span>
-            <p className="text-slate-600">Mã chuyến: <b>{trip?.trip_code}</b></p>
-            <p className="text-slate-600">Xe phụ trách: <b>{truck?.plate_number}</b> ({truck?.model})</p>
+            <span className="font-bold text-slate-800 block mb-1">
+              1. Giấy vận tải điện tử (Waybill)
+            </span>
+            <p className="text-slate-600">
+              Mã chuyến: <b>{trip?.trip_code}</b>
+            </p>
+            <p className="text-slate-600">
+              Xe phụ trách: <b>{truck?.plate_number}</b> ({truck?.model})
+            </p>
             <p className="text-slate-600">Lộ trình: {stops.length} điểm dừng</p>
           </div>
 
           <div className="bg-slate-100 p-3 rounded-xl border border-slate-200">
-            <span className="font-bold text-slate-800 block mb-1">2. Chứng từ khách hàng đính kèm</span>
-            {stops.map((s, idx) => (
-              <div key={s.id} className="py-1 border-b border-slate-200 last:border-0">
-                <span className="font-semibold text-slate-700">Điểm #{s.sequence} - Đơn {s.order?.order_code || 'N/A'}:</span>
-                <p className="text-slate-500 text-[11px]">Người nhận: {s.order?.receiver_name || 'Khách hàng'} • ĐT: {s.order?.receiver_phone || 'N/A'}</p>
+            <span className="font-bold text-slate-800 block mb-1">
+              2. Chứng từ khách hàng đính kèm
+            </span>
+            {stops.map((s) => (
+              <div
+                key={s.id}
+                className="py-1 border-b border-slate-200 last:border-0"
+              >
+                <span className="font-semibold text-slate-700">
+                  Điểm #{s.sequence} - Đơn {s.order?.order_code || "N/A"}:
+                </span>
+                <p className="text-slate-500 text-[11px]">
+                  Người nhận: {s.order?.receiver_name || "Khách hàng"} • ĐT:{" "}
+                  {s.order?.receiver_phone || "N/A"}
+                </p>
               </div>
             ))}
           </div>
 
           <p className="text-[11px] text-slate-400 italic">
-            Chứng từ chuyến xe đã được lưu đệm trên thiết bị để bạn có thể xem lại ngay cả khi mất sóng (BR-27).
+            Chứng từ chuyến xe đã được lưu đệm trên thiết bị để bạn có thể xem
+            lại ngay cả khi mất sóng (BR-27).
           </p>
         </div>
       </Modal>

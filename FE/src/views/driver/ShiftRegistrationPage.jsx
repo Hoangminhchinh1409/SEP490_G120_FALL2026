@@ -38,11 +38,13 @@ export default function ShiftRegistrationPage() {
   }, [currentWeekStart, weekEnd]);
 
   useEffect(() => {
-    fetchShifts();
+    const timer = setTimeout(() => {
+      void fetchShifts();
+    }, 0);
 
     const handleOnline = () => {
       setIsOffline(false);
-      fetchShifts();
+      void fetchShifts();
     };
     const handleOffline = () => setIsOffline(true);
 
@@ -51,8 +53,11 @@ export default function ShiftRegistrationPage() {
       window.addEventListener("offline", handleOffline);
     }
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      clearTimeout(timer);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
+      }
     };
   }, [fetchShifts]);
 
@@ -273,7 +278,7 @@ export default function ShiftRegistrationPage() {
 
                   {shift.note && (
                     <p className="text-xs text-slate-400 bg-slate-900/50 p-2 rounded-lg mt-1 italic">
-                      "{shift.note}"
+                      &ldquo;{shift.note}&rdquo;
                     </p>
                   )}
                 </div>
