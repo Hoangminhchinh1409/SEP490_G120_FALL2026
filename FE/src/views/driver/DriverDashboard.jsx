@@ -652,56 +652,64 @@ export default function DriverDashboard() {
   const drivingHours = tripData?.drivingHours || profile?.drivingHours;
 
   return (
-    <div className="bg-slate-900 min-h-screen font-sans text-slate-100 relative">
-      {/* Background gradient */}
-      <div className="absolute top-0 left-0 w-full h-72 bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-900 rounded-b-[40px] opacity-80 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-50px] right-[-50px] w-64 h-64 bg-blue-500 rounded-full blur-[80px] opacity-40"></div>
-        <div className="absolute top-20 left-[-50px] w-48 h-48 bg-indigo-500 rounded-full blur-[60px] opacity-40"></div>
+    <div className="bg-slate-900 min-h-screen font-sans text-slate-100 relative overflow-x-hidden">
+      {/* Ambient background glow (Seamless gradient, no awkward cutoff arch) */}
+      <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-blue-700/20 via-indigo-900/10 to-transparent pointer-events-none overflow-hidden">
+        <div className="absolute -top-20 -right-10 w-72 h-72 bg-blue-500/15 rounded-full blur-3xl"></div>
+        <div className="absolute top-0 -left-10 w-64 h-64 bg-indigo-500/15 rounded-full blur-3xl"></div>
       </div>
 
       {/* PWA Connection Status Bar with Safe Area support */}
       <div
-        className={`fixed top-0 left-0 w-full z-40 px-4 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-2 text-center text-xs font-bold text-white transition-all backdrop-blur-md border-b flex items-center justify-center gap-2 ${
+        className={`fixed top-0 left-0 right-0 max-w-md mx-auto z-40 px-3 pt-[max(0.4rem,env(safe-area-inset-top,0px))] pb-1.5 text-center text-xs font-bold text-white transition-all backdrop-blur-md border-b flex items-center justify-center gap-1.5 shadow-md ${
           isOffline
-            ? "bg-red-500/80 border-red-500/50"
-            : "bg-emerald-500/80 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+            ? "bg-red-600/90 border-red-500/50"
+            : "bg-emerald-600/90 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
         }`}
       >
         {isOffline ? (
           <>
-            <CloudOff size={14} /> LƯU TẠM (OFFLINE FIRST - BR-27)
+            <CloudOff size={13} /> LƯU TẠM (OFFLINE FIRST - BR-27)
           </>
         ) : (
           <>
-            <Cloud size={14} /> KẾT NỐI MẠNG ỔN ĐỊNH
+            <Cloud size={13} /> KẾT NỐI MẠNG ỔN ĐỊNH
           </>
         )}
       </div>
 
-      <div className="max-w-md mx-auto pt-[calc(3.5rem+env(safe-area-inset-top,0px))] px-4 relative z-10">
-        {/* Header Section */}
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight text-white drop-shadow-md">
-              NEXLOG Driver
-            </h1>
-            <p className="text-blue-200 text-sm font-medium">
-              Xin chào,{" "}
-              {profile?.user?.full_name || profile?.user?.username || "Tài xế"}
-            </p>
-            {profile?.license_number && (
-              <span className="text-[11px] text-blue-300/80 font-mono">
-                Bằng lái: {profile.license_number} ({profile.license_class})
-              </span>
-            )}
+      <div className="w-full pt-[calc(3rem+env(safe-area-inset-top,0px))] px-3.5 relative z-10">
+        {/* Header Hero Card (Blue-Purple Gradient Element) */}
+        <div className="bg-gradient-to-br from-blue-600 via-indigo-700 to-indigo-900 border border-blue-400/25 rounded-3xl p-4 mb-3 shadow-xl relative overflow-hidden">
+          <div className="absolute -right-6 -bottom-6 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
+          <div className="flex items-center justify-between relative z-10 gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-0.5">
+                <h1 className="text-xl font-black tracking-tight text-white drop-shadow-sm">
+                  NEXLOG Driver
+                </h1>
+                <span className="bg-white/20 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-md">
+                  PWA
+                </span>
+              </div>
+              <p className="text-blue-100 text-xs font-semibold truncate">
+                Xin chào,{" "}
+                {profile?.user?.full_name || profile?.user?.username || "Tài xế"}
+              </p>
+              {profile?.license_number && (
+                <span className="text-[10px] text-blue-200/90 font-mono block mt-0.5">
+                  Bằng lái: {profile.license_number} ({profile.license_class})
+                </span>
+              )}
+            </div>
+            <button
+              onClick={fetchDashboardData}
+              className="w-10 h-10 shrink-0 bg-white/15 hover:bg-white/25 active:scale-95 backdrop-blur-md rounded-2xl border border-white/25 flex items-center justify-center shadow-md transition-all text-white"
+              title="Làm mới"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            onClick={fetchDashboardData}
-            className="w-11 h-11 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl border border-white/20 flex items-center justify-center shadow-lg active:scale-95 transition-all text-white"
-            title="Làm mới"
-          >
-            <RefreshCw className="w-5 h-5" />
-          </button>
         </div>
 
         {/* OFFLINE SYNC STATUS & MANUAL SYNC BUTTON (BR-27, BR-37, MSG39) */}
@@ -709,9 +717,9 @@ export default function DriverDashboard() {
 
         {/* CẢNH BÁO GIỚI HẠN GIỜ LÁI XE TỨC THỜI (BR-34, MSG65) */}
         {drivingHours && Number(drivingHours.continuous_hours_left) <= 0.5 && (
-          <div className="mb-4 p-3.5 bg-amber-500/20 border border-amber-500/50 rounded-2xl flex items-center gap-3 text-amber-200 shadow-lg animate-pulse">
-            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-            <div className="text-xs">
+          <div className="mb-3 p-3 bg-amber-500/20 border border-amber-500/50 rounded-2xl flex items-center gap-2.5 text-amber-200 shadow-lg">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <div className="text-[11px] leading-tight">
               <span className="font-bold block text-amber-300">
                 CẢNH BÁO GIỚI HẠN GIỜ LÁI XE (MSG65)
               </span>
@@ -723,22 +731,22 @@ export default function DriverDashboard() {
 
         {/* WIDGET: Giờ lái an toàn còn lại (Screen 6.1 (4), BR-34) */}
         {drivingHours && (
-          <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-3xl p-4 mb-4 shadow-xl">
+          <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 mb-3 shadow-xl">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <Clock size={14} className="text-blue-400" /> Giờ lái còn lại
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Clock size={13} className="text-blue-400" /> Giờ lái còn lại
                 (BR-34)
               </span>
-              <span className="text-[10px] text-slate-400">Luật ATGT</span>
+              <span className="text-[9px] text-slate-400">Luật ATGT</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="bg-slate-900/60 p-2.5 rounded-2xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-medium">
+            <div className="grid grid-cols-3 gap-1.5 text-center">
+              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
+                <span className="text-[9px] text-slate-400 block font-medium truncate">
                   Liên tục (max 4h)
                 </span>
                 <span
-                  className={`text-base font-black ${drivingHours.continuous_hours_left < 1 ? "text-amber-400" : "text-emerald-400"}`}
+                  className={`text-sm font-black ${drivingHours.continuous_hours_left < 1 ? "text-amber-400" : "text-emerald-400"}`}
                 >
                   {drivingHours.continuous_hours_left}h
                 </span>
@@ -759,11 +767,11 @@ export default function DriverDashboard() {
                 />
               </div>
 
-              <div className="bg-slate-900/60 p-2.5 rounded-2xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-medium">
+              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
+                <span className="text-[9px] text-slate-400 block font-medium truncate">
                   Hôm nay (max 10h)
                 </span>
-                <span className="text-base font-black text-blue-400">
+                <span className="text-sm font-black text-blue-400">
                   {drivingHours.daily_hours_left}h
                 </span>
                 <Progress
@@ -779,11 +787,11 @@ export default function DriverDashboard() {
                 />
               </div>
 
-              <div className="bg-slate-900/60 p-2.5 rounded-2xl border border-slate-700/60">
-                <span className="text-[10px] text-slate-400 block font-medium">
+              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
+                <span className="text-[9px] text-slate-400 block font-medium truncate">
                   Tuần này (max 48h)
                 </span>
-                <span className="text-base font-black text-indigo-400">
+                <span className="text-sm font-black text-indigo-400">
                   {drivingHours.weekly_hours_left}h
                 </span>
                 <Progress
@@ -824,18 +832,18 @@ export default function DriverDashboard() {
         ) : (
           <>
             {/* Trip Info Header */}
-            <div className="mb-3 flex justify-between items-center">
-              <h2 className="text-lg font-bold text-white tracking-wide">
+            <div className="mb-2.5 flex items-center justify-between gap-2 flex-wrap">
+              <h2 className="text-sm font-bold text-white tracking-wide">
                 Chuyến xe hiện tại
               </h2>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={() => setDocsModalOpen(true)}
-                  className="bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"
+                  className="bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors"
                 >
-                  <FileText size={12} /> Chứng từ chuyến (6.1)
+                  <FileText size={11} /> Chứng từ
                 </button>
-                <div className="bg-blue-500/20 text-blue-200 border border-blue-400/30 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5">
+                <div className="bg-blue-500/20 text-blue-200 border border-blue-400/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
                   {trip.status.toUpperCase()}
                 </div>
@@ -843,27 +851,28 @@ export default function DriverDashboard() {
             </div>
 
             {/* Trip Summary Card */}
-            <div className="bg-white/10 backdrop-blur-xl border border-white/15 rounded-3xl p-4 mb-4 shadow-2xl relative overflow-hidden">
-              <div className="flex justify-between items-start border-b border-white/10 pb-3 mb-3">
-                <div>
-                  <p className="text-[10px] text-blue-200/80 font-bold uppercase tracking-widest mb-0.5">
+            <div className="bg-white/10 backdrop-blur-xl border border-white/15 rounded-2xl p-3 mb-3 shadow-2xl relative overflow-hidden">
+              <div className="flex justify-between items-start border-b border-white/10 pb-2 mb-2 gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[9px] text-blue-200/80 font-bold uppercase tracking-wider mb-0.5">
                     Mã Chuyến
                   </p>
-                  <h3 className="text-xl font-black text-white tracking-tight">
+                  <h3 className="text-lg font-black text-white tracking-tight truncate">
                     {trip.trip_code}
                   </h3>
                   {truck && (
-                    <div className="flex items-center gap-1.5 text-xs text-blue-200 font-semibold mt-1">
-                      <Truck size={14} />
-                      <span>Xe: {truck.plate_number}</span>
-                      <span className="text-blue-300/70">
-                        ({truck.model} - Tải trọng: {truck.allowed_payload} kg)
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-blue-200 font-semibold mt-1">
+                      <span className="flex items-center gap-1 shrink-0">
+                        <Truck size={12} /> Xe: {truck.plate_number}
+                      </span>
+                      <span className="text-blue-300/70 text-[10px]">
+                        ({truck.model} • {truck.allowed_payload ? `${truck.allowed_payload}kg` : ''})
                       </span>
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-1 bg-white/20 px-2.5 py-1 rounded-xl text-white font-semibold text-xs">
-                  <Package size={13} />
+                <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-xl text-white font-semibold text-[11px] shrink-0">
+                  <Package size={12} />
                   <span>{stops.length} Điểm dừng</span>
                 </div>
               </div>
@@ -937,11 +946,10 @@ export default function DriverDashboard() {
             </div>
 
             {/* Workflow Control Box */}
-            <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/60 rounded-3xl p-4 mb-4 shadow-2xl">
-              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Navigation2 className="w-4 h-4 text-indigo-400" /> Thao tác
-                  Chuyến xe
+            <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/60 rounded-2xl p-3 mb-4 shadow-2xl">
+              <div className="mb-2.5 flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Navigation2 className="w-3.5 h-3.5 text-indigo-400" /> Thao tác Chuyến xe
                 </span>
                 {/* Propose Fee Button (Screen 6.2 (10)) */}
                 <button
@@ -949,11 +957,11 @@ export default function DriverDashboard() {
                     setActiveStopTarget(currentStop);
                     setExtraFeeModalOpen(true);
                   }}
-                  className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/30 transition-colors"
+                  className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30 transition-colors shrink-0"
                 >
-                  <DollarSign size={13} /> Đề xuất phí (BR-30)
+                  <DollarSign size={12} /> Đề xuất phí (BR-30)
                 </button>
-              </h3>
+              </div>
 
               {/* Case 1: Trip is Assigned -> Need to Accept (MSG17, BR-09) */}
               {trip.status === "Assigned" && (
@@ -1116,9 +1124,16 @@ export default function DriverDashboard() {
                         onClick={() =>
                           handleArriveStop(trip.id, currentStop.id)
                         }
-                        className="w-full bg-blue-600 hover:bg-blue-500 border-none font-black rounded-xl h-12 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
+                        className="w-full bg-blue-600 hover:bg-blue-500 border-none font-bold rounded-xl h-auto py-2.5 shadow-lg shadow-blue-600/30 flex items-center justify-center text-center text-white"
                       >
-                        <MapPin size={18} /> BƯỚC 1: ĐÃ ĐẾN NƠI (ARRIVED)
+                        <div className="flex flex-col items-center justify-center w-full leading-tight">
+                          <span className="text-xs font-black flex items-center gap-1.5">
+                            <MapPin size={15} /> BƯỚC 1: ĐÃ ĐẾN NƠI (ARRIVED)
+                          </span>
+                          <span className="text-[10px] font-normal opacity-85">
+                            Ghi nhận mốc giờ thực tế
+                          </span>
+                        </div>
                       </Button>
                     )}
 
@@ -1131,10 +1146,16 @@ export default function DriverDashboard() {
                         onClick={() =>
                           handleStartLoading(trip.id, currentStop.id)
                         }
-                        className="w-full bg-amber-600 hover:bg-amber-500 border-none font-black rounded-xl h-12 shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2"
+                        className="w-full bg-amber-600 hover:bg-amber-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-amber-600/30 flex items-center justify-center text-center text-white"
                       >
-                        <Clock size={18} /> BƯỚC 2: BẮT ĐẦU BỐC / DỠ HÀNG
-                        (LOADING STARTED)
+                        <div className="flex flex-col items-center justify-center w-full leading-tight">
+                          <span className="text-xs font-black flex items-center gap-1.5">
+                            <Clock size={15} /> BƯỚC 2: BẮT ĐẦU BỐC / DỠ
+                          </span>
+                          <span className="text-[10px] font-normal opacity-85">
+                            (Loading Started - BR-30)
+                          </span>
+                        </div>
                       </Button>
                     )}
 
@@ -1148,17 +1169,23 @@ export default function DriverDashboard() {
                             setActiveStopTarget(currentStop);
                             setSealModalOpen(true);
                           }}
-                          className="w-full bg-indigo-600 hover:bg-indigo-500 border-none font-black rounded-xl h-12 shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
+                          className="w-full bg-indigo-600 hover:bg-indigo-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-indigo-600/30 flex items-center justify-center text-center text-white"
                         >
-                          <Camera size={18} /> BƯỚC 3: BỐC HÀNG & CHỤP ẢNH NIÊM
-                          CHÌ (BR-11)
+                          <div className="flex flex-col items-center justify-center w-full leading-tight">
+                            <span className="text-xs font-black flex items-center gap-1.5">
+                              <Camera size={15} /> BƯỚC 3: BỐC HÀNG & ẢNH CHÌ
+                            </span>
+                            <span className="text-[10px] font-normal opacity-85">
+                              (Record Cargo Pickup - BR-11)
+                            </span>
+                          </div>
                         </Button>
                       )}
 
                     {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal / Từ chối (BR-12, BR-57) */}
                     {currentStop.status === "Loading Started" &&
                       currentStop.stop_type === "Drop-off" && (
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-5 gap-1.5">
                           <Button
                             type="primary"
                             size="large"
@@ -1166,9 +1193,12 @@ export default function DriverDashboard() {
                               setActiveStopTarget(currentStop);
                               setPodModalOpen(true);
                             }}
-                            className="col-span-2 bg-emerald-600 hover:bg-emerald-500 border-none font-black rounded-xl h-12 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 text-xs"
+                            className="col-span-3 bg-emerald-600 hover:bg-emerald-500 border-none rounded-xl h-auto py-2 shadow-lg shadow-emerald-600/30 flex flex-col items-center justify-center text-center text-white"
                           >
-                            <Camera size={16} /> BƯỚC 3: GIAO HÀNG & POD (BR-12)
+                            <span className="text-[11px] font-black flex items-center gap-1">
+                              <Camera size={13} /> GIAO HÀNG & POD
+                            </span>
+                            <span className="text-[9px] opacity-85">(BR-12)</span>
                           </Button>
 
                           <Button
@@ -1178,9 +1208,12 @@ export default function DriverDashboard() {
                               setActiveStopTarget(currentStop);
                               setRefusalModalOpen(true);
                             }}
-                            className="col-span-1 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold rounded-xl h-12 flex flex-col items-center justify-center text-[10px]"
+                            className="col-span-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 rounded-xl h-auto py-2 flex flex-col items-center justify-center text-center"
                           >
-                            <Ban size={14} /> KHÁCH TỪ CHỐI (BR-57)
+                            <span className="text-[11px] font-bold flex items-center gap-1">
+                              <Ban size={12} /> TỪ CHỐI
+                            </span>
+                            <span className="text-[9px] opacity-80">(BR-57)</span>
                           </Button>
                         </div>
                       )}
@@ -1192,10 +1225,16 @@ export default function DriverDashboard() {
                         size="large"
                         loading={actionLoading}
                         onClick={() => handleLeftStop(trip.id, currentStop.id)}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 border-none font-black rounded-xl h-12 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2"
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-emerald-600/30 flex items-center justify-center text-center text-white"
                       >
-                        <CheckCircle size={18} /> BƯỚC 4: RỜI ĐI (LEFT - TIẾP
-                        TỤC LỘ TRÌNH)
+                        <div className="flex flex-col items-center justify-center w-full leading-tight">
+                          <span className="text-xs font-black flex items-center gap-1.5">
+                            <CheckCircle size={15} /> BƯỚC 4: RỜI ĐI (LEFT)
+                          </span>
+                          <span className="text-[10px] font-normal opacity-85">
+                            Tiếp tục lộ trình
+                          </span>
+                        </div>
                       </Button>
                     )}
                   </div>

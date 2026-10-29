@@ -80,32 +80,32 @@ export default function OfflineSyncStatus({ onSyncCompleted }) {
   }, [refreshCount, triggerSync]);
 
   return (
-    <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700/70 rounded-2xl p-3 mb-4 flex items-center justify-between shadow-lg">
-      <div className="flex items-center gap-2.5">
+    <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700/70 rounded-2xl p-2.5 mb-3 flex items-center justify-between gap-2 shadow-lg">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
         <div
-          className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+          className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
             isOnline
               ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
               : "bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse"
           }`}
         >
-          {isOnline ? <Cloud className="w-4 h-4" /> : <CloudOff className="w-4 h-4" />}
+          {isOnline ? <Cloud className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
         </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-white">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs font-bold text-white truncate">
               {isOnline ? "Trực tuyến (Online)" : "Ngoại tuyến (Offline)"}
             </span>
             {pendingCount > 0 && (
-              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-[10px] font-black animate-pulse">
-                {pendingCount} chờ gửi
+              <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-[9px] font-black animate-pulse">
+                {pendingCount} chờ
               </span>
             )}
           </div>
-          <p className="text-[10px] text-slate-400">
+          <p className="text-[10px] text-slate-400 truncate">
             {pendingCount > 0
-              ? `${pendingCount} thao tác đã lưu tạm tại điện thoại (BR-27)`
-              : "Dữ liệu đã được đồng bộ với máy chủ"}
+              ? `${pendingCount} thao tác lưu tạm (BR-27)`
+              : "Dữ liệu đã đồng bộ với máy chủ"}
           </p>
         </div>
       </div>
@@ -113,7 +113,7 @@ export default function OfflineSyncStatus({ onSyncCompleted }) {
       <button
         onClick={() => triggerSync(true)}
         disabled={syncing || !isOnline}
-        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+        className={`shrink-0 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all shadow-md ${
           syncing
             ? "bg-slate-700 text-slate-400 cursor-not-allowed"
             : !isOnline
@@ -121,7 +121,7 @@ export default function OfflineSyncStatus({ onSyncCompleted }) {
             : "bg-blue-600 hover:bg-blue-500 text-white active:scale-95 shadow-blue-600/30"
         }`}
       >
-        <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+        <RefreshCw className={`w-3 h-3 ${syncing ? "animate-spin" : ""}`} />
         <span>{syncing ? "Đang gửi..." : "Đồng bộ ngay"}</span>
       </button>
     </div>

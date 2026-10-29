@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
-import { Form, DatePicker, TimePicker, Input, Button, Tag, message, Spin, Empty, Card } from "antd";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { Form, DatePicker, TimePicker, Input, Button, Tag, message, Spin, Empty } from "antd";
 import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, XCircle, CloudOff, Cloud } from "lucide-react";
 import dayjs from "dayjs";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
@@ -20,13 +20,13 @@ export default function ShiftRegistrationPage() {
     return false;
   });
 
-  const weekEnd = currentWeekStart.add(6, "day");
+  const weekEnd = useMemo(() => currentWeekStart.add(6, "day"), [currentWeekStart]);
 
   const fetchShifts = useCallback(async () => {
     try {
       setLoading(true);
       const fromStr = currentWeekStart.format("YYYY-MM-DD");
-      const toStr = weekEnd.format("YYYY-MM-DD");
+      const toStr = currentWeekStart.add(6, "day").format("YYYY-MM-DD");
       const res = await driverApi.getMyShifts({ from: fromStr, to: toStr });
       setShifts(res?.shifts || []);
     } catch (err) {
@@ -35,12 +35,10 @@ export default function ShiftRegistrationPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentWeekStart, weekEnd]);
+  }, [currentWeekStart]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void fetchShifts();
-    }, 0);
+    void fetchShifts();
 
     const handleOnline = () => {
       setIsOffline(false);
@@ -53,7 +51,6 @@ export default function ShiftRegistrationPage() {
       window.addEventListener("offline", handleOffline);
     }
     return () => {
-      clearTimeout(timer);
       if (typeof window !== "undefined") {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
@@ -174,10 +171,7 @@ export default function ShiftRegistrationPage() {
       </div>
 
       {/* New Shift Form */}
-      <Card
-        className="bg-slate-800/90 border border-slate-700/80 rounded-3xl mb-5 shadow-xl text-slate-100"
-        bodyStyle={{ padding: "16px" }}
-      >
+      <div className="bg-slate-800/90 border border-slate-700/80 rounded-3xl p-4 mb-5 shadow-xl text-slate-100">
         <h2 className="text-sm font-black text-white mb-3 flex items-center gap-2">
           <Plus size={16} className="text-blue-400" /> Đăng ký Ca mới
         </h2>
@@ -231,7 +225,7 @@ export default function ShiftRegistrationPage() {
             Gửi Đăng Ký Ca (BR-60)
           </Button>
         </Form>
-      </Card>
+      </div>
 
       {/* Registered Shifts List */}
       <div>
