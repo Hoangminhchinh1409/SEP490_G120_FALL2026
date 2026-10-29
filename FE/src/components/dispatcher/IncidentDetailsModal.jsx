@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { Modal, Button, Input, Tag, Select, message } from 'antd';
 import { AlertTriangle, ArrowUpRight, RotateCcw, Camera } from 'lucide-react';
 
@@ -11,7 +11,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
   const [replacementDriver, setReplacementDriver] = useState('Nguyễn Văn Đạt');
   const [replacementReason, setReplacementReason] = useState('Hỏng xe giữa đường cần chuyển tải gấp');
 
-  if (!incident) return null;
+  if (!open || !incident) return null;
 
   const handleDispatchReplacement = () => {
     if (!replacementReason.trim()) {

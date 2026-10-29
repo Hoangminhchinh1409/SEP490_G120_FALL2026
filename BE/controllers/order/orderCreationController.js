@@ -386,8 +386,11 @@ const createDirectOrder = async (req, res) => {
       customer_email: customer_email || null,
       accounting_email: accounting_email || customer_email || null,
       authorized_bank: authorized_bank || 'Vietcombank',
-      items: req.body.items || null
+      items: req.body.items || null,
+      documents: req.body.documents || null
     };
+
+    const hasUploadedDocs = Array.isArray(req.body.documents) && req.body.documents.some(d => d.file && d.file !== 'Chờ tải lên');
 
     const { data: newOrder, error: orderErr } = await supabase
       .from('orders')
@@ -402,7 +405,7 @@ const createDirectOrder = async (req, res) => {
         receiver_name: (receiver_name && (receiver_name + '').trim()) || customer_name || 'Người nhận',
         receiver_phone: (receiver_phone && (receiver_phone + '').replace(/[^0-9]/g, '')) || cleanPhone || '0988123456',
         agreed_price: parseInt(agreed_price, 10) || 0,
-        status: 'Assigned',
+        status: hasUploadedDocs ? 'Confirmed' : 'Assigned',
         source: 'Direct',
         responsible_dispatcher_id: 1,
         created_by: 1,
@@ -411,7 +414,7 @@ const createDirectOrder = async (req, res) => {
         loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
         warehouse_type: 'ALS warehouse',
         customer_agrees_to_grouping: false,
-        document_status: 'Pending Documents',
+        document_status: hasUploadedDocs ? 'Approved' : 'Pending Documents',
         is_closed: false,
         waiting_too_long: false,
         late_risk: false,

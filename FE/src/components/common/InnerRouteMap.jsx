@@ -5,18 +5,29 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 // Component tự động pan, fitBounds & invalidateSize an toàn
-function MapBoundsUpdater({ pickupCoords, deliveryCoords }) {
+function MapBoundsUpdater({ pickupCoords, deliveryCoords, routePolyline }) {
   const map = useMap();
 
   useEffect(() => {
     if (!map) return;
     
-    // Đợi container bản đồ sẵn sàng trong DOM trước khi resize hoặc fitBounds
     const timer = setTimeout(() => {
       try {
         const container = map.getContainer();
         if (!container || !container.offsetParent) return;
         map.invalidateSize();
+
+        if (routePolyline && routePolyline.length > 2) {
+          const bounds = L.latLngBounds(routePolyline);
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, {
+              padding: [40, 40],
+              maxZoom: 16,
+              animate: false
+            });
+            return;
+          }
+        }
 
         if (pickupCoords?.lat && deliveryCoords?.lat) {
           const bounds = L.latLngBounds([
@@ -41,7 +52,7 @@ function MapBoundsUpdater({ pickupCoords, deliveryCoords }) {
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [pickupCoords?.lat, pickupCoords?.lng, deliveryCoords?.lat, deliveryCoords?.lng, map]);
+  }, [pickupCoords?.lat, pickupCoords?.lng, deliveryCoords?.lat, deliveryCoords?.lng, routePolyline?.length, map]);
 
   return null;
 }
@@ -93,19 +104,13 @@ const InnerRouteMap = ({
 
   const hasBothCoords = Boolean(pickupCoords?.lat && deliveryCoords?.lat);
 
-  // Tuyến đường vẽ trên bản đồ
+  // Chỉ vẽ tuyến đường khi đã có dữ liệu hình học ôm theo đường bộ thực tế (tuyệt đối không vẽ đường thẳng chim bay)
   const polylinePositions = useMemo(() => {
-    if (routePolyline && routePolyline.length > 0) {
+    if (Array.isArray(routePolyline) && routePolyline.length > 1) {
       return routePolyline;
     }
-    if (hasBothCoords) {
-      return [
-        [pickupCoords.lat, pickupCoords.lng],
-        [deliveryCoords.lat, deliveryCoords.lng]
-      ];
-    }
     return [];
-  }, [routePolyline, hasBothCoords, pickupCoords, deliveryCoords]);
+  }, [routePolyline]);
 
   return (
     <MapContainer
@@ -115,14 +120,18 @@ const InnerRouteMap = ({
       scrollWheelZoom={true}
       maxZoom={20}
     >
-      {/* Sử dụng Google Maps Tiles: Tải cực nhanh, không bao giờ bị chặn hay xám tại Việt Nam, hỗ trợ zoom sâu tới cấp 20 */}
+      {/* Sử dụng Google Maps Tiles */}
       <TileLayer
         attribution='&copy; Google Maps'
         url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
         maxZoom={20}
       />
 
-      <MapBoundsUpdater pickupCoords={pickupCoords} deliveryCoords={deliveryCoords} />
+      <MapBoundsUpdater
+        pickupCoords={pickupCoords}
+        deliveryCoords={deliveryCoords}
+        routePolyline={polylinePositions}
+      />
 
       {pickupCoords?.lat && (
         <Marker position={[pickupCoords.lat, pickupCoords.lng]} icon={pickupIcon}>
@@ -158,12 +167,12 @@ const InnerRouteMap = ({
         </Marker>
       )}
 
-      {polylinePositions.length > 0 && (
+      {polylinePositions.length > 1 && (
         <Polyline
           positions={polylinePositions}
           color="#4f46e5"
           weight={5}
-          opacity={0.85}
+          opacity={0.9}
         />
       )}
     </MapContainer>

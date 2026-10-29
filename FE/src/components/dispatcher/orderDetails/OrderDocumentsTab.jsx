@@ -37,6 +37,7 @@ export default function OrderDocumentsTab({
   const isDocsApprovedStage =
     !hasRejectedDocs &&
     (order.web_workflow?.stage === 'DOCS_APPROVED' || order.web_workflow?.stage === 'CONTRACT_SIGNED');
+  const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
 
   const docColumns = [
     { 
@@ -171,7 +172,7 @@ export default function OrderDocumentsTab({
             ghost 
             className="text-xs"
             onClick={() => handleApproveDoc(record.key)}
-            disabled={record.status === 'APPROVED' || record.file === 'Chờ tải lên'}
+            disabled={isClosed || record.status === 'APPROVED' || record.file === 'Chờ tải lên'}
           >
             Duyệt
           </Button>
@@ -181,11 +182,11 @@ export default function OrderDocumentsTab({
             ghost 
             className="text-xs"
             onClick={() => handleRejectDoc(record.key)}
-            disabled={record.status === 'REJECTED' || record.file === 'Chờ tải lên'}
+            disabled={isClosed || record.status === 'REJECTED' || record.file === 'Chờ tải lên'}
           >
             Từ chối
           </Button>
-          {record.isCustom && (
+          {record.isCustom && !isClosed && (
             <Tooltip title="Xóa chứng từ bổ sung">
               <Button 
                 size="small" 
@@ -231,13 +232,6 @@ export default function OrderDocumentsTab({
               : 'Tải lên và kiểm duyệt tính hợp lệ của từng loại chứng từ trước khi xếp chuyến.'}
           </p>
         </div>
-        <Button
-          icon={<Sparkles size={14} className="text-purple-600" />}
-          className="bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 text-xs font-semibold shrink-0"
-          onClick={() => setAssistantDrawerOpen(true)}
-        >
-          Trợ lý AI gợi ý
-        </Button>
       </div>
 
       {/* Thông tin đơn Web nếu có */}
@@ -302,95 +296,81 @@ export default function OrderDocumentsTab({
       </div>
 
       {/* Box bổ sung chứng từ chuyên ngành / tùy biến */}
-      <div className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-200 space-y-2.5">
-        <div className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
-          <Plus size={14} className="text-indigo-600" /> Bổ sung thêm loại chứng từ cho đơn hàng này:
+      {!isClosed && (
+        <div className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-200 space-y-2.5">
+          <div className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
+            <Plus size={14} className="text-indigo-600" /> Bổ sung thêm loại chứng từ cho đơn hàng này:
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+            <div className="sm:col-span-6">
+              <Select
+                placeholder="-- Chọn chứng từ chuyên ngành có sẵn trong hệ thống --"
+                value={selectedSpecializedDoc || undefined}
+                onChange={val => {
+                  setSelectedSpecializedDoc(val);
+                  setNewDocName('');
+                }}
+                allowClear
+                className="w-full text-xs"
+              >
+                {SPECIALIZED_CARGO_CATEGORIES.map(cat => (
+                  <OptGroup key={cat.categoryKey} label={cat.categoryName}>
+                    {cat.specializedDocs.map(doc => (
+                      <Option key={doc.name} value={doc.name}>
+                        {doc.name} ({doc.shortCode})
+                      </Option>
+                    ))}
+                  </OptGroup>
+                ))}
+              </Select>
+            </div>
+
+            <div className="sm:col-span-4">
+              <Input 
+                placeholder="Hoặc tự gõ tên chứng từ khác..."
+                value={newDocName}
+                onChange={e => {
+                  setNewDocName(e.target.value);
+                  setSelectedSpecializedDoc('');
+                }}
+                className="text-xs"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <Button
+                type="primary"
+                icon={<Plus size={13} />}
+                className="w-full bg-[#7367f0] text-xs font-semibold"
+                onClick={() => handleAddCustomDoc()}
+              >
+                Thêm
+              </Button>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
-          <div className="sm:col-span-6">
-            <Select
-              placeholder="-- Chọn chứng từ chuyên ngành có sẵn trong hệ thống --"
-              value={selectedSpecializedDoc || undefined}
-              onChange={val => {
-                setSelectedSpecializedDoc(val);
-                setNewDocName('');
-              }}
-              allowClear
-              className="w-full text-xs"
-            >
-              {SPECIALIZED_CARGO_CATEGORIES.map(cat => (
-                <OptGroup key={cat.categoryKey} label={cat.categoryName}>
-                  {cat.specializedDocs.map(doc => (
-                    <Option key={doc.name} value={doc.name}>
-                      {doc.name} ({doc.shortCode})
-                    </Option>
-                  ))}
-                </OptGroup>
-              ))}
-            </Select>
-          </div>
+      {/* Footer thông tin tệp tải lên */}
+      {!isClosed && (
+        <div className="pt-2 flex justify-between items-center flex-wrap gap-2">
+          <span className="text-xs text-gray-500">
+            Đã nộp tệp: <b>{documents.filter(d => d.file !== 'Chờ tải lên').length}/{documents.length}</b> tệp
+            {hasRejectedDocs && (
+              <span className="text-red-600 font-semibold ml-2">
+                • Bị từ chối: {rejectedDocs.length} tệp (chờ khách upload lại)
+              </span>
+            )}
+          </span>
 
-          <div className="sm:col-span-4">
-            <Input 
-              placeholder="Hoặc tự gõ tên chứng từ khác..."
-              value={newDocName}
-              onChange={e => {
-                setNewDocName(e.target.value);
-                setSelectedSpecializedDoc('');
-              }}
-              className="text-xs"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <Button
-              type="primary"
-              icon={<Plus size={13} />}
-              className="w-full bg-[#7367f0] text-xs font-semibold"
-              onClick={() => handleAddCustomDoc()}
-            >
-              Thêm
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Footer kiểm duyệt toàn bộ */}
-      <div className="pt-2 flex justify-between items-center flex-wrap gap-2">
-        <span className="text-xs text-gray-500">
-          Đã nộp tệp: <b>{documents.filter(d => d.file !== 'Chờ tải lên').length}/{documents.length}</b> tệp
-          {hasRejectedDocs && (
-            <span className="text-red-600 font-semibold ml-2">
-              • Bị từ chối: {rejectedDocs.length} tệp (chờ khách upload lại)
-            </span>
+          {isDocsApprovedStage && (
+            <Tag color="success" className="py-1.5 px-3 text-xs font-bold rounded-lg flex items-center gap-1.5 m-0">
+              <CheckCircle2 size={14} /> Đã duyệt toàn bộ chứng từ &amp; Đã gửi Hợp đồng cho khách ký số
+            </Tag>
           )}
-        </span>
-
-        {isDocsApprovedStage ? (
-          <Tag color="success" className="py-1.5 px-3 text-xs font-bold rounded-lg flex items-center gap-1.5 m-0">
-            <CheckCircle2 size={14} /> Đã duyệt toàn bộ chứng từ &amp; Đã gửi Hợp đồng cho khách ký số
-          </Tag>
-        ) : (
-          <Button 
-            type="primary" 
-            loading={confirmingDocs}
-            disabled={hasRejectedDocs}
-            className={
-              hasRejectedDocs
-                ? 'font-semibold text-xs'
-                : 'bg-emerald-600 hover:bg-emerald-700 font-semibold text-xs'
-            }
-            onClick={handleConfirmAllDocuments}
-          >
-            {hasRejectedDocs
-              ? 'Đang chờ khách tải lại chứng từ bị từ chối'
-              : isWebOrder
-                ? 'Duyệt chứng từ & Gửi hợp đồng ký số'
-                : 'Xác nhận toàn bộ & Xếp chuyến'}
-          </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,33 +1,24 @@
-import { useState, useMemo, useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Select, Checkbox, Button, Tooltip, message, Tag } from 'antd';
-import { 
-  FileText, 
-  Calculator,
-  Plus,
-  Trash2,
-  Package,
-  Truck,
-  ShieldCheck,
-  PlaneTakeoff,
-  PlaneLanding,
-  Clock,
-  Calendar,
-  AlertTriangle
-} from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Modal, Form, Input, message } from 'antd';
+import { FileText } from 'lucide-react';
 import { 
   calculateRouteEstimate, 
   calculateAlsPricing,
   calculateExportPickupSuggestion,
-  ALS_TARIFF_RATES,
   getCoordsFromAddress,
-  ALS_NOI_BAI_TERMINAL,
-  ALS_ICD_LOCATIONS
+  BASIC_CUSTOMS_DOCUMENTS,
+  SPECIALIZED_CARGO_CATEGORIES
 } from '../../data/dispatcherPresets';
 import { dispatcherApi } from '../../api/dispatcherApi';
-import RouteMapPicker from '../common/RouteMapPicker';
-import LocationSearchInput from '../common/LocationSearchInput';
+import DocumentAssistantDrawer from './DocumentAssistantDrawer';
 
-const { Option } = Select;
+// Các module chức năng đã được tách gọn
+import OrderFormCustomerSection from './orderForm/OrderFormCustomerSection';
+import OrderFormRouteSection from './orderForm/OrderFormRouteSection';
+import OrderFormVehicleSection from './orderForm/OrderFormVehicleSection';
+import OrderFormCargoSection from './orderForm/OrderFormCargoSection';
+import OrderFormPricingSection from './orderForm/OrderFormPricingSection';
+import OrderFormDocumentsSection from './orderForm/OrderFormDocumentsSection';
 
 const CUSTOMS_SERVICE_FEE = 500000; // Phí dịch vụ làm thủ tục hải quan hộ (VNĐ)
 
@@ -46,6 +37,26 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
 
   const [pickupCoords, setPickupCoords] = useState(null);
   const [deliveryCoords, setDeliveryCoords] = useState(null);
+
+  // State Hồ sơ chứng từ đính kèm (khách gửi qua Zalo / Hotline)
+  const [documents, setDocuments] = useState(() => {
+    return BASIC_CUSTOMS_DOCUMENTS.map((doc, idx) => ({
+      key: `doc-basic-${idx + 1}`,
+      name: doc.name,
+      description: doc.description,
+      file: 'Chờ tải lên',
+      status: 'WAITING_UPLOAD',
+      size: '-',
+      uploadDate: '-',
+      isBasic: true,
+      isCustom: false
+    }));
+  });
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
+  const [uploadingDocKey, setUploadingDocKey] = useState(null);
+  const [selectedSpecializedDoc, setSelectedSpecializedDoc] = useState('');
+  const [newCustomDocName, setNewCustomDocName] = useState('');
+  const fileInputRef = useRef(null);
 
   // Tải danh sách điểm giao nhận từ database
   useEffect(() => {
@@ -83,7 +94,6 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
 
   const [shippingDirection, setShippingDirection] = useState('IMPORT');
 
-
   // Khởi tạo địa chỉ theo chiều vận chuyển
   const applyDirectionPreset = (direction) => {
     setShippingDirection(direction);
@@ -98,8 +108,12 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         delivery_address: custAddr || ''
       });
       setPickupCoords({ lat: 21.2187, lng: 105.8042 });
-      setDeliveryMode('CUSTOM');
-      if (!custAddr) setDeliveryCoords(null);
+      if (custAddr) {
+        setDeliveryMode('CUSTOM');
+        setDeliveryCoords(getCoordsFromAddress(custAddr, 'B'));
+      } else {
+        setDeliveryCoords(null);
+      }
     } else {
       setDeliveryMode('PRESET');
       setSelectedDeliveryPreset('ALS_NOI_BAI');
@@ -107,105 +121,136 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         pickup_address: custAddr || '',
         delivery_address: 'Kho ALS tại Sân Bay Nội Bài'
       });
-      setPickupMode('CUSTOM');
-      if (!custAddr) setPickupCoords(null);
       setDeliveryCoords({ lat: 21.2187, lng: 105.8042 });
+      if (custAddr) {
+        setPickupMode('CUSTOM');
+        setPickupCoords(getCoordsFromAddress(custAddr, 'A'));
+      } else {
+        setPickupCoords(null);
+      }
     }
   };
 
-  // Chọn kho lấy hàng từ dropdown
   const handleSelectPickupPreset = (val) => {
     setSelectedPickupPreset(val);
-    if (val === 'CUSTOM') {
+    if (val === 'ALS_NOI_BAI') {
+      setPickupMode('PRESET');
+      form.setFieldsValue({ pickup_address: 'Kho ALS tại Sân Bay Nội Bài' });
+      setPickupCoords({ lat: 21.2187, lng: 105.8042 });
+    } else if (val === 'CUSTOM') {
       setPickupMode('CUSTOM');
       form.setFieldsValue({ pickup_address: '' });
       setPickupCoords(null);
-      return;
-    }
-    setPickupMode('PRESET');
-    const matched = dbLocations.find(l => (l.raw_id || l.id) === val);
-    if (matched) {
-      form.setFieldsValue({ pickup_address: matched.address || matched.name });
-      setPickupCoords({ lat: matched.lat || 21.2187, lng: matched.lng || 105.8042 });
     } else {
-      form.setFieldsValue({ pickup_address: 'Kho ALS tại Sân Bay Nội Bài' });
-      setPickupCoords({ lat: 21.2187, lng: 105.8042 });
+      setPickupMode('PRESET');
+      const found = dbLocations.find(l => (l.raw_id || l.id) === val);
+      if (found) {
+        form.setFieldsValue({ pickup_address: found.address || found.name });
+        setPickupCoords(found.lat && found.lng ? { lat: parseFloat(found.lat), lng: parseFloat(found.lng) } : null);
+      }
     }
   };
 
-  // Chọn kho giao hàng từ dropdown
   const handleSelectDeliveryPreset = (val) => {
     setSelectedDeliveryPreset(val);
-    if (val === 'CUSTOM') {
+    if (val === 'ALS_NOI_BAI') {
+      setDeliveryMode('PRESET');
+      form.setFieldsValue({ delivery_address: 'Kho ALS tại Sân Bay Nội Bài' });
+      setDeliveryCoords({ lat: 21.2187, lng: 105.8042 });
+    } else if (val === 'CUSTOM') {
       setDeliveryMode('CUSTOM');
       form.setFieldsValue({ delivery_address: '' });
       setDeliveryCoords(null);
-      return;
-    }
-    setDeliveryMode('PRESET');
-    const matched = dbLocations.find(l => (l.raw_id || l.id) === val);
-    if (matched) {
-      form.setFieldsValue({ delivery_address: matched.address || matched.name });
-      setDeliveryCoords({ lat: matched.lat || 21.2187, lng: matched.lng || 105.8042 });
     } else {
-      form.setFieldsValue({ delivery_address: 'Kho ALS tại Sân Bay Nội Bài' });
-      setDeliveryCoords({ lat: 21.2187, lng: 105.8042 });
+      setDeliveryMode('PRESET');
+      const found = dbLocations.find(l => (l.raw_id || l.id) === val);
+      if (found) {
+        form.setFieldsValue({ delivery_address: found.address || found.name });
+        setDeliveryCoords(found.lat && found.lng ? { lat: parseFloat(found.lat), lng: parseFloat(found.lng) } : null);
+      }
     }
   };
 
-  // Tính lộ trình
-  const routeInfo = useMemo(() => {
-    if (pickupCoords?.lat && deliveryCoords?.lat) {
-      return calculateRouteEstimate(
-        pickupCoords.lat, pickupCoords.lng,
-        deliveryCoords.lat, deliveryCoords.lng
-      );
-    }
-    return { distanceKm: 0, durationMins: 0 };
-  }, [pickupCoords, deliveryCoords]);
-
-  const values = Form.useWatch([], form);
-
-  // Thêm mặt hàng mới
-  const handleAddCargoItem = () => {
+  const addCargoItem = () => {
     setCargoItems(prev => [
       ...prev,
-      { id: Date.now(), cargo_name: '', cargo_type: undefined, package_count: null, package_unit: '', length_cm: null, width_cm: null, height_cm: null, weight: null }
+      {
+        id: Date.now(),
+        cargo_name: '',
+        cargo_type: undefined,
+        package_count: null,
+        package_unit: '',
+        length_cm: null,
+        width_cm: null,
+        height_cm: null,
+        weight: null
+      }
     ]);
   };
 
-  const handleRemoveCargoItem = (id) => {
-    if (cargoItems.length <= 1) { message.warning('Đơn hàng cần tối thiểu 1 loại hàng hóa!'); return; }
+  const removeCargoItem = (id) => {
+    if (cargoItems.length <= 1) return;
     setCargoItems(prev => prev.filter(it => it.id !== id));
   };
 
-  const handleUpdateCargoItem = (id, field, val) => {
-    setCargoItems(prev => prev.map(it => it.id === id ? { ...it, [field]: val } : it));
+  const updateCargoItem = (id, field, value) => {
+    setCargoItems(prev => prev.map(it => {
+      if (it.id === id) {
+        const updated = { ...it, [field]: value };
+        if (field === 'cargo_type' && value === 'BULK') {
+          updated.length_cm = null;
+          updated.width_cm = null;
+          updated.height_cm = null;
+        }
+        return updated;
+      }
+      return it;
+    }));
   };
 
-  // Tính tổng trọng lượng
+  // Tính tổng hàng hóa
   const totals = useMemo(() => {
-    let totalActual = 0, totalChargeable = 0, totalCount = 0;
-    cargoItems.forEach(item => {
-      const w = Number(item.weight) || 0;
-      const count = Number(item.package_count) || 1;
-      totalActual += w;
-      totalCount += count;
-      if (item.cargo_type === 'BULK') {
-        totalChargeable += w;
+    let totalCount = 0;
+    let actualWeight = 0;
+    let chargeableWeight = 0;
+
+    cargoItems.forEach(it => {
+      const cnt = Number(it.package_count) || 1;
+      const w = Number(it.weight) || 0;
+      totalCount += cnt;
+      actualWeight += w;
+
+      if (it.cargo_type === 'BULK') {
+        chargeableWeight += w;
       } else {
-        const l = Number(item.length_cm) || 0;
-        const wid = Number(item.width_cm) || 0;
-        const h = Number(item.height_cm) || 0;
-        totalChargeable += Math.max(w, (l * wid * h) / 5000);
+        const l = Number(it.length_cm) || 0;
+        const width = Number(it.width_cm) || 0;
+        const h = Number(it.height_cm) || 0;
+        const volCbm = (l * width * h * cnt) / 1000000;
+        const dimWeight = volCbm * 167;
+        chargeableWeight += Math.max(w, dimWeight);
       }
     });
-    return { actualWeight: totalActual.toFixed(2), chargeableWeight: totalChargeable.toFixed(2), totalCount };
+
+    return {
+      totalCount,
+      actualWeight: actualWeight.toFixed(1),
+      chargeableWeight: chargeableWeight.toFixed(1)
+    };
   }, [cargoItems]);
 
   const watchedValues = Form.useWatch([], form);
 
-  // Tính giá cước theo Biểu giá chuẩn ALS (tuyến cố định FedEx/Compal/Wistron & phụ phí)
+  // Tính lộ trình & cước phí
+  const routeInfo = useMemo(() => {
+    const pCoords = pickupCoords || getCoordsFromAddress(watchedValues?.pickup_address, 'A');
+    const dCoords = deliveryCoords || getCoordsFromAddress(watchedValues?.delivery_address, 'B');
+    if (!pCoords || !dCoords) {
+      return { distanceKm: 30, durationMins: 45, isDefault: true };
+    }
+    return calculateRouteEstimate(pCoords.lat, pCoords.lng, dCoords.lat, dCoords.lng);
+  }, [pickupCoords, deliveryCoords, watchedValues?.pickup_address, watchedValues?.delivery_address]);
+
   const estimatedPricing = useMemo(() => {
     return calculateAlsPricing({
       distanceKm: routeInfo.distanceKm,
@@ -230,21 +275,130 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
 
   const estimatedBaselineRate = estimatedPricing.totalRate || 0;
 
-  // Gợi ý lịch lấy hàng xuất khẩu dựa trên khoảng cách và lịch bay
   const exportPickupSuggestion = useMemo(() => {
     if (shippingDirection !== 'EXPORT' || !watchedValues?.flight_datetime) return null;
     return calculateExportPickupSuggestion(watchedValues.flight_datetime, routeInfo.distanceKm || 30);
   }, [shippingDirection, watchedValues?.flight_datetime, routeInfo.distanceKm]);
 
-  // Cập nhật giá thỏa thuận mặc định khi cước tham chiếu thay đổi
   useEffect(() => {
     if (estimatedBaselineRate > 0 && !form.isFieldTouched('agreed_price')) {
       form.setFieldsValue({ agreed_price: estimatedBaselineRate });
     }
   }, [estimatedBaselineRate, form]);
 
+  const handleTriggerAiSuggestDocs = () => {
+    setAssistantDrawerOpen(true);
+  };
+
+  const handleApplyAssistantDocs = (newDocList) => {
+    setDocuments(newDocList);
+    setAssistantDrawerOpen(false);
+    message.success(`Đã cập nhật ${newDocList.length} loại chứng từ theo tư vấn của Gemini AI!`);
+  };
+
+  const triggerUploadDoc = (docKey) => {
+    setUploadingDocKey(docKey);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleDocFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadingDocKey) return;
+
+    const fileSizeStr = file.size > 1024 * 1024
+      ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.round(file.size / 1024)} KB`;
+
+    const now = new Date();
+    const dateStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate()}/${now.getMonth() + 1}`;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64Data = reader.result;
+      setDocuments(prev => prev.map(d => {
+        if (d.key === uploadingDocKey) {
+          return {
+            ...d,
+            file: file.name,
+            file_data: base64Data,
+            size: fileSizeStr,
+            uploadDate: dateStr,
+            status: 'APPROVED'
+          };
+        }
+        return d;
+      }));
+      message.success(`Đã đính kèm tệp "${file.name}" cho chứng từ!`);
+      setUploadingDocKey(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddDirectCustomDoc = () => {
+    const title = (newCustomDocName || selectedSpecializedDoc || '').trim();
+    if (!title) {
+      message.warning('Vui lòng chọn hoặc nhập tên loại chứng từ cần thêm!');
+      return;
+    }
+
+    if (documents.some(d => d.name.toLowerCase() === title.toLowerCase())) {
+      message.warning('Loại chứng từ này đã có trong danh mục của đơn!');
+      return;
+    }
+
+    let docDesc = 'Chứng từ chuyên ngành bổ sung theo yêu cầu hàng hóa/khách hàng.';
+    let catName = 'Chứng từ bổ sung';
+    for (const cat of SPECIALIZED_CARGO_CATEGORIES) {
+      const match = cat.specializedDocs.find(d => d.name === title);
+      if (match) {
+        docDesc = match.description;
+        catName = cat.categoryName;
+        break;
+      }
+    }
+
+    const newKey = `custom-direct-doc-${Date.now()}`;
+    const newDoc = {
+      key: newKey,
+      name: title,
+      description: docDesc,
+      file: 'Chờ tải lên',
+      status: 'WAITING_UPLOAD',
+      size: '-',
+      uploadDate: '-',
+      isBasic: false,
+      isCustom: true,
+      categoryName: catName
+    };
+
+    setDocuments(prev => [...prev, newDoc]);
+    setNewCustomDocName('');
+    setSelectedSpecializedDoc('');
+    message.success(`Đã thêm chứng từ: "${newDoc.name}"`);
+  };
+
+  const handleDeleteDirectDoc = (docKey) => {
+    setDocuments(prev => prev.filter(d => d.key !== docKey));
+    message.info('Đã xóa loại chứng từ khỏi danh mục.');
+  };
+
+  const handleReset = () => {
+    form.resetFields();
+    setCargoItems([{ id: 1, cargo_name: '', cargo_type: undefined, package_count: null, package_unit: '', length_cm: null, width_cm: null, height_cm: null, weight: null }]);
+    setPickupCoords(null);
+    setDeliveryCoords(null);
+    setPickupMode('PRESET');
+    setDeliveryMode('CUSTOM');
+    setSelectedPickupPreset('ALS_NOI_BAI');
+    setSelectedDeliveryPreset('ALS_NOI_BAI');
+    setCustomsServiceRequired(false);
+    onCancel();
+  };
+
   const handleOk = () => {
-    // Validate hàng hóa
     for (let i = 0; i < cargoItems.length; i++) {
       const it = cargoItems[i];
       if (!it.cargo_name?.trim()) { message.error(`Vui lòng nhập tên hàng cho mặt hàng #${i + 1}`); return; }
@@ -286,23 +440,11 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         estimated_distance_km: routeInfo.distanceKm,
         estimated_duration_mins: routeInfo.durationMins,
         estimated_baseline_rate: estimatedBaselineRate,
+        documents: documents,
         created_at: new Date().toISOString()
       });
       handleReset();
     });
-  };
-
-  const handleReset = () => {
-    form.resetFields();
-    setCargoItems([{ id: 1, cargo_name: '', cargo_type: undefined, package_count: null, package_unit: '', length_cm: null, width_cm: null, height_cm: null, weight: null }]);
-    setPickupCoords(null);
-    setDeliveryCoords(null);
-    setPickupMode('PRESET');
-    setDeliveryMode('CUSTOM');
-    setSelectedPickupPreset('ALS_NOI_BAI');
-    setSelectedDeliveryPreset('ALS_NOI_BAI');
-    setCustomsServiceRequired(false);
-    onCancel();
   };
 
   useEffect(() => {
@@ -355,582 +497,81 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           loading_unloading_required: false
         }}
       >
-        {/* ── PHẦN 1: Thông tin Khách hàng ── */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
-            1. Thông tin khách hàng &amp; Tiếp nhận
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
-          <Form.Item label="Nguồn tiếp nhận" name="source" className="mb-2">
-            <Select>
-              <Option value="HOTLINE">Hotline / Cuộc gọi</Option>
-              <Option value="ZALO">Zalo / Tin nhắn</Option>
-              <Option value="DIRECT">Trực tiếp tại văn phòng</Option>
-            </Select>
-          </Form.Item>
-          
-          <Form.Item label="Mã số thuế" name="customer_tax_code" className="mb-2">
-            <Input placeholder="Mã số thuế" />
-          </Form.Item>
+        <OrderFormCustomerSection form={form} shippingDirection={shippingDirection} />
 
-          <Form.Item label="Khách hàng" name="customer_name" rules={[{ required: true, message: 'Nhập tên khách hàng' }]} className="mb-2">
-            <Input placeholder="Tên công ty hoặc doanh nghiệp" />
-          </Form.Item>
+        <OrderFormRouteSection
+          form={form}
+          shippingDirection={shippingDirection}
+          applyDirectionPreset={applyDirectionPreset}
+          pickupMode={pickupMode}
+          deliveryMode={deliveryMode}
+          selectedPickupPreset={selectedPickupPreset}
+          selectedDeliveryPreset={selectedDeliveryPreset}
+          handleSelectPickupPreset={handleSelectPickupPreset}
+          handleSelectDeliveryPreset={handleSelectDeliveryPreset}
+          pickupCoords={pickupCoords}
+          deliveryCoords={deliveryCoords}
+          setPickupCoords={setPickupCoords}
+          setDeliveryCoords={setDeliveryCoords}
+          dbLocations={dbLocations}
+          routeInfo={routeInfo}
+          exportPickupSuggestion={exportPickupSuggestion}
+        />
 
-          <Form.Item label="Số điện thoại" name="customer_phone" rules={[{ required: true, message: 'Nhập SĐT' }]} className="mb-2">
-            <Input placeholder="Số điện thoại liên hệ" />
-          </Form.Item>
+        <OrderFormVehicleSection
+          shippingDirection={shippingDirection}
+          estimatedPricing={estimatedPricing}
+          routeInfo={routeInfo}
+        />
 
-          <Form.Item label="Email" name="customer_email" rules={[{ required: true, type: 'email', message: 'Email hợp lệ' }]} className="mb-2">
-            <Input placeholder="Email liên hệ" />
-          </Form.Item>
+        <OrderFormCargoSection
+          cargoItems={cargoItems}
+          updateCargoItem={updateCargoItem}
+          removeCargoItem={removeCargoItem}
+          addCargoItem={addCargoItem}
+          totals={totals}
+        />
 
-          <Form.Item label="Địa chỉ" name="customer_address" className="sm:col-span-2 lg:col-span-3 mb-2">
-            <Input 
-              placeholder="Địa chỉ trụ sở hoặc văn phòng của khách hàng" 
-              onChange={(e) => {
-                const val = e.target.value;
-                if (form.getFieldValue('address_same_as_customer')) {
-                  if (shippingDirection === 'IMPORT') form.setFieldsValue({ delivery_address: val });
-                  else form.setFieldsValue({ pickup_address: val });
-                }
-              }}
-            />
-          </Form.Item>
+        <OrderFormPricingSection
+          customsServiceRequired={customsServiceRequired}
+          setCustomsServiceRequired={setCustomsServiceRequired}
+          estimatedPricing={estimatedPricing}
+          estimatedBaselineRate={estimatedBaselineRate}
+          routeInfo={routeInfo}
+        />
 
-          <div className="sm:col-span-2 lg:col-span-3 flex items-center -mt-1 mb-1">
-            <Form.Item name="is_new_customer" valuePropName="checked" className="mb-0">
-              <Checkbox className="text-xs font-semibold text-indigo-600">Khách hàng mới</Checkbox>
-            </Form.Item>
-          </div>
-        </div>
-
-        {/* ── PHẦN 2: Điểm lấy hàng & Điểm giao hàng ── */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-            2. Điểm lấy hàng &amp; Điểm giao hàng
-          </div>
-          <Form.Item name="address_same_as_customer" valuePropName="checked" className="mb-0">
-            <Checkbox 
-              className="text-xs font-semibold text-indigo-600"
-              onChange={(e) => {
-                if (e.target.checked) {
-                  const custAddr = form.getFieldValue('customer_address') || form.getFieldValue('customer_name');
-                  if (custAddr) {
-                    if (shippingDirection === 'IMPORT') form.setFieldsValue({ delivery_address: custAddr });
-                    else form.setFieldsValue({ pickup_address: custAddr });
-                  }
-                }
-              }}
-            >
-              {shippingDirection === 'IMPORT' ? 'Địa điểm nhận hàng trùng với địa chỉ của khách' : 'Địa điểm lấy hàng trùng với địa chỉ của khách'}
-            </Checkbox>
-          </Form.Item>
-        </div>
-
-        <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4 space-y-3">
-          {/* Chọn chiều vận chuyển */}
-          <div className="p-2.5 bg-white rounded-lg border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="text-xs font-semibold text-gray-700">Chiều vận chuyển:</div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => applyDirectionPreset('IMPORT')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${shippingDirection === 'IMPORT' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              ><span>🛬</span><span>Nhập khẩu</span></button>
-              <button type="button" onClick={() => applyDirectionPreset('EXPORT')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${shippingDirection === 'EXPORT' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              ><span>🛫</span><span>Xuất khẩu</span></button>
-            </div>
-          </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                {/* Điểm lấy hàng */}
-                <div className="p-3 bg-blue-50/70 rounded-lg border border-blue-200">
-                  <div className="text-[11px] font-bold text-blue-900 uppercase flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-1">
-                      <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">A</span>
-                      Điểm lấy hàng {shippingDirection === 'IMPORT' ? '(Kho/Cảng nhập)' : ''}
-                    </span>
-                    {shippingDirection === 'IMPORT' && (
-                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Hệ thống kho</span>
-                    )}
-                  </div>
-
-                  {shippingDirection === 'IMPORT' ? (
-                    <div className="space-y-2">
-                      <Select
-                        className="w-full text-xs"
-                        value={selectedPickupPreset}
-                        onChange={handleSelectPickupPreset}
-                        placeholder="Chọn kho lấy hàng..."
-                      >
-                        <Select.OptGroup label="Kho bãi có sẵn trong hệ thống">
-                          <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài (Mặc định)</Option>
-                          {dbLocations.filter(loc => !loc.name?.toLowerCase().includes('sân bay nội bài')).map(loc => (
-                            <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
-                              📍 {loc.name} {loc.province ? `(${loc.province})` : ''}
-                            </Option>
-                          ))}
-                        </Select.OptGroup>
-                        <Select.OptGroup label="Kho khác bên ngoài">
-                          <Option value="CUSTOM">➕ Khác (Nhập địa chỉ kho của khách bên ngoài)</Option>
-                        </Select.OptGroup>
-                      </Select>
-
-                      {pickupMode === 'CUSTOM' ? (
-                        <Form.Item name="pickup_address" rules={[{ required: true, message: 'Nhập địa chỉ kho bên ngoài' }]} className="mb-0">
-                          <LocationSearchInput
-                            label="Địa chỉ kho bên ngoài của khách"
-                            markerLetter="A"
-                            markerColor="#2563eb"
-                            placeholder="Gõ tìm địa chỉ kho ngoài..."
-                            value={form.getFieldValue('pickup_address')}
-                            onChange={(val) => { form.setFieldsValue({ pickup_address: val }); if (!val?.trim()) setPickupCoords(null); }}
-                            onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setPickupCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ pickup_address: loc.address }); } else { setPickupCoords(null); if (loc?.address) form.setFieldsValue({ pickup_address: loc.address }); } }}
-                            required
-                          />
-                        </Form.Item>
-                      ) : (
-                        <div className="text-xs text-blue-950 font-medium bg-white p-2 rounded border border-blue-100">
-                          {form.getFieldValue('pickup_address') || 'Kho ALS tại Sân Bay Nội Bài'}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Form.Item name="pickup_address" rules={[{ required: true, message: 'Nhập địa chỉ lấy hàng' }]} className="mb-0">
-                        <LocationSearchInput
-                          label="Điểm lấy hàng của khách"
-                          markerLetter="A"
-                          markerColor="#2563eb"
-                          placeholder="Gõ tìm địa chỉ lấy hàng..."
-                          value={form.getFieldValue('pickup_address')}
-                          onChange={(val) => { form.setFieldsValue({ pickup_address: val }); if (!val?.trim()) setPickupCoords(null); }}
-                          onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setPickupCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ pickup_address: loc.address }); } else { setPickupCoords(null); if (loc?.address) form.setFieldsValue({ pickup_address: loc.address }); } }}
-                          required
-                        />
-                      </Form.Item>
-                    </div>
-                  )}
-
-                  {/* Lịch trình hàng hóa: Nhập khẩu (Hàng xuống máy bay) vs Xuất khẩu (Lịch bay & Giờ lấy hàng) */}
-                  <div className="mt-2.5 pt-2 border-t border-blue-100">
-                    {shippingDirection === 'IMPORT' ? (
-                      <div>
-                        <div className="text-[11px] font-semibold text-blue-900 mb-1.5 flex items-center gap-1">
-                          <PlaneLanding size={13} className="text-blue-600" />
-                          <span>Thời gian hàng xuống khỏi máy bay (Flight Arrival Time) <span className="text-red-500">*</span></span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <Form.Item
-                            label={<span className="text-[10px] text-gray-500">Ngày máy bay hạ cánh</span>}
-                            name="flight_arrival_date"
-                            rules={[{ required: true, message: 'Chọn ngày hàng hạ cánh' }]}
-                            className="mb-0"
-                          >
-                            <Input
-                              type="date"
-                              className="text-xs bg-white"
-                              min={new Date().toISOString().split('T')[0]}
-                            />
-                          </Form.Item>
-                          <Form.Item
-                            label={<span className="text-[10px] text-gray-500">Giờ máy bay hạ cánh</span>}
-                            name="flight_arrival_time"
-                            rules={[{ required: true, message: 'Nhập giờ hạ cánh' }]}
-                            className="mb-0"
-                          >
-                            <Input
-                              type="time"
-                              className="text-xs bg-white"
-                            />
-                          </Form.Item>
-                        </div>
-                        <div className="mt-1.5 p-1.5 bg-blue-100/60 rounded text-[10px] text-blue-800 flex items-center gap-1">
-                          <span>ℹ️</span> Điều phối sẽ tự động điều xe đến cửa kho ALS lấy hàng ngay sau khi hàng hoàn tất dỡ khỏi máy bay và nhập kho.
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="text-[11px] font-semibold text-indigo-900 mb-1.5 flex items-center gap-1">
-                          <PlaneTakeoff size={13} className="text-indigo-600" />
-                          <span>Lịch bay dự kiến của hàng xuất (Flight ETD) <span className="text-red-500">*</span></span>
-                        </div>
-                        <Form.Item
-                          name="flight_datetime"
-                          rules={[{ required: true, message: 'Vui lòng chọn ngày giờ bay dự kiến' }]}
-                          className="mb-1"
-                        >
-                          <Input
-                            type="datetime-local"
-                            className="text-xs bg-white"
-                            min={new Date().toISOString().slice(0, 16)}
-                          />
-                        </Form.Item>
-
-                        <div className="mt-2 pt-2 border-t border-dashed border-blue-200">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[11px] font-semibold text-blue-900 flex items-center gap-1">
-                              <Calendar size={12} className="text-blue-600" /> Lịch chốt xe đến lấy hàng tại kho khách:
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <Form.Item
-                              name="required_pickup_date"
-                              rules={[{ required: true, message: 'Chọn ngày lấy hàng' }]}
-                              className="mb-0"
-                            >
-                              <Input
-                                type="date"
-                                className="text-xs bg-white"
-                                min={new Date().toISOString().split('T')[0]}
-                              />
-                            </Form.Item>
-                            <Form.Item
-                              name="operating_time_slot"
-                              className="mb-0"
-                            >
-                              <Select className="text-xs w-full bg-white">
-                                <Option value="FULL_DAY">☀️ Ca ngày (8:00 - 17:00)</Option>
-                                <Option value="AFTERNOON">🌤️ Ca chiều (12:00 - 17:00)</Option>
-                              </Select>
-                            </Form.Item>
-                          </div>
-                        </div>
-
-                        {/* Box gợi ý ngắn gọn cho điều phối */}
-                        {exportPickupSuggestion && (
-                          <div className="mt-1.5 p-1.5 bg-amber-50 rounded border border-amber-200 text-[10px] text-amber-900">
-                            ⏱️ <b>Khuyến nghị lấy trước {exportPickupSuggestion.latestPickupFormatted}</b> (cách {routeInfo.distanceKm} km, đã gồm {exportPickupSuggestion.travelHours}h xe chạy + 4h cut-off kho). Khách tự chịu phí nếu chốt muộn hơn.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Điểm giao hàng */}
-                <div className="p-3 bg-indigo-50/70 rounded-lg border border-indigo-200">
-                  <div className="text-[11px] font-bold text-indigo-900 uppercase flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-1">
-                      <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">B</span>
-                      Điểm giao hàng {shippingDirection === 'EXPORT' ? '(Kho/Cảng xuất)' : ''}
-                    </span>
-                    {shippingDirection === 'EXPORT' && (
-                      <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-medium">Hệ thống kho</span>
-                    )}
-                  </div>
-
-                  {shippingDirection === 'EXPORT' ? (
-                    <div className="space-y-2">
-                      <Select
-                        className="w-full text-xs"
-                        value={selectedDeliveryPreset}
-                        onChange={handleSelectDeliveryPreset}
-                        placeholder="Chọn kho giao hàng xuất..."
-                      >
-                        <Select.OptGroup label="Kho bãi có sẵn trong hệ thống">
-                          <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài (Mặc định)</Option>
-                          {dbLocations.filter(loc => !loc.name?.toLowerCase().includes('sân bay nội bài')).map(loc => (
-                            <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
-                              📍 {loc.name} {loc.province ? `(${loc.province})` : ''}
-                            </Option>
-                          ))}
-                        </Select.OptGroup>
-                        <Select.OptGroup label="Kho khác bên ngoài">
-                          <Option value="CUSTOM">➕ Khác (Nhập địa chỉ kho của khách bên ngoài)</Option>
-                        </Select.OptGroup>
-                      </Select>
-
-                      {deliveryMode === 'CUSTOM' ? (
-                        <Form.Item name="delivery_address" rules={[{ required: true, message: 'Nhập địa chỉ kho bên ngoài' }]} className="mb-0">
-                          <LocationSearchInput
-                            label="Địa chỉ kho bên ngoài của khách"
-                            markerLetter="B"
-                            markerColor="#10b981"
-                            placeholder="Gõ tìm địa chỉ kho ngoài..."
-                            value={form.getFieldValue('delivery_address')}
-                            onChange={(val) => { form.setFieldsValue({ delivery_address: val }); if (!val?.trim()) setDeliveryCoords(null); }}
-                            onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setDeliveryCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ delivery_address: loc.address }); } else { setDeliveryCoords(null); if (loc?.address) form.setFieldsValue({ delivery_address: loc.address }); } }}
-                            required
-                          />
-                        </Form.Item>
-                      ) : (
-                        <div className="text-xs text-indigo-950 font-medium bg-white p-2 rounded border border-indigo-100">
-                          {form.getFieldValue('delivery_address') || 'Kho ALS tại Sân Bay Nội Bài'}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Form.Item name="delivery_address" rules={[{ required: true, message: 'Nhập địa chỉ nhận hàng' }]} className="mb-0">
-                        <LocationSearchInput
-                          label="Điểm nhận hàng của khách"
-                          markerLetter="B"
-                          markerColor="#10b981"
-                          placeholder="Gõ tìm địa chỉ nhận hàng..."
-                          value={form.getFieldValue('delivery_address')}
-                          onChange={(val) => { form.setFieldsValue({ delivery_address: val }); if (!val?.trim()) setDeliveryCoords(null); }}
-                          onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setDeliveryCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ delivery_address: loc.address }); } else { setDeliveryCoords(null); if (loc?.address) form.setFieldsValue({ delivery_address: loc.address }); } }}
-                          required
-                        />
-                      </Form.Item>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Bản đồ */}
-              <div className="bg-white p-2 rounded-lg border border-gray-200">
-                <RouteMapPicker
-                  pickupAddress={form.getFieldValue('pickup_address') || (shippingDirection === 'IMPORT' ? 'Kho ALS tại Sân Bay Nội Bài' : '')}
-                  deliveryAddress={form.getFieldValue('delivery_address') || (shippingDirection === 'EXPORT' ? 'Kho ALS tại Sân Bay Nội Bài' : '')}
-                  pickupCoords={pickupCoords || (shippingDirection === 'IMPORT' ? { lat: 21.2187, lng: 105.8042 } : null)}
-                  deliveryCoords={deliveryCoords || (shippingDirection === 'EXPORT' ? { lat: 21.2187, lng: 105.8042 } : null)}
-                  height={220}
-                />
-              </div>
-            </div>
-
-            {/* ── PHẦN 3: Người liên hệ & Loại xe ── */}
-            <div className="flex items-center gap-2 mb-2">
-              <Truck size={14} className="text-emerald-600" />
-              <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
-                3. Thông tin người nhận &amp; Loại xe
-              </div>
-            </div>
-            <div className="bg-emerald-50/30 p-3.5 rounded-xl border border-emerald-100 mb-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {/* Nhập khẩu: Tên, SĐT người nhận hàng */}
-                {/* Xuất khẩu: Tên, SĐT người liên hệ */}
-                <Form.Item 
-                  label={
-                    <span className="text-xs font-semibold">
-                      {shippingDirection === 'IMPORT' ? 'Tên người nhận hàng' : 'Tên người liên hệ'} <span className="text-red-500">*</span>
-                    </span>
-                  }
-                  name="receiver_name" 
-                  rules={[{ required: true, message: shippingDirection === 'IMPORT' ? 'Nhập tên người nhận hàng' : 'Nhập tên người liên hệ' }]} 
-                  className="mb-0"
-                >
-                  <Input 
-                    placeholder={shippingDirection === 'IMPORT' ? 'Người nhận tại điểm giao' : 'Người liên hệ tại điểm gửi hàng'} 
-                    className="text-xs" 
-                  />
-                </Form.Item>
-
-                <Form.Item 
-                  label={
-                    <span className="text-xs font-semibold">
-                      {shippingDirection === 'IMPORT' ? 'SĐT người nhận hàng' : 'SĐT người liên hệ'} <span className="text-red-500">*</span>
-                    </span>
-                  }
-                  name="receiver_phone" 
-                  rules={[{ required: true, message: shippingDirection === 'IMPORT' ? 'Nhập SĐT người nhận hàng' : 'Nhập SĐT người liên hệ' }]} 
-                  className="mb-0"
-                >
-                  <Input 
-                    placeholder={shippingDirection === 'IMPORT' ? 'SĐT liên hệ khi giao nhận' : 'SĐT người liên hệ gửi hàng'} 
-                    className="text-xs" 
-                  />
-                </Form.Item>
-
-                <Form.Item label={<span className="text-xs font-semibold">Loại xe yêu cầu</span>}
-                  name="vehicle_type_required" className="mb-0">
-                  <Select className="text-xs w-full" placeholder="Chọn loại xe">
-                    <Option value="TRUCK_1.25T">🚐 Xe tải 1.25 tấn (1.25T Truck)</Option>
-                    <Option value="TRUCK_2.5T">🚛 Xe tải 2.5 tấn (2.5T Truck)</Option>
-                    <Option value="TRUCK_3.5T">🚛 Xe tải 3.5 tấn (3.5T Truck)</Option>
-                    <Option value="TRUCK_5T">🚛 Xe tải 5 tấn (5T Truck)</Option>
-                    <Option value="CONTAINER_20">📦 Container 20ft</Option>
-                    <Option value="CONTAINER_40">📦 Container 40ft</Option>
-                  </Select>
-                </Form.Item>
-              </div>
-
-              {/* Bảng chi tiết tính giá cước theo Biểu giá chuẩn ALS */}
-              {estimatedPricing.totalRate > 0 && (
-                <div className="mt-3 p-2.5 bg-white/90 rounded-lg border border-emerald-200 text-xs">
-                  <div className="flex flex-wrap items-center justify-between font-semibold text-emerald-900 border-b border-emerald-100 pb-1.5 mb-1.5">
-                    <span className="flex items-center gap-1">
-                      🏷️ {estimatedPricing.isFixedRoute ? `Tuyến cố định ALS: ${estimatedPricing.routeName}` : `Cước vận chuyển ước tính (${routeInfo.distanceKm} km)`}
-                    </span>
-                    <span className="text-sm font-bold text-emerald-700">
-                      Tổng tham chiếu: {estimatedPricing.totalRate.toLocaleString('vi-VN')} đ
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-gray-600">
-                    <div>• Cước vận tải xe: <b className="text-gray-800">{estimatedPricing.baseTransportFee.toLocaleString('vi-VN')} đ</b></div>
-                    <div>• Phí hải quan: <b className="text-gray-800">{estimatedPricing.customsFee > 0 ? `${estimatedPricing.customsFee.toLocaleString('vi-VN')} đ` : '0 đ'}</b></div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-        {/* ── PHẦN 4: Hàng hóa ── */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1.5">
-            <Package size={15} className="text-emerald-600" />
-            4. Danh mục hàng hóa &amp; Quy cách ({cargoItems.length} mặt hàng)
-          </div>
-          <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={handleAddCargoItem}
-            className="text-xs text-emerald-700 border-emerald-300 hover:border-emerald-500 font-semibold">
-            Thêm hàng hóa
-          </Button>
-        </div>
-
-        <div className="space-y-3 mb-4">
-          {cargoItems.map((item, index) => {
-            const isBulk = item.cargo_type === 'BULK';
-            return (
-              <div key={item.id} className="bg-gray-50/90 p-3 rounded-xl border border-gray-200 relative transition-all hover:border-indigo-200">
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-200/80">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center">{index + 1}</span>
-                    <span className="text-xs font-bold text-gray-800">Mặt hàng #{index + 1}</span>
-                  </div>
-                  {cargoItems.length > 1 && (
-                    <Tooltip title="Xóa mặt hàng này">
-                      <Button type="text" danger size="small" icon={<Trash2 size={13} />} onClick={() => handleRemoveCargoItem(item.id)} className="p-1 h-auto" />
-                    </Tooltip>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 mb-2.5">
-                  <div>
-                    <div className="text-[11px] font-medium text-gray-600 mb-1">Tên hàng hóa *</div>
-                    <Input placeholder="VD: Linh kiện, Nông sản..." value={item.cargo_name}
-                      onChange={(e) => handleUpdateCargoItem(item.id, 'cargo_name', e.target.value)} className="text-xs" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-gray-600 mb-1">Loại hàng *</div>
-                    <Select placeholder="Chọn loại hàng..." value={item.cargo_type}
-                      onChange={(val) => handleUpdateCargoItem(item.id, 'cargo_type', val)} className="text-xs w-full" allowClear>
-                      <Option value="GENERAL">Hàng bách hóa thông thường</Option>
-                      <Option value="PALLET">Hàng Pallet (Đo kích thước)</Option>
-                      <Option value="BULK">Hàng rời (Tính theo tải trọng)</Option>
-                      <Option value="FRAGILE">Hàng điện tử dễ vỡ</Option>
-                      <Option value="VALUABLE">Hàng giá trị cao (Niêm chì)</Option>
-                      <Option value="OTHER">Khác</Option>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div>
-                      <div className="text-[11px] font-medium text-gray-600 mb-1">Số lượng</div>
-                      <InputNumber min={1} placeholder="Số lượng" value={item.package_count}
-                        onChange={(val) => handleUpdateCargoItem(item.id, 'package_count', val)} className="w-full text-xs" />
-                    </div>
-                    <div>
-                      <div className="text-[11px] font-medium text-gray-600 mb-1">Đơn vị</div>
-                      <Input placeholder="Kiện, Pallet..." value={item.package_unit}
-                        onChange={(e) => handleUpdateCargoItem(item.id, 'package_unit', e.target.value)} className="text-xs" />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-medium text-gray-600 mb-1">Trọng lượng (kg) *</div>
-                    <InputNumber min={0.1} value={item.weight} onChange={(val) => handleUpdateCargoItem(item.id, 'weight', val)}
-                      placeholder="Nhập kg..." className="w-full text-xs font-semibold text-emerald-700" />
-                  </div>
-                </div>
-
-                {!isBulk ? (
-                  <div className="pt-2 border-t border-gray-150 grid grid-cols-3 gap-2">
-                    <div><span className="text-[10px] text-gray-500">Dài (cm):</span>
-                      <InputNumber min={1} placeholder="Dài..." value={item.length_cm} onChange={(val) => handleUpdateCargoItem(item.id, 'length_cm', val)} className="w-full text-xs" /></div>
-                    <div><span className="text-[10px] text-gray-500">Rộng (cm):</span>
-                      <InputNumber min={1} placeholder="Rộng..." value={item.width_cm} onChange={(val) => handleUpdateCargoItem(item.id, 'width_cm', val)} className="w-full text-xs" /></div>
-                    <div><span className="text-[10px] text-gray-500">Cao (cm):</span>
-                      <InputNumber min={1} placeholder="Cao..." value={item.height_cm} onChange={(val) => handleUpdateCargoItem(item.id, 'height_cm', val)} className="w-full text-xs" /></div>
-                  </div>
-                ) : (
-                  <div className="pt-1.5 border-t border-gray-150 text-[11px] text-emerald-700 italic">
-                    ℹ️ Hàng rời: Hệ thống tự động tính tải trọng trực tiếp theo trọng lượng thực ({Number(item.weight) || 0} kg)
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Tổng kết */}
-          <div className="bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between text-xs">
-            <div><span className="text-gray-600">Tổng số lượng: </span><b className="text-gray-900">{totals.totalCount} kiện/mặt hàng</b></div>
-            <div><span className="text-gray-600">Tổng trọng lượng thực: </span><b className="text-indigo-700">{totals.actualWeight} kg</b></div>
-            <div><span className="text-gray-600">Tải trọng tính cước ước tính: </span><b className="text-amber-700 font-bold">{totals.chargeableWeight} kg</b></div>
-          </div>
-        </div>
-
-        {/* ── PHẦN 5: Dịch vụ Hải quan & Cước phí vận chuyển ── */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider flex items-center gap-1.5">
-          <Calculator size={15} className="text-indigo-600" />
-          5. Dịch vụ Hải quan &amp; Cước phí vận chuyển
-        </div>
-
-        {/* Khối đăng ký làm thủ tục hải quan hộ */}
-        <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 p-3 rounded-xl border border-blue-200 mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-blue-600 text-white rounded-lg">
-              <ShieldCheck size={16} />
-            </div>
-            <span className="text-xs font-bold text-gray-800">
-              Dịch vụ làm thủ tục hải quan
-            </span>
-            <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
-              +500.000 VNĐ / tờ khai
-            </span>
-          </div>
-
-          <div>
-            <Checkbox
-              checked={customsServiceRequired}
-              onChange={(e) => setCustomsServiceRequired(e.target.checked)}
-            />
-          </div>
-        </div>
-
-        <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
-          <div className="p-2.5 bg-indigo-50/50 rounded-lg border border-indigo-100 mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Calculator size={16} className="text-indigo-600" />
-              <span className="text-xs text-gray-700 font-medium">
-                Cước tham chiếu ({estimatedPricing.isFixedRoute ? estimatedPricing.routeName : `${routeInfo.distanceKm} km`}):
-              </span>
-              {customsServiceRequired && (
-                <span className="text-[11px] text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded font-medium">
-                  (+500.000đ hải quan)
-                </span>
-              )}
-            </div>
-            <span className="text-sm font-bold text-indigo-700">
-              ~ {estimatedBaselineRate.toLocaleString()} VNĐ
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Form.Item label="Giá cước thỏa thuận (VNĐ)" name="agreed_price" rules={[{ required: true, message: 'Nhập giá thỏa thuận' }]} className="mb-0">
-              <InputNumber className="w-full font-bold text-blue-700"
-                formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                parser={value => value.replace(/\$\s?|(,*)/g, '')} min={0} />
-            </Form.Item>
-
-            <Form.Item label="Phí phụ trội (VNĐ)" name="extra_fees_surcharge" className="mb-0">
-              <InputNumber className="w-full text-indigo-700"
-                formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                parser={value => value.replace(/\$\s?|(,*)/g, '')} min={0} />
-            </Form.Item>
-
-            <Form.Item label="Phí phát sinh (VNĐ)" name="extra_fees_collection" className="mb-0">
-              <InputNumber className="w-full text-emerald-700"
-                formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                parser={value => value.replace(/\$\s?|(,*)/g, '')} min={0} />
-            </Form.Item>
-          </div>
-        </div>
-
-        {/* Ghi chú */}
-        <Form.Item label="Ghi chú vận hành" name="order_notes" className="mb-0">
+        {/* Ghi chú vận hành */}
+        <Form.Item label="Ghi chú vận hành" name="order_notes" className="mb-4">
           <Input.TextArea rows={2} placeholder="Ghi chú cho tài xế, yêu cầu đặc biệt về bốc xếp, nhiệt độ bảo quản..." />
         </Form.Item>
+
+        <OrderFormDocumentsSection
+          documents={documents}
+          handleTriggerAiSuggestDocs={handleTriggerAiSuggestDocs}
+          triggerUploadDoc={triggerUploadDoc}
+          handleDeleteDirectDoc={handleDeleteDirectDoc}
+          selectedSpecializedDoc={selectedSpecializedDoc}
+          setSelectedSpecializedDoc={setSelectedSpecializedDoc}
+          newCustomDocName={newCustomDocName}
+          setNewCustomDocName={setNewCustomDocName}
+          handleAddDirectCustomDoc={handleAddDirectCustomDoc}
+        />
       </Form>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleDocFileChange}
+        className="hidden"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
+      />
+
+      <DocumentAssistantDrawer
+        open={assistantDrawerOpen}
+        onClose={() => setAssistantDrawerOpen(false)}
+        currentCargo={cargoItems.map(it => it.cargo_name).filter(Boolean).join(', ') || 'Hàng hóa xuất nhập khẩu'}
+        onApplyRecommendations={handleApplyAssistantDocs}
+      />
     </Modal>
   );
 };

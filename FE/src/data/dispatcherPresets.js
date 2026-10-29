@@ -257,31 +257,31 @@ export const getCoordsFromAddress = (addressStr = '', markerType = 'A') => {
 export const DOCUMENT_TYPES = [
   { 
     key: 'CUSTOMS_DECLARATION', 
-    label: 'Tờ khai hải quan (Customs Declaration)', 
+    label: 'Tờ khai hải quan', 
     description: 'Bản khai chi tiết về mã HS, trị giá, số lượng và thuế suất.', 
     requiredDefault: true 
   },
   { 
     key: 'COMMERCIAL_INVOICE', 
-    label: 'Hóa đơn thương mại (Commercial Invoice - INV)', 
+    label: 'Hóa đơn thương mại', 
     description: 'Chứng từ thanh toán do người bán phát hành, là cơ sở tính thuế.', 
     requiredDefault: true 
   },
   { 
     key: 'PACKING_LIST', 
-    label: 'Phiếu đóng gói (Packing List - P/L)', 
+    label: 'Phiếu đóng gói', 
     description: 'Mô tả chi tiết cách đóng gói, trọng lượng tịnh, trọng lượng tổng và số kiện.', 
     requiredDefault: true 
   },
   { 
     key: 'DELIVERY_ORDER', 
-    label: 'Vận đơn (Bill of Lading - B/L hoặc Air Waybill - AWB)', 
+    label: 'Vận đơn', 
     description: 'Chứng nhận quyền sở hữu và hợp đồng vận chuyển.', 
     requiredDefault: true 
   },
   { 
     key: 'SALES_CONTRACT', 
-    label: 'Hợp đồng thương mại (Sales Contract)', 
+    label: 'Hợp đồng thương mại', 
     description: 'Thỏa thuận mua bán giữa người bán và người mua.', 
     requiredDefault: true 
   }
@@ -291,32 +291,32 @@ export const DOCUMENT_TYPES = [
 export const BASIC_CUSTOMS_DOCUMENTS = [
   { 
     key: 'doc-basic-1', 
-    name: 'Tờ khai hải quan (Customs Declaration)', 
+    name: 'Tờ khai hải quan', 
     description: 'Bản khai hải quan do Điều phối viên/Bộ phận Khai báo chuẩn bị và đính kèm.',
     isBasic: true,
     preparedBy: 'DISPATCHER'
   },
   { 
     key: 'doc-basic-2', 
-    name: 'Hóa đơn thương mại (Commercial Invoice - INV)', 
+    name: 'Hóa đơn thương mại', 
     description: 'Chứng từ thanh toán do người bán phát hành, là cơ sở tính thuế.',
     isBasic: true 
   },
   { 
     key: 'doc-basic-3', 
-    name: 'Phiếu đóng gói (Packing List - P/L)', 
+    name: 'Phiếu đóng gói', 
     description: 'Mô tả chi tiết cách đóng gói, trọng lượng tịnh, trọng lượng tổng và số kiện.',
     isBasic: true 
   },
   { 
     key: 'doc-basic-4', 
-    name: 'Vận đơn (Bill of Lading - B/L hoặc Air Waybill - AWB)', 
+    name: 'Vận đơn', 
     description: 'Chứng nhận quyền sở hữu và hợp đồng vận chuyển.',
     isBasic: true 
   },
   { 
     key: 'doc-basic-5', 
-    name: 'Hợp đồng thương mại (Sales Contract)', 
+    name: 'Hợp đồng thương mại', 
     description: 'Thỏa thuận mua bán giữa người bán và người mua.',
     isBasic: true 
   }
@@ -330,7 +330,7 @@ export const SPECIALIZED_CARGO_CATEGORIES = [
     keywords: ['general', 'tiêu dùng', 'linh kiện', 'điện tử', 'thời trang', 'may mặc', 'bách hóa', 'adtek'],
     specializedDocs: [
       {
-        name: 'Giấy chứng nhận xuất xứ (Certificate of Origin - C/O)',
+        name: 'Giấy chứng nhận xuất xứ',
         description: 'Dùng để hưởng ưu đãi thuế quan đặc biệt nếu có.'
       }
     ]
@@ -341,7 +341,7 @@ export const SPECIALIZED_CARGO_CATEGORIES = [
     keywords: ['agri_food', 'nông sản', 'thực phẩm', 'động thực vật', 'động vật', 'thực vật', 'trái cây', 'rau quả', 'thịt', 'thủy sản', 'nông nghiệp'],
     specializedDocs: [
       {
-        name: 'Giấy chứng nhận kiểm dịch thực vật (Phytosanitary Certificate) hoặc kiểm dịch động vật (Veterinary Certificate)',
+        name: 'Giấy chứng nhận kiểm dịch thực vật hoặc kiểm dịch động vật',
         description: 'Xác nhận hàng không mang sâu bệnh, dịch hại.'
       },
       {
@@ -349,7 +349,7 @@ export const SPECIALIZED_CARGO_CATEGORIES = [
         description: 'Do cơ quan quản lý nhà nước chuyên ngành cấp sau khi lấy mẫu kiểm tra.'
       },
       {
-        name: 'Kết quả kiểm nghiệm (Certificate of Analysis - C/A)',
+        name: 'Kết quả kiểm nghiệm',
         description: 'Kết quả kiểm nghiệm tùy theo từng lô hàng.'
       }
     ]
@@ -360,15 +360,15 @@ export const SPECIALIZED_CARGO_CATEGORIES = [
     keywords: ['chemical_pharma', 'hóa chất', 'mỹ phẩm', 'dược phẩm', 'thuốc', 'chất lỏng', 'nguy hiểm', 'chemical', 'pharma', 'medtech', 'thực phẩm chức năng'],
     specializedDocs: [
       {
-        name: 'Bảng chỉ dẫn an toàn hóa chất (Material Safety Data Sheet - MSDS)',
+        name: 'Bảng chỉ dẫn an toàn hóa chất',
         description: 'Mô tả thành phần, độ độc hại và cách xử lý sự cố.'
       },
       {
-        name: 'Giấy phép nhập khẩu/xuất khẩu hoặc Phiếu công bố sản phẩm (đối với mỹ phẩm, thực phẩm chức năng)',
+        name: 'Giấy phép nhập khẩu/xuất khẩu hoặc Phiếu công bố sản phẩm',
         description: 'Giấy phép nhập khẩu/xuất khẩu hoặc Phiếu công bố sản phẩm.'
       },
       {
-        name: 'Giấy chứng nhận lưu hành tự do (Certificate of Free Sale - CFS)',
+        name: 'Giấy chứng nhận lưu hành tự do',
         description: 'Cung cấp nếu cơ quan hải quan yêu cầu.'
       }
     ]
@@ -379,11 +379,11 @@ export const SPECIALIZED_CARGO_CATEGORIES = [
     keywords: ['wood_products', 'gỗ', 'sản phẩm từ gỗ', 'sản phẩm gỗ', 'pallet gỗ', 'nội thất gỗ', 'ván ép', 'wood', 'timber'],
     specializedDocs: [
       {
-        name: 'Giấy chứng nhận hun trùng (Fumigation Certificate)',
+        name: 'Giấy chứng nhận hun trùng',
         description: 'Xác nhận kiện hàng hoặc pallet gỗ đã được xử lý khử trùng.'
       },
       {
-        name: 'Hồ sơ lâm sản hợp pháp (Bảng kê gỗ, xác nhận nguồn gốc gỗ theo quy định kiểm lâm/hải quan)',
+        name: 'Hồ sơ lâm sản hợp pháp',
         description: 'Bảng kê gỗ, xác nhận nguồn gốc gỗ theo quy định kiểm lâm/hải quan.'
       }
     ]
@@ -394,15 +394,15 @@ export const SPECIALIZED_CARGO_CATEGORIES = [
     keywords: ['used_machinery', 'máy cũ', 'thiết bị cũ', 'đã qua sử dụng', 'used machine', 'second hand', 'dây chuyền cũ', 'máy móc cũ', 'máy móc', 'thiết bị', 'machinery'],
     specializedDocs: [
       {
-        name: 'Chứng chứng nhận chất lượng (Certificate of Quality - C/Q)',
+        name: 'Giấy chứng nhận chất lượng',
         description: 'Xác nhận chất lượng kỹ thuật của máy móc thiết bị.'
       },
       {
-        name: 'Chứng thư giám định của tổ chức giám định độc lập được cơ quan nhà nước chỉ định',
+        name: 'Chứng thư giám định của tổ chức giám định độc lập',
         description: 'Xác nhận năm sản xuất và tỉ lệ chất lượng còn lại.'
       },
       {
-        name: 'Giấy phép nhập khẩu (nếu thuộc danh mục hạn chế)',
+        name: 'Giấy phép nhập khẩu',
         description: 'Giấy phép nhập khẩu nếu thiết bị thuộc danh mục hạn chế.'
       }
     ]

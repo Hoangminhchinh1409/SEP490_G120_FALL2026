@@ -281,6 +281,7 @@ const getOrderByToken = async (req, res) => {
         customer:customers(id, company_name, tax_code, email, registered_address),
         pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, latitude, longitude),
         delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude),
+        responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
         order_cargos(*),
         order_notes(*)
       `);
@@ -375,6 +376,21 @@ const getOrderByToken = async (req, res) => {
           "",
         status: order.status,
         source: order.source,
+        dispatcher_phone:
+          extraMeta.dispatcher_phone ||
+          order.responsible_dispatcher?.phone ||
+          "0988 123 456",
+        dispatcher_zalo:
+          extraMeta.dispatcher_zalo ||
+          order.responsible_dispatcher?.zalo_link ||
+          (order.responsible_dispatcher?.phone
+            ? `https://zalo.me/${order.responsible_dispatcher.phone.replace(/[^0-9]/g, "")}`
+            : "https://zalo.me/0988123456"),
+        dispatcher_name:
+          extraMeta.dispatcher_name ||
+          order.responsible_dispatcher?.full_name ||
+          order.responsible_dispatcher?.username ||
+          "Điều phối viên NEXLOG",
         tracking_token: (order.tracking_token || "").trim(),
         web_workflow: extraMeta.web_workflow || {
           stage: "WAITING_PRICE_CONFIRMATION",

@@ -73,13 +73,19 @@ const sendOrderPriceConfirmationEmail = async ({
   cargoDescription,
   pickupDate,
   flightSchedule,
-  confirmUrl
+  confirmUrl,
+  dispatcherPhone,
+  dispatcherZalo
 }) => {
   const mailTransporter = await getTransporter();
   const formattedPrice = (agreedPrice || 0).toLocaleString('vi-VN');
   const isExport = (orderType || '').toUpperCase().includes('EXPORT') || (orderType || '').toUpperCase().includes('XUẤT');
   const typeText = isExport ? 'ĐƠN HÀNG XUẤT KHẨU (AIR CARGO EXPORT)' : 'ĐƠN HÀNG NHẬP KHẨU (AIR CARGO IMPORT)';
   const typeBadgeColor = isExport ? '#4f46e5' : '#0284c7';
+
+  const cleanPhone = (dispatcherPhone || '0988 123 456').toString().trim();
+  const rawDigitsPhone = cleanPhone.replace(/[^0-9]/g, '');
+  const zaloUrl = dispatcherZalo || (rawDigitsPhone ? `https://zalo.me/${rawDigitsPhone}` : 'https://zalo.me/0988123456');
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -181,10 +187,10 @@ const sendOrderPriceConfirmationEmail = async ({
               Quý khách có thể trao đổi trực tiếp với Điều phối viên phụ trách đơn hàng qua Hotline hoặc Zalo:
             </p>
             <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
-              <a href="tel:0988123456" style="display: inline-block; background: #16a34a; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
-                📞 Gọi Hotline: 0988 123 456
+              <a href="tel:${rawDigitsPhone || '0988123456'}" style="display: inline-block; background: #16a34a; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
+                📞 Gọi Hotline / Điều Phối: ${cleanPhone}
               </a>
-              <a href="https://zalo.me/0988123456" target="_blank" style="display: inline-block; background: #0284c7; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
+              <a href="${zaloUrl}" target="_blank" style="display: inline-block; background: #0284c7; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
                 💬 Chat Zalo Điều Phối
               </a>
             </div>

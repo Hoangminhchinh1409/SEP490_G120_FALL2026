@@ -14,12 +14,14 @@ const findOrderByIdentifier = async (identifier, includeRelations = false) => {
       customer:customers(company_name, email, tax_code),
       pickup_location:locations!orders_pickup_location_id_fkey(name, address),
       delivery_location:locations!orders_delivery_location_id_fkey(name, address),
+      responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
       order_cargos(*),
       order_notes(*)
     `
     : `
       *,
       customer:customers(company_name, email, tax_code),
+      responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
       order_notes(*)
     `;
 
@@ -178,6 +180,17 @@ const updateAgreedPrice = async (req, res) => {
         currentOrder.cargo_description ||
         'Hàng bách hóa / Linh kiện';
 
+      const dispPhone =
+        req.body?.dispatcher_phone ||
+        currentOrder.responsible_dispatcher?.phone ||
+        meta.dispatcher_phone ||
+        '0988 123 456';
+      const dispZalo =
+        req.body?.dispatcher_zalo ||
+        currentOrder.responsible_dispatcher?.zalo_link ||
+        meta.dispatcher_zalo ||
+        (dispPhone ? `https://zalo.me/${dispPhone.replace(/[^0-9]/g, '')}` : 'https://zalo.me/0988123456');
+
       emailResult = await sendOrderPriceConfirmationEmail({
         customerEmail: targetEmail,
         customerName: currentOrder.customer?.company_name || currentOrder.receiver_name || 'Quý khách',
@@ -195,7 +208,9 @@ const updateAgreedPrice = async (req, res) => {
         cargoDescription,
         pickupDate,
         flightSchedule,
-        confirmUrl
+        confirmUrl,
+        dispatcherPhone: dispPhone,
+        dispatcherZalo: dispZalo
       });
     }
 
@@ -240,7 +255,10 @@ const customerAgreeOrderPrice = async (req, res) => {
     await saveOrderMeta(order.id, meta);
     await supabase
       .from('orders')
-      .update({ updated_at: new Date().toISOString() })
+      .update({
+        status: 'CONFIRMED',
+        updated_at: new Date().toISOString()
+      })
       .eq('id', order.id);
 
     const cleanToken = (order.tracking_token || token || '').trim();
@@ -293,7 +311,10 @@ const customerNegotiateOrder = async (req, res) => {
     await saveOrderMeta(order.id, meta);
     await supabase
       .from('orders')
-      .update({ updated_at: new Date().toISOString() })
+      .update({
+        status: 'CONFIRMED',
+        updated_at: new Date().toISOString()
+      })
       .eq('id', order.id);
 
     return res.json({
@@ -348,7 +369,10 @@ const customerUploadDocuments = async (req, res) => {
     await saveOrderMeta(order.id, meta);
     await supabase
       .from('orders')
-      .update({ updated_at: new Date().toISOString() })
+      .update({
+        status: 'CONFIRMED',
+        updated_at: new Date().toISOString()
+      })
       .eq('id', order.id);
 
     return res.json({
@@ -484,6 +508,7 @@ const approveWebOrderDocuments = async (req, res) => {
     await supabase
       .from('orders')
       .update({
+        document_status: 'APPROVED',
         updated_at: new Date().toISOString()
       })
       .eq('id', currentOrder.id);
@@ -559,6 +584,8 @@ const customerSignContract = async (req, res) => {
     const { data: updatedOrder, error } = await supabase
       .from('orders')
       .update({
+        status: 'READY_FOR_PLANNING',
+        document_status: 'APPROVED',
         signed_order_contract_file: signedContractFile,
         ready_for_planning_at: new Date().toISOString(),
         updated_at: new Date().toISOString()

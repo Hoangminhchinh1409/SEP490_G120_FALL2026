@@ -234,22 +234,22 @@ export default function OrderConfirmationView() {
           {/* Thanh tương tác tức thì (Không delay) */}
           <div className="mt-5 pt-4 border-t border-white/20 flex flex-wrap items-center justify-between gap-3 text-xs">
             <span className="text-indigo-100 flex items-center gap-1.5 font-medium">
-              <span>⚡</span> Trao đổi trực tiếp không delay với Điều phối viên:
+              <span>⚡</span> Trao đổi trực tiếp không delay với Điều phối viên ({order.dispatcher_name || 'Phụ trách đơn'}):
             </span>
             <div className="flex items-center gap-2">
               <a
-                href="tel:0988123456"
+                href={`tel:${(order.dispatcher_phone || '0988 123 456').replace(/[^0-9]/g, '')}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs shadow-sm transition-all"
               >
-                <PhoneCall size={13} /> Gọi Hotline 24/7
+                <PhoneCall size={13} /> Gọi Điều Phối: {order.dispatcher_phone || '0988 123 456'}
               </a>
               <a
-                href="https://zalo.me/0988123456"
+                href={order.dispatcher_zalo || `https://zalo.me/${(order.dispatcher_phone || '0988123456').replace(/[^0-9]/g, '')}`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs shadow-sm transition-all"
               >
-                <MessageSquare size={13} /> Chat Zalo Ngay
+                <MessageSquare size={13} /> Chat Zalo Điều Phối
               </a>
             </div>
           </div>

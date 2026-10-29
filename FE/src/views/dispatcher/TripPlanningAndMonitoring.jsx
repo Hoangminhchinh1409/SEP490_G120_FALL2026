@@ -95,8 +95,16 @@ export default function TripPlanningAndMonitoring() {
     return () => { active = false; };
   }, []);
 
-  const handleAssignSuccess = (createdTrip) => {
-    message.success(`Đã phân bổ chuyến ${createdTrip.trip_id} thành công!`);
+  const handleAssignSuccess = async (createdTrip) => {
+    try {
+      const orderId = createdTrip.order_id || createdTrip.id;
+      if (orderId) {
+        await orderApi.assignTrip(orderId);
+      }
+    } catch (err) {
+      console.warn('assignTrip API error:', err);
+    }
+    message.success(`Đã phân bổ chuyến ${createdTrip.trip_id || createdTrip.id || ''} thành công!`);
     setSelectedOrderForAssign(null);
     fetchData();
   };

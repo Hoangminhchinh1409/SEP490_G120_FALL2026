@@ -46,12 +46,29 @@ const updateTripStatus = async (req, res) => {
   }
 };
 
-// 4. Tính toán lộ trình đường bộ thực tế & thời gian di chuyển (UC-07)
+// 4. Tính toán lộ trình đường bộ thực tế ngắn nhất & thời gian di chuyển (UC-07)
+// Hỗ trợ cả 2 điểm (startLat, startLng, endLat, endLng) và nhiều điểm dừng (waypoints=lat1,lng1|lat2,lng2|...)
 const calculateRoadRoute = async (req, res) => {
   try {
-    const { startLng, startLat, endLng, endLat } = req.query;
+    const { startLng, startLat, endLng, endLat, waypoints } = req.query;
 
-    if (!startLng || !startLat || !endLng || !endLat) {
+    let pointList = [];
+    if (waypoints && typeof waypoints === 'string') {
+      pointList = waypoints
+        .split('|')
+        .map((pair) => {
+          const [latStr, lngStr] = pair.split(',');
+          return { lat: parseFloat(latStr), lng: parseFloat(lngStr) };
+        })
+        .filter((p) => !Number.isNaN(p.lat) && !Number.isNaN(p.lng));
+    } else if (startLng && startLat && endLng && endLat) {
+      pointList = [
+        { lat: parseFloat(startLat), lng: parseFloat(startLng) },
+        { lat: parseFloat(endLat), lng: parseFloat(endLng) }
+      ];
+    }
+
+    if (pointList.length < 2) {
       return res.status(400).json({ message: 'Thiếu tham số tọa độ điểm đầu hoặc điểm cuối' });
     }
 
@@ -63,7 +80,7 @@ const calculateRoadRoute = async (req, res) => {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NEXLOG-Logistics'
           },
-          timeout: 7000
+          timeout: 8500
         }, (response) => {
           let data = '';
           response.on('data', chunk => data += chunk);
@@ -85,9 +102,10 @@ const calculateRoadRoute = async (req, res) => {
       });
     };
 
-    // Ưu tiên Geoapify Routing API chuyên dụng
+    // 1. Ưu tiên Geoapify Routing API với type=short (Tuyến đường bộ thực tế ngắn nhất, ôm sát đường giao thông)
     try {
-      const geoapifyUrl = `https://api.geoapify.com/v1/routing?waypoints=${startLat},${startLng}|${endLat},${endLng}&mode=drive&apiKey=${geoapifyKey}`;
+      const wpParam = pointList.map((p) => `${p.lat},${p.lng}`).join('|');
+      const geoapifyUrl = `https://api.geoapify.com/v1/routing?waypoints=${wpParam}&mode=drive&type=short&apiKey=${geoapifyKey}`;
       const geoData = await fetchJson(geoapifyUrl);
       const feature = geoData?.features?.[0];
 
@@ -103,48 +121,65 @@ const calculateRoadRoute = async (req, res) => {
           coordsList = geom.coordinates;
         }
 
+        const legs = Array.isArray(feature.properties.legs)
+          ? feature.properties.legs.map((leg) => ({
+              distanceKm: parseFloat(((leg.distance || 0) / 1000).toFixed(1)),
+              durationMins: Math.max(5, Math.round((leg.time || 0) / 60))
+            }))
+          : [];
+
         if (coordsList.length > 0) {
           const polyline = coordsList.map(([lng, lat]) => [lat, lng]);
           return res.json({
             success: true,
+            provider: 'geoapify_road_short',
             distanceKm: parseFloat((distMeters / 1000).toFixed(1)),
             durationMins: Math.max(5, Math.round(timeSecs / 60)),
+            legs,
             polyline
           });
         }
       }
     } catch (gErr) {
-      console.warn('Geoapify Routing failed, fallback to OSM:', gErr.message);
+      console.warn('Geoapify Routing failed, fallback to OSRM:', gErr.message);
     }
 
-    // Fallback: OpenStreetMap routed-car
-    const targetUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&alternatives=true`;
+    // 2. Fallback: OSRM Road Routing (router.project-osrm.org & routing.openstreetmap.de)
+    const osrmCoords = pointList.map((p) => `${p.lng},${p.lat}`).join(';');
+    const osrmUrlPrimary = `https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson&alternatives=true&steps=false`;
+    const osrmUrlSecondary = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson&alternatives=true&steps=false`;
 
-    let osmData;
-    try {
-      osmData = await fetchJson(targetUrl);
-    } catch {
-      const fallbackUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
-      osmData = await fetchJson(fallbackUrl).catch(() => null);
+    let osmData = await fetchJson(osrmUrlPrimary).catch(() => null);
+    if (!osmData || !osmData.routes || osmData.routes.length === 0) {
+      osmData = await fetchJson(osrmUrlSecondary).catch(() => null);
     }
 
     if (osmData && osmData.routes && osmData.routes.length > 0) {
+      // Sắp xếp chọn tuyến đường bộ có quãng đường ngắn nhất (a.distance nhỏ nhất)
       const sortedRoutes = [...osmData.routes].sort((a, b) => a.distance - b.distance);
       const shortestRoute = sortedRoutes[0];
 
       const distanceKm = parseFloat((shortestRoute.distance / 1000).toFixed(1));
       const durationMins = Math.max(5, Math.round(shortestRoute.duration / 60));
       const polyline = shortestRoute.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      const legs = Array.isArray(shortestRoute.legs)
+        ? shortestRoute.legs.map((leg) => ({
+            distanceKm: parseFloat(((leg.distance || 0) / 1000).toFixed(1)),
+            durationMins: Math.max(5, Math.round((leg.duration || 0) / 60))
+          }))
+        : [];
 
       return res.json({
         success: true,
+        provider: 'osrm_road_short',
         distanceKm,
         durationMins,
+        legs,
         polyline
       });
     }
 
-    return res.status(404).json({ message: 'Không tìm thấy đường bộ nối 2 điểm' });
+    return res.status(404).json({ message: 'Không tìm thấy đường bộ nối các điểm dừng' });
   } catch (err) {
     console.error('calculateRoadRoute exception:', err);
     return res.status(500).json({ message: 'Lỗi tính toán tuyến đường' });

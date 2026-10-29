@@ -1,5 +1,5 @@
-import React from 'react';
-import { Tag, Button, InputNumber, Input, Popover, Select } from 'antd';
+import React, { useState } from 'react';
+import { Tag, Button, InputNumber, Input, Popover, Select, message } from 'antd';
 import { 
   AlertTriangle, 
   PhoneCall, 
@@ -10,14 +10,12 @@ import {
   Route, 
   Package,
   RefreshCw,
-  CheckCircle2,
-  Truck,
-  Sparkles
+  CheckCircle2
 } from 'lucide-react';
 import RouteMapPicker from '../../common/RouteMapPicker';
-import { VEHICLE_SPECS, getVehicleSpecByKey } from '../../../data/dispatcherPresets';
-
-const { Option } = Select;
+import { getVehicleSpecByKey } from '../../../data/dispatcherPresets';
+import { aiApi } from '../../../api/aiApi';
+import { OrderVehicleRecommendationBox, OrderOverviewPreDocsBox } from './OrderOverviewSubSections';
 
 export default function OrderOverviewTab({
   order,
@@ -39,7 +37,10 @@ export default function OrderOverviewTab({
   setVehicleAnalysisNote,
   vehicleRecommendation,
   savingPrice,
-  handleConfirmPriceAndOrder
+  handleConfirmPriceAndOrder,
+  documents = [],
+  setDocuments,
+  onOpenAssistant
 }) {
   const cleanPhone = (order.customer_phone || '').replace(/[^0-9]/g, '');
   const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
@@ -53,9 +54,82 @@ export default function OrderOverviewTab({
   const customerInitialSpec = vehicleRecommendation?.customerSpec || getVehicleSpecByKey(order.customer_requested_vehicle || order.vehicle_type_required || 'TRUCK_2.5T');
   const recommendedSpec = vehicleRecommendation?.recommendedSpec || currentProposedSpec;
 
+  const [aiAnalyzingVehicle, setAiAnalyzingVehicle] = useState(false);
+  const [aiVehicleInsight, setAiVehicleInsight] = useState(null);
+
+  // State thêm chứng từ tùy biến ngay tại Overview Tab
+  const [overviewSelectedSpecDoc, setOverviewSelectedSpecDoc] = useState('');
+  const [overviewCustomDocName, setOverviewCustomDocName] = useState('');
+
+  const handleAddOverviewCustomDoc = () => {
+    const title = (overviewCustomDocName || overviewSelectedSpecDoc || '').trim();
+    if (!title) {
+      message.warning('Vui lòng chọn hoặc nhập tên loại chứng từ cần bổ sung!');
+      return;
+    }
+
+    if (documents.some(d => d.name.toLowerCase() === title.toLowerCase())) {
+      message.warning('Chứng từ này đã có trong danh mục!');
+      return;
+    }
+
+    const newKey = `overview-doc-${Date.now()}`;
+    const newDoc = {
+      key: newKey,
+      name: title,
+      description: 'Chứng từ chuyên ngành do Điều phối viên yêu cầu bổ sung.',
+      file: 'Chờ tải lên',
+      status: 'WAITING_UPLOAD',
+      size: '-',
+      uploadDate: '-',
+      isBasic: false,
+      isCustom: true,
+      categoryName: 'Chứng từ bổ sung'
+    };
+
+    setDocuments?.(prev => [...prev, newDoc]);
+    setOverviewCustomDocName('');
+    setOverviewSelectedSpecDoc('');
+    message.success(`Đã thêm chứng từ: "${newDoc.name}"`);
+  };
+
+  const handleDeleteOverviewDoc = (docKey) => {
+    setDocuments?.(prev => prev.filter(d => d.key !== docKey));
+    message.info('Đã xóa loại chứng từ khỏi danh mục.');
+  };
+
+  const handleGeminiAnalyzeVehicle = async () => {
+    try {
+      setAiAnalyzingVehicle(true);
+      const res = await aiApi.analyzeVehicleAndQuote({
+        order,
+        customerRequestedVehicle: customerInitialSpec.label,
+        systemRecommendedVehicle: recommendedSpec.label,
+        distanceKm: routeInfo?.distanceKm || 35,
+        estimatedPriceVnd: estimatedBaselineRate
+      });
+
+      if (res?.recommendedVehicleKey) {
+        const matchedSpec = getVehicleSpecByKey(res.recommendedVehicleKey);
+        if (matchedSpec && canEditPrice) {
+          setProposedVehicleType?.(matchedSpec.key);
+        }
+      }
+      if (res?.customerAdvisoryNote && canEditPrice) {
+        setVehicleAnalysisNote?.(res.customerAdvisoryNote);
+      }
+      setAiVehicleInsight(res);
+      message.success(`Google Gemini AI (${res.model || 'Gemini Pro'}) đã phân tích phương án xe & soạn lời tư vấn!`);
+    } catch (err) {
+      message.error('Không thể kết nối Gemini AI lúc này');
+    } finally {
+      setAiAnalyzingVehicle(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {/* 1. ĐẶT LÊN TRÊN CÙNG (TRƯỚC LIÊN HỆ KHÁCH HÀNG & CHỐT CƯỚC): Khối Khách hàng muốn thương lượng lại giá & phương án xe */}
+      {/* 1. Khối Khách hàng muốn thương lượng lại giá & phương án xe */}
       {isNegotiating && negotiation && (
         <div className="p-4 bg-amber-50 rounded-xl border-2 border-amber-300 text-xs space-y-2.5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
@@ -117,7 +191,7 @@ export default function OrderOverviewTab({
             )}
           </div>
 
-          {/* Lịch sử các lần thương lượng trước (nếu khách deal nhiều lần) */}
+          {/* Lịch sử các lần thương lượng trước */}
           {negotiationHistory.length > 0 && (
             <div className="pt-2 border-t border-amber-200/70 space-y-1">
               <div className="text-[11px] font-bold text-amber-900">Lịch sử thương lượng trước đó ({negotiationHistory.length} lần):</div>
@@ -144,7 +218,7 @@ export default function OrderOverviewTab({
         </div>
       )}
 
-      {/* Banner hướng dẫn luồng xử lý đối với đơn DRAFT chưa thương lượng */}
+      {/* Banner hướng dẫn luồng xử lý đối với đơn DRAFT */}
       {order.status === 'DRAFT' && !isNegotiating && (
         <div className="p-3.5 bg-gradient-to-r from-amber-50 to-indigo-50 rounded-xl border border-amber-200">
           <div className="flex items-center gap-2 font-bold text-amber-900 text-xs mb-1">
@@ -159,146 +233,23 @@ export default function OrderOverviewTab({
         </div>
       )}
 
-      {/* 2. KHỐI GỢI Ý XẾP XE BAN ĐẦU & PHÂN TÍCH CHỌN XE ĐÚNG ĐỂ TRAO ĐỔI VỚI KHÁCH HÀNG */}
-      <div className="p-4 bg-gradient-to-r from-emerald-50/70 via-white to-indigo-50/60 rounded-xl border border-emerald-200 space-y-3 shadow-2xs">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 pb-2.5">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
-              <Truck size={15} />
-            </div>
-            <div>
-              <span className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1.5">
-                Phân tích &amp; Gợi ý xếp xe phù hợp (Trao đổi chốt phương án xe với khách)
-              </span>
-              <span className="text-[11px] text-gray-500 block">
-                Đối chiếu giữa xe khách chọn ban đầu và phân tích kỹ thuật theo tải trọng ({order.chargeable || order.weight || 0} kg) &amp; kích thước ({order.length_cm || 0}×{order.width_cm || 0}×{order.height_cm || 0} cm)
-              </span>
-            </div>
-          </div>
-          <Tag
-            color={
-              vehicleRecommendation?.status === 'UNDER_CAPACITY'
-                ? 'warning'
-                : vehicleRecommendation?.status === 'OVER_CAPACITY'
-                  ? 'processing'
-                  : 'success'
-            }
-            className="m-0 font-bold text-[11px] px-2.5 py-0.5 rounded-full"
-          >
-            {vehicleRecommendation?.status === 'UNDER_CAPACITY'
-              ? '⚠️ Xe khách chọn thiếu tải / hẹp thùng — Cần tư vấn đổi xe'
-              : vehicleRecommendation?.status === 'OVER_CAPACITY'
-                ? '💡 Xe khách chọn dư tải — Có thể tối ưu'
-                : '✓ Xe khách chọn phù hợp thông số hàng'}
-          </Tag>
-        </div>
+      {/* 2. GỢI Ý XẾP XE BAN ĐẦU & PHÂN TÍCH CHỌN XE ĐÚNG */}
+      <OrderVehicleRecommendationBox
+        proposedVehicleType={proposedVehicleType}
+        setProposedVehicleType={setProposedVehicleType}
+        vehicleRecommendation={vehicleRecommendation}
+        currentProposedSpec={currentProposedSpec}
+        customerInitialSpec={customerInitialSpec}
+        estimatedBaselineRate={estimatedBaselineRate}
+        canEditPrice={canEditPrice}
+        aiAnalyzingVehicle={aiAnalyzingVehicle}
+        handleGeminiAnalyzeVehicle={handleGeminiAnalyzeVehicle}
+        aiVehicleInsight={aiVehicleInsight}
+        vehicleAnalysisNote={vehicleAnalysisNote}
+        setVehicleAnalysisNote={setVehicleAnalysisNote}
+      />
 
-        {/* So sánh 3 cột: Xe khách chọn vs Hệ thống phân tích gợi ý vs Phương án xe điều phối chốt */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          {/* Cột 1: Xe khách chọn ban đầu */}
-          <div className="p-3 bg-white rounded-lg border border-gray-200 space-y-1">
-            <div className="text-[11px] text-gray-500 font-medium">1. Loại xe khách chọn khi tạo đơn:</div>
-            <div className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-              <span>🚛 {customerInitialSpec.label}</span>
-            </div>
-            <div className="text-[11px] text-gray-500 font-mono">
-              {customerInitialSpec.boxDimText} · Tải {customerInitialSpec.maxPayloadKg.toLocaleString('vi-VN')} kg
-            </div>
-          </div>
-
-          {/* Cột 2: Hệ thống phân tích & gợi ý xếp xe */}
-          <div className={`p-3 rounded-lg border space-y-1 ${
-            vehicleRecommendation?.status === 'UNDER_CAPACITY'
-              ? 'bg-amber-50/80 border-amber-300'
-              : 'bg-emerald-50/70 border-emerald-200'
-          }`}>
-            <div className="text-[11px] font-semibold text-emerald-900 flex items-center justify-between">
-              <span className="flex items-center gap-1">
-                <Sparkles size={12} className="text-emerald-600" /> 2. Hệ thống phân tích gợi ý:
-              </span>
-              {canEditPrice && proposedVehicleType !== recommendedSpec.key && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProposedVehicleType?.(recommendedSpec.key);
-                    if (!vehicleAnalysisNote) {
-                      setVehicleAnalysisNote?.(vehicleRecommendation?.reason || '');
-                    }
-                  }}
-                  className="text-[11px] font-bold text-indigo-600 underline hover:text-indigo-800 cursor-pointer"
-                >
-                  [Áp dụng gợi ý]
-                </button>
-              )}
-            </div>
-            <div className="font-bold text-emerald-800 text-sm">
-              ✨ {recommendedSpec.label}
-            </div>
-            <div className="text-[11px] text-emerald-700 font-mono">
-              {recommendedSpec.boxDimText} · Tải {recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg ({recommendedSpec.volumeM3} m³)
-            </div>
-          </div>
-
-          {/* Cột 3: Điều phối viên chọn phương án xe để chốt với khách */}
-          <div className="p-3 bg-indigo-50/60 rounded-lg border border-indigo-200 space-y-1.5">
-            <div className="text-[11px] font-bold text-indigo-900">
-              3. Phương án xe Điều phối chốt với khách:
-            </div>
-            {canEditPrice ? (
-              <Select
-                className="w-full text-xs"
-                size="small"
-                value={proposedVehicleType || 'TRUCK_2.5T'}
-                onChange={(val) => setProposedVehicleType?.(val)}
-              >
-                {VEHICLE_SPECS.map(v => (
-                  <Option key={v.key} value={v.key}>
-                    {v.label} ({v.boxDimText} · {v.maxPayloadKg.toLocaleString('vi-VN')}kg)
-                  </Option>
-                ))}
-              </Select>
-            ) : (
-              <div className="font-bold text-indigo-700 text-sm flex items-center gap-1.5">
-                <span>✓ {currentProposedSpec.label}</span>
-                <Tag color="blue" className="m-0 text-[10px]">Đã thống nhất</Tag>
-              </div>
-            )}
-            <div className="text-[10px] text-indigo-600">
-              {currentProposedSpec.boxDimText} · Giá sàn tương ứng: <b>{estimatedBaselineRate.toLocaleString('vi-VN')} đ</b>
-            </div>
-          </div>
-        </div>
-
-        {/* Nhận xét phân tích tự động & Ghi chú tư vấn chọn xe gửi khách */}
-        <div className="p-2.5 bg-white rounded-lg border border-emerald-100 text-xs space-y-2">
-          <div className="text-gray-700 leading-relaxed">
-            <b className="text-emerald-800">📊 Nhận định kỹ thuật xếp hàng: </b>
-            <span>{vehicleRecommendation?.reason}</span>
-          </div>
-          {canEditPrice ? (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1.5 border-t border-gray-100">
-              <span className="text-[11px] font-semibold text-gray-600 shrink-0">
-                Ghi chú phương án xe gửi khách:
-              </span>
-              <Input
-                size="small"
-                value={vehicleAnalysisNote}
-                onChange={(e) => setVehicleAnalysisNote?.(e.target.value)}
-                placeholder="VD: Lô hàng 20 thùng (200x200x200cm) cần đi Xe tải 3.5 tấn (thùng rộng 2.05m) để xếp vừa an toàn không bị cấn thùng..."
-                className="text-xs flex-1"
-              />
-            </div>
-          ) : (
-            vehicleAnalysisNote && (
-              <div className="text-[11px] text-indigo-800 bg-indigo-50/60 px-2.5 py-1.5 rounded border border-indigo-100">
-                <b>Ghi chú phương án xe đã chốt với khách:</b> {vehicleAnalysisNote}
-              </div>
-            )
-          )}
-        </div>
-      </div>
-
-      {/* 3. Box Liên hệ khách hàng & Chốt giá cước thỏa thuận (kèm Phương án xe) */}
+      {/* 3. Box Liên hệ khách hàng & Chốt giá cước thỏa thuận */}
       <div className="bg-gradient-to-r from-blue-50/60 to-indigo-50/60 p-4 rounded-xl border border-indigo-100 space-y-3">
         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
           <div>
@@ -396,7 +347,7 @@ export default function OrderOverviewTab({
                             </div>
 
                             <div className="text-[10px] text-gray-400 italic">
-                              * Tính theo biểu giá vận tải chính thức của ALS (Hợp đồng FedEx Express). Khi đổi loại xe ở mục Phân tích phía trên, giá sàn sẽ tự động cập nhật theo cỡ xe đó.
+                              * Tính theo biểu giá vận tải chính thức của ALS (Hợp đồng FedEx Express).
                             </div>
                           </div>
                         }
@@ -478,7 +429,7 @@ export default function OrderOverviewTab({
             </div>
           </div>
 
-          {/* Ô bắt buộc nhập Lý do điều chỉnh lại giá khi đang ở trạng thái Đang thương lượng */}
+          {/* Ô bắt buộc nhập Lý do điều chỉnh lại giá */}
           {isNegotiating && (
             <div className="pt-2.5 border-t border-indigo-50 space-y-1.5">
               <label className="text-xs font-bold text-amber-900 flex items-center gap-1">
@@ -488,24 +439,26 @@ export default function OrderOverviewTab({
               <Input
                 value={adjustmentReason}
                 onChange={(e) => setAdjustmentReason(e.target.value)}
-                placeholder="Nhập rõ lý do điều chỉnh hoặc phản hồi báo giá & phương án xe cho khách (VD: Điều chỉnh sang Xe 3.5 tấn để vừa kích thước 200cm và hỗ trợ giá ưu đãi)..."
+                placeholder="Nhập rõ lý do điều chỉnh hoặc phản hồi báo giá & phương án xe cho khách..."
                 className="text-xs border-amber-300 focus:border-amber-500"
               />
             </div>
           )}
-
-          {/* Hiển thị lý do điều chỉnh gần nhất nếu đã chốt lại giá và đang chờ khách phản hồi */}
-          {!isNegotiating && order.web_workflow?.adjustment_reason && (
-            <div className="pt-2 border-t border-gray-100 text-[11px] text-gray-600 flex items-center justify-between flex-wrap gap-2">
-              <span>
-                • Lý do chốt lại giá gần nhất: <b className="text-indigo-700">{order.web_workflow.adjustment_reason}</b>
-              </span>
-              {order.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' && (
-                <Tag color="processing" className="text-[10px] m-0">Đang chờ khách xác nhận xe &amp; giá mới</Tag>
-              )}
-            </div>
-          )}
         </div>
+
+        {/* Danh mục chứng từ chuẩn bị trước khi gửi báo giá */}
+        {(order.status === 'DRAFT' || isNegotiating) && (
+          <OrderOverviewPreDocsBox
+            documents={documents}
+            onOpenAssistant={onOpenAssistant}
+            handleDeleteOverviewDoc={handleDeleteOverviewDoc}
+            overviewSelectedSpecDoc={overviewSelectedSpecDoc}
+            setOverviewSelectedSpecDoc={setOverviewSelectedSpecDoc}
+            overviewCustomDocName={overviewCustomDocName}
+            setOverviewCustomDocName={setOverviewCustomDocName}
+            handleAddOverviewCustomDoc={handleAddOverviewCustomDoc}
+          />
+        )}
       </div>
 
       {/* Bản đồ hình ảnh tuyến đường & Số km ước tính */}
@@ -517,88 +470,103 @@ export default function OrderOverviewTab({
           </div>
           <div className="flex items-center gap-3 text-xs">
             <span className="text-gray-500">
-              Quãng đường: <b className="text-indigo-700 font-mono text-sm">{routeInfo.distanceKm} km</b>
+              Quãng đường: <b className="text-indigo-600 font-mono">{routeInfo.distanceKm} km</b>
             </span>
-            <span className="text-gray-400">|</span>
+            <span className="text-gray-300">|</span>
             <span className="text-gray-500">
-              Thời gian xe chạy: <b className="text-indigo-700 font-mono text-sm">{routeInfo.durationMins} phút</b>
+              Thời gian xe chạy: <b className="text-indigo-600 font-mono">{routeInfo.durationMins} phút</b>
             </span>
           </div>
         </div>
 
-        <div className="rounded-lg overflow-hidden border border-gray-200 h-64 w-full">
-          <RouteMapPicker
-            pickupAddress={pickupAddress}
-            deliveryAddress={deliveryAddress}
-            pickupCoords={pickupCoords}
-            deliveryCoords={deliveryCoords}
-            onRouteChange={setRouteInfo}
-            height={256}
-          />
-        </div>
+        <RouteMapPicker
+          pickupCoords={pickupCoords}
+          deliveryCoords={deliveryCoords}
+          pickupAddress={pickupAddress}
+          deliveryAddress={deliveryAddress}
+          height={280}
+          onRouteChange={(calculated) => {
+            if (calculated && (calculated.distanceKm !== routeInfo.distanceKm || calculated.durationMins !== routeInfo.durationMins)) {
+              setRouteInfo(calculated);
+            }
+          }}
+        />
       </div>
 
-      {/* Thông tin hàng hóa & Thông số tải trọng */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
+      {/* Thông tin Khách hàng & Địa điểm giao nhận */}
+      <div className="p-3.5 bg-gray-50/80 rounded-xl border border-gray-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
         <div>
-          <div className="text-xs text-gray-500">Khách hàng:</div>
-          <div className="font-bold text-gray-800 text-sm mt-0.5">{order.customer || order.customer_name}</div>
-          <div className="text-xs text-gray-500 mt-1">Mã HAWB: <span className="font-mono font-semibold text-indigo-600">{order.hawb_code || order.order_id}</span></div>
-          <div className="text-xs text-gray-500 mt-1">SĐT: {order.customer_phone || 'Chưa cung cấp'} | Email: {order.customer_email || 'Chưa cung cấp'}</div>
+          <span className="text-gray-400 block mb-1 font-medium">Khách hàng:</span>
+          <span className="font-bold text-gray-800 text-sm block">{order.customer || order.customer_name}</span>
+          <span className="text-gray-500 block mt-0.5">
+            Mã HAWB: <b className="text-indigo-600 font-mono">{order.hawb || '—'}</b>
+          </span>
+          <span className="text-gray-500 block">SĐT: {order.customer_phone || 'Chưa có'} | Email: {order.customer_email || 'Chưa có'}</span>
         </div>
         <div>
-          <div className="text-xs text-gray-500">Địa điểm giao nhận:</div>
-          <div className="font-medium text-gray-700 text-xs mt-1">
-            <span className="font-bold text-blue-600">Điểm lấy:</span> {pickupAddress}
-          </div>
-          <div className="font-medium text-gray-700 text-xs mt-1">
-            <span className="font-bold text-emerald-600">Điểm giao:</span> {deliveryAddress}
+          <span className="text-gray-400 block mb-1 font-medium">Địa điểm giao nhận:</span>
+          <div className="space-y-1">
+            <div className="flex items-start gap-1.5">
+              <span className="font-bold text-blue-600 shrink-0">Điểm lấy:</span>
+              <span className="text-gray-700">{pickupAddress}</span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <span className="font-bold text-emerald-600 shrink-0">Điểm giao:</span>
+              <span className="text-gray-700">{deliveryAddress}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-        <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-          <div className="text-[11px] text-gray-500">Số lượng / Quy cách</div>
-          <div className="font-bold text-gray-800 text-sm mt-0.5">{order.package_count || 1} {order.package_unit || (order.cargo_type === 'BULK' ? 'Chuyến' : 'Kiện')}</div>
+      {/* 4 Chỉ số hàng hóa */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-center">
+          <span className="text-[11px] text-gray-500 block mb-1 font-medium">Số lượng / Quy cách</span>
+          <span className="font-bold text-gray-800 text-sm block">
+            {order.package_count || 1} {order.package_type || 'Kiện'}
+          </span>
         </div>
-        <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-          <div className="text-[11px] text-gray-500">Kích thước (DxRxC)</div>
-          <div className="font-bold text-gray-800 text-xs mt-1">
-            {order.cargo_type === 'BULK' || (!order.length_cm && !order.width_cm && !order.height_cm)
-              ? 'Hàng rời (Không đo)'
-              : `${order.length_cm || 0}x${order.width_cm || 0}x${order.height_cm || 0} cm`}
-          </div>
+
+        <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-center">
+          <span className="text-[11px] text-gray-500 block mb-1 font-medium">Kích thước (DxRxC)</span>
+          <span className="font-bold text-gray-800 text-sm block">
+            {order.length_cm || 0}x{order.width_cm || 0}x{order.height_cm || 0} cm
+          </span>
         </div>
-        <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-          <div className="text-[11px] text-gray-500">{order.cargo_type === 'BULK' ? 'Trọng tải hàng rời' : 'Trọng lượng thực'}</div>
-          <div className="font-bold text-gray-800 text-sm mt-0.5">{order.weight || order.weight_kg || 0} kg</div>
+
+        <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-center">
+          <span className="text-[11px] text-gray-500 block mb-1 font-medium">Trọng lượng thực</span>
+          <span className="font-bold text-gray-800 text-sm block font-mono">
+            {order.weight || order.weight_kg || 0} kg
+          </span>
         </div>
-        <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
-          <div className="text-[11px] text-amber-800 font-medium">Tải trọng tính cước</div>
-          <div className="font-bold text-amber-600 text-base mt-0.5">{order.chargeable || order.chargeable_weight || 0} kg</div>
+
+        <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200 text-center">
+          <span className="text-[11px] text-amber-800 block mb-1 font-medium">Tải trọng tính cước</span>
+          <span className="font-bold text-amber-600 text-sm block font-mono">
+            {order.chargeable || order.chargeable_weight || order.weight || 0} kg
+          </span>
         </div>
       </div>
 
-      {/* Bảng danh sách mặt hàng nếu có nhiều loại hàng */}
-      {order.items && Array.isArray(order.items) && order.items.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
-          <div className="px-3.5 py-2 bg-indigo-50/70 border-b border-indigo-150 flex items-center justify-between">
-            <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
-              <Package size={14} className="text-indigo-600" /> Danh mục các loại hàng trong đơn ({order.items.length} loại)
-            </span>
-          </div>
-          <div className="divide-y divide-gray-100 text-xs">
-            {order.items.map((it, idx) => (
-              <div key={idx} className="p-2.5 flex items-center justify-between hover:bg-gray-50">
+      {/* Danh mục các loại hàng trong đơn */}
+      {order.items && order.items.length > 0 && (
+        <div className="p-3.5 bg-gray-50/80 rounded-xl border border-gray-200">
+          <span className="text-xs font-bold text-gray-700 mb-2.5 flex items-center gap-1.5">
+            <Package size={14} className="text-[#7367f0]" />
+            Danh mục các loại hàng trong đơn ({order.items.length} loại)
+          </span>
+          <div className="space-y-2">
+            {order.items.map((item, idx) => (
+              <div key={idx} className="p-2.5 bg-white rounded-lg border border-gray-150 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5">
                 <div>
-                  <span className="font-bold text-gray-800">{idx + 1}. {it.cargo_name}</span>
-                  <span className="ml-2 text-gray-500 font-mono">({it.cargo_type})</span>
+                  <span className="font-bold text-gray-800">{idx + 1}. {item.name || item.cargo_name}</span>
+                  <span className="text-[10px] text-gray-400 ml-1.5">({item.category || item.cargo_type || 'GENERAL'})</span>
                 </div>
-                <div className="flex items-center gap-4 text-gray-600">
-                  <span>SL: <b>{it.package_count} {it.package_unit}</b></span>
-                  <span>Kích thước: <b>{it.length_cm}x{it.width_cm}x{it.height_cm} cm</b></span>
-                  <span>Trọng lượng: <b className="text-indigo-600">{it.weight} kg</b></span>
+                <div className="flex items-center gap-3 text-gray-600 font-mono text-[11px]">
+                  <span>SL: <b>{item.quantity || 1} {item.package_type || 'Kiện'}</b></span>
+                  <span>Kích thước: <b>{item.length || 0}x{item.width || 0}x{item.height || 0} cm</b></span>
+                  <span>Trọng lượng: <b className="text-indigo-600">{item.weight || 0} kg</b></span>
                 </div>
               </div>
             ))}
@@ -606,17 +574,13 @@ export default function OrderOverviewTab({
         </div>
       )}
 
-      {/* Ghi chú yêu cầu của khách (chỉ hiển thị ghi chú gốc khi đặt đơn, không lặp lại ghi chú đàm phán) */}
-      {order.order_notes && 
-       order.order_notes.trim().length > 0 && 
-       !order.order_notes.includes('Đơn hàng nhận tư vấn từ Website') && 
-       !order.order_notes.includes('Cần liên hệ tư vấn lộ trình') &&
-       !order.order_notes.includes('[Khách hàng phản hồi đàm phán]') && (
-        <div className="p-3 bg-yellow-50/80 rounded-xl border border-yellow-200 text-xs text-yellow-900">
-          <div className="font-bold flex items-center gap-1 mb-1">
+      {/* Ghi chú yêu cầu của khách */}
+      {order.order_notes && (
+        <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 text-xs text-amber-900 leading-relaxed">
+          <div className="font-bold text-amber-900 flex items-center gap-1 mb-1">
             <AlertTriangle size={14} /> Ghi chú yêu cầu của khách:
           </div>
-          {order.order_notes}
+          <div>{order.order_notes}</div>
         </div>
       )}
     </div>
