@@ -118,13 +118,22 @@ export default function DriverDashboard() {
         setProfile(profileRes.value.profile || profileRes.value);
       }
 
-      if (activeTripRes.status === "fulfilled" && activeTripRes.value?.trip) {
-        setTripData(activeTripRes.value);
-        // Lưu cache chứng từ chuyến xe ngoại tuyến (Mục 6781)
-        await cacheTripDocuments(
-          activeTripRes.value.trip.id,
-          activeTripRes.value,
-        );
+      if (activeTripRes.status === "fulfilled") {
+        if (activeTripRes.value?.trip) {
+          setTripData(activeTripRes.value);
+          // Lưu cache chứng từ chuyến xe ngoại tuyến (Mục 6781)
+          await cacheTripDocuments(
+            activeTripRes.value.trip.id,
+            activeTripRes.value,
+          );
+        } else if (!isOffline) {
+          // Khi server trả về không có chuyến xe nào đang hoạt động
+          setTripData((prev) => {
+            // Giữ lại giao diện chúc mừng hoàn tất chuyến xe nếu chuyến vừa kết thúc trong phiên
+            if (prev?.trip?.status === "Completed") return prev;
+            return activeTripRes.value || { hasActiveTrip: false, trip: null };
+          });
+        }
       } else if (isOffline) {
         // Nếu ngoại tuyến và không lấy được từ server -> Đọc từ cache
         const cached = await getCachedTripDocuments("active");
@@ -489,19 +498,42 @@ export default function DriverDashboard() {
           activeStopTarget.id,
           payload,
         );
-        await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, {
-          eventType: "Loading Done",
-        });
         if (res.isTripCompleted) {
           message.success(
             "Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe (BR-24)!",
           );
+          // Cập nhật ngay trạng thái chuyến xe sang Completed (BR-24)
+          setTripData((prev) => {
+            if (!prev || !prev.trip) return prev;
+            const updatedStops = (prev.trip.stops || []).map((s) =>
+              s.id === activeStopTarget.id
+                ? {
+                    ...s,
+                    status: "Done",
+                    delivered_quantity: payload.delivered_packages,
+                  }
+                : s,
+            );
+            return {
+              ...prev,
+              hasActiveTrip: true,
+              trip: {
+                ...prev.trip,
+                status: "Completed",
+                stops: updatedStops,
+              },
+              currentStop: {
+                ...activeStopTarget,
+                status: "Done",
+              },
+            };
+          });
         } else {
           message.success("Ghi nhận giao hàng và lưu POD thành công!");
+          await fetchDashboardData();
         }
       }
       setPodModalOpen(false);
-      fetchDashboardData();
     } catch (err) {
       message.error(err.message || "Lỗi khi ghi nhận giao hàng");
     } finally {
@@ -552,6 +584,18 @@ export default function DriverDashboard() {
         message.success(
           res.message || "Đã ghi nhận khách không nhận hàng. (MSG74)",
         );
+        // Cập nhật trạng thái điểm dừng sang Done
+        setTripData((prev) => {
+          if (!prev || !prev.trip) return prev;
+          const updatedStops = (prev.trip.stops || []).map((s) =>
+            s.id === activeStopTarget.id ? { ...s, status: "Done" } : s,
+          );
+          return {
+            ...prev,
+            trip: { ...prev.trip, stops: updatedStops },
+            currentStop: { ...activeStopTarget, status: "Done" },
+          };
+        });
       }
       setRefusalModalOpen(false);
       setRefusalReason("");
@@ -843,8 +887,20 @@ export default function DriverDashboard() {
                 >
                   <FileText size={11} /> Chứng từ
                 </button>
-                <div className="bg-blue-500/20 text-blue-200 border border-blue-400/30 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
+                <div
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${
+                    trip.status === "Completed"
+                      ? "bg-emerald-500/20 text-emerald-200 border border-emerald-400/30"
+                      : "bg-blue-500/20 text-blue-200 border border-blue-400/30"
+                  }`}
+                >
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      trip.status === "Completed"
+                        ? "bg-emerald-400"
+                        : "bg-blue-400 animate-pulse"
+                    }`}
+                  ></div>
                   {trip.status.toUpperCase()}
                 </div>
               </div>
@@ -952,15 +1008,17 @@ export default function DriverDashboard() {
                   <Navigation2 className="w-3.5 h-3.5 text-indigo-400" /> Thao tác Chuyến xe
                 </span>
                 {/* Propose Fee Button (Screen 6.2 (10)) */}
-                <button
-                  onClick={() => {
-                    setActiveStopTarget(currentStop);
-                    setExtraFeeModalOpen(true);
-                  }}
-                  className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30 transition-colors shrink-0"
-                >
-                  <DollarSign size={12} /> Đề xuất phí (BR-30)
-                </button>
+                {trip.status !== "Completed" && (
+                  <button
+                    onClick={() => {
+                      setActiveStopTarget(currentStop);
+                      setExtraFeeModalOpen(true);
+                    }}
+                    className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30 transition-colors shrink-0"
+                  >
+                    <DollarSign size={12} /> Đề xuất phí (BR-30)
+                  </button>
+                )}
               </div>
 
               {/* Case 1: Trip is Assigned -> Need to Accept (MSG17, BR-09) */}
@@ -1251,6 +1309,16 @@ export default function DriverDashboard() {
                     Xe và hồ sơ tài xế đã được giải phóng về trạng thái sẵn sàng
                     (BR-24).
                   </p>
+                  <Button
+                    type="primary"
+                    onClick={() => {
+                      setTripData({ hasActiveTrip: false, trip: null });
+                      fetchDashboardData();
+                    }}
+                    className="mt-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl h-10 px-6 shadow-lg shadow-emerald-600/30"
+                  >
+                    Hoàn tất & Sẵn sàng nhận chuyến mới
+                  </Button>
                 </div>
               )}
             </div>

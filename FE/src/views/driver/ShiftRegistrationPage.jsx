@@ -72,13 +72,27 @@ export default function ShiftRegistrationPage() {
       setSubmitting(true);
 
       const dateStr = values.date.format("YYYY-MM-DD");
-      const startTimeStr = values.timeRange[0].format("HH:mm:ss");
-      const endTimeStr = values.timeRange[1].format("HH:mm:ss");
+
+      // Ghép ngày làm việc với giờ bắt đầu & kết thúc theo đúng múi giờ địa phương (tránh lệch múi giờ UTC+7)
+      let startDateTime = values.date
+        .hour(values.timeRange[0].hour())
+        .minute(values.timeRange[0].minute())
+        .second(0);
+
+      let endDateTime = values.date
+        .hour(values.timeRange[1].hour())
+        .minute(values.timeRange[1].minute())
+        .second(0);
+
+      // Nếu ca làm việc qua đêm (giờ kết thúc nhỏ hơn hoặc bằng giờ bắt đầu), tính sang ngày hôm sau
+      if (endDateTime.isBefore(startDateTime) || endDateTime.isSame(startDateTime)) {
+        endDateTime = endDateTime.add(1, "day");
+      }
 
       const payload = {
         date: dateStr,
-        start_time: `${dateStr}T${startTimeStr}Z`,
-        end_time: `${dateStr}T${endTimeStr}Z`,
+        start_time: startDateTime.toISOString(),
+        end_time: endDateTime.toISOString(),
         note: values.note ? values.note.trim() : null
       };
 
