@@ -1,4 +1,5 @@
 "use client";
+import DriverShiftsPage from './DriverShiftsPage';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal, Form, Input, Select, DatePicker, TimePicker, message, Spin, Badge, Tooltip, Popconfirm, Alert } from 'antd';
 import dayjs from 'dayjs';
@@ -32,11 +33,7 @@ export default function FleetPage() {
   const [driverForm] = Form.useForm();
   const [submittingDriver, setSubmittingDriver] = useState(false);
 
-  // 3. Shift Modal (Screen 25 - UC-20 V2)
-  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
-  const [shiftForm] = Form.useForm();
-  const [submittingShift, setSubmittingShift] = useState(false);
-  const [rejectModal, setRejectModal] = useState({ open: false, shiftId: null, reason: '' });
+
 
   // Load Đội xe & Tài xế
   const fetchFleetData = async () => {
@@ -267,66 +264,6 @@ export default function FleetPage() {
       message.error(error.message || 'Lỗi khi lưu hồ sơ tài xế.');
     } finally {
       setSubmittingDriver(false);
-    }
-  };
-
-  // ==========================================
-  // XỬ LÝ CA TRỰC TÀI XẾ (UC-20 V2 - Screen 25)
-  // ==========================================
-  const handleApproveShift = async (shift) => {
-    try {
-      const res = await managerApi.approveShift(shift.id);
-      message.success(res.message || 'Đã duyệt ca làm việc thành công.');
-      if (res.warning) {
-        message.warning(res.warning, 6);
-      }
-      fetchShifts();
-    } catch (error) {
-      console.error('Lỗi khi duyệt ca:', error);
-      message.error(error.message || 'Lỗi khi duyệt ca.');
-    }
-  };
-
-  const handleConfirmRejectShift = async () => {
-    try {
-      await managerApi.rejectShift(rejectModal.shiftId, rejectModal.reason);
-      message.success('Đã từ chối ca làm việc.');
-      setRejectModal({ open: false, shiftId: null, reason: '' });
-      fetchShifts();
-    } catch (error) {
-      console.error('Lỗi khi từ chối ca:', error);
-      message.error(error.message || 'Lỗi khi từ chối ca.');
-    }
-  };
-
-  const handleCreateManagerShift = async (values) => {
-    try {
-      setSubmittingShift(true);
-      const dateStr = values.date.format('YYYY-MM-DD');
-      const startStr = values.time_range[0].format('HH:mm');
-      const endStr = values.time_range[1].format('HH:mm');
-
-      const payload = {
-        driver_id: values.driver_id,
-        date: dateStr,
-        start_time: `${dateStr}T${startStr}:00+07:00`,
-        end_time: `${dateStr}T${endStr}:00+07:00`,
-        note: values.note || 'Ca trực do Quản lý xếp'
-      };
-
-      const res = await managerApi.createShift(payload);
-      message.success(res.message || 'Xếp ca làm việc cho tài xế thành công.');
-      if (res.warning) {
-        message.warning(res.warning, 6);
-      }
-      setIsShiftModalOpen(false);
-      shiftForm.resetFields();
-      fetchShifts();
-    } catch (error) {
-      console.error('Lỗi khi tạo ca trực:', error);
-      message.error(error.message || 'Lỗi khi tạo ca trực.');
-    } finally {
-      setSubmittingShift(false);
     }
   };
 
@@ -605,18 +542,25 @@ export default function FleetPage() {
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
-                            <Select
-                              value={truck.status}
-                              size="small"
-                              className="w-36 text-xs font-semibold"
-                              onChange={(val) => handleQuickStatusChange(truck.id, val)}
-                              options={[
-                                { value: 'AVAILABLE', label: '🟢 Sẵn sàng' },
-                                { value: 'ON_TRIP', label: '🔵 Đang chạy' },
-                                { value: 'MAINTENANCE', label: '🟠 Bảo dưỡng' },
-                                { value: 'INACTIVE', label: '⚪ Ngưng HĐ' }
-                              ]}
-                            />
+                            {truck.status === 'ON_TRIP' ? (
+                              <Tooltip title="Xe đang thực hiện chuyến đi, không thể chuyển đổi trạng thái thủ công (UC-09)">
+                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200 cursor-not-allowed">
+                                  🚚 Đang chạy
+                                </span>
+                              </Tooltip>
+                            ) : (
+                              <Select
+                                value={truck.status}
+                                size="small"
+                                className="w-36 text-xs font-semibold"
+                                onChange={(val) => handleQuickStatusChange(truck.id, val)}
+                                options={[
+                                  { value: 'AVAILABLE', label: '🟢 Sẵn sàng' },
+                                  { value: 'MAINTENANCE', label: '🛠 Bảo dưỡng' },
+                                  { value: 'INACTIVE', label: '⚪ Ngưng HĐ' }
+                                ]}
+                              />
+                            )}
                           </td>
 
                           <td className="py-3.5 px-4 text-right">
@@ -740,208 +684,8 @@ export default function FleetPage() {
 
       {/* ========================================================= */}
       {/* TAB 3: LỊCH PHÂN CA & PHÊ DUYỆT CA (SCREEN 25 V2) */}
-      {/* ========================================================= */}
       {activeTab === 'SHIFTS' && (
-        <div className="space-y-6">
-          {/* HEADER LỊCH CA TÀI XẾ & ĐIỀU HƯỚNG TUẦN (KHỚP FIGURE 45 - ①) */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-container-lowest p-5 rounded-2xl shadow-sm border border-outline-variant/30">
-            <div>
-              <h2 className="text-xl font-black text-primary tracking-tight">
-                Lịch ca tài xế
-              </h2>
-              <p className="text-xs text-on-surface-variant mt-0.5">
-                Quản lý lịch ca trực tuần, phê duyệt ca do tài xế đăng ký và kiểm soát giờ lái (BR-34).
-              </p>
-            </div>
-
-            {/* Bộ chọn tuần chuẩn Figure 45: [◀] Tuần [T2] – [CN] [▶] */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentWeekStart(currentWeekStart.subtract(1, 'week'))}
-                className="w-8 h-8 rounded-xl border border-surface-container bg-surface-container-low text-primary flex items-center justify-center hover:bg-surface-container cursor-pointer transition-colors"
-                title="Tuần trước"
-                type="button"
-              >
-                <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-              </button>
-              <div className="px-4 py-1.5 rounded-xl bg-surface-container-low border border-surface-container font-bold text-xs text-primary font-mono">
-                Tuần {weekDays[0].displayDate} – {weekDays[6].displayDate}/{currentWeekStart.format('YYYY')}
-              </div>
-              <button
-                onClick={() => setCurrentWeekStart(currentWeekStart.add(1, 'week'))}
-                className="w-8 h-8 rounded-xl border border-surface-container bg-surface-container-low text-primary flex items-center justify-center hover:bg-surface-container cursor-pointer transition-colors"
-                title="Tuần sau"
-                type="button"
-              >
-                <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-              </button>
-            </div>
-          </div>
-
-          {/* BẢNG 1: LƯỚI MA TRẬN TÀI XẾ × 7 NGÀY (KHỚP CHUẨN FIGURE 45 - ②) */}
-          <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 border border-outline-variant/30 space-y-4">
-            {shiftLoading ? (
-              <div className="py-16 text-center"><Spin size="large" /></div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-xs font-bold tracking-wider border-b border-surface-container">
-                      <th className="py-3 px-3 min-w-[140px]">Tài xế</th>
-                      {weekDays.map((d) => (
-                        <th key={d.dateStr} className={`py-3 px-2 text-center text-xs font-bold min-w-[110px] ${d.isToday ? 'bg-primary/10 text-primary' : ''}`}>
-                          {d.dayName} {d.displayDate}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-surface-container text-xs">
-                    {drivers.map((drv) => {
-                      const driverShifts = shifts.filter((s) => Number(s.driver_id) === Number(drv.id));
-                      return (
-                        <tr key={drv.id} className="hover:bg-surface-container-low/40 transition-colors">
-                          <td className="py-3 px-3 font-bold text-primary">
-                            <div>{drv.name}</div>
-                            <div className="text-[10px] text-on-surface-variant font-mono">Hạng {drv.license_class}</div>
-                          </td>
-                          {weekDays.map((d) => {
-                            const shiftOnDay = driverShifts.find((s) => s.date === d.dateStr && s.status !== 'Rejected');
-                            const isOverLimit = shiftOnDay && shiftOnDay.duration_hours > 10;
-                            const isPending = shiftOnDay && shiftOnDay.status === 'Requested';
-
-                            return (
-                              <td
-                                key={d.dateStr}
-                                onClick={() => {
-                                  setIsShiftModalOpen(true);
-                                  setTimeout(() => {
-                                    shiftForm.resetFields();
-                                    shiftForm.setFieldsValue({
-                                      driver_id: drv.id,
-                                      date: d.dayMoment,
-                                      time_range: [d.dayMoment.hour(8).minute(0), d.dayMoment.hour(17).minute(0)]
-                                    });
-                                  }, 0);
-                                }}
-                                className={`py-2.5 px-2 text-center cursor-pointer transition-colors border-l border-surface-container/50 ${
-                                  isOverLimit
-                                    ? 'bg-amber-100 text-amber-900 font-bold'
-                                    : isPending
-                                    ? 'bg-amber-50/80 text-amber-800'
-                                    : shiftOnDay
-                                    ? 'bg-emerald-50 text-emerald-800 font-medium'
-                                    : 'hover:bg-surface-container-low/80'
-                                }`}
-                                title="Bấm để thêm hoặc sửa ca"
-                              >
-                                {shiftOnDay ? (
-                                  <div className="text-[11px] font-mono leading-tight">
-                                    <span>{isPending ? '⏳ ' : ''}</span>
-                                    <span>{dayjs(shiftOnDay.start_time).format('HH:mm')}–{dayjs(shiftOnDay.end_time).format('HH:mm')}</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-outline text-[11px] opacity-0 hover:opacity-100">+</span>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* BANNER CẢNH BÁO VƯỢT GIỜ LÁI (KHỚP FIGURE 45 - ③) */}
-            {shifts.some((s) => s.duration_hours > 10) && (
-              <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl text-amber-900 text-xs font-medium">
-                {(() => {
-                  const overShift = shifts.find((s) => s.duration_hours > 10);
-                  return `Ca của ${overShift?.driver_name || 'Tài xế'} ngày ${overShift?.date ? dayjs(overShift.date).format('DD/MM') : ''} dài ${overShift?.duration_hours} giờ, vượt giới hạn giờ lái theo luật. Ca vẫn được lưu. (BR-34)`;
-                })()}
-              </div>
-            )}
-          </div>
-
-          {/* BẢNG 2: CA CHỜ DUYỆT (KHỚP CHUẨN FIGURE 45 - ④) */}
-          <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 border border-outline-variant/30 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-primary flex items-center gap-2">
-                <span>Ca chờ duyệt</span>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-xs font-black">
-                  {pendingShifts.length}
-                </span>
-              </h3>
-            </div>
-
-            {pendingShifts.length === 0 ? (
-              <div className="py-6 text-center text-on-surface-variant text-xs italic bg-surface-container-low/40 rounded-xl">
-                Không có ca trực nào đang chờ duyệt trong tuần này.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-surface-container-low text-on-surface-variant uppercase text-[11px] font-bold border-b border-surface-container">
-                      <th className="py-2.5 px-3">Tài xế</th>
-                      <th className="py-2.5 px-3">Ngày</th>
-                      <th className="py-2.5 px-3">Giờ</th>
-                      <th className="py-2.5 px-3">Gửi lúc</th>
-                      <th className="py-2.5 px-3">Ghi chú</th>
-                      <th className="py-2.5 px-3 text-right">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-surface-container">
-                    {pendingShifts.map((sh) => (
-                      <tr key={sh.id} className="hover:bg-surface-container-low/50">
-                        <td className="py-2.5 px-3 font-bold text-primary">
-                          {sh.driver_name}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono">
-                          {sh.date ? dayjs(sh.date).format('DD/MM/YYYY') : 'N/A'}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono font-bold text-primary">
-                          {dayjs(sh.start_time).format('HH:mm')}–{dayjs(sh.end_time).format('HH:mm')}
-                        </td>
-                        <td className="py-2.5 px-3 text-on-surface-variant">
-                          {sh.created_at ? dayjs(sh.created_at).format('DD/MM HH:mm') : 'N/A'}
-                        </td>
-                        <td className="py-2.5 px-3 text-on-surface-variant">
-                          {sh.note || '—'}
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <div className="inline-flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleApproveShift(sh)}
-                              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer transition-colors shadow-2xs"
-                            >
-                              Duyệt
-                            </button>
-                            <span className="text-outline">·</span>
-                            <button
-                              type="button"
-                              onClick={() => setRejectModal({ open: true, shiftId: sh.id, reason: '' })}
-                              className="text-error font-bold hover:underline cursor-pointer"
-                            >
-                              Từ chối
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Chú thích chân trang chuẩn Figure 45 */}
-            <div className="pt-2 text-xs italic text-on-surface-variant">
-              Bấm một ô để thêm hoặc sửa ca (ca do Quản lý thêm được duyệt luôn). ⏳ = chờ duyệt. Hai ca của một tài xế không được chồng nhau.
-            </div>
-          </div>
-        </div>
+        <DriverShiftsPage />
       )}
 
       {/* ========================================================= */}
@@ -1185,111 +929,6 @@ export default function FleetPage() {
         </Form>
       </Modal>
 
-      {/* ========================================================= */}
-      {/* MODAL 3: XẾP CA MỚI CHO TÀI XẾ (SCREEN 25 V2) */}
-      {/* ========================================================= */}
-      <Modal
-        title={
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-            <span className="material-symbols-outlined text-indigo-600">more_time</span>
-            <span className="font-bold text-slate-900 text-base">
-              Xếp Ca Làm Việc Mới Cho Tài Xế
-            </span>
           </div>
-        }
-        open={isShiftModalOpen}
-        onCancel={() => setIsShiftModalOpen(false)}
-        footer={null}
-        forceRender
-      >
-        <Form form={shiftForm} layout="vertical" onFinish={handleCreateManagerShift} className="mt-4">
-          <Alert
-            title="Lưu ý an toàn lái xe:"
-            description="Tổng giờ lái trong ngày không được vượt quá 10 giờ và 48 giờ/tuần. Hệ thống sẽ cảnh báo vàng nếu xếp ca vượt mức."
-            type="info"
-            showIcon
-            className="mb-4 text-xs rounded-xl"
-          />
-
-          <Form.Item
-            name="driver_id"
-            label={<span className="font-semibold text-slate-700">Chọn tài xế</span>}
-            rules={[{ required: true, message: 'Vui lòng chọn tài xế' }]}
-          >
-            <Select
-              className="h-10"
-              placeholder="Chọn tài xế nhận ca..."
-              options={drivers.map(d => ({
-                value: d.id,
-                label: `${d.name || d.full_name} (${d.phone || 'SĐT'} - Hạng ${d.license_class || 'C'})`
-              }))}
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="date"
-            label={<span className="font-semibold text-slate-700">Ngày làm việc</span>}
-            rules={[{ required: true, message: 'Chọn ngày trực' }]}
-          >
-            <DatePicker className="w-full h-10 rounded-lg" format="DD/MM/YYYY" />
-          </Form.Item>
-
-          <Form.Item
-            name="time_range"
-            label={<span className="font-semibold text-slate-700">Khung giờ ca trực (Start - End)</span>}
-            rules={[{ required: true, message: 'Chọn giờ bắt đầu và kết thúc' }]}
-            extra="Hệ thống sẽ từ chối nếu có 2 ca chồng lấn giờ của cùng 1 tài xế."
-          >
-            <TimePicker.RangePicker className="w-full h-10 rounded-lg" format="HH:mm" />
-          </Form.Item>
-
-          <Form.Item
-            name="note"
-            label={<span className="font-semibold text-slate-700">Ghi chú phân ca</span>}
-          >
-            <Input.TextArea rows={2} placeholder="Tuyến bay gấp HAN-SGN, ca sáng..." className="rounded-lg" />
-          </Form.Item>
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsShiftModalOpen(false)}
-              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-semibold cursor-pointer"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={submittingShift}
-              className="px-5 py-2 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 cursor-pointer shadow-sm"
-            >
-              {submittingShift ? 'Đang lưu...' : 'Lưu ca làm việc'}
-            </button>
-          </div>
-        </Form>
-      </Modal>
-
-      {/* Modal Nhập lý do từ chối ca trực */}
-      <Modal
-        title="Lý do từ chối ca trực của tài xế"
-        open={rejectModal.open}
-        onCancel={() => setRejectModal({ open: false, shiftId: null, reason: '' })}
-        onOk={handleConfirmRejectShift}
-        okText="Xác nhận từ chối"
-        cancelText="Hủy"
-        okButtonProps={{ danger: true }}
-      >
-        <p className="text-xs text-slate-500 mb-2">
-          Hệ thống sẽ gửi thông báo đến tài xế kèm lý do từ chối của bạn:
-        </p>
-        <Input.TextArea
-          rows={3}
-          value={rejectModal.reason}
-          onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })}
-          placeholder="VD: Trùng lịch bảo dưỡng xe, cần nghỉ ngơi theo luật ATGT..."
-          className="rounded-lg"
-        />
-      </Modal>
-    </div>
   );
 }

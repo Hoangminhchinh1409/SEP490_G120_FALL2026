@@ -518,6 +518,19 @@ export const managerApi = {
     }
   },
 
+  updateShift: async (id, payload) => {
+    try {
+      const data = await fetchWithAuth(`/manager/shifts/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.updateShift Error:', error);
+      throw error;
+    }
+  },
+
   createShift: async (payload) => {
     try {
       const data = await fetchWithAuth('/manager/shifts', {

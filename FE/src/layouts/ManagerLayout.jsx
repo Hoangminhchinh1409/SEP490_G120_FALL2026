@@ -15,6 +15,7 @@ export default function ManagerLayout({ children }) {
     { href: '/manager/orders', icon: 'package_2', name: 'Khối lượng đơn' },
     { href: '/manager/approvals', icon: 'fact_check', name: 'Sự cố & Bồi thường' },
     { href: '/manager/fleet', icon: 'local_shipping', name: 'Đội xe' },
+    { href: '/manager/shifts', icon: 'calendar_month', name: 'Lịch ca trực' },
     { href: '/manager/vendors', icon: 'handshake', name: 'Nhà xe & Hợp đồng' },
     { href: '/manager/blogs', icon: 'newspaper', name: 'Tin tức' },
     { href: '/manager/accounts', icon: 'manage_accounts', name: 'Tài khoản nhân viên' },

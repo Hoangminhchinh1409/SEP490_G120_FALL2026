@@ -34,6 +34,7 @@ router.put('/drivers/:id', fleetController.updateDriverProfile);
 
 router.get('/shifts', fleetController.getShifts);
 router.post('/shifts', fleetController.createShift);
+router.put('/shifts/:id', fleetController.updateShift);
 router.patch('/shifts/:id/approve', fleetController.approveShift);
 router.patch('/shifts/:id/reject', fleetController.rejectShift);
 router.delete('/shifts/:id', fleetController.deleteShift);

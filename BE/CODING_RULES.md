@@ -1,330 +1,410 @@
 # 📋 NEXLOG Backend — Coding Rules & Conventions
 
-> **Phiên bản:** 1.0  
-> **Cập nhật:** 2026-10-14  
-> **Tech Stack:** Node.js · Express 5 · PostgreSQL (Supabase) · JWT · bcrypt
+> **Phiên bản:** 2.0 (Đồng bộ toàn diện theo System Architecture, Package Diagram & Frontend Integration)  
+> **Cập nhật:** 2026-10-28  
+> **Tech Stack:** Node.js · Express 5 · PostgreSQL 16 (Supabase - 36 tables) · Prisma · JWT (httpOnly) · bcrypt · node-cron (Advisory Locks) · Next.js (App Router & PWA)
 
 ---
 
-## 1. Kiến trúc dự án (Project Architecture)
+## 1. Kiến trúc hệ thống tổng thể (System Architecture)
+
+Hệ thống được tổ chức theo mô hình phân tán giữa Client (Web & PWA), Backend Application (2 processes chung codebase), Cơ sở dữ liệu và các Dịch vụ tích hợp bên ngoài (External Services):
+
+```
+┌────────────────────────────────────────────────────────┐
+│                        CLIENTS                         │
+│  - Guest browser: Order form, tracking page, news      │
+│  - Staff browser: Admin, Manager, Dispatcher portals   │
+│  - Driver phone (PWA): Service worker, IndexedDB, GPS  │
+└───────────────┬────────────────────────┬───────────────┘
+                │ HTTPS                  │ HTTPS, Offline sync
+                ▼                        ▼
+┌────────────────────────────────────────────────────────┐     Prisma     ┌────────────────────────┐
+│               APPLICATION (Node.js)                    ├───────────────>│   PostgreSQL 16        │
+│                                                        │                │   (Supabase host)      │
+│  ┌──────────────────────────────────────────────────┐  │                │   - 36 tables          │
+│  │ API Process: Express 5, REST /api/v1             │  │                │   - Prisma migrations  │
+│  │ (auth, orders, trips, fleet... JWT cookies, RBAC)│  │                └────────────────────────┘
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │  GPS pull,     ┌────────────────────────┐
+│  ┌──────────────────────────────────────────────────┐  │  Routes, maps, │   EXTERNAL SERVICES    │
+│  │ Job Worker Process: node-cron (JOB-01 to JOB-06) ├──┼───────────────>│ - Cloudinary (API-02/03│
+│  │ (PostgreSQL advisory lock, own process)          │  │  AI, files...  │ - Google Maps (API-01/05│
+│  └──────────────────────────────────────────────────┘  │                │ - Vehicle GPS (API-04) │
+│                (Same codebase, two processes)          │                │ - Gemini AI (API-06)   │
+└────────────────────────────────────────────────────────┘                │ - Email Service        │
+                                                                          │ - Vendor System (API-07│
+                                                                          └────────────────────────┘
+```
+
+### 1.1 Nguyên tắc 2 Processes (API Process & Job Worker Process)
+- **Cùng một codebase**, khởi chạy thành 2 process độc lập trong môi trường production:
+  1. **API Process (`server.js`):** Tiếp nhận request qua giao thức HTTPS, cung cấp REST API `/api/v1` cho các portal Web và Mobile PWA.
+  2. **Job Worker Process (`jobs/`):** Chạy background worker định kỳ với `node-cron`. 
+- **Quy tắc Advisory Lock:** Tất cả các cron job chạy ngầm (`JOB-01` đến `JOB-06`) **bắt buộc** phải sử dụng cơ chế PostgreSQL Session-level hoặc Transaction-level Advisory Lock (`SELECT pg_try_advisory_lock(...)`) để chống hiện tượng race condition hoặc thực thi trùng lặp khi chạy đa tiến trình/scale container.
+
+---
+
+## 2. Kiến trúc phân tầng Module Backend (Package Diagram & Dependencies)
+
+Toàn bộ backend tuân thủ nghiêm ngặt **mô hình phân tầng 3 lớp phụ thuộc một chiều** (Top-Down Dependency, tuyệt đối không phụ thuộc vòng) và ánh xạ chuẩn với danh mục Use Case (UC-01 đến UC-48):
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. ENTRY MODULES (Tầng đầu vào — Gọi xuống Business Modules)                              │
+│  - driver (UC-28 to 32)      - tracking (UC-01, 47)      - monitoring (UC-11, 42, 43, 48)│
+│  - dashboard (UC-21, 27)     - news (UC-44, 45)          - workflows (cancel order, ...) │
+└────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                                             │ calls
+                                             ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│ 2. BUSINESS MODULES (Tầng nghiệp vụ lõi — Gọi xuống Base Modules)                         │
+│  - orders (UC-03, 04, 08, 12, 13, 22)                    - trips (UC-06, 07, 09, 41)     │
+│  - incidents (UC-14, 15, 16, 25)                         - claims (UC-26)                │
+│  - vendors (UC-10, 23)                                   - documents (UC-02, 05, 39)     │
+└────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                                             │ calls
+                                             ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│ 3. BASE MODULES (Tầng nền tảng độc lập — KHÔNG chứa business rules của module khác)     │
+│  - fleet (UC-18, 19, 20)     - customers (UC-24)         - locations (UC-40)             │
+│  - users (UC-17, 33 to 36)   - auth (UC-37, 38, 46)      - notifications (alerts, msgs)  │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.1 Quy tắc ranh giới phân tầng (Layer Boundary Rules)
+1. **Entry Modules:**
+   - **Mục đích:** Là cổng giao tiếp trực tiếp với Client (Driver portal, Public tracking, Điều phối Dashboard...) hoặc điều phối các luồng nghiệp vụ phức tạp liên module (`workflows` như quy trình Hủy đơn hàng `cancel order`, Đổi xe điều phối `change truck`).
+   - **Quy tắc:** Được phép gọi các hàm từ **Business Modules**. KHÔNG được phép query raw SQL trực tiếp vào database tầng dữ liệu của module khác.
+2. **Business Modules:**
+   - **Mục đích:** Xử lý nghiệp vụ chuyên biệt của từng miền nghiệp vụ cốt lõi (Orders, Trips, Incidents, Claims, Vendors, Documents).
+   - **Quy tắc:** Được phép gọi xuống **Base Modules** hoặc thông qua các Service Interfaces được định nghĩa rõ ràng. **KHÔNG** được gọi ngược lên Entry Modules.
+3. **Base Modules:**
+   - **Mục đích:** Quản lý dữ liệu gốc và tiện ích hạ tầng nền tảng (Fleet, Customers, Locations, Users, Auth, Notifications).
+   - **QUY TẮC CỐT LÕI (BẮT BUỘC):** Base Modules **tuyệt đối KHÔNG chứa business rules hay import code của các module khác**. Base Modules phải hoàn toàn độc lập để mọi module tầng trên có thể tái sử dụng an toàn.
+
+---
+
+## 3. Danh mục tích hợp dịch vụ bên ngoài (External Services Catalog)
+
+Các dịch vụ bên ngoài phải được tích hợp chuẩn hóa theo mã hiệu quy định:
+
+| Mã API | Dịch vụ bên thứ ba | Mục đích tích hợp | Quy chuẩn tích hợp |
+|:-------|:-------------------|:------------------|:-------------------|
+| **API-01** | Google Maps Platform | Routes API | Tính toán quãng đường, thời gian di chuyển (ETA), tối ưu lộ trình |
+| **API-02** | Cloudinary | Upload & Storage | Lưu trữ ảnh chụp biên bản giao nhận POD, ảnh seal chì, ảnh chứng từ |
+| **API-03** | Cloudinary | Signed URL Upload | Cấp `signature` từ API để điện thoại tài xế upload ảnh trực tiếp lên CDN |
+| **API-04** | Vehicle GPS System | GPS Tracking | Thu thập toạ độ định vị xe từ thiết bị hộp đen / nhà cung cấp |
+| **API-05** | Google Maps Platform | Geocoding API | Chuyển đổi giữa địa chỉ thực tế và toạ độ kinh độ / vĩ độ (Lat/Lng) |
+| **API-06** | Gemini (Google AI) | Document AI | Gợi ý văn bản, trích xuất dữ liệu hóa đơn/chứng từ, hỗ trợ soạn thảo |
+| **API-07** | Vendor Systems | Webhook / Inbound | Tiếp nhận dữ liệu chuyến xe/đơn từ hệ thống đối tác qua API Key |
+| **EMAIL** | Email Service | Notification Mail | Gửi liên kết tra cứu đơn hàng (tracking link), email đặt lại mật khẩu |
+
+---
+
+## 4. Tác vụ định kỳ ngầm (Background Job Worker: JOB-01 đến JOB-06)
+
+Các Background Jobs chạy ngầm trong process Job Worker, quản lý qua `node-cron`:
+
+| Mã Job | Tên Job | Nghiệp vụ SRS liên quan | Tần suất & Mô tả |
+|:-------|:--------|:------------------------|:-----------------|
+| **JOB-01** | File Retention | BR-22 | Bảo lưu chứng từ, ảnh chì, POD của các đơn hàng có khiếu nại đang `PENDING` |
+| **JOB-02** | GPS & Shift Overtime Check | BR-34, MSG65, MSG83 | Cảnh báo tài xế lái xe liên tục quá 4 giờ và cảnh báo hết ca làm việc khi chuyến chưa hoàn tất |
+| **JOB-03** | Order Flagger | BR-25, MSG41, BR-13 | Tự động gắn cờ các đơn hàng Draft quá hạn và đơn Confirmed quá hạn chưa được gán chuyến |
+| **JOB-04** | Trip Status & ETA Tracking | BR-09, BR-12 | Cập nhật tự động tiến độ chuyến đi, đối soát toạ độ GPS và tính toán ETA |
+| **JOB-05** | Contract & License Expiry Check | BR-18, BR-20 | Kiểm tra cảnh báo hợp đồng nhà xe, bằng lái tài xế hoặc giấy tờ sắp hết hạn |
+| **JOB-06** | Auto-lock Expired Trucks | BR-24 | Tự động chuyển trạng thái các xe hết hạn đăng kiểm sang `INACTIVE` |
+
+### 4.1 Mẫu cài đặt Advisory Lock cho Job Worker
+```javascript
+// ✅ BẮT BUỘC dùng PostgreSQL advisory lock khi thực thi job
+const runJobWithLock = async (jobLockId, jobName, jobFunction) => {
+    const client = await pool.connect();
+    try {
+        const { rows } = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [jobLockId]);
+        if (!rows[0].acquired) {
+            console.log(`[Job Worker] ${jobName} đang chạy ở tiến trình khác, bỏ qua lượt này.`);
+            return;
+        }
+        console.log(`[Job Worker] Bắt đầu thực hiện: ${jobName}`);
+        await jobFunction();
+    } catch (err) {
+        console.error(`[Job Worker Error] ${jobName} thất bại:`, err.message);
+    } finally {
+        await client.query('SELECT pg_advisory_unlock($1)', [jobLockId]);
+        client.release();
+    }
+};
+```
+
+---
+
+## 5. Kiến trúc tích hợp Frontend & PWA Driver (FE Architecture)
+
+Frontend được phát triển bằng **Next.js (App Router)** và chia rõ ranh giới giữa `app/` và `src/`:
+
+```
+FE (Next.js, App Router)
+├── app/                      # Cấu trúc Route groups theo phân quyền vai trò
+│   ├── (public)/             # home, news, login, forgot-password, /f/[token] (order form), /t/[token] (tracking)
+│   ├── admin/                # Quản trị người dùng, roles, system logs, cấu hình, dashboard
+│   ├── manager/              # Dashboard, orders, fleet, shifts, vendors, incidents, claims, news
+│   ├── dispatcher/           # Orders, chi tiết đơn, locations, trip assignment, monitoring, incidents, contracts
+│   └── driver/               # My trips, thực thi chuyến, báo cáo sự cố, ca trực (chạy PWA)
+└── src/
+    ├── views, components, layouts/ # Giao diện màn hình và UI components dùng chung
+    ├── contexts, providers/        # Quản lý Auth State, Role Guard, Theme
+    ├── api/apiClient/              # Fetch client gửi credentials, map mã lỗi hệ thống (MSG)
+    └── pwa/                        # Dành riêng cho Driver: Service Worker, IndexedDB outbox queue,
+                                    # Sync Manager (đồng bộ offline), Photo Compressor (nén ảnh trước khi đẩy CDN)
+```
+
+---
+
+## 6. Cấu trúc mã nguồn Backend (Source Tree)
 
 ```
 BE/
-├── config/           # Cấu hình database, Supabase client
-│   ├── db.js         # PostgreSQL Pool (pg) — dùng cho raw SQL query
-│   └── supabase.js   # Supabase Client — dùng cho Supabase SDK query
-├── controllers/      # Xử lý request/response (nhận req, trả res)
-├── services/         # Business logic (xử lý nghiệp vụ, không chạm req/res)
-├── models/           # Data access layer (truy vấn database)
-├── middlewares/      # Middleware (auth, logging, validation, error handler)
-├── routes/           # Định nghĩa API endpoints & gắn middleware
-│   └── index.js      # Route aggregator — gom tất cả sub-routes
-├── server.js         # Entry point — khởi tạo Express app
-├── .env              # Biến môi trường (KHÔNG commit lên git)
+├── config/           # Cấu hình database, Supabase, Prisma client
+│   ├── db.js         # PostgreSQL Pool (pg) — dùng cho raw SQL query phức tạp
+│   ├── supabase.js   # Supabase Client — dùng cho Storage & SDK query
+│   └── prisma.js     # Prisma client (nếu dùng)
+├── controllers/      # Tầng Controller (nhận req, parse input, gọi service, trả res.status.json)
+├── services/         # Tầng Service (xử lý business logic, độc lập hoàn toàn với req/res)
+├── models/           # Data Access Layer (truy vấn DB qua Prisma, pg pool hoặc Supabase)
+├── middlewares/      # Middleware (requireAuth, requireRole, validation, error handler)
+├── routes/           # Định nghĩa endpoint REST /api/v1/ và gắn middleware
+│   └── index.js      # Route aggregator
+├── jobs/             # Các background jobs (JOB-01 đến JOB-06, advisory locks)
+├── prisma/           # Prisma schema & migrations (quản lý 36 bảng)
+├── server.js         # Entry point — khởi tạo Express app (API Process)
+├── .env              # Biến môi trường (TUYỆT ĐỐI KHÔNG commit)
 └── package.json
 ```
 
-### 1.1 Luồng xử lý request
+### 6.1 Luồng xử lý request 3 tầng chuẩn mực
 
 ```
-Client Request
-    → routes/{module}Routes.js     (URL mapping + middleware)
-    → middlewares/                  (auth, validation, role check)
-    → controllers/{module}Controller.js  (parse input, gọi service, trả response)
-    → services/{module}Service.js   (business logic)
-    → models/{module}Model.js       (database query)
-    → Response
+Client Request (Browser / PWA)
+    → routes/{module}Routes.js           (URL mapping /api/v1 + middleware nhóm)
+    → middlewares/                       (requireAuth, requireRole, validateBody)
+    → controllers/{module}Controller.js  (parse input req, gọi service, trả res.status.json)
+    → services/{module}Service.js        (thực thi Business Logic, không đụng req/res)
+    → models/{module}Model.js            (truy vấn Database qua Prisma / pg pool / Supabase)
+    → Response JSON
 ```
 
-### 1.2 Quy tắc phân tầng
+### 6.2 Bảng quy chuẩn phân tầng
 
-| Tầng | Được phép truy cập | KHÔNG được |
-|------|-------------------|-----------|
-| **Route** | Controller, Middleware | Gọi trực tiếp Model/Service |
-| **Controller** | Service, trả `res.json()` | Viết raw SQL, gọi trực tiếp Model |
-| **Service** | Model, các Service khác | Truy cập `req`, `res` |
-| **Model** | `pool` (pg) hoặc `supabase` client | Business logic |
-| **Middleware** | `req`, `res`, `next()` | Business logic phức tạp |
-
-> ⚠️ **Lưu ý thực tế:** `managerController.js` hiện tại đang query trực tiếp bằng `pool.query()` trong controller. Với các module **mới**, hãy tách ra theo đúng 3 tầng Controller → Service → Model. Các module cũ sẽ được refactor dần.
+| Tầng | Được phép truy cập | KHÔNG được phép |
+|:-----|:-------------------|:----------------|
+| **Route** | Controller, Middleware | Gọi trực tiếp Model hoặc Service |
+| **Controller** | Service, trả `res.status().json()` | Viết raw SQL, gọi trực tiếp Model |
+| **Service** | Model, các Service khác tầng Base | Truy cập vào `req`, `res` |
+| **Model** | `prisma`, `pool` (pg) hoặc `supabase` | Chứa business rules |
+| **Middleware** | `req`, `res`, `next()` | Chứa business logic phức tạp |
 
 ---
 
-## 2. Quy tắc đặt tên (Naming Conventions)
+## 7. Quy tắc đặt tên (Naming Conventions)
 
-### 2.1 Files
-
+### 7.1 Files
 | Loại | Convention | Ví dụ |
-|------|-----------|-------|
+|:-----|:-----------|:------|
 | Controller | `{module}Controller.js` | `orderController.js`, `managerController.js` |
 | Service | `{module}Service.js` | `authService.js`, `orderService.js` |
 | Model | `{module}Model.js` | `userModel.js`, `truckModel.js` |
 | Route | `{module}Routes.js` | `authRoutes.js`, `managerRoutes.js` |
 | Middleware | `{feature}Middleware.js` | `authMiddleware.js`, `validationMiddleware.js` |
-| Config | `{name}.js` | `db.js`, `supabase.js` |
+| Job Worker | `{domain}Jobs.js` | `managerJobs.js`, `workerJobs.js` |
+| Config | `{name}.js` | `db.js`, `supabase.js`, `prisma.js` |
 
-### 2.2 Variables & Functions
-
+### 7.2 Variables, Functions & Constants
 ```javascript
 // ✅ camelCase cho variables & functions
 const totalRevenue = 100;
-const findUserById = async (id) => { ... };
+const calculateTripDuration = async (tripId) => { ... };
 
 // ✅ UPPER_SNAKE_CASE cho constants & enums
 const MAX_PAGE_SIZE = 100;
 const ORDER_STATUS = {
     PENDING: 'PENDING',
+    CONFIRMED: 'CONFIRMED',
     IN_PROGRESS: 'IN_PROGRESS',
-    COMPLETED: 'COMPLETED'
+    COMPLETED: 'COMPLETED',
+    CANCELLED: 'CANCELLED'
 };
 
-// ❌ KHÔNG dùng
-const Total_Revenue = 100;    // PascalCase cho biến
-const find_user_by_id = () => {}; // snake_case cho function JS
+// ❌ KHÔNG dùng PascalCase hoặc snake_case cho biến JS
+const Total_Revenue = 100;
+const calculate_duration = () => {};
 ```
 
-### 2.3 API Endpoints
-
+### 7.3 REST API Endpoints (Quy chuẩn `/api/v1`)
 ```
-GET    /api/{module}                   # Lấy danh sách
-GET    /api/{module}/:id               # Lấy chi tiết
-POST   /api/{module}                   # Tạo mới
-PUT    /api/{module}/:id               # Cập nhật toàn bộ
-PATCH  /api/{module}/:id               # Cập nhật một phần
-DELETE /api/{module}/:id               # Xoá
+GET    /api/v1/{module}                # Lấy danh sách (hỗ trợ phân trang page, limit)
+GET    /api/v1/{module}/:id            # Lấy thông tin chi tiết một bản ghi
+POST   /api/v1/{module}                # Tạo mới bản ghi
+PUT    /api/v1/{module}/:id            # Cập nhật toàn bộ bản ghi
+PATCH  /api/v1/{module}/:id            # Cập nhật một phần thuộc tính
+DELETE /api/v1/{module}/:id            # Xoá (Soft delete)
 
-# Hành động đặc biệt: dùng verb sau resource
-PATCH  /api/orders/:id/reassign        # Gán lại đơn hàng
-PATCH  /api/vendors/:id/approve        # Phê duyệt nhà xe
-POST   /api/approvals/:id/decide       # Quyết định bồi thường
+# Hành động đặc biệt: Đặt động từ sau danh từ thực thể
+PATCH  /api/v1/orders/:id/reassign     # Gán lại chuyến / tài xế
+PATCH  /api/v1/vendors/:id/approve     # Phê duyệt nhà xe
+POST   /api/v1/claims/:id/decide       # Quyết định chấp thuận / từ chối khiếu nại
+POST   /api/v1/uploads/sign            # Cấp chữ ký upload ảnh Cloudinary (API-03)
 ```
 
-### 2.4 Database columns
-
+### 7.4 Database Columns & Enums
 ```sql
 -- ✅ snake_case cho tên bảng và cột (PostgreSQL convention)
-created_at, updated_at, deleted_at
-full_name, role_id, password_hash
-tracking_email, tracking_token
+created_at, updated_at, deleted_at, plate_number, inspection_expiry, password_hash
 
 -- ✅ UPPER_SNAKE_CASE cho giá trị enum
-'PENDING', 'ACTIVE', 'ON_TRIP', 'AVAILABLE', 'MAINTENANCE'
+'PENDING', 'ACTIVE', 'ON_TRIP', 'AVAILABLE', 'MAINTENANCE', 'COMPLETED'
 ```
 
 ---
 
-## 3. Patterns & Code Style
+## 8. Patterns & Code Style
 
-### 3.1 Controller Pattern
-
+### 8.1 Controller Pattern
 ```javascript
-// ✅ ĐÚNG — Controller function template
+// ✅ ĐÚNG — Controller chuẩn hóa
 const getOrders = async (req, res) => {
     try {
-        // 1. Parse input từ req
-        const { page = 1, limit = 20, status } = req.query;
+        const { page = 1, limit = 20, status, search } = req.query;
         const userId = req.user.id;
 
-        // 2. Gọi service (hoặc query trực tiếp nếu đơn giản)
-        const result = await orderService.getOrders({ page, limit, status, userId });
+        const result = await orderService.getOrders({
+            page: parseInt(page, 10),
+            limit: parseInt(limit, 10),
+            status,
+            search,
+            userId
+        });
 
-        // 3. Trả response thành công
         return res.status(200).json({
             message: "Success",
             ...result
         });
-
     } catch (error) {
-        // 4. Log lỗi & trả response lỗi
-        console.error("getOrders Error:", error);
-        return res.status(500).json({
-            message: "Internal server error",
-            error: error.message
+        console.error("[OrderController.getOrders Error]:", error);
+        return res.status(error.statusCode || 500).json({
+            message: error.message || "Internal server error",
+            code: error.code || "ERR_INTERNAL"
         });
     }
 };
 ```
 
-### 3.2 Service Pattern
-
+### 8.2 Service Pattern
 ```javascript
-// ✅ ĐÚNG — Service không chạm req/res
+// ✅ ĐÚNG — Service xử lý nghiệp vụ, không nhận req, res
 const getOrders = async ({ page, limit, status, userId }) => {
-    const orders = await orderModel.findOrders({ page, limit, status });
+    const { orders, total } = await orderModel.findOrders({ page, limit, status });
     
-    // Business logic xử lý ở đây
+    // Xử lý Business Logic / Flagging
     const enriched = orders.map(order => ({
         ...order,
-        isOverdue: new Date(order.expected_delivery_time) < new Date()
+        isOverdue: order.expected_delivery_time ? new Date(order.expected_delivery_time) < new Date() : false
     }));
 
-    return { orders: enriched, total: orders.length };
+    return { orders: enriched, total, page, limit };
 };
 ```
 
-### 3.3 Model Pattern (Supabase SDK)
-
+### 8.3 Model Pattern (Prisma / pg Pool / Supabase SDK)
 ```javascript
-// ✅ ĐÚNG — Dùng Supabase Client
-const supabase = require("../config/supabase");
-
-const findUserByIdentifier = async (identifier) => {
-    const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .or(`username.eq.${identifier},email.eq.${identifier}`)
-        .maybeSingle();
-
-    if (error) throw error;
-    return data;
+// 1. Prisma Model (Khuyến nghị cho entity chuẩn)
+const prisma = require("../config/prisma");
+const findTruckById = async (id) => {
+    return await prisma.trucks.findFirst({
+        where: { id, deleted_at: null }
+    });
 };
-```
 
-### 3.4 Model Pattern (Raw SQL — pg Pool)
-
-```javascript
-// ✅ ĐÚNG — Dùng pg Pool với parameterized queries
+// 2. pg Pool (Dùng cho Raw SQL truy vấn phức tạp, nhiều JOIN / Aggregate / Advisory Lock)
 const pool = require("../config/db");
-
-const findOrderById = async (id) => {
-    const result = await pool.query(
-        `SELECT * FROM orders WHERE id = $1 AND deleted_at IS NULL`,
-        [id]
-    );
-    return result.rows[0] || null;
+const findOrderDetailsWithJoins = async (orderId) => {
+    const query = `
+        SELECT o.*, c.name AS customer_name, t.plate_number
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        LEFT JOIN trips tr ON tr.order_id = o.id
+        LEFT JOIN trucks t ON tr.truck_id = t.id
+        WHERE o.id = $1 AND o.deleted_at IS NULL
+    `;
+    const { rows } = await pool.query(query, [orderId]);
+    return rows[0] || null;
 };
 ```
-
-### 3.5 Khi nào dùng `pool` vs `supabase`?
-
-| Dùng `pool` (pg) | Dùng `supabase` SDK |
-|-------------------|-------------------|
-| Query phức tạp với nhiều JOIN | CRUD đơn giản (SELECT, INSERT, UPDATE) |
-| Aggregate functions (SUM, COUNT, GROUP BY) | Cần dùng `.maybeSingle()`, `.single()` |
-| Sub-queries, CTE (WITH ... AS) | Real-time subscriptions |
-| Khi cần control tối đa SQL | Auth / Storage Supabase |
 
 ---
 
-## 4. Route & Middleware Rules
+## 9. Route & Middleware Rules
 
-### 4.1 Route Registration
+### 9.1 Phân quyền truy cập theo vai trò (Role-Based Access Control - RBAC)
+Database lưu trữ role người dùng theo ID số hoặc Enum:
+- `1` = **ADMIN** (Administrator)
+- `2` = **MANAGER** (Quản lý)
+- `3` = **DISPATCHER** (Điều phối viên)
+- `4` = **DRIVER** (Tài xế)
+- `5` = **CUSTOMER** (Khách hàng)
 
 ```javascript
-// ✅ ĐÚNG — Đăng ký route trong routes/{module}Routes.js
 const express = require("express");
 const router = express.Router();
 const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
-const { getOrders, createOrder } = require("../controllers/orderController");
+const orderController = require("../controllers/orderController");
 
-// Middleware cấp route-group (áp dụng cho tất cả route trong file)
+// Bắt buộc đăng nhập
 router.use(requireAuth);
 
-// Route definitions
-router.get("/", getOrders);
-router.post("/", createOrder);
+// Cho phép Manager và Dispatcher tạo/sửa đơn
+router.get("/", orderController.getOrders);
+router.post("/", requireRole(["MANAGER", "DISPATCHER", "ADMIN"]), orderController.createOrder);
+router.delete("/:id", requireRole(["ADMIN"]), orderController.deleteOrder);
 
 module.exports = router;
-```
-
-```javascript
-// ✅ ĐÚNG — Gom route trong routes/index.js
-const router = express.Router();
-router.use("/auth", authRoutes);
-router.use("/orders", orderRoutes);
-module.exports = router;
-```
-
-```javascript
-// ✅ ĐÚNG — Mount trong server.js
-app.use("/api/manager", managerRoutes);  // Route riêng
-app.use("/api", apiRoutes);              // Route gom từ index.js
-```
-
-### 4.2 Role-Based Access Control
-
-```javascript
-// ✅ Role IDs trong database
-// 1 = ADMIN (Administrator)
-// 2 = MANAGER
-// 3 = DISPATCHER
-// 4 = DRIVER
-// 5 = CUSTOMER
-
-// ✅ ĐÚNG — Bảo vệ route theo role
-router.use(requireRole(["MANAGER", "ADMIN"]));
-
-// ✅ ĐÚNG — Bảo vệ route đơn lẻ
-router.delete("/:id", requireRole(["ADMIN"]), deleteUser);
 ```
 
 ---
 
-## 5. Database Rules
+## 10. Database Rules (PostgreSQL 16 & Prisma)
 
-### 5.1 Parameterized Queries (CRITICAL)
-
+### 10.1 Parameterized Queries (BẮT BUỘC ĐỐI VỚI RAW SQL)
 ```javascript
-// ✅ ĐÚNG — Luôn dùng parameterized query ($1, $2, ...)
+// ✅ ĐÚNG — Luôn dùng tham số ($1, $2, ...)
 const result = await pool.query(
     `SELECT * FROM users WHERE id = $1 AND status = $2`,
     [userId, 'ACTIVE']
 );
 
-// ❌ SAI — TUYỆT ĐỐI KHÔNG string interpolation trong SQL
-const result = await pool.query(
-    `SELECT * FROM users WHERE id = '${userId}'`  // SQL INJECTION!
-);
+// ❌ TUYỆT ĐỐI CẤM — Nối chuỗi câu SQL (Nguy cơ SQL Injection)
+const result = await pool.query(`SELECT * FROM users WHERE id = '${userId}'`);
 ```
 
-### 5.2 Soft Delete
-
+### 10.2 Soft Delete
 ```javascript
-// ✅ ĐÚNG — Dùng soft delete (cột deleted_at)
-await pool.query(
-    `UPDATE trucks SET deleted_at = NOW() WHERE id = $1`, [id]
-);
+// ✅ Cập nhật cột deleted_at
+await pool.query(`UPDATE trucks SET deleted_at = NOW() WHERE id = $1`, [id]);
 
-// ✅ ĐÚNG — Luôn filter deleted_at khi SELECT
-await pool.query(
-    `SELECT * FROM trucks WHERE deleted_at IS NULL`
-);
-
-// ❌ SAI — KHÔNG dùng hard delete trừ khi có lý do đặc biệt
-await pool.query(`DELETE FROM trucks WHERE id = $1`, [id]);
+// ✅ Luôn lọc deleted_at IS NULL khi query
+await pool.query(`SELECT * FROM trucks WHERE deleted_at IS NULL`);
 ```
 
-### 5.3 Timestamps
-
-```javascript
-// ✅ Database tự quản lý created_at, updated_at qua trigger/default
-// Chỉ cần set khi cần override
-await pool.query(
-    `INSERT INTO users (username, email, created_at) 
-     VALUES ($1, $2, NOW())`,
-    [username, email]
-);
-```
-
-### 5.4 UUID
-
-```
--- Project dùng UUID v4 cho primary keys
--- PostgreSQL tự generate: DEFAULT gen_random_uuid()
--- Không cần truyền id khi INSERT (trừ khi cần gán cụ thể)
-```
-
-### 5.5 Enum Values (PHẢI đúng chính xác)
-
-```
+### 10.3 Chuẩn hóa ENUM Values (Khớp 100% với SRS)
+```sql
 -- orders.status:
 'PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'FAILED'
 
--- trucks.status:
-'AVAILABLE', 'ON_TRIP', 'MAINTENANCE', 'DECOMMISSIONED'
+-- trips.status:
+'PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'
 
--- users.status:
-'ACTIVE', 'INACTIVE', 'SUSPENDED'
+-- trucks.status:
+'AVAILABLE', 'ON_TRIP', 'MAINTENANCE', 'DECOMMISSIONED', 'INACTIVE'
 
 -- incidents.type:
 'BREAKDOWN', 'ACCIDENT', 'CARGO_DAMAGED', 'DELAY', 'OTHER'
@@ -337,248 +417,60 @@ await pool.query(
 
 -- transport_contracts.status:
 'DRAFT', 'ACTIVE', 'EXPIRED', 'TERMINATED'
-
--- trips.status:
-'PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'
-```
-
-> ⚠️ Kiểm tra enum thật trong database trước khi INSERT/UPDATE. Sai enum sẽ bị PostgreSQL reject với lỗi constraint.
-
----
-
-## 6. Authentication & Authorization
-
-### 6.1 Token Flow
-
-```
-1. Client POST /api/auth/login  →  Server trả cookie httpOnly chứa JWT
-2. Client gọi API khác          →  Cookie tự động gửi kèm (credentials: 'include')
-3. Middleware requireAuth        →  Lấy token từ cookie HOẶC header Authorization
-4. Middleware requireRole        →  Kiểm tra role_id trong JWT payload
-```
-
-### 6.2 JWT Payload
-
-```javascript
-// JWT chứa:
-{
-    id: "uuid-v4",          // user.id
-    username: "manager01",  // user.username
-    role_id: 2,             // user.role_id (Number)
-    iat: 1234567890,        // issued at (tự động)
-    exp: 1234654290         // expires in 1 day (tự động)
-}
-```
-
-### 6.3 Cookie Settings
-
-```javascript
-// ✅ ĐÚNG — Cookie config
-res.cookie("token", token, {
-    httpOnly: true,                                    // Không truy cập qua JS
-    secure: process.env.NODE_ENV === "production",     // HTTPS only in prod
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    maxAge: 24 * 60 * 60 * 1000                        // 1 ngày
-});
 ```
 
 ---
 
-## 7. Error Handling
+## 11. Authentication & Security Rules
 
-### 7.1 HTTP Status Codes
+### 11.1 Token & Cookie Flow
+1. Client `POST /api/v1/auth/login` $\rightarrow$ Server xác thực bcrypt $\rightarrow$ Trả về JWT qua **Cookie httpOnly**.
+2. Client tự động đính kèm cookie (`credentials: 'include'`).
+3. `requireAuth` middleware đọc token từ `req.cookies.token` hoặc `Authorization: Bearer <token>`.
+4. Không bao giờ lưu token trong `localStorage` để chống tấn công XSS.
 
-| Code | Dùng khi |
-|------|---------|
-| `200` | Thành công |
-| `201` | Tạo mới thành công |
-| `400` | Input không hợp lệ (missing fields, wrong format) |
-| `401` | Chưa đăng nhập / Token hết hạn |
-| `403` | Không có quyền truy cập |
-| `404` | Resource không tìm thấy |
-| `409` | Conflict (duplicate username, email) |
-| `500` | Lỗi server / database |
+### 11.2 Bảo mật tuyệt đối (Security Musts & Forbiddens)
+- ✅ Băm mật khẩu bằng `bcrypt` (salt rounds $\ge 10$).
+- ✅ Thiết lập CORS giới hạn domain cụ thể (`http://localhost:3000`, production domain).
+- ❌ **TUYỆT ĐỐI KHÔNG** log password / token / secret key ra console log.
+- ❌ **TUYỆT ĐỐI KHÔNG** trả về `password_hash` trong bất kỳ response JSON nào.
+- ❌ **TUYỆT ĐỐI KHÔNG** commit file `.env` lên Git repository.
 
-### 7.2 Response Format
+---
 
+## 12. Error Handling & Mã thông báo hệ thống (MSG Mapping)
+
+### 12.1 Format Response chuẩn
 ```javascript
-// ✅ ĐÚNG — Response thành công
+// Response thành công
 return res.status(200).json({
     message: "Success",
     data: result
 });
 
-// ✅ ĐÚNG — Response lỗi
+// Response lỗi có gắn mã thông báo hệ thống MSG (theo SRS)
 return res.status(400).json({
-    message: "Validation failed",
-    error: "Email is required"
-});
-
-// ✅ ĐÚNG — Response với danh sách
-return res.status(200).json({
-    message: "Success",
-    orders: [...],
-    total: 100,
-    page: 1,
-    limit: 20
+    message: "Dữ liệu không hợp lệ",
+    code: "MSG41",
+    error: "Đơn hàng đã quá hạn xử lý gán chuyến."
 });
 ```
 
-### 7.3 Error Logging
+---
 
-```javascript
-// ✅ ĐÚNG — Log đủ context
-console.error("getOrders Error:", error);
-console.error(`[OrderController] Failed to get order ${id}:`, error.message);
+## 13. Quy trình tạo mới một Module (Checklist)
 
-// ❌ SAI — Log không đủ thông tin
-console.log(error);
-console.error("error");
-```
+Khi phát triển thêm tính năng hoặc phân hệ mới (ví dụ: `documents`, `claims`), tuân thủ thứ tự:
+
+1. Xác định vị trí phân tầng: **Entry Module**, **Business Module** hay **Base Module**.
+2. Kiểm tra/Tạo migration database: Cập nhật schema trong `prisma/schema.prisma` hoặc bảng PostgreSQL.
+3. Tạo Data Access: `models/{module}Model.js`.
+4. Tạo Business Logic: `services/{module}Service.js`.
+5. Tạo Controller xử lý API: `controllers/{module}Controller.js`.
+6. Định nghĩa Routes và phân quyền: `routes/{module}Routes.js`.
+7. Đăng ký vào route aggregator `routes/index.js` (dưới tiền tố `/api/v1/{module}`).
+8. Viết Background Job tương ứng (nếu có yêu cầu xử lý ngầm) tại `jobs/`.
 
 ---
 
-## 8. Security Rules
-
-### 8.1 Bắt buộc (MUST)
-
-- ✅ **Parameterized queries** cho tất cả database calls — KHÔNG BAO GIỜ nối string
-- ✅ **bcrypt** để hash password (cost factor ≥ 10)
-- ✅ **httpOnly cookie** cho JWT — không lưu token ở localStorage
-- ✅ **Input validation** trước khi query database
-- ✅ **CORS** chỉ cho phép origin cụ thể (`http://localhost:3000`)
-- ✅ **Rate limiting** cho login endpoint (sẽ bổ sung)
-
-### 8.2 Cấm (MUST NOT)
-
-- ❌ KHÔNG log password / token ra console
-- ❌ KHÔNG trả `password_hash` trong bất kỳ API response nào
-- ❌ KHÔNG commit file `.env` lên git
-- ❌ KHÔNG hard-code credentials trong source code
-- ❌ KHÔNG dùng `SELECT *` khi chỉ cần vài cột (trừ model cần full data)
-
----
-
-## 9. Environment Variables (.env)
-
-```env
-# Database
-DATABASE_URL=postgresql://user:pass@host:port/dbname
-
-# Supabase
-SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_ANON_KEY=eyJ...
-
-# Auth
-JWT_SECRET=your-jwt-secret-here
-
-# Server
-PORT=9999
-NODE_ENV=development
-```
-
-> ⚠️ File `.env` đã có trong `.gitignore`. KHÔNG BAO GIỜ commit lên repository.
-
----
-
-## 10. Import Order
-
-```javascript
-// 1. Node.js built-in modules
-const path = require("path");
-
-// 2. Third-party packages
-const express = require("express");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-
-// 3. Project config
-const pool = require("../config/db");
-const supabase = require("../config/supabase");
-
-// 4. Project modules (services, models, middlewares)
-const authService = require("../services/authService");
-const userModel = require("../models/userModel");
-const { requireAuth, requireRole } = require("../middlewares/authMiddleware");
-```
-
----
-
-## 11. Module Export Convention
-
-```javascript
-// ✅ ĐÚNG — Module export ở cuối file
-const functionA = async (req, res) => { ... };
-const functionB = async (req, res) => { ... };
-
-module.exports = {
-    functionA,
-    functionB
-};
-
-// ❌ SAI — export inline
-module.exports.functionA = async (req, res) => { ... };
-exports.functionA = async (req, res) => { ... };
-```
-
----
-
-## 12. Git & Code Review
-
-### 12.1 Branch Naming
-
-```
-feature/{module}-{feature}    # feature/manager-fleet-crud
-bugfix/{module}-{description} # bugfix/auth-token-expired
-hotfix/{description}          # hotfix/cors-production
-```
-
-### 12.2 Commit Message
-
-```
-feat(manager): add fleet management endpoints
-fix(auth): handle numeric role_id comparison
-refactor(orders): extract service layer
-docs(backend): add coding rules document
-```
-
-### 12.3 Checklist trước khi Push
-
-- [ ] Không có `console.log()` dư thừa (chỉ giữ `console.error` cho error)
-- [ ] Không có file test/seed tạm còn sót
-- [ ] Không có credentials/secrets trong code
-- [ ] Tất cả SQL queries dùng parameterized ($1, $2...)
-- [ ] Đã test API bằng Postman / cURL / script
-- [ ] Response format nhất quán (có `message`, data key rõ ràng)
-
----
-
-## 13. Checklist tạo Module mới
-
-Khi tạo module mới (VD: `dispatcher`), tạo theo thứ tự:
-
-```
-1. models/dispatcherModel.js      → Database queries
-2. services/dispatcherService.js   → Business logic
-3. controllers/dispatcherController.js → Request handling
-4. routes/dispatcherRoutes.js      → Endpoint definitions
-5. routes/index.js                 → Đăng ký route mới
-6. (hoặc server.js nếu route riêng)
-```
-
----
-
-## 14. Các công cụ phát triển
-
-| Công cụ | Mục đích |
-|---------|---------|
-| `nodemon` | Auto-restart khi code thay đổi |
-| `dotenv` | Load biến môi trường từ `.env` |
-| Postman / Thunder Client | Test API thủ công |
-| `pg` (node-postgres) | Raw SQL queries |
-| `@supabase/supabase-js` | Supabase SDK queries |
-
----
-
-> 📌 **Tài liệu này sẽ được cập nhật khi project phát triển thêm.**  
-> Mọi thành viên trong team Backend phải đọc và tuân thủ trước khi code.
+> 📌 **Tài liệu này là quy chuẩn bắt buộc cho mọi thành viên trong dự án NEXLOG.** Mọi pull request hoặc commit phải tuân thủ nghiêm ngặt các nguyên tắc trên.
