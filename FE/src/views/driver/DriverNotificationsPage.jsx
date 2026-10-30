@@ -38,10 +38,11 @@ export default function DriverNotificationsPage() {
 
   const handleMarkRead = async (id) => {
     try {
-      await driverApi.markNotificationRead(id);
+      // Optimistic update ngay lập tức trên UI
       setNotifications(prev =>
         prev.map(n => n.id === id ? { ...n, read_time: new Date().toISOString() } : n)
       );
+      await driverApi.markNotificationRead(id);
     } catch (err) {
       console.error("markNotificationRead error:", err);
     }
@@ -89,15 +90,14 @@ export default function DriverNotificationsPage() {
           <p className="text-xs text-slate-400">Cập nhật chuyến xe & duyệt ca (Screen 6.5)</p>
         </div>
         {unreadCount > 0 && (
-          <Button
-            size="small"
-            type="text"
-            loading={markingAll}
+          <button
+            disabled={markingAll}
             onClick={handleMarkAllRead}
-            className="text-xs text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 p-0"
+            className="text-xs bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-200 hover:text-white px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
-            <CheckCheck size={14} /> Đã đọc hết
-          </Button>
+            <CheckCheck size={14} className="text-blue-300" />
+            <span>{markingAll ? "Đang xử lý..." : "Đã đọc hết"}</span>
+          </button>
         )}
       </div>
 
@@ -120,34 +120,62 @@ export default function DriverNotificationsPage() {
               <div
                 key={notif.id}
                 onClick={() => !isRead && handleMarkRead(notif.id)}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                className={`p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${
                   isRead
-                    ? "bg-slate-800/60 border-slate-700/50 text-slate-300"
-                    : "bg-slate-800 border-blue-500/40 shadow-lg shadow-blue-500/5 text-white"
+                    ? "bg-slate-900/60 border-slate-800 text-slate-400 opacity-75 hover:opacity-100"
+                    : "bg-gradient-to-r from-slate-800 to-slate-800/90 border-blue-500/60 shadow-lg shadow-blue-500/10 text-white hover:border-blue-400 ring-1 ring-blue-500/20"
                 }`}
               >
-                <div className="flex items-start gap-3">
-                  <div className={`p-2.5 rounded-xl ${isRead ? "bg-slate-700/50" : "bg-blue-600/20"}`}>
+                {/* Dải màu đánh dấu bên trái cho thông báo chưa đọc */}
+                {!isRead && (
+                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500" />
+                )}
+
+                <div className="flex items-start gap-3 pl-1">
+                  <div
+                    className={`p-2.5 rounded-xl transition-colors ${
+                      isRead ? "bg-slate-800 text-slate-500" : "bg-blue-600/20 text-blue-400"
+                    }`}
+                  >
                     {getNotificationIcon(notif.target_type)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                        {notif.target_type || "Hệ thống"}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`text-[10px] uppercase tracking-wider font-extrabold ${
+                            isRead ? "text-slate-500" : "text-blue-300"
+                          }`}
+                        >
+                          {notif.target_type || "Hệ thống"}
+                        </span>
+                        {!isRead && (
+                          <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 py-0.2 rounded-full font-bold border border-blue-400/30">
+                            MỚI
+                          </span>
+                        )}
+                      </div>
                       {!isRead && (
-                        <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)] animate-pulse shrink-0" />
                       )}
                     </div>
-                    <p className="text-xs font-semibold leading-relaxed mb-2">
+                    <p
+                      className={`text-xs leading-relaxed mb-2 ${
+                        isRead ? "font-normal text-slate-300" : "font-bold text-white"
+                      }`}
+                    >
                       {notif.message}
                     </p>
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
                       <span className="flex items-center gap-1">
-                        <Clock size={12} /> {timeAgo}
+                        <Clock size={12} className={isRead ? "text-slate-500" : "text-blue-400"} />{" "}
+                        {timeAgo}
                       </span>
                       {notif.target_type === "TRIP" && (
-                        <Link href="/driver" className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1">
+                        <Link
+                          href="/driver"
+                          className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"
+                        >
                           Xem chuyến <ArrowRight size={12} />
                         </Link>
                       )}
