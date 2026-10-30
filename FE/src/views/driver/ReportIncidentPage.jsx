@@ -57,7 +57,7 @@ export default function ReportIncidentPage() {
       };
 
       if (isOffline) {
-        queueOfflineAction({
+        await queueOfflineAction({
           type: "REPORT_INCIDENT",
           payload: {
             ...payload,
@@ -65,12 +65,12 @@ export default function ReportIncidentPage() {
           }
         });
         message.warning("Đang mất kết nối mạng. Sự cố đã được lưu tạm trên máy (Offline First) và sẽ tự động gửi ngay khi có mạng (BR-27)!");
+        form.resetFields();
       } else {
         await driverApi.reportIncident(payload);
         message.success("Đã báo sự cố. Điều phối viên đã được báo (MSG21)!");
+        setTimeout(() => router.push("/driver"), 1500);
       }
-
-      setTimeout(() => router.push("/driver"), 1500);
     } catch (err) {
       if (err.errorFields) return;
       message.error(err.message || "Không thể gửi báo cáo sự cố");

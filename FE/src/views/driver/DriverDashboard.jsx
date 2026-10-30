@@ -218,18 +218,30 @@ export default function DriverDashboard() {
           : undefined;
 
       if (isOffline) {
-        queueOfflineAction({
+        await queueOfflineAction({
           type: "ACCEPT_TRIP",
           tripId,
           payload: { clientActionId, phoneTime: new Date().toISOString() },
         });
         message.info("Đã ghi nhận nhận chuyến xe (Ngoại tuyến).");
+        setTripData((prev) => {
+          if (!prev || !prev.trip) return prev;
+          const firstStop =
+            (prev.trip.stops || []).find((s) => s.status !== "Done") ||
+            prev.trip.stops?.[0] ||
+            null;
+          return {
+            ...prev,
+            trip: { ...prev.trip, status: "Accepted" },
+            currentStop: prev.currentStop || firstStop,
+          };
+        });
       } else {
         const res = await driverApi.acceptTrip(tripId, { clientActionId });
         message.success(res.message || "Đã nhận chuyến xe thành công!");
+        await fetchDashboardData();
       }
       setAcceptModalOpen(false);
-      fetchDashboardData();
     } catch (err) {
       message.error(err.message || "Không thể nhận chuyến xe");
     } finally {
@@ -248,7 +260,7 @@ export default function DriverDashboard() {
           : undefined;
 
       if (isOffline) {
-        queueOfflineAction({
+        await queueOfflineAction({
           type: "ARRIVE_STOP",
           tripId,
           stopId,
@@ -259,6 +271,31 @@ export default function DriverDashboard() {
           },
         });
         message.info("Đã ghi nhận đến điểm dừng (Ngoại tuyến).");
+        setTripData((prev) => {
+          if (!prev || !prev.trip) return prev;
+          const updatedStops = (prev.trip.stops || []).map((s) =>
+            s.id === stopId
+              ? {
+                  ...s,
+                  status: "Arrived",
+                  actual_arrival: new Date().toISOString(),
+                }
+              : s,
+          );
+          return {
+            ...prev,
+            trip: {
+              ...prev.trip,
+              status: "In Progress",
+              stops: updatedStops,
+            },
+            currentStop: {
+              ...(prev.currentStop || {}),
+              status: "Arrived",
+              actual_arrival: new Date().toISOString(),
+            },
+          };
+        });
       } else {
         const res = await driverApi.arriveStop(tripId, stopId, {
           ...coords,
@@ -271,8 +308,8 @@ export default function DriverDashboard() {
         } else {
           message.success("Đã ghi nhận đến điểm dừng!");
         }
+        await fetchDashboardData();
       }
-      fetchDashboardData();
     } catch (err) {
       message.error(err.message || "Không thể cập nhật đến nơi");
     } finally {
@@ -303,6 +340,20 @@ export default function DriverDashboard() {
           },
         });
         message.info("Đã ghi nhận bắt đầu bốc/dỡ (Ngoại tuyến).");
+        setTripData((prev) => {
+          if (!prev || !prev.trip) return prev;
+          const updatedStops = (prev.trip.stops || []).map((s) =>
+            s.id === stopId ? { ...s, status: "Loading Started" } : s,
+          );
+          return {
+            ...prev,
+            trip: { ...prev.trip, stops: updatedStops },
+            currentStop: {
+              ...(prev.currentStop || {}),
+              status: "Loading Started",
+            },
+          };
+        });
       } else {
         const res = await driverApi.recordStopEvent(tripId, stopId, {
           eventType: "Loading Started",
@@ -326,8 +377,8 @@ export default function DriverDashboard() {
             `Đã bắt đầu bốc/dỡ hàng. Thời gian chờ: ${res.waitingMinutes || 0} phút.`,
           );
         }
+        await fetchDashboardData();
       }
-      fetchDashboardData();
     } catch (err) {
       message.error(err.message || "Không thể cập nhật bắt đầu bốc/dỡ");
     } finally {
@@ -358,6 +409,23 @@ export default function DriverDashboard() {
           },
         });
         message.info("Đã ghi nhận rời đi (Ngoại tuyến).");
+        setTripData((prev) => {
+          if (!prev || !prev.trip) return prev;
+          const updatedStops = (prev.trip.stops || []).map((s) =>
+            s.id === stopId ? { ...s, status: "Done" } : s,
+          );
+          const nextStop =
+            updatedStops.find((s) => s.status !== "Done") || null;
+          return {
+            ...prev,
+            trip: {
+              ...prev.trip,
+              status: nextStop ? "In Progress" : "Completed",
+              stops: updatedStops,
+            },
+            currentStop: nextStop,
+          };
+        });
       } else {
         await driverApi.recordStopEvent(tripId, stopId, {
           eventType: "Left",
@@ -365,8 +433,8 @@ export default function DriverDashboard() {
           clientActionId,
         });
         message.success("Đã ghi nhận rời đi, tiếp tục hành trình!");
+        await fetchDashboardData();
       }
-      fetchDashboardData();
     } catch (err) {
       message.error(err.message || "Không thể cập nhật rời đi");
     } finally {
@@ -416,13 +484,34 @@ export default function DriverDashboard() {
       };
 
       if (isOffline) {
-        queueOfflineAction({
+        await queueOfflineAction({
           type: "RECORD_PICKUP",
           tripId: tripData.trip.id,
           stopId: activeStopTarget.id,
           payload,
         });
         message.info("Đã lưu bốc hàng và niêm chì (Ngoại tuyến).");
+        setTripData((prev) => {
+          if (!prev || !prev.trip) return prev;
+          const updatedStops = (prev.trip.stops || []).map((s) =>
+            s.id === activeStopTarget.id
+              ? {
+                  ...s,
+                  status: "Loading Done",
+                  loaded_packages: payload.loaded_packages,
+                  loaded_weight: payload.loaded_weight,
+                }
+              : s,
+          );
+          return {
+            ...prev,
+            trip: { ...prev.trip, stops: updatedStops },
+            currentStop: {
+              ...(prev.currentStop || {}),
+              status: "Loading Done",
+            },
+          };
+        });
       } else {
         await driverApi.recordPickup(
           tripData.trip.id,
@@ -433,9 +522,9 @@ export default function DriverDashboard() {
           eventType: "Loading Done",
         });
         message.success("Ghi nhận lấy hàng và niêm chì thành công! (BR-11)");
+        await fetchDashboardData();
       }
       setSealModalOpen(false);
-      fetchDashboardData();
     } catch (err) {
       message.error(err.message || "Lỗi khi ghi nhận bốc hàng");
     } finally {
@@ -492,6 +581,33 @@ export default function DriverDashboard() {
           payload,
         });
         message.info("Đã lưu biên bản giao nhận POD (Ngoại tuyến).");
+        setTripData((prev) => {
+          if (!prev || !prev.trip) return prev;
+          const updatedStops = (prev.trip.stops || []).map((s) =>
+            s.id === activeStopTarget.id
+              ? {
+                  ...s,
+                  status: "Done",
+                  delivered_quantity: payload.delivered_packages,
+                }
+              : s,
+          );
+          const nextStop =
+            updatedStops.find((s) => s.status !== "Done") || null;
+          return {
+            ...prev,
+            hasActiveTrip: true,
+            trip: {
+              ...prev.trip,
+              status: nextStop ? "In Progress" : "Completed",
+              stops: updatedStops,
+            },
+            currentStop: nextStop || {
+              ...activeStopTarget,
+              status: "Done",
+            },
+          };
+        });
       } else {
         const res = await driverApi.recordDelivery(
           tripData.trip.id,
