@@ -68,6 +68,7 @@ export default function DriverNotificationsPage() {
     switch (targetType) {
       case "TRIP":
         return <Truck size={18} className="text-blue-400" />;
+      case "SHIFT":
       case "DRIVER_SHIFT":
         return <Calendar size={18} className="text-emerald-400" />;
       case "ORDER":

@@ -167,6 +167,29 @@ const createTrip = async (payload, userId = 3) => {
     await tripModel.updateTruckStatus(truckId, 'ON_TRIP');
   }
 
+  // 7. Thông báo cho tài xế về chuyến xe mới (UC-14, UC-29, MSG17)
+  if (driverId && allocation_type !== 'VENDOR') {
+    try {
+      const driverModel = require('../models/driverModel');
+      const supabase = require('../config/supabase');
+      const { data: driverProf } = await supabase
+        .from('driver_profiles')
+        .select('user_account_id')
+        .eq('id', driverId)
+        .single();
+      if (driverProf?.user_account_id) {
+        await driverModel.createSystemNotification({
+          userAccountId: driverProf.user_account_id,
+          targetType: 'TRIP',
+          targetId: tripId,
+          message: `Bạn được điều phối chuyến xe mới ${tripCode} (${truck_plate || 'Xe tải'}). Hãy kiểm tra lộ trình và sẵn sàng nhận chuyến! (MSG17)`
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Trip assignment notification warning:', notifErr.message);
+    }
+  }
+
   return {
     id: tripCode,
     raw_id: tripId,
