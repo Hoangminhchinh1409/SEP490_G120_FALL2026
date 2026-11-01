@@ -190,6 +190,15 @@ export function FleetDriverModal({
           <Input placeholder="0912345678" className="h-10 rounded-lg" />
         </Form.Item>
 
+        <Form.Item
+          name="email"
+          label={<span className="font-semibold text-slate-700">Email (Tùy chọn)</span>}
+          rules={[{ type: 'email', message: 'Email không đúng định dạng' }]}
+          extra="Nếu để trống, hệ thống sẽ tự sinh email đăng nhập theo số điện thoại."
+        >
+          <Input placeholder="taixe@nexlog.vn" className="h-10 rounded-lg" />
+        </Form.Item>
+
         <div className="grid grid-cols-2 gap-3">
           <Form.Item
             name="license_number"
@@ -218,6 +227,7 @@ export function FleetDriverModal({
         <Form.Item
           name="expiry"
           label={<span className="font-semibold text-slate-700">Ngày hết hạn GPLX</span>}
+          rules={[{ required: true, message: 'Vui lòng chọn ngày hết hạn GPLX' }]}
         >
           <DatePicker className="w-full h-10 rounded-lg" format="DD/MM/YYYY" placeholder="Chọn ngày hết hạn" />
         </Form.Item>

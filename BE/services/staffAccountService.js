@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
+const supabase = require("../config/supabase");
 const staffAccountModel = require("../models/staffAccountModel");
 
 // Role IDs hợp lệ theo đặc tả BR-28: Chỉ Dispatcher (3) và Driver (4)
@@ -144,6 +145,23 @@ const staffAccountService = {
             status: normalizedStatus,
             order_form_token
         });
+
+        // BR-28: Nếu tạo tài khoản là Driver (role_id = 4), tự động tạo bản ghi hồ sơ tài xế driver_profiles
+        if (targetRoleId === 4 && newAccount?.id) {
+            try {
+                const licNum = `GPLX-${(phone || '').slice(-6) || Math.floor(100000 + Math.random() * 900000)}`;
+                const licExp = new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                await supabase.from('driver_profiles').insert({
+                    user_account_id: newAccount.id,
+                    license_number: licNum,
+                    license_class: 'C',
+                    license_expiry: licExp,
+                    status: 'ACTIVE'
+                });
+            } catch (dpErr) {
+                console.warn('Tạo driver_profiles phụ trợ cảnh báo:', dpErr.message);
+            }
+        }
 
         return {
             ...newAccount,

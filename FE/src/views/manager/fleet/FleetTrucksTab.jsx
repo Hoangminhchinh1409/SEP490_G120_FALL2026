@@ -63,31 +63,30 @@ export default function FleetTrucksTab({
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
               <tr>
                 <th className="py-3 px-4">Biển số &amp; Model</th>
-                <th className="py-3 px-4">Tải trọng</th>
-                <th className="py-3 px-4">Kích thước Thùng (D×R×C)</th>
-                <th className="py-3 px-4">Hạng bằng yêu cầu</th>
-                <th className="py-3 px-4">Hạn đăng kiểm</th>
-                <th className="py-3 px-4">Hạn bảo hiểm</th>
-                <th className="py-3 px-4 text-center">Trạng thái</th>
+                <th className="py-3 px-4">Tải trọng &amp; Thùng</th>
+                <th className="py-3 px-4">Hạn đăng kiểm (TT 02/2023)</th>
+                <th className="py-3 px-4">Bảo dưỡng định kỳ (PM)</th>
+                <th className="py-3 px-4 text-center">Trạng thái &amp; Downtime</th>
                 <th className="py-3 px-4 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center">
+                  <td colSpan={6} className="py-12 text-center">
                     <Spin size="large" />
                   </td>
                 </tr>
               ) : filteredTrucks.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
                     Không tìm thấy xe tải phù hợp
                   </td>
                 </tr>
               ) : (
                 filteredTrucks.map((truck) => {
-                  const isExpired = truck.is_inspection_expired;
+                  const alertLevel = truck.inspection_alert_level;
+                  const daysLeft = truck.days_until_inspection;
                   return (
                     <tr key={truck.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-4">
@@ -103,73 +102,116 @@ export default function FleetTrucksTab({
                       </td>
 
                       <td className="py-3.5 px-4 font-mono font-semibold text-slate-800">
-                        {((truck.payload_kg || truck.allowed_payload || 0) / 1000).toFixed(1)} tấn
-                        <span className="block text-[11px] text-slate-400 font-normal">
-                          ({Number(truck.payload_kg || truck.allowed_payload || 0).toLocaleString('vi-VN')} kg)
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 font-mono text-xs">
-                        {truck.box_length || truck.box_length_cm || 0} × {truck.box_width || truck.box_width_cm || 0} × {truck.box_height || truck.box_height_cm || 0} cm
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-xs">
-                          Hạng {truck.required_license_class || 'C'}
-                        </span>
+                        <div>
+                          {((truck.payload_kg || truck.allowed_payload || 0) / 1000).toFixed(1)} tấn ({Number(truck.payload_kg || truck.allowed_payload || 0).toLocaleString('vi-VN')} kg)
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-normal">
+                          Thùng: {truck.box_length || truck.box_length_cm || 0}×{truck.box_width || truck.box_width_cm || 0}×{truck.box_height || truck.box_height_cm || 0} cm · Hạng {truck.required_license_class || 'C'}
+                        </div>
                       </td>
 
                       <td className="py-3.5 px-4">
                         {truck.inspection_expiry ? (
-                          <span className={`text-xs font-mono inline-flex items-center gap-1 ${
-                            isExpired ? 'text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-200' : 'text-slate-700'
-                          }`}>
-                            {isExpired && <span className="material-symbols-outlined text-[14px]">warning</span>}
-                            {new Date(truck.inspection_expiry).toLocaleDateString('vi-VN')}
-                          </span>
-                        ) : '—'}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 font-mono text-xs text-slate-700">
+                              <span>{new Date(truck.inspection_expiry).toLocaleDateString('vi-VN')}</span>
+                            </div>
+                            {alertLevel === 'EXPIRED' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-100 text-red-700 font-bold text-[10px] border border-red-300">
+                                <span className="material-symbols-outlined text-[13px]">block</span>
+                                Hết hạn (Khóa xe)
+                              </span>
+                            ) : alertLevel === 'URGENT' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-100 text-orange-800 font-bold text-[10px] border border-orange-300">
+                                <span className="material-symbols-outlined text-[13px]">alarm</span>
+                                Còn {daysLeft} ngày (Khẩn)
+                              </span>
+                            ) : alertLevel === 'WARNING' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[10px] border border-amber-300">
+                                Còn {daysLeft} ngày
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-medium text-[10px]">
+                                ✓ An toàn ({daysLeft} ngày)
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
                       </td>
 
-                      <td className="py-3.5 px-4 text-xs font-mono text-slate-600">
-                        {truck.insurance_expiry ? new Date(truck.insurance_expiry).toLocaleDateString('vi-VN') : '—'}
+                      {/* Cột 4: Bảo dưỡng định kỳ (PM) */}
+                      <td className="py-3.5 px-4">
+                        <div className="space-y-1 min-w-[150px]">
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="text-slate-600 font-semibold">{truck.current_odometer_km?.toLocaleString('vi-VN') || 25000} km</span>
+                            {truck.maintenance_status === 'OVERDUE' ? (
+                              <span className="text-[10px] text-red-600 font-bold">Quá hạn BD</span>
+                            ) : truck.maintenance_status === 'DUE_SOON' ? (
+                              <span className="text-[10px] text-orange-600 font-bold">Cần BD</span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-600 font-bold">Đạt chuẩn</span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            Kỳ kế: {truck.next_maintenance_km?.toLocaleString('vi-VN')} km
+                            {truck.km_until_maintenance > 0 && ` (còn ${truck.km_until_maintenance?.toLocaleString('vi-VN')} km)`}
+                          </div>
+                        </div>
                       </td>
 
+                      {/* Cột 5: Trạng thái xe & Giờ gián đoạn sửa chữa (Downtime) */}
                       <td className="py-3.5 px-4 text-center">
-                        <Select
-                          size="small"
-                          value={truck.status}
-                          onChange={(val) => handleQuickStatusChange(truck.id, val)}
-                          disabled={isExpired && truck.status !== 'AVAILABLE'}
-                          className="w-36 text-xs font-semibold"
-                          options={[
-                            { value: 'AVAILABLE', label: '🟢 Sẵn sàng' },
-                            { value: 'ON_TRIP', label: '🚚 Đang chạy' },
-                            { value: 'MAINTENANCE', label: '🔧 Bảo dưỡng' },
-                            { value: 'INACTIVE', label: '⚪ Tạm ngưng' }
-                          ]}
-                        />
+                        {truck.status === 'ON_TRIP' ? (
+                          <Tooltip title="Xe đang thực hiện chuyến đi, không thể chuyển đổi trạng thái thủ công (UC-09)">
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200 cursor-not-allowed">
+                              🚚 Đang chạy
+                            </span>
+                          </Tooltip>
+                        ) : (
+                          <div className="inline-flex flex-col items-center gap-1">
+                            <Select
+                              value={truck.status}
+                              size="small"
+                              className="w-36 text-xs font-semibold"
+                              onChange={(val) => handleQuickStatusChange(truck.id, val)}
+                              options={[
+                                { value: 'AVAILABLE', label: '🟢 Sẵn sàng' },
+                                { value: 'MAINTENANCE', label: '🛠 Bảo dưỡng/Sửa' },
+                                { value: 'INACTIVE', label: '⚪ Ngưng HĐ' }
+                              ]}
+                            />
+                            {truck.status === 'MAINTENANCE' && (
+                              <Tooltip title={`Xưởng: ${truck.service_garage || 'Xưởng bảo dưỡng đối tác'}`}>
+                                <div className="text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-bold flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[12px]">schedule</span>
+                                  Downtime: {truck.downtime_hours || 18}h
+                                </div>
+                              </Tooltip>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleOpenEditTruck(truck)}
-                            className="px-2.5 py-1 rounded-lg text-blue-600 hover:bg-blue-50 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">edit</span>
-                            <span>Sửa</span>
-                          </button>
+                        <div className="inline-flex items-center gap-1">
+                          <Tooltip title="Cập nhật chi tiết xe">
+                            <button
+                              onClick={() => handleOpenEditTruck(truck)}
+                              className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                            </button>
+                          </Tooltip>
 
                           <Popconfirm
-                            title="Xóa xe khỏi danh sách?"
-                            description="Xe sẽ được chuyển sang trạng thái Ngưng hoạt động (Inactive)."
+                            title="Ngưng hoạt động xe này?"
+                            description={`Chuyển xe ${truck.plate_number} sang trạng thái Inactive.`}
                             onConfirm={() => handleDeleteTruck(truck.id)}
-                            okText="Đồng ý"
-                            cancelText="Hủy"
-                            okButtonProps={{ danger: true }}
                           >
-                            <button className="px-2 py-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 text-xs cursor-pointer transition-colors">
-                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            <button className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
+                              <span className="material-symbols-outlined text-[18px]">delete</span>
                             </button>
                           </Popconfirm>
                         </div>

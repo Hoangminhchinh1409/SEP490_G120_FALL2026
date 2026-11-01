@@ -3,14 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { Form, message } from 'antd';
 import dayjs from 'dayjs';
 import { managerApi } from '../../api/managerApi';
-import DriverShiftsPage from './DriverShiftsPage';
 import FleetTrucksTab from './fleet/FleetTrucksTab';
 import FleetDriversTab from './fleet/FleetDriversTab';
 import { FleetTruckModal, FleetDriverModal } from './fleet/FleetModals';
 
 export default function FleetPage() {
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('TRUCKS'); // 'TRUCKS' | 'DRIVERS' | 'SHIFTS'
+  const [activeTab, setActiveTab] = useState('TRUCKS'); // 'TRUCKS' | 'DRIVERS'
 
   // Data states
   const [trucks, setTrucks] = useState([]);
@@ -175,7 +174,8 @@ export default function FleetPage() {
       driverForm.resetFields();
       driverForm.setFieldsValue({
         license_class: 'C',
-        status: 'ACTIVE'
+        status: 'ACTIVE',
+        expiry: dayjs().add(5, 'year')
       });
     }, 0);
   };
@@ -187,6 +187,7 @@ export default function FleetPage() {
       driverForm.resetFields();
       driverForm.setFieldsValue({
         full_name: driver.name || driver.full_name,
+        email: driver.email,
         phone: driver.phone,
         license_number: driver.license_number,
         license_class: driver.license_class || driver.license,
@@ -202,6 +203,7 @@ export default function FleetPage() {
       const payload = {
         name: values.full_name,
         full_name: values.full_name,
+        email: values.email,
         phone: values.phone,
         license_number: values.license_number,
         license_class: values.license_class,
@@ -230,30 +232,45 @@ export default function FleetPage() {
   // KPIs
   const totalTrucks = trucks.length;
   const activeTrucks = trucks.filter((t) => t.status === 'ON_TRIP').length;
-  const expiredTrucks = trucks.filter((t) => t.is_inspection_expired).length;
+  const maintenanceTrucks = trucks.filter((t) => t.status === 'MAINTENANCE').length;
+  const expiredTrucks = trucks.filter((t) => t.inspection_alert_level === 'EXPIRED' || t.is_inspection_expired).length;
+  const dueSoonTrucks = trucks.filter((t) => t.inspection_alert_level === 'URGENT' || t.inspection_alert_level === 'WARNING').length;
+  const dueMaintenanceCount = trucks.filter((t) => t.maintenance_status === 'DUE_SOON' || t.maintenance_status === 'OVERDUE').length;
 
   return (
     <div className="flex flex-col w-full space-y-6">
       {/* Top Banner & Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <div>
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              Quản lý Đội xe &amp; Ca trực Tài xế
+              Quản lý Đội xe &amp; Kỹ thuật bảo dưỡng
             </h1>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold text-xs border border-blue-200">
               <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-              Đang vận hành: {activeTrucks}/{totalTrucks} Xe
+              Đang chạy: {activeTrucks}/{totalTrucks} Xe
             </span>
+            {maintenanceTrucks > 0 && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-800 font-semibold text-xs border border-amber-200">
+                <span className="material-symbols-outlined text-sm">build</span>
+                {maintenanceTrucks} xe nằm xưởng bảo dưỡng
+              </span>
+            )}
             {expiredTrucks > 0 && (
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 text-red-700 font-semibold text-xs border border-red-200">
                 <span className="material-symbols-outlined text-sm">warning</span>
-                {expiredTrucks} xe hết hạn đăng kiểm
+                {expiredTrucks} xe hết hạn đăng kiểm (khóa)
+              </span>
+            )}
+            {dueMaintenanceCount > 0 && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-orange-50 text-orange-700 font-semibold text-xs border border-orange-200">
+                <span className="material-symbols-outlined text-sm">alarm</span>
+                {dueMaintenanceCount} xe đến kỳ bảo dưỡng
               </span>
             )}
           </div>
           <p className="text-sm text-slate-500 mt-1 max-w-3xl">
-            Khai báo thông số kỹ thuật xe tải, giám sát hạn kiểm định, quản lý hồ sơ tài xế và phê duyệt ca làm việc tuần.
+            Giám sát thời hạn đăng kiểm (TT 02/2023), chu kỳ bảo dưỡng định kỳ ODO km và theo dõi thời gian gián đoạn sửa chữa (Downtime).
           </p>
         </div>
 
@@ -281,7 +298,7 @@ export default function FleetPage() {
         </div>
       </div>
 
-      {/* Tabs Chuyển đổi Modules */}
+      {/* Tabs Chuyển đổi Modules: Đội xe & Tài xế */}
       <div className="flex items-center justify-between border-b border-slate-200">
         <div className="flex items-center gap-2">
           <button
@@ -313,18 +330,6 @@ export default function FleetPage() {
               {drivers.length}
             </span>
           </button>
-
-          <button
-            onClick={() => setActiveTab('SHIFTS')}
-            className={`flex items-center gap-2 px-4 py-3 font-semibold text-sm border-b-2 transition-all cursor-pointer relative ${
-              activeTab === 'SHIFTS'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[19px]">calendar_month</span>
-            <span>Lịch ca trực &amp; Phê duyệt</span>
-          </button>
         </div>
       </div>
 
@@ -350,11 +355,6 @@ export default function FleetPage() {
           loading={loading}
           handleOpenEditDriver={handleOpenEditDriver}
         />
-      )}
-
-      {/* TAB 3: LỊCH PHÂN CA & PHÊ DUYỆT CA */}
-      {activeTab === 'SHIFTS' && (
-        <DriverShiftsPage />
       )}
 
       {/* MODAL 1: KHAI BÁO / CHI TIẾT XE TẢI */}

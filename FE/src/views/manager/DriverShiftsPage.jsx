@@ -572,12 +572,9 @@ export default function DriverShiftsPage() {
         )}
 
         {/* Chú thích chân trang chuẩn Figure 45 */}
-        <div className="pt-2 text-xs text-on-surface-variant flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-surface-container/60">
+        <div className="pt-2 text-xs text-on-surface-variant border-t border-surface-container/60">
           <div>
             💡 <strong>Hướng dẫn:</strong> Bấm vào một ô hoặc nút <strong>"+ Thêm ca"</strong> để xếp ca trực mới (ca do Quản lý tạo tự động có hiệu lực). Bấm vào ca đã có để xem chi tiết, chỉnh sửa hoặc xóa ca.
-          </div>
-          <div className="font-mono text-[11px] text-amber-700 font-semibold">
-            Luật 36/2024/QH15 (BR-34): Giới hạn lái xe tối đa 10 giờ/ngày.
           </div>
         </div>
       </div>

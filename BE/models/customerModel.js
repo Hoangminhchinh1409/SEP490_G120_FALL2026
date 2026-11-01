@@ -60,14 +60,14 @@ const seedDefaultContracts = async () => {
   });
   if (customers && customers.length > 0) {
     const seedPayload = customers.map((c, i) => ({
-      contract_number: `NEX/2026/HDVT-${c.company_name.slice(0, 5).toUpperCase().replace(/[^A-Z]/g, '')}-0${i + 1}`,
+      contract_number: `NEX/2026/HDVT-${c.company_name.slice(0, 5).toUpperCase().replace(/[^A-Z]/g, '') || 'CUST'}-0${i + 1}`,
+      contract_type: 'Customer',
       customer_id: c.id,
-      terms: 'Vận chuyển hàng hóa nguyên chuyến có bảo hiểm và kẹp chì điện tử',
-      pricing_conditions: 'Bảng cước cố định năm 2026',
-      compensation_rules: 'Bồi thường 100% giá trị hàng hóa nếu hư hỏng hoặc mất niêm phong',
-      free_waiting_minutes: 60,
-      waiting_fee_per_hour: 150000,
-      cancellation_fee_tiers: { before_4h: 30, after_dispatch: 70 },
+      terms_and_responsibilities: 'Vận chuyển hàng hóa nguyên chuyến có bảo hiểm và kẹp chì điện tử',
+      pricing_conditions: 'Bảng cước cố định năm 2026 theo hợp đồng nguyên tắc',
+      compensation_terms: 'Bồi thường 100% giá trị hàng hóa theo hạn mức nếu hư hỏng hoặc mất seal',
+      free_waiting_time: 60,
+      waiting_fee_rate: 150000,
       liability_cap: 200000000,
       signed_on: new Date('2026-01-01'),
       valid_from: new Date('2026-01-01'),

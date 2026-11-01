@@ -1,4 +1,5 @@
 const supabase = require('../config/supabase');
+const bcrypt = require('bcrypt');
 const fleetService = require('../services/fleetService');
 const staffAccountService = require('../services/staffAccountService');
 
@@ -502,53 +503,153 @@ const deleteTruck = async (req, res) => {
 
 const createDriver = async (req, res) => {
   try {
-    const { name, full_name, phone, license_number, license_class, expiry } = req.body;
-    const driverName = full_name || name;
+    const { name, full_name, email, phone, license_number, license_class, expiry, password } = req.body;
+    const driverName = (full_name || name || '').trim();
+    const cleanPhone = (phone || '').trim();
 
-    if (!driverName || !phone) {
+    if (!driverName || !cleanPhone) {
       return res.status(400).json({ message: 'Họ tên và số điện thoại là bắt buộc (MSG02).' });
     }
 
-    const username = `driver_${phone.slice(-4)}_${Math.floor(Math.random() * 100)}`;
-    const { data: newUser, error: userErr } = await supabase
+    // 1. Kiểm tra xem đã có user nào theo SĐT hoặc Email chưa
+    let userId = null;
+    let finalUsername = '';
+    let finalEmail = '';
+    let finalFullName = driverName;
+    let finalPhone = cleanPhone;
+
+    const { data: userByPhone } = await supabase
       .from('users')
-      .insert({
-        username,
-        full_name: driverName,
-        phone,
-        role_id: 4,
-        status: 'ACTIVE'
-      })
-      .select('id, full_name, phone, username')
-      .single();
+      .select('id, full_name, phone, username, email, role_id')
+      .eq('phone', cleanPhone)
+      .maybeSingle();
 
-    if (userErr) throw userErr;
+    let existingUser = userByPhone;
+    if (!existingUser && email && email.trim()) {
+      const { data: userByEmail } = await supabase
+        .from('users')
+        .select('id, full_name, phone, username, email, role_id')
+        .eq('email', email.trim().toLowerCase())
+        .maybeSingle();
+      if (userByEmail) existingUser = userByEmail;
+    }
 
-    const licNum = license_number || `GPLX-${phone.slice(-6)}`;
-    const { data: newProfile, error: profileErr } = await supabase
+    if (existingUser) {
+      userId = existingUser.id;
+      finalUsername = existingUser.username;
+      finalEmail = existingUser.email;
+      finalFullName = existingUser.full_name || driverName;
+      finalPhone = existingUser.phone || cleanPhone;
+
+      // Cập nhật vai trò thành Driver (4) nếu chưa phải
+      if (existingUser.role_id !== 4) {
+        await supabase.from('users').update({ role_id: 4 }).eq('id', userId);
+      }
+    } else {
+      // Tạo Username duy nhất
+      const phoneDigits = cleanPhone.replace(/\D/g, '').slice(-4) || Math.floor(Math.random() * 1000);
+      let candidateUsername = `driver_${phoneDigits}_${Math.floor(10 + Math.random() * 90)}`;
+      const { data: dupUser } = await supabase.from('users').select('id').eq('username', candidateUsername).maybeSingle();
+      if (dupUser) {
+        candidateUsername = `driver_${phoneDigits}_${Date.now().toString().slice(-4)}`;
+      }
+      finalUsername = candidateUsername;
+
+      // Tạo Email hợp lệ không được null và không được trùng
+      if (email && email.trim()) {
+        finalEmail = email.trim().toLowerCase();
+      } else {
+        finalEmail = `${finalUsername}@nexlog.vn`;
+      }
+      const { data: dupEmail } = await supabase.from('users').select('id').eq('email', finalEmail).maybeSingle();
+      if (dupEmail) {
+        finalEmail = `driver_${phoneDigits}_${Date.now()}@nexlog.vn`;
+      }
+
+      // Băm mật khẩu mặc định (bắt buộc vì password_hash NOT NULL)
+      const rawPassword = password || 'Nexlog@2026';
+      const password_hash = await bcrypt.hash(rawPassword, 10);
+
+      const { data: newUser, error: userErr } = await supabase
+        .from('users')
+        .insert({
+          username: finalUsername,
+          password_hash,
+          full_name: driverName,
+          email: finalEmail,
+          phone: cleanPhone,
+          role_id: 4,
+          status: 'ACTIVE'
+        })
+        .select('id, full_name, phone, username, email')
+        .single();
+
+      if (userErr) throw userErr;
+      userId = newUser.id;
+    }
+
+    // 2. Kiểm tra và thêm / cập nhật hồ sơ driver_profiles
+    const { data: existingProfile } = await supabase
       .from('driver_profiles')
-      .insert({
-        user_account_id: newUser.id,
-        license_number: licNum,
-        license_class: license_class || 'C',
-        license_expiry: expiry ? new Date(expiry).toISOString() : null,
-        status: 'ACTIVE'
-      })
-      .select('*')
-      .single();
+      .select('id')
+      .eq('user_account_id', userId)
+      .maybeSingle();
 
-    if (profileErr) throw profileErr;
+    const licNum = (license_number || '').trim() || `GPLX-${cleanPhone.slice(-6)}`;
+    const licClass = license_class || 'C';
+    // license_expiry is NOT NULL in database: use provided date or default to 5 years in future
+    const licExpiry = expiry 
+      ? new Date(expiry).toISOString().split('T')[0] 
+      : new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    let profileResult = null;
+    if (existingProfile) {
+      const { data: updatedProfile, error: updateProfileErr } = await supabase
+        .from('driver_profiles')
+        .update({
+          license_number: licNum,
+          license_class: licClass,
+          license_expiry: licExpiry,
+          status: 'ACTIVE',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingProfile.id)
+        .select('*')
+        .single();
+
+      if (updateProfileErr) throw updateProfileErr;
+      profileResult = updatedProfile;
+    } else {
+      const { data: newProfile, error: profileErr } = await supabase
+        .from('driver_profiles')
+        .insert({
+          user_account_id: userId,
+          license_number: licNum,
+          license_class: licClass,
+          license_expiry: licExpiry,
+          status: 'ACTIVE'
+        })
+        .select('*')
+        .single();
+
+      if (profileErr) throw profileErr;
+      profileResult = newProfile;
+    }
 
     return res.status(201).json({
       message: 'Thêm tài xế mới thành công (MSG07).',
       driver: {
-        id: newProfile.id,
-        name: newUser.full_name,
-        phone: newUser.phone,
-        license: newProfile.license_class,
-        license_number: newProfile.license_number,
-        expiry: newProfile.license_expiry,
-        status: newProfile.status
+        id: profileResult.id,
+        user_account_id: userId,
+        name: finalFullName,
+        phone: finalPhone,
+        username: finalUsername,
+        email: finalEmail,
+        license: profileResult.license_class,
+        license_class: profileResult.license_class,
+        license_number: profileResult.license_number,
+        expiry: profileResult.license_expiry,
+        status: profileResult.status
       }
     });
   } catch (error) {
@@ -560,7 +661,7 @@ const createDriver = async (req, res) => {
 const updateDriverProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    const { license_number, license_class, license_expiry, status, full_name, phone } = req.body;
+    const { license_number, license_class, license_expiry, status, full_name, phone, email } = req.body;
 
     const profileUpdates = { updated_at: new Date().toISOString() };
     if (license_number !== undefined) profileUpdates.license_number = license_number;
@@ -574,15 +675,16 @@ const updateDriverProfile = async (req, res) => {
       .from('driver_profiles')
       .update(profileUpdates)
       .eq('id', id)
-      .select('*, users:user_account_id(id, full_name, phone)')
+      .select('*')
       .single();
 
     if (pErr) throw pErr;
 
-    if ((full_name || phone) && updatedProfile.user_account_id) {
+    if ((full_name || phone || email) && updatedProfile.user_account_id) {
       const userUpdates = { updated_at: new Date().toISOString() };
       if (full_name) userUpdates.full_name = full_name;
       if (phone) userUpdates.phone = phone;
+      if (email) userUpdates.email = email;
 
       await supabase
         .from('users')

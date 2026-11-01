@@ -49,6 +49,17 @@ export const managerApi = {
     }
   },
 
+  // Lấy danh sách tài xế đội xe
+  getFleetDrivers: async () => {
+    try {
+      const data = await fetchWithAuth('/manager/vehicles');
+      return data.drivers || [];
+    } catch (error) {
+      console.error('managerApi.getFleetDrivers Error:', error);
+      return [];
+    }
+  },
+
   // 3. Lấy danh sách đơn hàng & điều phối viên
   getOrders: async () => {
     try {

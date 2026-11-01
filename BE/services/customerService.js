@@ -16,8 +16,8 @@ const formatContract = (c) => {
     tax_code: taxCode,
     start_date: c.valid_from || '2026-01-01',
     end_date: c.valid_to || '2026-12-31',
-    free_waiting_mins: c.free_waiting_minutes || 60,
-    waiting_fee_per_hour: c.waiting_fee_per_hour || 150000,
+    free_waiting_mins: c.free_waiting_time || c.free_waiting_minutes || 60,
+    waiting_fee_per_hour: c.waiting_fee_rate || c.waiting_fee_per_hour || 150000,
     cancellation_tiers: 'Hủy trước 4h: Phạt 30% cước | Sau khi điều xe: Phạt 70% cước',
     liability_cap_vnd: c.liability_cap || 200000000,
     liability_cap_type: '100% giá trị khai báo có seal nguyên chì',
@@ -39,15 +39,17 @@ const createContract = async (payload) => {
 
   const contractData = {
     contract_number: payload.contract_no || `NEX/2026/HDVT-${Math.floor(100 + Math.random() * 900)}`,
+    contract_type: isVendor ? 'Vendor' : 'Customer',
     customer_id: !isVendor ? (payload.partner_id || 1) : null,
     vendor_id: isVendor ? (payload.partner_id || 1) : null,
-    terms: 'Hợp đồng vận chuyển tiêu chuẩn dịch vụ ALS Logistics',
-    free_waiting_minutes: parseInt(payload.free_waiting_mins, 10) || 60,
-    waiting_fee_per_hour: parseInt(payload.waiting_fee_per_hour, 10) || 150000,
+    terms_and_responsibilities: payload.terms || 'Hợp đồng vận chuyển tiêu chuẩn dịch vụ ALS Logistics',
+    pricing_conditions: 'Bảng cước cố định năm 2026',
+    compensation_terms: 'Bồi thường theo hạn mức trách nhiệm hợp đồng',
+    free_waiting_time: parseInt(payload.free_waiting_mins, 10) || 60,
+    waiting_fee_rate: parseInt(payload.waiting_fee_per_hour, 10) || 150000,
     liability_cap: parseInt(payload.liability_cap_vnd, 10) || 200000000,
     valid_from: payload.start_date || '2026-01-01',
     valid_to: payload.end_date || '2026-12-31',
-    signed_on: payload.start_date || '2026-01-01',
     status: payload.status || 'ACTIVE'
   };
 
