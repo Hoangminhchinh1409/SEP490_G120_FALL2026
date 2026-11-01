@@ -412,8 +412,22 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         .map(it => `${it.cargo_name}${it.package_count ? ` (${it.package_count} ${it.package_unit || 'kiện'})` : ''}`)
         .join(', ');
 
+      let currentDispatcherId = null;
+      try {
+        const cached = typeof window !== 'undefined' ? window.sessionStorage.getItem('nexlog_cached_user') : null;
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.id && !isNaN(Number(parsed.id))) {
+            currentDispatcherId = Number(parsed.id);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
       onSubmit({
         ...fieldValues,
+        dispatcher_id: currentDispatcherId,
         required_pickup_date: shippingDirection === 'IMPORT'
           ? (fieldValues.flight_arrival_date || fieldValues.required_pickup_date || null)
           : (fieldValues.required_pickup_date || null),

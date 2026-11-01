@@ -186,36 +186,57 @@ export default function OrdersWorkloadPage() {
                   <th className="py-3 px-4">Điều phối</th>
                   <th className="py-3 px-4 text-center">Đơn đang xử lý</th>
                   <th className="py-3 px-4 text-center">Đơn bị gắn cờ</th>
+                  <th className="py-3 px-4 text-center">Tình trạng tải</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-container text-xs">
-                {dispatchers.map((d) => (
-                  <tr key={d.id} className="hover:bg-surface-container-low/50 transition-colors">
-                    <td className="py-3.5 px-4 font-bold text-primary">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                          {d.full_name?.charAt(0) || 'Đ'}
+                {dispatchers.map((d) => {
+                  const isOverloaded = d.active_orders >= 5 || d.flagged_orders >= 2;
+                  const isLeastLoaded = d.active_orders <= 1 && d.flagged_orders === 0;
+
+                  return (
+                    <tr key={d.id} className="hover:bg-surface-container-low/50 transition-colors">
+                      <td className="py-3.5 px-4 font-bold text-primary">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                            {d.full_name?.charAt(0) || 'Đ'}
+                          </div>
+                          <div>
+                            <div>{d.full_name || d.username}</div>
+                            <div className="text-[10px] text-on-surface-variant font-mono">{d.username}</div>
+                          </div>
                         </div>
-                        <div>
-                          <div>{d.full_name || d.username}</div>
-                          <div className="text-[10px] text-on-surface-variant font-mono">{d.username}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-center font-extrabold text-primary">
-                      {d.active_orders}
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      {d.flagged_orders > 0 ? (
-                        <span className="inline-block px-2.5 py-0.5 rounded-full bg-error/10 text-error font-black">
-                          {d.flagged_orders}
-                        </span>
-                      ) : (
-                        <span className="text-on-surface-variant font-medium">0</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-extrabold text-primary">
+                        {d.active_orders}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {d.flagged_orders > 0 ? (
+                          <span className="inline-block px-2.5 py-0.5 rounded-full bg-error/10 text-error font-black">
+                            {d.flagged_orders}
+                          </span>
+                        ) : (
+                          <span className="text-on-surface-variant font-medium">0</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {isOverloaded ? (
+                          <Tag color="red" className="font-bold text-[10px] m-0">
+                            Quá tải / Đọng đơn
+                          </Tag>
+                        ) : isLeastLoaded ? (
+                          <Tag color="green" className="font-bold text-[10px] m-0">
+                            Ít đơn (Ưu tiên nhận)
+                          </Tag>
+                        ) : (
+                          <Tag color="blue" className="font-medium text-[10px] m-0">
+                            Bình thường
+                          </Tag>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
