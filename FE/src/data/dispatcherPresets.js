@@ -532,10 +532,19 @@ export const VEHICLE_SPECS = [
 ];
 
 export const getVehicleSpecByKey = (vehicleKey) => {
-  return (
-    VEHICLE_SPECS.find(v => v.key === vehicleKey) ||
-    VEHICLE_SPECS[1] // Mặc định TRUCK_2.5T
-  );
+  if (!vehicleKey) return VEHICLE_SPECS[1];
+  const normalized = String(vehicleKey).trim().toUpperCase();
+  const directMatch = VEHICLE_SPECS.find(v => v.key.toUpperCase() === normalized);
+  if (directMatch) return directMatch;
+
+  // Hỗ trợ cả các dạng key như '1.25T', '2.5T', '3.5T', '5T', '8T', '15T'
+  const keyWithPrefix = `TRUCK_${normalized}`;
+  const prefixMatch = VEHICLE_SPECS.find(v => v.key.toUpperCase() === keyWithPrefix);
+  if (prefixMatch) return prefixMatch;
+
+  // Hỗ trợ tìm kiếm theo số tấn trong chuỗi: '3.5', '1.25', '2.5'
+  const numericMatch = VEHICLE_SPECS.find(v => v.key.includes(normalized) || v.label.includes(normalized));
+  return numericMatch || VEHICLE_SPECS[1];
 };
 
 /**

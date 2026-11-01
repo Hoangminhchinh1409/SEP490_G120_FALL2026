@@ -142,19 +142,21 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
     let totalCount = 0;
 
     cargoItems.forEach(item => {
-      const w = Number(item.weight) || 0;
+      const unitW = Number(item.weight) || 0;
       const count = Number(item.package_count) || 1;
-      totalActual += w;
+      const totalItemWeight = unitW * count;
+      totalActual += totalItemWeight;
       totalCount += count;
 
       if (item.cargo_type === 'BULK') {
-        totalChargeable += w;
+        totalChargeable += totalItemWeight;
       } else {
         const l = Number(item.length_cm) || 0;
         const wid = Number(item.width_cm) || 0;
         const h = Number(item.height_cm) || 0;
-        const vol = (l * wid * h) / 5000;
-        totalChargeable += Math.max(w, vol);
+        const unitVol = (l * wid * h) / 5000;
+        const totalItemVolWeight = unitVol * count;
+        totalChargeable += Math.max(totalItemWeight, totalItemVolWeight);
       }
     });
 

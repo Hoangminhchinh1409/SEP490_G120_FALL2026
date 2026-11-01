@@ -193,14 +193,19 @@ export function ConsultationCargoSection({
                 </div>
 
                 <div>
-                  <div className="text-[11px] font-medium text-gray-600 mb-1">Trọng lượng (kg) *</div>
+                  <div className="text-[11px] font-medium text-gray-600 mb-1">Trọng lượng (kg/kiện) *</div>
                   <InputNumber 
                     min={0.1} 
                     value={item.weight} 
                     onChange={(val) => handleUpdateCargoItem(item.id, 'weight', val)}
-                    placeholder="Nhập kg..."
+                    placeholder="VD: 150 kg/kiện"
                     className="w-full text-xs font-semibold text-emerald-700"
                   />
+                  {Number(item.package_count) > 1 && Number(item.weight) > 0 && (
+                    <div className="text-[10px] text-gray-500 mt-0.5">
+                      Tổng lô: <b className="text-emerald-700">{((Number(item.package_count) || 1) * Number(item.weight)).toLocaleString('vi-VN')} kg</b>
+                    </div>
+                  )}
                 </div>
               </div>
 

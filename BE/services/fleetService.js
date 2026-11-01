@@ -21,17 +21,18 @@ const getTruckCategory = (payloadKg) => {
 const getAllTrucks = async () => {
   const trucks = await fleetModel.findAllTrucks();
   return (trucks || []).map(t => {
-    const volM3 = (t.box_length_cm && t.box_width_cm && t.box_height_cm)
-      ? parseFloat(((t.box_length_cm * t.box_width_cm * t.box_height_cm) / 1000000).toFixed(1))
-      : parseFloat(((t.payload_kg * 0.0068) || 9.5).toFixed(1));
+    const payload = t.allowed_payload || t.payload_kg || 1250;
+    const volM3 = (t.box_length && t.box_width && t.box_height)
+      ? parseFloat(((t.box_length * t.box_width * t.box_height)).toFixed(1))
+      : parseFloat(((payload * 0.0068) || 9.5).toFixed(1));
 
     return {
       key: t.id.toString(),
       id: t.id,
       plate: t.plate_number,
-      model: getTruckModelName(t.payload_kg),
-      category: getTruckCategory(t.payload_kg),
-      payload_kg: t.payload_kg || 1250,
+      model: t.model || getTruckModelName(payload),
+      category: getTruckCategory(payload),
+      payload_kg: payload,
       volume_m3: volM3,
       box_length_cm: t.box_length_cm,
       box_width_cm: t.box_width_cm,

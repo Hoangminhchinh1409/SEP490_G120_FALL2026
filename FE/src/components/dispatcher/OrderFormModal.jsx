@@ -216,19 +216,20 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
 
     cargoItems.forEach(it => {
       const cnt = Number(it.package_count) || 1;
-      const w = Number(it.weight) || 0;
+      const unitW = Number(it.weight) || 0;
+      const totalItemWeight = unitW * cnt;
       totalCount += cnt;
-      actualWeight += w;
+      actualWeight += totalItemWeight;
 
       if (it.cargo_type === 'BULK') {
-        chargeableWeight += w;
+        chargeableWeight += totalItemWeight;
       } else {
         const l = Number(it.length_cm) || 0;
         const width = Number(it.width_cm) || 0;
         const h = Number(it.height_cm) || 0;
         const volCbm = (l * width * h * cnt) / 1000000;
         const dimWeight = volCbm * 167;
-        chargeableWeight += Math.max(w, dimWeight);
+        chargeableWeight += Math.max(totalItemWeight, dimWeight);
       }
     });
 

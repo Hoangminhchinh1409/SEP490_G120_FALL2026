@@ -557,19 +557,32 @@ export default function OrderOverviewTab({
             Danh mục các loại hàng trong đơn ({order.items.length} loại)
           </span>
           <div className="space-y-2">
-            {order.items.map((item, idx) => (
-              <div key={idx} className="p-2.5 bg-white rounded-lg border border-gray-150 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5">
-                <div>
-                  <span className="font-bold text-gray-800">{idx + 1}. {item.name || item.cargo_name}</span>
-                  <span className="text-[10px] text-gray-400 ml-1.5">({item.category || item.cargo_type || 'GENERAL'})</span>
+            {order.items.map((item, idx) => {
+              const count = Number(item.package_count || item.quantity) || 1;
+              const unitW = Number(item.weight) || 0;
+              const totalW = unitW * count;
+              const unit = item.package_unit || item.package_type || 'Kiện';
+              const l = item.length_cm || item.length || 0;
+              const w = item.width_cm || item.width || 0;
+              const h = item.height_cm || item.height || 0;
+
+              return (
+                <div key={idx} className="p-2.5 bg-white rounded-lg border border-gray-150 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5">
+                  <div>
+                    <span className="font-bold text-gray-800">{idx + 1}. {item.name || item.cargo_name}</span>
+                    <span className="text-[10px] text-gray-400 ml-1.5">({item.category || item.cargo_type || 'GENERAL'})</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-gray-600 font-mono text-[11px]">
+                    <span>SL: <b>{count} {unit}</b></span>
+                    <span>Kích thước: <b>{l}x{w}x{h} cm</b></span>
+                    <span>
+                      Trọng lượng: <b className="text-indigo-600">{totalW.toLocaleString('vi-VN')} kg</b>
+                      {count > 1 && <span className="text-gray-400 font-normal"> ({unitW} kg/{unit})</span>}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-gray-600 font-mono text-[11px]">
-                  <span>SL: <b>{item.quantity || 1} {item.package_type || 'Kiện'}</b></span>
-                  <span>Kích thước: <b>{item.length || 0}x{item.width || 0}x{item.height || 0} cm</b></span>
-                  <span>Trọng lượng: <b className="text-indigo-600">{item.weight || 0} kg</b></span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

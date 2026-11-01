@@ -30,7 +30,9 @@ export default function OrderDocumentsTab({
   handleRejectDoc,
   triggerUploadDoc,
   handleConfirmAllDocuments,
-  confirmingDocs
+  confirmingDocs,
+  handleScanCustomsFromDocs,
+  scanningCustoms
 }) {
   const rejectedDocs = documents.filter(d => d.status === 'REJECTED');
   const hasRejectedDocs = rejectedDocs.length > 0;
@@ -352,17 +354,32 @@ export default function OrderDocumentsTab({
         </div>
       )}
 
-      {/* Footer thông tin tệp tải lên */}
+      {/* Footer thông tin tệp tải lên & Nút Tự động Scan Tờ khai hải quan sau khi ký hợp đồng */}
       {!isClosed && (
         <div className="pt-2 flex justify-between items-center flex-wrap gap-2">
-          <span className="text-xs text-gray-500">
-            Đã nộp tệp: <b>{documents.filter(d => d.file !== 'Chờ tải lên').length}/{documents.length}</b> tệp
-            {hasRejectedDocs && (
-              <span className="text-red-600 font-semibold ml-2">
-                • Bị từ chối: {rejectedDocs.length} tệp (chờ khách upload lại)
-              </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500">
+              Đã nộp tệp: <b>{documents.filter(d => d.file !== 'Chờ tải lên').length}/{documents.length}</b> tệp
+              {hasRejectedDocs && (
+                <span className="text-red-600 font-semibold ml-2">
+                  • Bị từ chối: {rejectedDocs.length} tệp (chờ khách upload lại)
+                </span>
+              )}
+            </span>
+
+            {/* Nút scan tờ khai hải quan tự động sau khi khách đã ký hợp đồng */}
+            {(order.web_workflow?.stage === 'CONTRACT_SIGNED' || order.status === 'READY_FOR_PLANNING') && (
+              <Button
+                type="primary"
+                icon={<Sparkles size={13} className="text-amber-300" />}
+                loading={scanningCustoms}
+                onClick={handleScanCustomsFromDocs}
+                className="bg-indigo-700 hover:bg-indigo-600 text-white font-bold text-xs h-8 rounded-lg shadow-sm"
+              >
+                Tự động scan chứng từ &amp; Điền Tờ khai hải quan (Gemini AI)
+              </Button>
             )}
-          </span>
+          </div>
 
           {isDocsApprovedStage && (
             <Tag color="success" className="py-1.5 px-3 text-xs font-bold rounded-lg flex items-center gap-1.5 m-0">

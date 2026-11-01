@@ -34,38 +34,56 @@ const INTERNAL_FLEET_OPTIONS = [
   {
     value: '29A-112.34 - 1.250 kg - Sẵn sàng',
     plate: '29A-112.34',
-    specKey: '1.25T',
-    label: '29A-112.34 · Xe 1.25 tấn (3,2×1,65×1,7m) · 1.250 kg · Sẵn sàng'
+    specKey: 'TRUCK_1.25T',
+    label: '29A-112.34 · Xe 1.25 tấn (3,1×1,6×1,6m) · 1.250 kg · Sẵn sàng'
+  },
+  {
+    value: '29A-115.68 - 1.250 kg - Sẵn sàng',
+    plate: '29A-115.68',
+    specKey: 'TRUCK_1.25T',
+    label: '29A-115.68 · Xe 1.25 tấn (3,1×1,6×1,6m) · 1.250 kg · Sẵn sàng'
   },
   {
     value: '29C-456.78 - 2.500 kg - Sẵn sàng',
     plate: '29C-456.78',
-    specKey: '2.5T',
+    specKey: 'TRUCK_2.5T',
     label: '29C-456.78 · Xe 2.5 tấn (4,2×1,9×1,9m) · 2.500 kg · Sẵn sàng'
+  },
+  {
+    value: '29C-458.99 - 2.500 kg - Sẵn sàng',
+    plate: '29C-458.99',
+    specKey: 'TRUCK_2.5T',
+    label: '29C-458.99 · Xe 2.5 tấn (4,2×1,9×1,9m) · 2.500 kg · Sẵn sàng'
   },
   {
     value: '29H-995.72 - 3.500 kg - Sẵn sàng',
     plate: '29H-995.72',
-    specKey: '3.5T',
+    specKey: 'TRUCK_3.5T',
     label: '29H-995.72 · Xe 3.5 tấn (5,0×2,05×2,05m) · 3.500 kg · Sẵn sàng'
+  },
+  {
+    value: '29H-996.88 - 3.500 kg - Sẵn sàng',
+    plate: '29H-996.88',
+    specKey: 'TRUCK_3.5T',
+    label: '29H-996.88 · Xe 3.5 tấn (5,0×2,05×2,05m) · 3.500 kg · Sẵn sàng'
   },
   {
     value: '29H-767.99 - 5.000 kg - Sẵn sàng',
     plate: '29H-767.99',
-    specKey: '5T',
+    specKey: 'TRUCK_5T',
     label: '29H-767.99 · Xe 5 tấn (6,2×2,2×2,2m) · 5.000 kg · Sẵn sàng'
   },
   {
     value: '29H-888.68 - 8.000 kg - Sẵn sàng',
     plate: '29H-888.68',
-    specKey: '8T',
+    specKey: 'TRUCK_8T',
     label: '29H-888.68 · Xe 8 tấn (7,8×2,35×2,4m) · 8.000 kg · Sẵn sàng'
   },
   {
     value: '29R-150.99 - 15.000 kg - Sẵn sàng',
     plate: '29R-150.99',
-    specKey: '15T',
-    label: '29R-150.99 · Xe 15 tấn (9,6×2,4×2,6m) · 15.000 kg · Sẵn sàng'
+    specKey: 'CONTAINER_20',
+    label: '29R-150.99 · Cont 20ft (5,9×2,35×2,39m) · 12.000 kg · Sẵn sàng'
   }
 ];
 
@@ -103,13 +121,34 @@ export default function TripAssignmentModal({
     });
   }, [chargeableWeight, actualWeight, order]);
 
+  // Xe đã chốt của đơn (ưu tiên agreed_vehicle_type -> proposed_vehicle_type -> vehicle_type_required)
+  const agreedVehicleSpecKey = useMemo(() => {
+    const rawKey = order?.agreed_vehicle_type || order?.proposed_vehicle_type || order?.vehicle_type_required || 'TRUCK_3.5T';
+    const spec = getVehicleSpecByKey(rawKey);
+    return spec.key;
+  }, [order]);
+
+  // Bộ lọc danh sách xe: CHỈ hiển thị các xe CÙNG HẠNG TẢI TRỌNG đã chốt (khác biển số)
+  const filteredFleetOptions = useMemo(() => {
+    const specKeyNorm = agreedVehicleSpecKey.replace('TRUCK_', '');
+    const matchedOptions = INTERNAL_FLEET_OPTIONS.filter(o => 
+      o.specKey === agreedVehicleSpecKey ||
+      o.specKey.replace('TRUCK_', '') === specKeyNorm
+    );
+    return matchedOptions.length > 0 ? matchedOptions : INTERNAL_FLEET_OPTIONS;
+  }, [agreedVehicleSpecKey]);
+
   const defaultOption = useMemo(() => {
-    const recommendedKey = vehicleAnalysis?.recommendedVehicle?.key || '3.5T';
-    const found = INTERNAL_FLEET_OPTIONS.find(o => o.specKey === recommendedKey);
-    return found ? found.value : INTERNAL_FLEET_OPTIONS[2].value;
-  }, [vehicleAnalysis]);
+    return filteredFleetOptions[0]?.value || INTERNAL_FLEET_OPTIONS[4].value;
+  }, [filteredFleetOptions]);
 
   const [selectedTruckPlate, setSelectedTruckPlate] = useState(defaultOption);
+
+  useEffect(() => {
+    if (defaultOption) {
+      setSelectedTruckPlate(defaultOption);
+    }
+  }, [defaultOption]);
   const [driverCount, setDriverCount] = useState(1);
   const [selectedDriver1, setSelectedDriver1] = useState('Hồ Chí Học · Đã lái 4,5h');
   const [selectedDriver2, setSelectedDriver2] = useState(undefined);
@@ -559,8 +598,11 @@ export default function TripAssignmentModal({
                     selectedTruckPlate={selectedTruckPlate}
                     setSelectedTruckPlate={setSelectedTruckPlate}
                     selectedTruckSpec={selectedTruckSpec}
-                    INTERNAL_FLEET_OPTIONS={INTERNAL_FLEET_OPTIONS}
-                    trucks={trucks}
+                    INTERNAL_FLEET_OPTIONS={filteredFleetOptions}
+                    trucks={trucks.filter(t => {
+                      const spec = getVehicleSpecByKey(agreedVehicleSpecKey);
+                      return Math.abs((t.payload_kg || t.allowed_payload || 0) - spec.maxPayloadKg) < 100;
+                    })}
                     driverCount={driverCount}
                     setDriverCount={setDriverCount}
                     totalTripHours={totalTripHours}
@@ -716,17 +758,29 @@ export default function TripAssignmentModal({
           trip_code: `TR-${orderCode}`,
           plate: currentFleetItem.plate,
           truck_model: selectedTruckSpec.label,
-          box_dim: selectedTruckSpec.boxText,
-          truck_length_cm: selectedTruckSpec.lengthCm,
-          truck_width_cm: selectedTruckSpec.widthCm,
-          truck_height_cm: selectedTruckSpec.heightCm,
+          box_dim: selectedTruckSpec.boxDimText || selectedTruckSpec.boxText,
+          truck_length_cm: selectedTruckSpec.length_cm || selectedTruckSpec.lengthCm,
+          truck_width_cm: selectedTruckSpec.width_cm || selectedTruckSpec.widthCm,
+          truck_height_cm: selectedTruckSpec.height_cm || selectedTruckSpec.heightCm,
           max_payload: selectedTruckSpec.maxPayloadKg,
-          max_volume: selectedTruckSpec.maxVolumeM3,
+          max_volume: selectedTruckSpec.volumeM3 || selectedTruckSpec.maxVolumeM3,
           total_weight: actualWeight || chargeableWeight,
           orders_count: 1,
           total_volume: cargoVolume,
-          order: order,
-          orders: [order],
+          order: {
+            ...order,
+            weight: actualWeight || order.weight || 2850,
+            chargeable: chargeableWeight || order.chargeable || 2850,
+            actual_weight_kg: actualWeight || 2850,
+            chargeable_weight_kg: chargeableWeight || 2850
+          },
+          orders: [{
+            ...order,
+            weight: actualWeight || order.weight || 2850,
+            chargeable: chargeableWeight || order.chargeable || 2850,
+            actual_weight_kg: actualWeight || 2850,
+            chargeable_weight_kg: chargeableWeight || 2850
+          }],
           assignment_stops: stops,
           is_multi_drop: multiDropMode === 'MULTI_POINTS'
         }}

@@ -7,6 +7,7 @@ import IncidentDetailsModal from '../../components/dispatcher/IncidentDetailsMod
 import CancelOrderModal from '../../components/dispatcher/CancelOrderModal';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
+import { useAuth } from '../../providers/AuthProvider';
 
 // Subcomponents đã được tách
 import TripPlanningTab from './tripPlanning/TripPlanningTab';
@@ -20,6 +21,7 @@ import {
 } from './tripPlanning/TripAuxiliaryModals';
 
 export default function TripPlanningAndMonitoring() {
+  const { user } = useAuth();
   const [activeMainTab, setActiveMainTab] = useState('planning');
   const [trips, setTrips] = useState([]);
   const [incidents, setIncidents] = useState([]);
@@ -49,7 +51,19 @@ export default function TripPlanningAndMonitoring() {
         dispatcherApi.getTrucks(),
         dispatcherApi.getDrivers()
       ]);
-      const readyOrders = (ordersData || []).filter(o => o.status === 'READY_FOR_PLANNING');
+      const currentUserId = user?.id ? Number(user.id) : null;
+      const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
+
+      const readyOrders = (ordersData || []).filter(o => {
+        if (o.status !== 'READY_FOR_PLANNING') return false;
+        if (isDispatcher && currentUserId) {
+          const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id) : null;
+          if (orderDispId && orderDispId !== currentUserId) {
+            return false;
+          }
+        }
+        return true;
+      });
       setPendingOrders(readyOrders);
       setTrips(tripsData || []);
       setIncidents(incidentsData || []);
@@ -61,7 +75,7 @@ export default function TripPlanningAndMonitoring() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     let active = true;
@@ -76,7 +90,19 @@ export default function TripPlanningAndMonitoring() {
           dispatcherApi.getDrivers()
         ]);
         if (!active) return;
-        const readyOrders = (ordersData || []).filter(o => o.status === 'READY_FOR_PLANNING');
+        const currentUserId = user?.id ? Number(user.id) : null;
+        const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
+
+        const readyOrders = (ordersData || []).filter(o => {
+          if (o.status !== 'READY_FOR_PLANNING') return false;
+          if (isDispatcher && currentUserId) {
+            const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id) : null;
+            if (orderDispId && orderDispId !== currentUserId) {
+              return false;
+            }
+          }
+          return true;
+        });
         setPendingOrders(readyOrders);
         setTrips(tripsData || []);
         setIncidents(incidentsData || []);
@@ -93,7 +119,7 @@ export default function TripPlanningAndMonitoring() {
 
     loadInitialData();
     return () => { active = false; };
-  }, []);
+  }, [user]);
 
   const handleAssignSuccess = async (createdTrip) => {
     try {

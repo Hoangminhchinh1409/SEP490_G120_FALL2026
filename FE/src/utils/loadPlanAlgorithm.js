@@ -242,16 +242,20 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
     // Lấy danh sách loại hàng trong đơn (nếu có mảng items), hoặc lấy trực tiếp từ order
     const rawItems =
       Array.isArray(ord.items) && ord.items.length > 0
-        ? ord.items.map((it) => ({
-            cargo_name: it.cargo_name || ord.cargo_name || "Hàng hóa",
-            cargo_type: it.cargo_type || ord.cargo_type || "GENERAL",
-            package_count: Math.max(1, parseInt(it.package_count) || parseInt(ord.package_count) || 1),
-            package_unit: it.package_unit || ord.package_unit || "Thùng Carton",
-            length_cm: parseFloat(it.length_cm) || parseFloat(ord.length_cm) || 0,
-            width_cm: parseFloat(it.width_cm) || parseFloat(ord.width_cm) || 0,
-            height_cm: parseFloat(it.height_cm) || parseFloat(ord.height_cm) || 0,
-            weight_kg: Number(it.weight) || Number(ord.weight || ord.actual_weight_kg || ord.chargeable) || 200,
-          }))
+        ? ord.items.map((it) => {
+            const pCount = Math.max(1, parseInt(it.package_count) || 1);
+            const totalKg = Number(it.total_weight) || (Number(it.weight) > 0 ? Number(it.weight) * pCount : 0);
+            return {
+              cargo_name: it.cargo_name || ord.cargo_name || "Hàng hóa",
+              cargo_type: it.cargo_type || ord.cargo_type || "GENERAL",
+              package_count: pCount,
+              package_unit: it.package_unit || ord.package_unit || "Thùng Carton",
+              length_cm: parseFloat(it.length_cm) || parseFloat(ord.length_cm) || 0,
+              width_cm: parseFloat(it.width_cm) || parseFloat(ord.width_cm) || 0,
+              height_cm: parseFloat(it.height_cm) || parseFloat(ord.height_cm) || 0,
+              weight_kg: totalKg > 0 ? totalKg : Number(ord.weight || ord.actual_weight_kg || ord.chargeable || 200),
+            };
+          })
         : [
             {
               cargo_name: ord.cargo_name || "Hàng hóa",

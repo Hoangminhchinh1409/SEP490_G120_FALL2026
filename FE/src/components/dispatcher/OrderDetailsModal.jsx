@@ -42,7 +42,7 @@ export default function OrderDetailsModal({ open, order, onCancel, onUpdateOrder
 
   return (
     <OrderDetailsModalContent
-      key={`${order.id || order.order_id}-${order.web_workflow?.stage || order.status}-${order.web_workflow?.negotiation?.submitted_at || ''}`}
+      key={`${order.id || order.order_id}`}
       open={open}
       order={order}
       onCancel={onCancel}
@@ -68,6 +68,54 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [savingPrice, setSavingPrice] = useState(false);
   const [confirmingDocs, setConfirmingDocs] = useState(false);
+  const [scanningCustoms, setScanningCustoms] = useState(false);
+
+  // Scan thông tin từ chứng từ khách upload để fill tự động vào Tờ khai hải quan
+  const handleScanCustomsFromDocs = async () => {
+    try {
+      setScanningCustoms(true);
+      const res = await aiApi.autoScanCustomsDeclaration({
+        order,
+        uploadedDocs: documents.filter(d => d.file !== 'Chờ tải lên')
+      });
+
+      const customsDocKey = documents.find(d => d.key === 'doc-basic-1' || d.key === 'basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'))?.key || 'doc-basic-1';
+      
+      const updatedDocs = documents.map(d => {
+        if (d.key === customsDocKey || d.name?.toLowerCase().includes('tờ khai hải quan')) {
+          return {
+            ...d,
+            file: res.fileName || `To_khai_hai_quan_${order.order_id || 'NEX'}_VNACCS.pdf`,
+            size: res.fileSize || '245 KB',
+            uploadDate: new Date().toLocaleString('vi-VN'),
+            status: 'APPROVED',
+            customs_data: res
+          };
+        }
+        return d;
+      });
+
+      setDocuments(updatedDocs);
+      await orderApi.uploadOrderDocuments(order.id || order.order_id, updatedDocs);
+
+      onUpdateOrder?.({
+        ...order,
+        documents: updatedDocs,
+        web_workflow: {
+          ...(order.web_workflow || {}),
+          documents: updatedDocs,
+          customs_declaration: res
+        }
+      });
+
+      message.success(`Đã tự động trích xuất thông tin & sinh Tờ khai hải quan điện tử (${res.declarationNumber || 'VNACCS'}) thành công!`);
+    } catch (err) {
+      console.error('handleScanCustomsFromDocs error:', err);
+      message.error(err.message || 'Lỗi khi quét thông tin tờ khai hải quan');
+    } finally {
+      setScanningCustoms(false);
+    }
+  };
 
   // State Modal Từ chối 1 chứng từ
   const [rejectDocModalOpen, setRejectDocModalOpen] = useState(false);
@@ -582,13 +630,12 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
 
     const unuploaded = documents.filter(d => d.file === 'Chờ tải lên' || d.status === 'WAITING_UPLOAD');
     if (unuploaded.length > 0) {
-      const hasUnuploadedCustoms = unuploaded.some(d => d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'));
-      if (hasUnuploadedCustoms) {
-        message.warning(`Vui lòng đính kèm Tệp Tờ khai hải quan (phần Điều phối chuẩn bị) trước khi phê duyệt toàn bộ hồ sơ!`);
-      } else {
-        message.warning(`Còn ${unuploaded.length} chứng từ chưa được tải tệp lên! Hãy tải đầy đủ trước khi xác nhận toàn bộ.`);
+      // Bỏ bắt buộc Tờ khai hải quan phải nộp trước (vì tờ khai sẽ được tự sinh bằng AI sau khi khách ký hợp đồng)
+      const nonCustomsUnuploaded = unuploaded.filter(d => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan')));
+      if (nonCustomsUnuploaded.length > 0) {
+        message.warning(`Còn ${nonCustomsUnuploaded.length} chứng từ của khách chưa được tải tệp lên! Hãy tải đầy đủ trước khi xác nhận.`);
+        return;
       }
-      return;
     }
 
     const isWebOrder = order.source === 'HOMEPAGE';
@@ -756,6 +803,8 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           triggerUploadDoc={triggerUploadDoc}
           handleConfirmAllDocuments={handleConfirmAllDocuments}
           confirmingDocs={confirmingDocs}
+          handleScanCustomsFromDocs={handleScanCustomsFromDocs}
+          scanningCustoms={scanningCustoms}
         />
       )
     });

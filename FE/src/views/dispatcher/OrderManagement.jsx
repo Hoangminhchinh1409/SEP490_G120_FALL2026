@@ -7,6 +7,7 @@ import OrderDetailsModal from '../../components/dispatcher/OrderDetailsModal';
 import CancelOrderModal from '../../components/dispatcher/CancelOrderModal';
 import DocumentAssistantDrawer from '../../components/dispatcher/DocumentAssistantDrawer';
 import { orderApi } from '../../api/orderApi';
+import { useAuth } from '../../providers/AuthProvider';
 
 const { RangePicker } = DatePicker;
 
@@ -36,6 +37,7 @@ const statusLabels = {
 
 const OrderManagement = () => {
   const router = useRouter();
+  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState('');
@@ -165,10 +167,21 @@ const OrderManagement = () => {
     }
   };
 
-  // Filter logic
+  // Filter logic (Lọc theo dispatcher phụ trách nếu đang đăng nhập là Điều phối viên)
   const filteredData = useMemo(() => {
     const searchLower = filterText.trim().toLowerCase();
+    const currentUserId = user?.id ? Number(user.id) : null;
+    const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
+
     return orders.filter(item => {
+      // Nếu là Dispatcher, chỉ xem đơn được phân công cho mình
+      if (isDispatcher && currentUserId) {
+        const orderDispId = item.responsible_dispatcher_id ? Number(item.responsible_dispatcher_id) : null;
+        if (orderDispId && orderDispId !== currentUserId) {
+          return false;
+        }
+      }
+
       const matchSearch = !searchLower || 
         (item.order_id && item.order_id.toLowerCase().includes(searchLower)) ||
         (item.customer && item.customer.toLowerCase().includes(searchLower)) ||
@@ -190,7 +203,7 @@ const OrderManagement = () => {
       }
       return matchSearch && matchStatus;
     });
-  }, [orders, filterText, filterStatus]);
+  }, [orders, filterText, filterStatus, user]);
 
   const columns = useMemo(() => [
     { 

@@ -30,12 +30,6 @@ export default function OrderConfirmationView() {
   const [agreeing, setAgreeing] = useState(false);
   const [agreedSuccess, setAgreedSuccess] = useState(false);
 
-  // Negotiation Modal
-  const [negotiateModalOpen, setNegotiateModalOpen] = useState(false);
-  const [submittingFeedback, setSubmittingFeedback] = useState(false);
-  const [feedbackSuccess, setFeedbackSuccess] = useState(false);
-  const [negotiateForm] = Form.useForm();
-
   useEffect(() => {
     if (!token) return;
     const loadOrder = async () => {
@@ -112,36 +106,6 @@ export default function OrderConfirmationView() {
       message.error(err.message || 'Lỗi khi xác nhận đơn hàng');
     } finally {
       setAgreeing(false);
-    }
-  };
-
-  const handleOpenNegotiateModal = () => {
-    negotiateForm.resetFields();
-    negotiateForm.setFieldsValue({
-      feedback_reason: 'Giá cước vượt ngân sách',
-      proposed_price: order?.web_workflow?.negotiation?.proposed_price || undefined,
-      proposed_vehicle_type: order?.proposed_vehicle_type || order?.vehicle_type_required || '2.5T',
-      customer_note: ''
-    });
-    setNegotiateModalOpen(true);
-  };
-
-  const handleNegotiateSubmit = async () => {
-    try {
-      const values = await negotiateForm.validateFields();
-      setSubmittingFeedback(true);
-      await orderApi.customerNegotiateOrder(token, values);
-      message.success('Đã gửi yêu cầu thương lượng giá & phương án xe thành công! Điều phối viên sẽ phản hồi sớm nhất.');
-      setFeedbackSuccess(true);
-      setNegotiateModalOpen(false);
-      // Reload order info
-      const updatedData = await orderApi.getOrderByToken(token);
-      setOrder(updatedData);
-    } catch (err) {
-      console.error('Negotiate submit error:', err);
-      message.error(err.message || 'Không thể gửi yêu cầu đàm phán');
-    } finally {
-      setSubmittingFeedback(false);
     }
   };
 
@@ -480,22 +444,17 @@ export default function OrderConfirmationView() {
             />
           )}
 
-          {/* Nút Hành Động Đồng Ý & Thương Lượng Lại (Có thể deal lại nhiều lần cho đến khi ưng ý) */}
+          {/* Nút Hành Động Đồng Ý & Thương Lượng Hotline Trực Tiếp */}
           {!agreedSuccess ? (
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <Button
-                  size="large"
-                  icon={hasDispatcherRequoted ? <RefreshCw size={16} /> : <MessageSquare size={16} />}
-                  onClick={handleOpenNegotiateModal}
-                  className="border-amber-400 text-amber-800 hover:text-amber-900 hover:border-amber-500 bg-amber-50/60 font-semibold h-12 rounded-xl w-full sm:w-auto"
-                >
-                  {hasDispatcherRequoted
-                    ? 'Chưa ưng phương án / giá này? Thương lượng lại (Deal lại)'
-                    : isCurrentlyNegotiating
-                      ? 'Cập nhật lại đề xuất thương lượng'
-                      : 'Yêu cầu thương lượng lại giá / phương án xe'}
-                </Button>
+              <div className="w-full sm:w-auto p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2">
+                <PhoneCall size={16} className="text-amber-700 shrink-0" />
+                <span>
+                  Nếu Quý khách muốn thương lượng lại giá cước hoặc đổi phương án xe, vui lòng <b>gọi trực tiếp Điều phối viên</b>: 
+                  <a href={`tel:${(order.dispatcher_phone || '0978886699').replace(/[^0-9]/g, '')}`} className="font-bold text-amber-950 underline ml-1">
+                    {order.dispatcher_name || 'ĐPV Phụ trách'} ({order.dispatcher_phone || '0978 886 699'})
+                  </a>
+                </span>
               </div>
 
               <Button
@@ -504,7 +463,7 @@ export default function OrderConfirmationView() {
                 loading={agreeing}
                 onClick={handleAgreePrice}
                 icon={<CheckCircle2 size={18} />}
-                className="bg-[#4f46e5] hover:bg-[#4338ca] text-white font-bold px-8 h-12 rounded-xl shadow-lg shadow-indigo-600/25 w-full sm:w-auto"
+                className="bg-[#4f46e5] hover:bg-[#4338ca] text-white font-bold px-8 h-12 rounded-xl shadow-lg shadow-indigo-600/25 w-full sm:w-auto shrink-0"
               >
                 Đồng ý chốt Phương án xe &amp; Giá cước
               </Button>
@@ -524,69 +483,6 @@ export default function OrderConfirmationView() {
           )}
 
         </div>
-
-        {/* MODAL YÊU CẦU ĐIỀU CHỈNH GIÁ / PHƯƠNG ÁN XE / LỊCH TRÌNH */}
-        <Modal
-          title={
-            <div className="flex items-center gap-2 text-base font-bold text-slate-800">
-              <MessageSquare size={18} className="text-amber-600" />
-              Thương lượng lại Giá cước &amp; Phương án xe vận chuyển
-            </div>
-          }
-          open={negotiateModalOpen}
-          onCancel={() => setNegotiateModalOpen(false)}
-          onOk={handleNegotiateSubmit}
-          confirmLoading={submittingFeedback}
-          okText="Gửi đề xuất thương lượng"
-          cancelText="Đóng"
-          okButtonProps={{ className: 'bg-[#4f46e5] font-semibold' }}
-          destroyOnHidden
-          centered
-        >
-          <div className="py-2 space-y-3">
-            <p className="text-xs text-slate-600">
-              Nếu mức giá hiện tại <b>{(order.agreed_price || 0).toLocaleString()} VNĐ</b> hoặc phương án xe <b>{proposedVehicleSpec.label}</b> chưa phù hợp, vui lòng gửi đề xuất bên dưới. Điều phối viên sẽ thẩm định và chốt lại cho Quý khách ngay:
-            </p>
-
-            <Form form={negotiateForm} layout="vertical" initialValues={{ feedback_reason: 'Giá cước vượt ngân sách' }}>
-              <Form.Item label={<span className="text-xs font-semibold">Lý do thương lượng (*)</span>} name="feedback_reason" rules={[{ required: true }]}>
-                <Select className="text-xs">
-                  <Option value="Giá cước vượt ngân sách">💰 Giá cước vượt ngân sách dự toán</Option>
-                  <Option value="Muốn thương lượng giảm thêm giá cước">🤝 Muốn thương lượng giảm thêm giá cước</Option>
-                  <Option value="Muốn đổi loại phương tiện">🚛 Muốn trao đổi lại loại xe tải vận chuyển</Option>
-                  <Option value="Muốn thay đổi ngày/giờ lấy hàng">📅 Muốn thay đổi ngày / giờ lấy hàng</Option>
-                  <Option value="Thay đổi số lượng hoặc quy cách hàng">📦 Thay đổi số lượng / quy cách hàng</Option>
-                  <Option value="Lý do khác">Khác (nhập chi tiết bên dưới)</Option>
-                </Select>
-              </Form.Item>
-
-              <Form.Item label={<span className="text-xs font-semibold">Phương án xe Quý khách mong muốn</span>} name="proposed_vehicle_type">
-                <Select className="text-xs">
-                  {VEHICLE_SPECS.map((v) => (
-                    <Option key={v.key} value={v.key}>
-                      {v.label} — {v.boxText} (Tối đa {v.maxPayloadKg.toLocaleString('vi-VN')} kg)
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-
-              <Form.Item label={<span className="text-xs font-semibold">Mức giá Quý khách đề xuất (VNĐ)</span>} name="proposed_price">
-                <InputNumber
-                  placeholder="VD: 2,300,000"
-                  formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={(val) => val.replace(/\$\s?|(,*)/g, '')}
-                  className="w-full font-bold text-indigo-700"
-                  min={100000}
-                />
-              </Form.Item>
-
-              <Form.Item label={<span className="text-xs font-semibold">Ghi chú cụ thể gửi Điều phối viên (*)</span>} name="customer_note" rules={[{ required: true, message: 'Vui lòng nhập nội dung đề xuất của Quý khách' }]}>
-                <TextArea rows={3} placeholder="VD: Hàng 20 thùng carton của mình xếp gọn được trên xe 2.5 tấn, bên bạn xem xét giảm cước nhé..." className="text-xs" />
-              </Form.Item>
-            </Form>
-          </div>
-        </Modal>
-
       </div>
     </div>
   );

@@ -1,10 +1,11 @@
 import { fetchWithoutAuth } from './apiClient';
 
 export const orderApi = {
-  // 1. Lấy danh sách toàn bộ đơn hàng từ Backend Supabase
-  getAllOrders: async () => {
+  // 1. Lấy danh sách toàn bộ đơn hàng từ Backend Supabase (hỗ trợ lọc theo dispatcher_id)
+  getAllOrders: async (params = {}) => {
     try {
-      const data = await fetchWithoutAuth('/orders');
+      const queryStr = params?.dispatcher_id ? `?dispatcher_id=${params.dispatcher_id}` : '';
+      const data = await fetchWithoutAuth(`/orders${queryStr}`);
       return data.orders || [];
     } catch (error) {
       console.error('orderApi.getAllOrders Error:', error);

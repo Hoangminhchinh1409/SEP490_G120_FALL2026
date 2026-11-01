@@ -25,13 +25,20 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
   const [aiLoadPlanAdvice, setAiLoadPlanAdvice] = useState(null);
 
   const truckSpec = useMemo(() => {
-    const is35T = trip?.plate?.includes('995.72') || trip?.truck_model?.includes('3.5');
-    const is5T = trip?.plate?.includes('767.99') || trip?.truck_model?.includes('5');
+    const is35T = trip?.plate?.includes('995.72') || trip?.plate?.includes('996.88') || trip?.truck_model?.includes('3.5');
+    const is5T = trip?.plate?.includes('767.99') || trip?.plate?.includes('649.48') || trip?.plate?.includes('888.99') || trip?.truck_model?.includes('5');
+    const is125T = trip?.plate?.includes('112.34') || trip?.plate?.includes('115.68') || trip?.truck_model?.includes('1.25');
+
+    const defaultLength = is5T ? 620 : is35T ? 500 : is125T ? 310 : 420;
+    const defaultWidth = is5T ? 220 : is35T ? 205 : is125T ? 160 : 190;
+    const defaultHeight = is5T ? 220 : is35T ? 205 : is125T ? 160 : 190;
+    const defaultPayload = is5T ? 5000 : is35T ? 3500 : is125T ? 1250 : 2500;
+
     return {
-      length_cm: Number(trip?.truck_length_cm) || (is5T ? 620 : is35T ? 500 : 420),
-      width_cm: Number(trip?.truck_width_cm) || (is5T ? 220 : is35T ? 205 : 190),
-      height_cm: Number(trip?.truck_height_cm) || (is5T ? 220 : is35T ? 205 : 190),
-      max_payload: Number(trip?.max_payload) || (is5T ? 5000 : is35T ? 3500 : 2500),
+      length_cm: Number(trip?.truck_length_cm) || defaultLength,
+      width_cm: Number(trip?.truck_width_cm) || defaultWidth,
+      height_cm: Number(trip?.truck_height_cm) || defaultHeight,
+      max_payload: Number(trip?.max_payload) || defaultPayload,
       is_multi_drop: trip?.is_multi_drop,
       assignment_stops: trip?.assignment_stops,
       order: trip?.order,

@@ -117,12 +117,19 @@ const createConsultationOrder = async (req, res) => {
 
     if (items && Array.isArray(items) && items.length > 0) {
       totalPackages = items.reduce((sum, it) => sum + (parseInt(it.package_count, 10) || 1), 0);
-      actualWeight = items.reduce((sum, it) => sum + (parseFloat(it.weight) || 0), 0);
+      actualWeight = items.reduce((sum, it) => {
+        const unitW = parseFloat(it.weight) || 0;
+        const cnt = parseInt(it.package_count, 10) || 1;
+        return sum + (unitW * cnt);
+      }, 0);
       chargeableWeight = items.reduce((sum, it) => {
-        const itemWeight = parseFloat(it.weight) || 0;
-        if (it.cargo_type === 'BULK') return sum + itemWeight;
-        const itemVol = ((parseFloat(it.length_cm) || 0) * (parseFloat(it.width_cm) || 0) * (parseFloat(it.height_cm) || 0)) / 5000;
-        return sum + Math.max(itemWeight, itemVol);
+        const unitW = parseFloat(it.weight) || 0;
+        const cnt = parseInt(it.package_count, 10) || 1;
+        const totalItemW = unitW * cnt;
+        if (it.cargo_type === 'BULK') return sum + totalItemW;
+        const unitVol = ((parseFloat(it.length_cm) || 0) * (parseFloat(it.width_cm) || 0) * (parseFloat(it.height_cm) || 0)) / 5000;
+        const totalItemVol = unitVol * cnt;
+        return sum + Math.max(totalItemW, totalItemVol);
       }, 0);
       finalCargoDesc = items.map(it => `${it.cargo_name || 'Hàng'} (${it.package_count || 1} ${it.package_unit || 'kiện'})`).join(', ');
       l = Math.max(1, parseFloat(items[0]?.length_cm) || 100);

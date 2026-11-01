@@ -58,9 +58,27 @@ const analyzeLoadPlan3D = async (req, res) => {
   }
 };
 
+const autoScanCustomsDeclaration = async (req, res) => {
+  try {
+    const result = await aiService.autoScanCustomsDeclaration(req.body);
+    return res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('AI autoScanCustomsDeclaration error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Lỗi kết nối Gemini AI khi trích xuất tờ khai hải quan',
+      error: err.message
+    });
+  }
+};
+
 module.exports = {
   analyzeCustomsDocuments,
   analyzeVehicleAndQuote,
-  analyzeLoadPlan3D
+  analyzeLoadPlan3D,
+  autoScanCustomsDeclaration
 };
 

@@ -279,7 +279,7 @@ const assembleMetaFromNotes = (notesList) => {
   if (chunkNotes.length > 0) {
     // Lấy bộ chunk mới nhất theo index tăng dần
     const byIndex = new Map();
-    chunkNotes.sort((a, b) => a.id - b.id);
+    chunkNotes.sort((a, b) => Number(a.id) - Number(b.id));
     chunkNotes.forEach((c) => byIndex.set(c.index, c.body));
     const sortedIndices = [...byIndex.keys()].sort((a, b) => a - b);
     const fullJson = sortedIndices.map((idx) => byIndex.get(idx)).join('');

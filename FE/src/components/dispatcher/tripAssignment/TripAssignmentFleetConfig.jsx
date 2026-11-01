@@ -67,10 +67,10 @@ export default function TripAssignmentFleetConfig({
         <div className="col-span-8 space-y-1">
           <div className="flex items-center justify-between">
             <label className="text-xs font-semibold text-gray-700">
-              Xe (tỉnh, độ dài, đăng kiểm còn hạn) *
+              Xe (Cùng tải trọng đã chốt {selectedTruckSpec.label}) *
             </label>
             <span className="text-[11px] text-indigo-600 font-medium">
-              Thùng: {selectedTruckSpec.boxText} · Tối đa {selectedTruckSpec.maxPayloadKg.toLocaleString()} kg
+              Thùng: {selectedTruckSpec.boxDimText || selectedTruckSpec.boxText} · Tối đa {selectedTruckSpec.maxPayloadKg.toLocaleString()} kg
             </span>
           </div>
           <Select
