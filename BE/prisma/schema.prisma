@@ -1,14 +1,660 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model activity_logs {
+  id           BigInt   @id @default(autoincrement())
+  actor_id     BigInt?
+  actor_type   String   @db.VarChar(10)
+  action       String   @db.VarChar(50)
+  target_type  String   @db.VarChar(30)
+  target_id    BigInt
+  changes      Json?
+  reason       String?  @db.VarChar(255)
+  ip_address   String?  @db.Inet
+  created_time DateTime @default(now()) @db.Timestamptz(6)
+  users        users?   @relation(fields: [actor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model compensation_claims {
+  id                                           BigInt     @id @default(autoincrement())
+  order_id                                     BigInt
+  incident_id                                  BigInt?
+  amount                                       BigInt
+  reason                                       String
+  evidence                                     String?
+  status                                       String     @default("Pending") @db.VarChar(20)
+  created_by                                   BigInt
+  created_time                                 DateTime   @default(now()) @db.Timestamptz(6)
+  reviewed_by                                  BigInt?
+  reviewed_time                                DateTime?  @db.Timestamptz(6)
+  review_comment                               String?
+  updated_at                                   DateTime   @default(now()) @db.Timestamptz(6)
+  source                                       String?    @default("Incident") @db.VarChar(20)
+  claim_type                                   String?    @default("Damage") @db.VarChar(30)
+  users_compensation_claims_created_byTousers  users      @relation("compensation_claims_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  incidents                                    incidents? @relation(fields: [incident_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders                                       orders     @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_compensation_claims_reviewed_byTousers users?     @relation("compensation_claims_reviewed_byTousers", fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_compensation_claims_order_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model contract_cancellation_tiers {
+  id                  BigInt              @id @default(autoincrement())
+  contract_id         BigInt
+  hours_from          Int
+  hours_to            Int
+  fee_percent         Decimal             @db.Decimal(5, 2)
+  transport_contracts transport_contracts @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model customer_documents {
+  id                                          BigInt    @id @default(autoincrement())
+  order_id                                    BigInt
+  document_type                               String    @db.VarChar(50)
+  is_required                                 Boolean   @default(true)
+  file_link                                   String?   @db.VarChar(255)
+  file_type                                   String?   @db.VarChar(10)
+  file_size                                   Int?
+  required_by                                 BigInt?
+  uploaded_by                                 BigInt?
+  uploaded_time                               DateTime? @db.Timestamptz(6)
+  checked_by                                  BigInt?
+  checked_time                                DateTime? @db.Timestamptz(6)
+  reject_reason                               String?
+  status                                      String    @default("Required") @db.VarChar(20)
+  created_at                                  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                                  DateTime  @default(now()) @db.Timestamptz(6)
+  users_customer_documents_checked_byTousers  users?    @relation("customer_documents_checked_byTousers", fields: [checked_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders                                      orders    @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_customer_documents_required_byTousers users?    @relation("customer_documents_required_byTousers", fields: [required_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_customer_documents_uploaded_byTousers users?    @relation("customer_documents_uploaded_byTousers", fields: [uploaded_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model customers {
+  id                  BigInt                @id @default(autoincrement())
+  company_name        String                @db.VarChar(255)
+  tax_code            String                @unique @db.VarChar(20)
+  registered_address  String                @db.VarChar(255)
+  contact_person      String                @db.VarChar(100)
+  email               String                @db.VarChar(100)
+  phone               String                @db.VarChar(15)
+  created_by          BigInt?
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  users               users?                @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  locations           locations[]
+  orders              orders[]
+  transport_contracts transport_contracts[]
+}
+
+model delivery_evidences {
+  id            BigInt     @id @default(autoincrement())
+  trip_stop_id  BigInt
+  order_id      BigInt?
+  type          String     @db.VarChar(20)
+  file_link     String     @db.VarChar(255)
+  file_type     String?    @db.VarChar(10)
+  file_size     Int?
+  seal_number   String?    @db.VarChar(30)
+  receiver_name String?    @db.VarChar(100)
+  captured_time DateTime   @db.Timestamptz(6)
+  received_time DateTime   @default(now()) @db.Timestamptz(6)
+  latitude      Decimal?   @db.Decimal(9, 6)
+  longitude     Decimal?   @db.Decimal(9, 6)
+  status        String     @default("Stored") @db.VarChar(10)
+  orders        orders?    @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trip_stops    trip_stops @relation(fields: [trip_stop_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model driver_profiles {
+  id                 BigInt          @id @default(autoincrement())
+  user_account_id    BigInt          @unique
+  license_number     String          @unique @db.VarChar(20)
+  license_class      String          @db.VarChar(5)
+  license_expiry     DateTime        @db.Date
+  status             String          @default("Active") @db.VarChar(10)
+  last_trip_ended_at DateTime?       @db.Timestamptz(6)
+  created_at         DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime        @default(now()) @db.Timestamptz(6)
+  users              users           @relation(fields: [user_account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  driver_shifts      driver_shifts[]
+  incidents          incidents[]
+  trip_drivers       trip_drivers[]
+  trip_events        trip_events[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This table contains exclusion constraints and requires additional setup for migrations. Visit https://pris.ly/d/exclusion-constraints for more info.
+model driver_shifts {
+  id                                       BigInt          @id @default(autoincrement())
+  driver_id                                BigInt
+  date                                     DateTime        @db.Date
+  start_time                               DateTime        @db.Timestamptz(6)
+  end_time                                 DateTime        @db.Timestamptz(6)
+  created_by                               BigInt?
+  created_at                               DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at                               DateTime        @default(now()) @db.Timestamptz(6)
+  status                                   String          @default("Requested") @db.VarChar(20)
+  note                                     String?
+  rejection_reason                         String?
+  registered_by                            BigInt?
+  reviewed_by                              BigInt?
+  reviewed_at                              DateTime?       @db.Timestamptz(6)
+  users_driver_shifts_created_byTousers    users?          @relation("driver_shifts_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  driver_profiles                          driver_profiles @relation(fields: [driver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_driver_shifts_registered_byTousers users?          @relation("driver_shifts_registered_byTousers", fields: [registered_by], references: [id], onUpdate: NoAction)
+  users_driver_shifts_reviewed_byTousers   users?          @relation("driver_shifts_reviewed_byTousers", fields: [reviewed_by], references: [id], onUpdate: NoAction)
+
+  @@index([driver_id, date], map: "idx_driver_shifts_driver_date")
+  @@index([status], map: "idx_driver_shifts_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model extra_fees {
+  id                                   BigInt    @id @default(autoincrement())
+  order_id                             BigInt
+  trip_id                              BigInt?
+  fee_type                             String    @db.VarChar(30)
+  amount                               BigInt
+  reason                               String    @db.VarChar(255)
+  suggested_by_system                  Boolean   @default(false)
+  recorded_by                          BigInt?
+  confirmed_by                         BigInt?
+  confirmed_time                       DateTime? @db.Timestamptz(6)
+  created_at                           DateTime  @default(now()) @db.Timestamptz(6)
+  source                               String?   @default("Dispatcher") @db.VarChar(20)
+  photo_url                            String?
+  status                               String?   @default("Confirmed") @db.VarChar(20)
+  reject_reason                        String?
+  users_extra_fees_confirmed_byTousers users?    @relation("extra_fees_confirmed_byTousers", fields: [confirmed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders                               orders    @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_extra_fees_recorded_byTousers  users?    @relation("extra_fees_recorded_byTousers", fields: [recorded_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trips                                trips?    @relation(fields: [trip_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model incidents {
+  id                                  BigInt                @id @default(autoincrement())
+  trip_id                             BigInt
+  trip_stop_id                        BigInt?
+  type                                String                @db.VarChar(50)
+  description                         String                @db.VarChar(500)
+  photos                              String[]
+  fault                               String?               @db.VarChar(50)
+  status                              String                @default("Reported") @db.VarChar(20)
+  reported_by                         BigInt?
+  reported_time                       DateTime              @default(now()) @db.Timestamptz(6)
+  escalated_by                        BigInt?
+  escalated_time                      DateTime?             @db.Timestamptz(6)
+  escalation_reason                   String?
+  resolution_note                     String?               @db.VarChar(500)
+  resolved_by                         BigInt?
+  resolved_time                       DateTime?             @db.Timestamptz(6)
+  created_at                          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at                          DateTime              @default(now()) @db.Timestamptz(6)
+  compensation_claims                 compensation_claims[]
+  users_incidents_escalated_byTousers users?                @relation("incidents_escalated_byTousers", fields: [escalated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  driver_profiles                     driver_profiles?      @relation(fields: [reported_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_incidents_resolved_byTousers  users?                @relation("incidents_resolved_byTousers", fields: [resolved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trips                               trips                 @relation(fields: [trip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  trip_stops                          trip_stops?           @relation(fields: [trip_stop_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model locations {
+  id                                            BigInt       @id @default(autoincrement())
+  name                                          String       @db.VarChar(100)
+  type                                          String       @db.VarChar(30)
+  customer_id                                   BigInt?
+  address                                       String       @db.VarChar(255)
+  province                                      String       @db.VarChar(50)
+  latitude                                      Decimal?     @db.Decimal(9, 6)
+  longitude                                     Decimal?     @db.Decimal(9, 6)
+  contact_name                                  String?      @db.VarChar(100)
+  contact_phone                                 String?      @db.VarChar(15)
+  receiving_hours                               String?      @db.VarChar(50)
+  geofence_radius                               Int?
+  created_by                                    BigInt?
+  created_at                                    DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at                                    DateTime     @default(now()) @db.Timestamptz(6)
+  users                                         users?       @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers                                     customers?   @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders_orders_delivery_location_idTolocations orders[]     @relation("orders_delivery_location_idTolocations")
+  orders_orders_pickup_location_idTolocations   orders[]     @relation("orders_pickup_location_idTolocations")
+  trip_stops                                    trip_stops[]
+}
+
+model news_posts {
+  id               BigInt    @id @default(autoincrement())
+  author_id        BigInt
+  title            String    @db.VarChar(200)
+  category         String    @db.VarChar(50)
+  summary          String    @db.VarChar(200)
+  content          String
+  cover_image_link String?   @db.VarChar(255)
+  is_featured      Boolean   @default(false)
+  view_count       Int       @default(0)
+  published_time   DateTime? @db.Timestamptz(6)
+  status           String    @default("Draft") @db.VarChar(20)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+  users            users     @relation(fields: [author_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status, published_time(sort: Desc)], map: "idx_news_posts_status")
+}
+
+model notifications {
+  id              BigInt    @id @default(autoincrement())
+  user_account_id BigInt
+  target_type     String?   @db.VarChar(30)
+  target_id       BigInt?
+  message         String
+  created_time    DateTime  @default(now()) @db.Timestamptz(6)
+  read_time       DateTime? @db.Timestamptz(6)
+  users           users     @relation(fields: [user_account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_cargos {
+  id                   BigInt   @id @default(autoincrement())
+  order_id             BigInt   @unique
+  cargo_type           String   @db.VarChar(50)
+  cargo_name           String   @db.VarChar(255)
+  quantity             Int
+  unit                 String   @db.VarChar(50)
+  actual_weight_kg     Decimal  @db.Decimal(7, 2)
+  length_cm            Decimal? @db.Decimal(6, 1)
+  width_cm             Decimal? @db.Decimal(6, 1)
+  height_cm            Decimal? @db.Decimal(6, 1)
+  specification        String?  @db.VarChar(255)
+  stackable            Boolean  @default(true)
+  chargeable_weight_kg Decimal  @db.Decimal(8, 2)
+  declared_value       BigInt?
+  special_request_note String?
+  orders               orders   @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model order_notes {
+  id         BigInt   @id @default(autoincrement())
+  order_id   BigInt
+  content    String   @db.VarChar(500)
+  created_by BigInt
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders     orders   @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model order_status_history {
+  id         BigInt   @id @default(autoincrement())
+  order_id   BigInt
+  status     String   @db.VarChar(30)
+  changed_by BigInt?
+  changed_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users?   @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders     orders   @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model orders {
+  id                                               BigInt                 @id @default(autoincrement())
+  order_code                                       String                 @unique @db.VarChar(20)
+  hawb_number                                      String?                @db.VarChar(50)
+  customer_id                                      BigInt
+  pickup_location_id                               BigInt
+  delivery_location_id                             BigInt
+  receiver_name                                    String                 @db.VarChar(100)
+  receiver_phone                                   String                 @db.VarChar(15)
+  source                                           String                 @default("Web") @db.VarChar(20)
+  agreed_price                                     BigInt                 @default(0)
+  customer_agrees_to_grouping                      Boolean                @default(false)
+  responsible_dispatcher_id                        BigInt
+  contract_id                                      BigInt?
+  signed_order_contract_file                       String?                @db.VarChar(255)
+  vendor_id                                        BigInt?
+  vendor_tracking_code                             String?                @db.VarChar(50)
+  tracking_token                                   String                 @unique @db.Char(43)
+  tracking_token_expiry                            DateTime?              @db.Timestamptz(6)
+  document_status                                  String                 @default("Pending Documents") @db.VarChar(30)
+  cancellation_reason                              String?
+  cancellation_fee                                 BigInt?
+  is_closed                                        Boolean                @default(false)
+  status                                           String                 @default("Draft") @db.VarChar(30)
+  created_by                                       BigInt
+  created_at                                       DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at                                       DateTime               @default(now()) @db.Timestamptz(6)
+  order_type                                       String?                @default("Import") @db.VarChar(20)
+  requested_pickup_date                            DateTime?              @db.Date
+  truck_type_requested                             String?                @db.VarChar(50)
+  loading_request                                  String?
+  warehouse_type                                   String?                @default("ALS warehouse") @db.VarChar(50)
+  warehouse_name                                   String?                @db.VarChar(255)
+  vendor_pod_file                                  String?
+  vendor_refusal_file                              String?
+  refusal_reason                                   String?
+  refusal_photo                                    String?
+  waiting_too_long                                 Boolean?               @default(false)
+  late_risk                                        Boolean?               @default(false)
+  ready_for_planning_at                            DateTime?              @db.Timestamptz(6)
+  compensation_claims                              compensation_claims[]
+  customer_documents                               customer_documents[]
+  delivery_evidences                               delivery_evidences[]
+  extra_fees                                       extra_fees[]
+  order_cargos                                     order_cargos?
+  order_notes                                      order_notes[]
+  order_status_history                             order_status_history[]
+  transport_contracts                              transport_contracts?   @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_orders_created_byTousers                   users                  @relation("orders_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers                                        customers              @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  locations_orders_delivery_location_idTolocations locations              @relation("orders_delivery_location_idTolocations", fields: [delivery_location_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  locations_orders_pickup_location_idTolocations   locations              @relation("orders_pickup_location_idTolocations", fields: [pickup_location_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_orders_responsible_dispatcher_idTousers    users                  @relation("orders_responsible_dispatcher_idTousers", fields: [responsible_dispatcher_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendors                                          vendors?               @relation(fields: [vendor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trip_stops                                       trip_stops[]
+
+  @@index([customer_id], map: "idx_orders_customer")
+  @@index([responsible_dispatcher_id, status], map: "idx_orders_responsible")
+  @@index([status], map: "idx_orders_status")
+  @@index([tracking_token], map: "idx_orders_tracking_token")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model password_reset_tokens {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    BigInt
+  token_hash String   @unique
+  expires_at DateTime @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model permissions {
+  id               BigInt             @id @default(autoincrement())
+  key              String             @unique @db.VarChar(100)
+  role_permissions role_permissions[]
+}
+
+model role_permissions {
+  role_id       BigInt
+  permission_id BigInt
+  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roles         roles       @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([role_id, permission_id])
+}
+
+model roles {
+  id               BigInt             @id @default(autoincrement())
+  name             String             @unique @db.VarChar(50)
+  role_permissions role_permissions[]
+  users            users[]
+}
+
+model system_settings {
+  key          String   @id @db.VarChar(50)
+  value        Json
+  updated_by   BigInt?
+  updated_time DateTime @default(now()) @db.Timestamptz(6)
+  users        users?   @relation(fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model transport_contracts {
+  id                          BigInt                        @id @default(autoincrement())
+  contract_number             String                        @unique @db.VarChar(30)
+  contract_type               String                        @db.VarChar(20)
+  customer_id                 BigInt?
+  vendor_id                   BigInt?
+  terms_and_responsibilities  String
+  pricing_conditions          String
+  free_waiting_time           Int?
+  waiting_fee_rate            BigInt?
+  liability_cap               BigInt?
+  compensation_terms          String
+  valid_from                  DateTime                      @db.Date
+  valid_to                    DateTime                      @db.Date
+  attachment_link             String?                       @db.VarChar(255)
+  created_by                  BigInt?
+  status                      String                        @default("Draft") @db.VarChar(20)
+  created_at                  DateTime                      @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                      @default(now()) @db.Timestamptz(6)
+  contract_cancellation_tiers contract_cancellation_tiers[]
+  orders                      orders[]
+  users                       users?                        @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers                   customers?                    @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendors                     vendors?                      @relation(fields: [vendor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model trip_drivers {
+  id                 BigInt          @id @default(autoincrement())
+  trip_id            BigInt
+  driver_id          BigInt
+  driver_role        String          @default("Primary") @db.VarChar(20)
+  assignment_type    String          @default("Original") @db.VarChar(20)
+  incident_id        BigInt?
+  assigned_time      DateTime        @default(now()) @db.Timestamptz(6)
+  released_time      DateTime?       @db.Timestamptz(6)
+  replacement_reason String?         @db.VarChar(255)
+  driver_profiles    driver_profiles @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trips              trips           @relation(fields: [trip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model trip_events {
+  id                  BigInt           @id @default(autoincrement())
+  client_action_id    String           @unique @db.Uuid
+  trip_id             BigInt
+  trip_stop_id        BigInt?
+  driver_id           BigInt?
+  event_type          String           @db.VarChar(30)
+  phone_time          DateTime         @db.Timestamptz(6)
+  received_time       DateTime         @default(now()) @db.Timestamptz(6)
+  latitude            Decimal?         @db.Decimal(9, 6)
+  longitude           Decimal?         @db.Decimal(9, 6)
+  outside_radius_flag Boolean?         @default(false)
+  payload             Json?
+  created_at          DateTime         @default(now()) @db.Timestamptz(6)
+  driver_profiles     driver_profiles? @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trips               trips            @relation(fields: [trip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  trip_stops          trip_stops?      @relation(fields: [trip_stop_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([trip_id, phone_time], map: "idx_trip_events_trip")
+}
+
+model trip_status_history {
+  id         BigInt   @id @default(autoincrement())
+  trip_id    BigInt
+  status     String   @db.VarChar(50)
+  changed_by BigInt?
+  changed_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users?   @relation(fields: [changed_by], references: [id], onUpdate: NoAction)
+  trips      trips    @relation(fields: [trip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([trip_id], map: "idx_trip_status_history_trip_id")
+}
+
+model trip_stops {
+  id                          BigInt               @id @default(autoincrement())
+  trip_id                     BigInt
+  order_id                    BigInt?
+  sequence                    Int                  @db.SmallInt
+  stop_type                   String               @db.VarChar(20)
+  location_id                 BigInt?
+  planned_arrival             DateTime?            @db.Timestamptz(6)
+  actual_arrival              DateTime?            @db.Timestamptz(6)
+  distance_from_previous_stop Decimal?             @db.Decimal(7, 1)
+  loaded_quantity             Int?
+  loaded_weight               Decimal?             @db.Decimal(8, 2)
+  delivered_quantity          Int?
+  delivered_weight            Decimal?             @db.Decimal(8, 2)
+  status                      String               @default("Pending") @db.VarChar(20)
+  delivery_evidences          delivery_evidences[]
+  incidents                   incidents[]
+  trip_events                 trip_events[]
+  locations                   locations?           @relation(fields: [location_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders                      orders?              @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trips                       trips                @relation(fields: [trip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([trip_id, sequence], map: "trip_stops_trip_seq_unique")
+  @@index([trip_id, sequence], map: "idx_trip_stops_trip")
+}
+
+model trip_track_points {
+  id            BigInt   @id @default(autoincrement())
+  trip_id       BigInt
+  latitude      Decimal  @db.Decimal(9, 6)
+  longitude     Decimal  @db.Decimal(9, 6)
+  recorded_time DateTime @db.Timestamptz(6)
+  trips         trips    @relation(fields: [trip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([trip_id, recorded_time], map: "idx_trip_track_points_trip")
+}
+
+model trip_trucks {
+  id                 BigInt    @id @default(autoincrement())
+  trip_id            BigInt
+  truck_id           BigInt
+  assignment_type    String    @default("Original") @db.VarChar(20)
+  incident_id        BigInt?
+  assigned_time      DateTime  @default(now()) @db.Timestamptz(6)
+  released_time      DateTime? @db.Timestamptz(6)
+  replacement_reason String?   @db.VarChar(255)
+  trips              trips     @relation(fields: [trip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  trucks             trucks    @relation(fields: [truck_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model trips {
+  id                  BigInt                @id @default(autoincrement())
+  trip_code           String                @unique @db.VarChar(20)
+  planned_start       DateTime              @db.Timestamptz(6)
+  planned_distance    Decimal?              @db.Decimal(7, 1)
+  planned_duration    Int?
+  actual_distance     Decimal?              @db.Decimal(7, 1)
+  actual_duration     Int?
+  status              String                @default("Assigned") @db.VarChar(20)
+  created_by          BigInt?
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  extra_fees          extra_fees[]
+  incidents           incidents[]
+  trip_drivers        trip_drivers[]
+  trip_events         trip_events[]
+  trip_status_history trip_status_history[]
+  trip_stops          trip_stops[]
+  trip_track_points   trip_track_points[]
+  trip_trucks         trip_trucks[]
+  users               users?                @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  waybills            waybills[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model trucks {
+  id                     BigInt        @id @default(autoincrement())
+  plate_number           String        @unique @db.VarChar(15)
+  model                  String?       @db.VarChar(50)
+  allowed_payload        Int
+  box_length             Decimal       @db.Decimal(6, 1)
+  box_width              Decimal       @db.Decimal(6, 1)
+  box_height             Decimal       @db.Decimal(6, 1)
+  required_license_class String        @db.VarChar(5)
+  inspection_expiry      DateTime      @db.Date
+  insurance_expiry       DateTime      @db.Date
+  gps_device_id          String?       @db.VarChar(50)
+  status                 String        @default("Available") @db.VarChar(20)
+  last_lat               Decimal?      @db.Decimal(9, 6)
+  last_lng               Decimal?      @db.Decimal(9, 6)
+  last_located_at        DateTime?     @db.Timestamptz(6)
+  created_at             DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime      @default(now()) @db.Timestamptz(6)
+  deleted_at             DateTime?     @db.Timestamptz(6)
+  trip_trucks            trip_trucks[]
+}
+
+model users {
+  id                                                         BigInt                  @id @default(autoincrement())
+  username                                                   String                  @unique @db.VarChar(50)
+  password_hash                                              String                  @db.VarChar(255)
+  full_name                                                  String                  @db.VarChar(100)
+  email                                                      String                  @unique @db.VarChar(100)
+  phone                                                      String?                 @db.VarChar(15)
+  zalo_link                                                  String?                 @db.VarChar(255)
+  role_id                                                    BigInt
+  status                                                     String                  @default("Active") @db.VarChar(20)
+  order_form_token                                           String?                 @db.VarChar(64)
+  password_reset_token                                       String?                 @db.VarChar(64)
+  password_reset_expiry                                      DateTime?               @db.Timestamptz(6)
+  password_changed_at                                        DateTime?               @db.Timestamptz(6)
+  last_login_at                                              DateTime?               @db.Timestamptz(6)
+  created_at                                                 DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                                                 DateTime                @default(now()) @db.Timestamptz(6)
+  activity_logs                                              activity_logs[]
+  compensation_claims_compensation_claims_created_byTousers  compensation_claims[]   @relation("compensation_claims_created_byTousers")
+  compensation_claims_compensation_claims_reviewed_byTousers compensation_claims[]   @relation("compensation_claims_reviewed_byTousers")
+  customer_documents_customer_documents_checked_byTousers    customer_documents[]    @relation("customer_documents_checked_byTousers")
+  customer_documents_customer_documents_required_byTousers   customer_documents[]    @relation("customer_documents_required_byTousers")
+  customer_documents_customer_documents_uploaded_byTousers   customer_documents[]    @relation("customer_documents_uploaded_byTousers")
+  customers                                                  customers[]
+  driver_profiles                                            driver_profiles?
+  driver_shifts_driver_shifts_created_byTousers              driver_shifts[]         @relation("driver_shifts_created_byTousers")
+  driver_shifts_driver_shifts_registered_byTousers           driver_shifts[]         @relation("driver_shifts_registered_byTousers")
+  driver_shifts_driver_shifts_reviewed_byTousers             driver_shifts[]         @relation("driver_shifts_reviewed_byTousers")
+  extra_fees_extra_fees_confirmed_byTousers                  extra_fees[]            @relation("extra_fees_confirmed_byTousers")
+  extra_fees_extra_fees_recorded_byTousers                   extra_fees[]            @relation("extra_fees_recorded_byTousers")
+  incidents_incidents_escalated_byTousers                    incidents[]             @relation("incidents_escalated_byTousers")
+  incidents_incidents_resolved_byTousers                     incidents[]             @relation("incidents_resolved_byTousers")
+  locations                                                  locations[]
+  news_posts                                                 news_posts[]
+  notifications                                              notifications[]
+  order_notes                                                order_notes[]
+  order_status_history                                       order_status_history[]
+  orders_orders_created_byTousers                            orders[]                @relation("orders_created_byTousers")
+  orders_orders_responsible_dispatcher_idTousers             orders[]                @relation("orders_responsible_dispatcher_idTousers")
+  password_reset_tokens                                      password_reset_tokens[]
+  system_settings                                            system_settings[]
+  transport_contracts                                        transport_contracts[]
+  trip_status_history                                        trip_status_history[]
+  trips                                                      trips[]
+  roles                                                      roles                   @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendors                                                    vendors[]
+  waybills                                                   waybills[]
+}
+
+model vendors {
+  id                  BigInt                @id @default(autoincrement())
+  company_name        String                @unique @db.VarChar(255)
+  contact_person      String?               @db.VarChar(100)
+  phone               String                @db.VarChar(15)
+  truck_types         String?               @db.VarChar(50)
+  approval_status     String                @default("Pending") @db.VarChar(20)
+  approved_by         BigInt?
+  approved_time       DateTime?             @db.Timestamptz(6)
+  approval_notes      String?
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  uses_status_api     Boolean?              @default(false)
+  api_key             String?               @db.VarChar(255)
+  orders              orders[]
+  transport_contracts transport_contracts[]
+  users               users?                @relation(fields: [approved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model waybills {
+  id                 BigInt   @id @default(autoincrement())
+  trip_id            BigInt
+  waybill_number     String   @unique @db.VarChar(20)
+  issue_time         DateTime @default(now()) @db.Timestamptz(6)
+  issued_by          BigInt?
+  status             String   @default("Valid") @db.VarChar(20)
+  trip_data_snapshot Json
+  file_link          String?  @db.VarChar(255)
+  users              users?   @relation(fields: [issued_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trips              trips    @relation(fields: [trip_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }

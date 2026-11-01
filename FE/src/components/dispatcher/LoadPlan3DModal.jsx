@@ -133,7 +133,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               Xếp hàng 3D – Chuyến {tripCode}
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Thuật toán <b>3D Extreme-Point + LIFO Shelf/Layer Bin Packing</b> (Ưu tiên kiện nặng dưới sàn, xoay tối ưu 90° &amp; xếp dỡ theo thứ tự điểm dừng)
+              Thuật toán <b>3D Extreme-Point + LIFO Layer Bin Packing</b>
             </p>
           </div>
           <Button 
@@ -153,7 +153,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
             <div className="flex items-center gap-2">
               <Tag color={summary.isOverloaded ? 'red' : 'green'} className="m-0 font-bold text-xs">
                 {summary.isOverloaded
-                  ? `Cảnh báo vượt ngưỡng (MSG66)`
+                  ? `Cảnh báo vượt ngưỡng tải`
                   : `Đã xếp đủ ${summary.packedPackagesCount}/${summary.totalPackagesCount} kiện hợp lệ`}
               </Tag>
             </div>
@@ -164,16 +164,16 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               {cargoSpecDetails.map((spec, idx) => (
                 <div key={idx} className="flex flex-wrap items-center gap-3 text-slate-700">
                   <span>
-                    📦 Hàng khách khai báo: <b>{spec.cargoName}</b> ({spec.cargoType})
+                    📦 Hàng khách khai báo: <b>{spec.cargoName}</b>
                   </span>
                   <span>
                     · Số lượng: <b className="text-indigo-700">{spec.packageCount} {spec.packageUnit}</b>
                   </span>
                   <span>
-                    · Số đo khách nhập (DxRxC): <b className="font-mono">{spec.inputDimensionsCm}</b>
+                    · Số đo khách nhập: <b className="font-mono">{spec.inputDimensionsCm}</b>
                   </span>
                   <span>
-                    · Kích thước mỗi kiện khi xếp 3D: <b className="font-mono text-emerald-700">{spec.unitDimensionsCm}</b> ({spec.unitWeightKg} kg/kiện)
+                    · Kích thước mỗi kiện: <b className="font-mono text-emerald-700">{spec.unitDimensionsCm}</b> · {spec.unitWeightKg} kg/kiện
                   </span>
                   <span>
                     · Tổng trọng lượng: <b>{spec.totalWeightKg.toLocaleString()} kg</b>
@@ -210,7 +210,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
           {/* Danh sách điểm dừng */}
           <div className="lg:col-span-3 space-y-3">
             <div className="text-xs font-bold text-gray-700">
-              {stops.length > 1 ? 'Điểm giao (giao trước → sau theo LIFO)' : 'Điểm giao hàng duy nhất (Chuẩn theo đơn)'}
+              {stops.length > 1 ? 'Điểm giao hàng' : 'Điểm giao hàng duy nhất'}
             </div>
 
             <div className="space-y-2">
@@ -245,7 +245,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
             {/* Danh sách từng kiện hàng */}
             <div className="pt-2 border-t border-gray-200 space-y-1.5">
               <div className="flex items-center justify-between text-xs font-bold text-gray-700">
-                <span>Danh sách kiện trên xe ({blocksData.length})</span>
+                <span>Danh sách kiện trên xe · {blocksData.length} kiện</span>
                 <span className="text-[10px] text-gray-400 font-normal">Bấm để xem tọa độ</span>
               </div>
               <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
@@ -262,7 +262,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                       }`}
                     >
                       <span className="truncate">
-                        #{String(b.packageIndex).padStart(2, '0')} · {b.packageUnit} (Tầng {b.tierLevel})
+                        #{String(b.packageIndex).padStart(2, '0')} · {b.packageUnit} · Tầng {b.tierLevel}
                       </span>
                       <span className="font-mono text-[10px] text-gray-600 shrink-0 ml-1">
                         {b.dx}×{b.dy}×{b.dz}cm · {b.weight}
@@ -289,7 +289,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                         : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    {view === '3D' ? 'Góc nhìn 3D (Xoay chuột)' : `Chiếu ${view}`}
+                    {view === '3D' ? 'Góc nhìn 3D' : `Chiếu ${view}`}
                   </button>
                 ))}
                 {activeView === '3D' && (
@@ -361,18 +361,18 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               </div>
 
               <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium px-2 pt-1.5">
-                <span>◀ Đầu xe (Vách trước X = 0 cm — Xếp hàng giao sau cùng)</span>
+                <span>◀ Đầu xe</span>
                 <span className="text-indigo-600">
-                  {activeView === '3D' ? '💡 Giữ chuột trái và kéo để xoay không gian thùng xe 360°' : `Mặt cắt kỹ thuật tỷ lệ thực (${boxDimText})`}
+                  {activeView === '3D' ? '💡 Kéo chuột để xoay 360°' : `Mặt cắt kỹ thuật tỷ lệ thực`}
                 </span>
-                <span>Cửa sau (X = {truck.length_cm} cm — Xếp hàng giao trước) ▶</span>
+                <span>Cửa sau ▶</span>
               </div>
             </div>
 
             {/* Tổng hợp thùng xe */}
             <div className="p-3 bg-slate-50 border border-gray-300 rounded text-xs text-gray-800 flex flex-wrap items-center justify-between gap-2">
               <div>
-                Số lượng kiện đã xếp: <b className="text-indigo-700">{summary.packedPackagesCount} / {summary.totalPackagesCount} kiện</b> · Tải trọng: <b>{summary.totalWeight?.toLocaleString()} / {summary.maxPayload?.toLocaleString()} kg ({summary.weightPercent}%)</b> · Thể tích chiếm dụng: <b>{summary.totalVolume} / {summary.maxVolume} m³ ({summary.volumePercent}%)</b>
+                Số lượng kiện đã xếp: <b className="text-indigo-700">{summary.packedPackagesCount} / {summary.totalPackagesCount} kiện</b> · Tải trọng: <b>{summary.totalWeight?.toLocaleString()} / {summary.maxPayload?.toLocaleString()} kg · {summary.weightPercent}%</b> · Thể tích chiếm dụng: <b>{summary.totalVolume} / {summary.maxVolume} m³ · {summary.volumePercent}%</b>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-emerald-700 font-semibold">
@@ -396,7 +396,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-purple-950 flex items-center gap-1.5">
                     <Bot size={14} className="text-purple-600" />
-                    Hướng dẫn Bốc xếp &amp; Chằng buộc từ Google Gemini AI ({aiLoadPlanAdvice.model || 'Gemini Pro'}):
+                    Hướng dẫn Bốc xếp &amp; Chằng buộc từ Google Gemini AI:
                   </span>
                   <Tag color={aiLoadPlanAdvice.safetyStatus === 'SAFE' ? 'green' : 'gold'} className="m-0 text-[10px] font-bold">
                     {aiLoadPlanAdvice.safetyStatus || 'SAFE'}
@@ -425,7 +425,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               <div className="p-3 bg-indigo-50/50 border border-indigo-200 rounded text-xs text-gray-800 space-y-1">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <b className="text-indigo-900">Kiện {selectedBlock.palletCode}</b> · Khách hàng: <b>{selectedBlock.customer}</b> · Hàng hóa: <b>{selectedBlock.cargoName}</b> ({selectedBlock.packageIndex}/{selectedBlock.totalPackagesInLot} {selectedBlock.packageUnit})
+                    <b className="text-indigo-900">Kiện {selectedBlock.palletCode}</b> · Khách hàng: <b>{selectedBlock.customer}</b> · Hàng hóa: <b>{selectedBlock.cargoName}</b> · {selectedBlock.packageIndex}/{selectedBlock.totalPackagesInLot} {selectedBlock.packageUnit}
                   </div>
                   <Tag color="blue" className="m-0 font-mono text-[11px]">
                     Kích thước kiện: {selectedBlock.dimensions} · Nặng: {selectedBlock.weight}

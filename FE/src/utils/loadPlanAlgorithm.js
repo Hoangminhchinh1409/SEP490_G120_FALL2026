@@ -438,11 +438,12 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
       });
     }
 
-    // Sắp xếp các điểm Extreme Point ứng viên:
-    // Ưu tiên: 1. Sát đầu xe (x nhỏ) -> 2. Sát sàn xe (z nhỏ) -> 3. Từ trái qua phải (y nhỏ)
+    // Sắp xếp các điểm Extreme Point ứng viên theo quy chuẩn An toàn Logistics:
+    // Ưu tiên cao nhất: Sát mặt sàn (z thấp nhất) để hạ trọng tâm xe, chống rung lắc lật xe
+    // Khi cùng độ cao Z: Xếp từ vách đầu xe (x nhỏ) về phía sau, và từ vách trái (y nhỏ) sang phải
     candidatePoints.sort((p1, p2) => {
-      if (Math.abs(p1.x - p2.x) > 1) return p1.x - p2.x;
       if (Math.abs(p1.z - p2.z) > 1) return p1.z - p2.z;
+      if (Math.abs(p1.x - p2.x) > 1) return p1.x - p2.x;
       return p1.y - p2.y;
     });
 

@@ -203,10 +203,10 @@ export function LoadPlanCanvas({
         />
 
         <text x={p00H.x} y={p00H.y - 8} fontSize="10" fontWeight="700" fill="#1e293b">
-          ◀ Đầu xe (Cao {truck.height_cm}cm)
+          ◀ Đầu xe · Cao {truck.height_cm}cm
         </text>
         <text x={pLWH.x} y={pLWH.y - 8} fontSize="10" fontWeight="700" fill="#1e293b" textAnchor="end">
-          Cửa sau (Dài {truck.length_cm}cm × Rộng {truck.width_cm}cm) ▶
+          Cửa sau · Dài {truck.length_cm}cm × Rộng {truck.width_cm}cm ▶
         </text>
       </svg>
     );
@@ -251,8 +251,8 @@ export function LoadPlanCanvas({
         textAnchor="middle"
       >
         {activeView === 'Trước'
-          ? `Chiều rộng lòng thùng (Y): ${truck.width_cm} cm (${(truck.width_cm / 100).toFixed(2)} m)`
-          : `Chiều dài lòng thùng (X): ${truck.length_cm} cm (${(truck.length_cm / 100).toFixed(2)} m) — [Đầu xe 0cm → Cửa sau ${truck.length_cm}cm]`}
+          ? `Chiều rộng lòng thùng: ${truck.width_cm} cm · ${(truck.width_cm / 100).toFixed(2)} m`
+          : `Chiều dài lòng thùng: ${truck.length_cm} cm · ${(truck.length_cm / 100).toFixed(2)} m — [Đầu xe 0cm → Cửa sau ${truck.length_cm}cm]`}
       </text>
 
       <text

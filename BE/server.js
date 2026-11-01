@@ -4,7 +4,14 @@ const cookieParser = require("cookie-parser");
 const compression = require("compression");
 require("dotenv").config();
 
+// Đảm bảo BigInt trả về từ Prisma được serialize chuẩn sang JSON (Number)
+BigInt.prototype.toJSON = function() {
+  const n = Number(this);
+  return Number.isSafeInteger(n) ? n : this.toString();
+};
+
 const supabase = require("./config/supabase");
+const prisma = require("./config/prisma");
 const apiRoutes = require("./routes");
 
 const app = express();
