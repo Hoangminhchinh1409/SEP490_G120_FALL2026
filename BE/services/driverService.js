@@ -983,6 +983,68 @@ const markAllNotificationsRead = async (userId) => {
 // 12. OFFLINE SYNC (BR-27, MSG39)
 // ==========================================
 
+const formatActionDescription = (type, payload = {}, tripId, stopId) => {
+  switch (type) {
+    case "ACCEPT_TRIP":
+      return `Xác nhận nhận chuyến xe ${tripId ? `#${tripId}` : ""}`.trim();
+    case "ARRIVE_STOP":
+      return `Đến điểm dừng ${stopId ? `#${stopId}` : ""} (Arrived)`.trim();
+    case "RECORD_STOP_EVENT": {
+      const eventName = payload?.event_type || payload?.eventType || "Tiến trình";
+      const eventMap = {
+        LOADING_START: "Bắt đầu bốc hàng (Loading Started)",
+        LOADING_DONE: "Bốc hàng xong (Loading Done)",
+        UNLOADING_START: "Bắt đầu dỡ hàng (Unloading Started)",
+        UNLOADING_DONE: "Dỡ hàng xong (Unloading Done)",
+        DEPARTED: "Xe lăn bánh rời điểm dừng (Left)"
+      };
+      return eventMap[eventName] || `Cập nhật trạng thái điểm dừng: ${eventName}`;
+    }
+    case "RECORD_PICKUP": {
+      const seal = payload?.seal_number || payload?.sealNumber || "";
+      return `Lấy hàng & Niêm phong seal ${seal ? `#${seal}` : ""} (Picked Up)`.trim();
+    }
+    case "RECORD_DELIVERY": {
+      const receiver = payload?.receiver_name || payload?.receiverName || "Khách hàng";
+      return `Giao hàng thành công & Ký nhận POD (${receiver})`;
+    }
+    case "REFUSE_CARGO": {
+      const reason = payload?.rejection_reason || payload?.reason || "Khách từ chối nhận";
+      return `Người nhận từ chối nhận hàng (Lý do: ${reason})`;
+    }
+    case "PROPOSE_EXTRA_FEE": {
+      const amount = Number(payload?.amount || 0).toLocaleString("vi-VN");
+      const feeName = payload?.fee_type || payload?.feeType || "Phụ phí";
+      return `Đề xuất phụ phí phát sinh: ${amount} đ (${feeName})`;
+    }
+    case "REGISTER_SHIFT": {
+      const date = payload?.date || payload?.work_date || payload?.workDate || "Ngày làm";
+      let startStr = payload?.start_time || payload?.startTime || "";
+      let endStr = payload?.end_time || payload?.endTime || "";
+      if (typeof startStr === "string" && startStr.includes("T")) {
+        try {
+          const d = new Date(startStr);
+          startStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        } catch {}
+      }
+      if (typeof endStr === "string" && endStr.includes("T")) {
+        try {
+          const d = new Date(endStr);
+          endStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        } catch {}
+      }
+      const hours = startStr && endStr ? ` (${startStr} - ${endStr})` : "";
+      return `Đăng ký ca làm việc ngày ${date}${hours}`;
+    }
+    case "REPORT_INCIDENT": {
+      const desc = payload?.description || payload?.type || "Sự cố giao thông";
+      return `Báo cáo sự cố khẩn cấp: ${desc}`;
+    }
+    default:
+      return `Thao tác ngoại tuyến [${type}]`;
+  }
+};
+
 const syncOfflineActions = async (userId, actions = []) => {
   if (!Array.isArray(actions) || actions.length === 0) {
     return { success: true, syncedCount: 0, results: [] };
@@ -996,8 +1058,12 @@ const syncOfflineActions = async (userId, actions = []) => {
 
   const results = [];
   for (const actionItem of actions) {
+    const { type, tripId, stopId, payload = {} } = actionItem || {};
+    const label = formatActionDescription(type, payload, tripId, stopId);
+    const clientActionId = payload?.clientActionId || actionItem?.clientActionId;
+    const clientTime = payload?.phoneTime || actionItem?.phoneTime || actionItem?.queuedAt || new Date().toISOString();
+
     try {
-      const { type, tripId, stopId, payload } = actionItem;
       let res;
       switch (type) {
         case "ACCEPT_TRIP":
@@ -1030,17 +1096,122 @@ const syncOfflineActions = async (userId, actions = []) => {
         default:
           res = { success: false, message: `Loại hành động không hợp lệ: ${type}` };
       }
-      results.push({ actionId: payload?.clientActionId, success: true, res });
+      results.push({
+        actionId: clientActionId,
+        type,
+        description: label,
+        status: "SUCCESS",
+        clientTime,
+        syncedAt: new Date().toISOString(),
+        res
+      });
     } catch (err) {
-      results.push({ actionId: actionItem?.payload?.clientActionId, success: false, error: err.message });
+      results.push({
+        actionId: clientActionId,
+        type,
+        description: label,
+        status: "FAILED",
+        clientTime,
+        syncedAt: new Date().toISOString(),
+        error: err.message
+      });
     }
+  }
+
+  const syncedCount = results.filter((r) => r.status === "SUCCESS").length;
+  const failedCount = results.filter((r) => r.status === "FAILED").length;
+  const totalCount = results.length;
+
+  let logId = null;
+
+  try {
+    // 1. Lưu bản ghi kiểm tra chi tiết các hành động vào activity_logs (Database)
+    const { data: actLog, error: actErr } = await supabase
+      .from("activity_logs")
+      .insert([
+        {
+          actor_id: userId,
+          actor_type: "DRIVER",
+          action: "OFFLINE_SYNC",
+          target_type: "OFFLINE_SYNC",
+          target_id: 0,
+          changes: {
+            totalCount,
+            syncedCount,
+            failedCount,
+            items: results.map((r) => ({
+              actionId: r.actionId,
+              type: r.type,
+              description: r.description,
+              status: r.status,
+              clientTime: r.clientTime,
+              syncedAt: r.syncedAt,
+              error: r.error || null
+            }))
+          },
+          reason: `Đồng bộ ngoại tuyến: ${syncedCount}/${totalCount} thành công (BR-27, MSG39)`
+        }
+      ])
+      .select();
+
+    if (!actErr && actLog && actLog[0]) {
+      logId = actLog[0].id;
+    }
+  } catch (logErr) {
+    console.warn("Failed to insert offline sync activity log:", logErr.message);
+  }
+
+  try {
+    // 2. Tạo thông báo hiển thị cho Driver tại Screen 6.5
+    const notifMessage = failedCount === 0
+      ? `Đã đồng bộ thành công ${syncedCount}/${totalCount} hành động ngoại tuyến lên máy chủ (BR-27, MSG39). Bấm để xem chi tiết danh sách.`
+      : `Đồng bộ ngoại tuyến hoàn tất: ${syncedCount}/${totalCount} thành công (${failedCount} thao tác bị lỗi). Bấm để kiểm tra chi tiết.`;
+
+    await supabase.from("notifications").insert([
+      {
+        user_account_id: userId,
+        target_type: "OFFLINE_SYNC",
+        target_id: logId,
+        message: notifMessage,
+        created_time: new Date().toISOString(),
+        read_time: null
+      }
+    ]);
+  } catch (notifErr) {
+    console.warn("Failed to insert offline sync notification:", notifErr.message);
   }
 
   return {
     success: true,
-    syncedCount: results.filter(r => r.success).length,
+    syncedCount,
+    failedCount,
+    totalCount,
+    logId,
     results
   };
+};
+
+const getSyncLogDetail = async (userId, logId) => {
+  if (!logId) {
+    const error = new Error("Mã bản ghi đồng bộ không hợp lệ");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const { data, error } = await supabase
+    .from("activity_logs")
+    .select("id, actor_id, action, target_type, changes, reason, created_time")
+    .eq("id", logId)
+    .eq("actor_id", userId)
+    .maybeSingle();
+
+  if (error || !data) {
+    const err = new Error("Không tìm thấy chi tiết phiên đồng bộ này");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return data;
 };
 
 module.exports = {
@@ -1061,6 +1232,6 @@ module.exports = {
   getDriverNotifications,
   markNotificationRead,
   markAllNotificationsRead,
-  syncOfflineActions
+  syncOfflineActions,
+  getSyncLogDetail
 };
-
