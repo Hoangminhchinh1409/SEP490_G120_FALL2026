@@ -42,7 +42,7 @@ const callGeminiGenerateContent = async (promptText, responseJson = true) => {
 
       if (!res.ok) {
         const errBody = await res.text();
-        lastError = new Error(`Gemini API(${modelName}) HTTP ${res.status}: ${errBody}`);
+        lastError = new Error(`Gemini API (${modelName}) HTTP ${res.status}: ${errBody}`);
         continue;
       }
 
@@ -54,7 +54,7 @@ const callGeminiGenerateContent = async (promptText, responseJson = true) => {
           .trim() || '';
 
       if (!rawText) {
-        lastError = new Error(`Gemini API(${modelName}) returned empty content`);
+        lastError = new Error(`Gemini API (${modelName}) returned empty content`);
         continue;
       }
 
@@ -184,7 +184,7 @@ Hãy phân tích sơ đồ xếp hàng 3D hiện tại trên xe tải và đưa 
 - Tổng khối lượng: ${summary.totalWeight} kg (${summary.weightPercent}% tải trọng)
 - Tổng thể tích: ${summary.totalVolume} m³ (${summary.volumePercent}% dung tích)
 - Chi tiết hàng hóa: ${JSON.stringify(cargoSpecDetails)}
-- Danh sách điểm trả hàng (LIFO): ${stops.map((s) => `${s.name}(${s.packageCount} kiện, ${s.weight} kg)`).join('; ')}
+- Danh sách điểm trả hàng (LIFO): ${stops.map((s) => `${s.name} (${s.packageCount} kiện, ${s.weight} kg)`).join('; ')}
 
 Trả về JSON với cấu trúc:
 {
@@ -269,4 +269,3 @@ module.exports = {
   autoScanCustomsDeclaration
 };
 
-generativelanguage.googleapis.com
