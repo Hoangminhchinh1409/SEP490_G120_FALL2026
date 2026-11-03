@@ -41,6 +41,7 @@ const MSG04 = "Mật khẩu mới không hợp lệ.";
 const MSG58 = "Mật khẩu hiện tại không đúng.";
 const MSG59 = "Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.";
 const MSG60 = "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.";
+const PASSWORD_MAX_BYTES_MESSAGE = "Mật khẩu mới không được vượt quá 72 byte.";
 
 function getInitials(name) {
   if (!name) return "U";
@@ -71,26 +72,10 @@ function profileFromUser(user) {
 }
 
 async function updateUserProfile(payload) {
-  const requests = [
-    [API_ENDPOINTS.AUTH.UPDATE_PROFILE, "POST"],
-    [API_ENDPOINTS.AUTH.ME, "PATCH"],
-    [API_ENDPOINTS.AUTH.ME, "PUT"],
-  ];
-  let lastError;
-
-  for (const [endpoint, method] of requests) {
-    try {
-      return await fetchWithAuth(endpoint, {
-        method,
-        body: JSON.stringify(payload),
-      });
-    } catch (error) {
-      if (error.status !== 404) throw error;
-      lastError = error;
-    }
-  }
-
-  throw lastError;
+  return fetchWithAuth(API_ENDPOINTS.AUTH.UPDATE_PROFILE, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export default function UserProfile() {
@@ -201,6 +186,10 @@ export default function UserProfile() {
     }
     if (passwordForm.newPassword.length < 8 || passwordForm.newPassword === passwordForm.currentPassword) {
       setPasswordError(MSG59);
+      return;
+    }
+    if (new TextEncoder().encode(passwordForm.newPassword).length > 72) {
+      setPasswordError(PASSWORD_MAX_BYTES_MESSAGE);
       return;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {

@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
+const userModel = require('../models/userModel');
 
-const requireAuth = (req, res, next) => {
+const requireAuth = async (req, res, next) => {
+    let decoded;
     try {
         let token = req.cookies?.token;
 
@@ -14,18 +16,41 @@ const requireAuth = (req, res, next) => {
             });
         }
 
-        const decoded = jwt.verify(
+        decoded = jwt.verify(
             token,
             process.env.JWT_SECRET
         );
-
-        req.user = decoded;
-
-        next();
-
     } catch (error) {
         return res.status(401).json({
             message: 'Invalid or expired token'
+        });
+    }
+
+    try {
+        const sessionState = await userModel.getAuthSessionState(decoded.id);
+        const passwordChangedAt = sessionState?.password_changed_at
+            ? new Date(sessionState.password_changed_at).getTime()
+            : 0;
+
+        if (
+            !sessionState ||
+            String(sessionState.status).toUpperCase() !== 'ACTIVE' ||
+            Number(decoded.pwdv || 0) !== passwordChangedAt
+        ) {
+            return res.status(401).json({
+                message: 'Invalid or expired token'
+            });
+        }
+
+        req.user = decoded;
+        return next();
+    } catch (error) {
+        console.error('Authentication session check failed:', {
+            name: error.name,
+            code: error.code || null
+        });
+        return res.status(500).json({
+            message: 'Internal server error'
         });
     }
 };

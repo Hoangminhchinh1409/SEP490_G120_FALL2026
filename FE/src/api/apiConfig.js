@@ -7,7 +7,7 @@ export const API_ENDPOINTS = {
         LOGIN: "/auth/login",
         LOGOUT: "/auth/logout",
         ME: "/auth/me",// lấy thông tin người dùng hiện tại
-        UPDATE_PROFILE: "/auth/update-profile",
+        UPDATE_PROFILE: "/auth/me",
         CHANGE_PASSWORD: "/auth/change-password",// thay đổi mật khẩu
         FORGOT_PASSWORD: "/auth/forgot-password",
         RESET_PASSWORD: "/auth/reset-password",
