@@ -1,0 +1,150 @@
+﻿
+
+Tổng quan: các vai trò trong hệ thống
+
+Guest là khách hàng của ALS, không cần tài khoản. Dispatcher là người điều phối đơn và chuyến. Driver là tài xế, dùng app trên điện thoại. Manager quản lý đội xe, nhân sự và duyệt các việc quan trọng. Administrator quản trị tài khoản và hệ thống.
+
+Giai đoạn 1: Khách lên đơn và chốt giá (Draft → Confirmed)
+
+Dispatcher gửi cho khách đường link đặt đơn riêng của mình. Khách mở link và tự điền form, không cần đăng ký. Khách ghi thông tin liên hệ, chọn hàng nhập (Import) hay hàng xuất (Export), nơi lấy hàng, nơi giao, người nhận, ngày lấy hàng, loại xe và yêu cầu bốc xếp. Mỗi dòng hàng gồm tên, loại, số lượng, cân nặng, kích thước và hàng có xếp chồng được không. Khách cũng chọn có nhờ ALS làm thủ tục hải quan hay không. Khách không nhập giá. Một đơn gửi qua form nặng tối đa 4.000 kg và không nhận hàng nguy hiểm. Với từng dòng hàng, hệ thống lấy số lớn hơn giữa cân nặng thực và cân quy đổi theo kích thước để tính cước.
+
+Form gửi đi là hệ thống tạo ngay đơn ở trạng thái Draft và báo cho Dispatcher. Hệ thống không hỏi còn xe hay không, vì ALS nhận mọi đơn. Thiếu xe thì thuê nhà xe ngoài ở bước sau.
+
+Dispatcher mở đơn Draft để rà soát. Dữ liệu sai thì Dispatcher hỏi lại khách rồi tự sửa. Hệ thống cho biết quãng đường và thời gian chạy dự kiến để Dispatcher tham khảo. ALS không dùng bảng giá cố định, nên sau khi thương lượng với khách qua Zalo hoặc hotline, Dispatcher tự nhập mức giá đã chốt. Nếu đơn có thể đi ghép với đơn khác của cùng khách, Dispatcher nói với khách ngay lúc báo giá.
+
+Khi khách đồng ý giá, Dispatcher chọn các chứng từ khách cần nộp. Dispatcher có thể hỏi trợ lý AI xem loại hàng này cần giấy tờ gì. Sau đó Dispatcher gửi link theo dõi đơn qua email. Khách tải chứng từ lên đó, hoặc nhờ Dispatcher tải hộ. Dispatcher mở từng file, duyệt hoặc từ chối kèm lý do để khách nộp lại.
+
+Khi chứng từ đã duyệt đủ, Dispatcher tạo hợp đồng cho đơn. Khách ký, Dispatcher tải bản đã ký lên và bấm Confirm Order. Hệ thống chỉ cho xác nhận khi có đủ ba thứ: chứng từ đã duyệt, giá đã chốt, hợp đồng đã ký. Đơn lúc này thành Confirmed và được gắn với hợp đồng khung của khách (bảng phí hủy, thời gian chờ miễn phí, mức bồi thường tối đa). Nếu khách chọn dịch vụ hải quan, đội ALS làm tờ khai dựa trên hồ sơ khách cung cấp, và phí này được ghi như một khoản phụ phí.
+
+Giai đoạn 2: Lập chuyến và gán xe (Confirmed → Assigned)
+
+Dispatcher mở đơn Confirmed và chọn xe, tài xế. Nếu cùng khách đó đang có một chuyến chưa chạy và khách đã đồng ý đi ghép, Dispatcher đưa đơn vào chuyến ấy. Một đơn luôn đi nguyên trên một xe, không tách hai xe.
+
+Hệ thống gợi ý loại xe nhỏ nhất vẫn chở đủ, xe nào gần nơi lấy hàng được xếp trước. Hàng quá thể tích thùng xe chỉ bị cảnh báo. Hàng quá tải trọng thì hệ thống không cho gán. Từ danh sách kiện hàng, hệ thống vẽ sơ đồ xếp 3D: hàng giao điểm cuối nằm sâu nhất, kiện nào cho phép mới được xếp chồng lên nhau. Sơ đồ chỉ để tham khảo, Dispatcher chỉnh được và nó không chặn việc gán xe.
+
+Hệ thống cũng tính tổng thời gian chuyến và giờ dự kiến đến từng điểm (ETA) từ giờ xuất phát Dispatcher chọn. Mỗi chặng lấy thời gian Google Maps có tính tắc đường, nhân 1,2 vì xe tải chậm hơn xe con, rồi cộng thời gian dừng tại điểm (60 phút ở kho nhập của ALS, 15 phút ở nơi khác, cộng thêm theo số tấn hàng). Dispatcher sửa được thời gian dừng. Nếu giờ đến nằm ngoài giờ nhận hàng của kho, hệ thống cảnh báo nhưng vẫn cho gán. Chuyến dài hơn 8 giờ thì hệ thống gợi ý dùng 2 tài xế.
+
+Danh sách tài xế chỉ có người đủ cả năm điều kiện: ca làm đã duyệt bao trùm chuyến, vẫn trong giới hạn 10 giờ mỗi ngày và 48 giờ mỗi tuần, không có chuyến nào chưa xong, đã nghỉ đủ giữa hai chuyến, bằng lái đúng hạng và còn hạn.
+
+Khi Dispatcher bấm gán, hệ thống tạo chuyến và đơn thành Assigned. Trang theo dõi của khách hiện “Truck assigned”. Giấy vận tải (waybill) được tạo ra và cả chuyến được gửi xuống app của tài xế. Giờ đến dự kiến lúc này được lưu lại làm giờ kế hoạch.
+
+Chuyến đi qua các trạng thái sau. Dispatched là lúc chuyến vừa gửi cho tài xế. Accepted là khi tài xế nhận. In Progress là khi tài xế bấm Arrived đầu tiên ở điểm lấy hàng. Completed là ở điểm giao cuối. Chuyến chỉ bị Cancelled khi mọi đơn trong đó bị hủy trước khi xe chạy.
+
+Sau khi chuyến được tạo, Dispatcher và tài xế đều mở được bộ chứng từ của chuyến, gồm giấy vận tải và các chứng từ khách đã nộp. Dispatcher có thể xuất giấy vận tải ra PDF để in cho khách ký xác nhận khối lượng. Tài xế mở bộ chứng từ này một lần khi có sóng, sau đó đọc được cả khi mất sóng. Bộ này bị xóa khỏi điện thoại khi chuyến Completed hoặc khi giấy vận tải bị thay bằng bản mới do đổi xe.
+
+Nếu đội xe nhà hết xe, Dispatcher chọn Hand Over to Vendor. Dispatcher chọn một nhà xe đã được Manager duyệt và nhập mã vận đơn của nhà xe. Đơn thành Handed Over to Vendor, khách nhận mã đó qua email. Nhà xe tự báo trạng thái về hệ thống qua kết nối riêng, hoặc Dispatcher cập nhật thay.
+
+Giai đoạn 3: Bốc hàng và chạy trên đường (Assigned → Accepted → Picked Up → In Transit)
+
+Tài xế đăng ký ca làm từ trước và Manager đã duyệt. Khi có chuyến mới, tài xế bấm nhận trên app (không có nút từ chối) và đơn thành Accepted. Đến điểm lấy hàng, tài xế bấm Arrived. Từ lúc này chuyến chuyển sang In Progress. Tài xế chụp ảnh hàng để xác nhận không có vấn đề, xếp hàng lên xe và chụp ảnh hàng đã xếp. Sau đó tài xế niêm phong, chụp một ảnh thấy rõ số seal cùng biển số xe, rồi nhập số seal, số kiện và khối lượng. Nếu khối lượng vượt tải trọng xe, hệ thống không lưu và tài xế phải gọi Dispatcher. Lưu xong, đơn thành Picked Up. Khi tài xế bấm Left rời điểm lấy hàng, đơn thành In Transit.
+
+Hàng nhập (Import): hàng từ máy bay xuống phải qua kiểm tra và thông quan xong. Lúc đó tài xế mới chụp ảnh, xếp hàng, niêm phong và chụp seal.
+
+Hàng xuất (Export): tài xế lấy hàng ở kho khách rồi chở về kho ALS. Tại kho, tài xế cắt seal, chụp seal đã cắt và hàng lúc dỡ xuống. Sau đó hải quan kiểm tra rồi hàng mới lên máy bay.
+
+Điện thoại tài xế lưu mọi thao tác và tự gửi khi có sóng trở lại, nên đi qua kho hải quan mất sóng cũng không sao. Hệ thống lấy vị trí GPS của xe mỗi phút để Dispatcher xem trên màn hình giám sát. Giờ dự kiến đến được tính lại ở bốn thời điểm: mỗi khi tài xế bấm Arrived hoặc Left, mỗi 5 phút theo vị trí xe, mỗi khi đổi xe, và khi Dispatcher sửa kế hoạch. ETA này chỉ để điều phối nội bộ, không gắn cờ trễ và không hiện cho khách. Giờ kế hoạch được lưu một lần lúc gán xe và không đổi. Giờ dự kiến mới nhất của từng điểm dừng cũng được lưu để nhân viên xem trên màn giám sát và khi xem lại hành trình, và mỗi lần tính lại thì ghi đè lên giá trị cũ.
+
+Hệ thống cảnh báo Dispatcher trong ba trường hợp: tài xế bấm xác nhận khi đang ở xa điểm dừng (tài xế vẫn không bị chặn), tài xế lái liên tục gần 4 giờ, và ca của tài xế sắp hết khi chuyến chưa xong. Dispatcher và tài xế nhắn tin với nhau ngay trên đơn.
+
+Tại mỗi điểm dừng, tài xế bấm lần lượt bốn nút: Arrived (đã đến), Loading Started (bắt đầu bốc hoặc dỡ), Loading Done (bốc hoặc dỡ xong) và Left (rời đi). Từ các mốc giờ này hệ thống tính thời gian chờ, tức từ lúc đến đến lúc bắt đầu bốc. Nếu thời gian chờ vượt mức miễn phí trong hợp đồng, hệ thống gợi ý phí chờ. Nếu xe phải chờ hàng thông quan ở kho, việc có tính phí chờ cho khách hay không do Dispatcher quyết bằng cách xác nhận hoặc từ chối khoản gợi ý. Hệ thống còn tính thời gian ở lại điểm, từ lúc đến đến lúc rời đi, để Manager xem trong hiệu suất tài xế. Tài xế cũng có thể đề xuất phụ phí kèm ảnh. Mọi khoản phí chỉ tính khi Dispatcher xác nhận.
+
+Giai đoạn 4: Sự cố và bồi thường
+
+Tài xế gửi báo cáo sự cố từ app, kèm ảnh hiện trường. Dispatcher nhận cảnh báo trên màn hình giám sát, gọi cho tài xế và ghi lại hướng xử lý.
+
+Nếu xe hỏng hoặc xe hay tài xế không đi tiếp được, Dispatcher đổi xe hoặc đổi tài xế ngay trên chuyến đang chạy và bắt buộc ghi lý do. Vị trí xe hỏng trở thành một điểm trung chuyển (Transit) để sang hàng sang xe thay thế. Tài xế chụp lại seal và biển số mới. Hệ thống tạo giấy vận tải mới và tính lại giờ đến từ vị trí của xe mới. Sau khi hàng đã sang xe mới, Manager đặt xe cũ sang Maintenance, hệ thống không tự đặt. Hỏng xe là lỗi của ALS nên khách không phải trả thêm phí.
+
+Nếu người nhận vắng mặt, tài xế báo sự cố và đơn vẫn ở In Transit cho đến khi giao được hoặc bị từ chối. Với hàng nhập mà người nhận từ chối, tài xế ghi lý do và chụp ảnh hàng, đơn thành Delivered (Exception). Dispatcher chọn một kho ALS, hệ thống thêm kho đó làm điểm dừng kế tiếp, và đơn đóng khi hàng được dỡ ở đó. Trang theo dõi của khách lúc đó hiện “Not received – stored at an ALS warehouse”.
+
+Sự cố nặng gồm hàng hỏng hoặc mất, tai nạn giao thông, hàng bị cơ quan nhà nước giữ. Với những trường hợp này Dispatcher phải chuyển lên Manager. Manager xem lại hành trình làm bằng chứng, ghi nhận lỗi thuộc bên nào rồi mới đóng sự cố.
+
+Sau khi nhận hàng, khách có 14 ngày để gửi yêu cầu bồi thường ngay trên trang theo dõi. Khách chọn loại (hư hỏng, thiếu hụt hoặc mất), mô tả, nhập số tiền và gửi tối đa 5 ảnh. Dispatcher cũng có thể tạo yêu cầu bồi thường từ một sự cố. Manager đối chiếu ảnh, hợp đồng và hành trình rồi duyệt hoặc từ chối kèm nhận xét. Số tiền vượt mức bồi thường tối đa trong hợp đồng (hoặc 500 triệu đồng khi không có hợp đồng) vẫn duyệt được nhưng phải ghi lý do. Trong lúc yêu cầu còn chờ, ảnh và dữ liệu GPS của chuyến không bị xóa theo lịch.
+
+Giai đoạn 5: Giao hàng và đóng đơn (In Transit → Delivered)
+
+Đến điểm giao, với hàng nhập tài xế dỡ hàng, giao chứng từ giấy và chụp biên bản giao nhận (POD) có chữ ký của người nhận. Tên người nhận ghi hay không tùy chọn. Với hàng xuất, tài xế cắt seal, chụp seal đã cắt và hàng đã dỡ, rồi giao chứng từ. Tài xế tick xác nhận đã giao đủ chứng từ và bấm Save Delivery. Thiếu ảnh thì hệ thống không cho lưu.
+
+Lưu xong là đơn thành Delivered và đóng luôn, không sửa được nữa. Ở điểm giao cuối, chuyến thành Completed và xe trở lại trạng thái rảnh. Sau đó Dispatcher xác nhận phí chờ và các phụ phí.
+
+Khách mở link theo dõi bất kỳ lúc nào để xem đơn đang ở bước nào: đã nhận đơn, đã có xe, đã lấy hàng, đã đến kho trung chuyển, đã giao. Khách thấy tên và số điện thoại Dispatcher phụ trách. Khách không thấy giờ dự kiến, ảnh POD hay ảnh seal.
+
+Thanh toán diễn ra hoàn toàn ngoài hệ thống, vì NEXLOG không kết nối ngân hàng. Kế toán xuất file đơn, kèm hợp đồng và ảnh POD, để làm căn cứ thu tiền.
+
+Giai đoạn 6: Hủy đơn (Cancelled)
+
+Khách báo hủy qua Zalo hoặc hotline. Đơn Draft hủy không mất phí. Đơn Confirmed, Assigned hoặc Accepted hủy được khi chuyến chưa sang In Progress. Hệ thống gợi ý phí hủy theo hợp đồng: càng gần giờ chạy thì phần trăm giá càng cao, và Dispatcher được sửa số tiền. Xe và tài xế được giải phóng. Chuyến chỉ bị hủy khi không còn đơn nào trong đó, và trang theo dõi hiện Cancelled. Khi chuyến đã In Progress thì hệ thống không cho hủy, đơn bị khóa và tiếp tục đi giao. Với đơn đã giao cho nhà xe ngoài, hủy xong thì tiền với nhà xe xử lý ngoài hệ thống.
+
+Những việc nằm ngoài hệ thống
+
+Hệ thống không có luồng riêng cho hai tình huống sau, và Dispatcher xử lý ngoài hệ thống; khoản tiền thỏa thuận chỉ được nhập tay. Một là xe hỏng giữa chuyến mà đội xe nhà không còn xe rảnh: Dispatcher tự liên hệ nhà xe ngoài để chở phần hàng còn lại. Hai là hàng bị từ chối đã nằm ở kho ALS: việc giao lại hoặc cất kho do Dispatcher thỏa thuận với khách. NEXLOG không quản lý tồn kho.
+
+Phần vận hành xung quanh
+
+Manager quản lý tài khoản Dispatcher và tài xế, hồ sơ tài xế (hạng bằng, hạn bằng), danh sách xe (tải trọng, hạn đăng kiểm và bảo hiểm, thiết bị GPS) và tình trạng xe. Tài xế tự đăng ký ca trên app, và Manager duyệt hoặc từ chối kèm lý do. Manager cũng có thể tự thêm hoặc sửa ca cho tài xế, và ca do Manager thêm được duyệt luôn. Hai ca của cùng một tài xế không được chồng nhau. Hệ thống cảnh báo khi một ca vượt 10 giờ trong ngày hoặc cộng dồn vượt 48 giờ trong tuần. Tài xế nhận kết quả duyệt ngay trên app.
+
+Manager còn duyệt nhà xe ngoài, theo dõi khối lượng việc của từng Dispatcher cùng những đơn bị treo quá lâu, rồi chuyển đơn sang Dispatcher khác khi cần. Manager xem Performance Dashboard và hiệu suất từng tài xế, đồng thời đăng và quản lý bài tin tức trên website, nơi khách xem, tìm và lọc theo chuyên mục.
+
+Dispatcher quản lý danh sách địa điểm (địa chỉ, vị trí bản đồ, giờ nhận hàng) và hợp đồng khung với khách và nhà xe. Dispatcher cũng có dashboard riêng cho việc của mình. Sau mỗi chuyến, Dispatcher và Manager có thể xem lại toàn bộ hành trình để đối chiếu kế hoạch với thực tế.
+
+Administrator tạo và khóa tài khoản, phân vai trò và quyền, xem nhật ký hoạt động (kể cả lý do mỗi lần đổi xe hay tài xế), và chỉnh cài đặt hệ thống như thời hạn lưu dữ liệu. Các giới hạn giờ lái theo luật bị khóa, không sửa được. Mọi người dùng đều đăng nhập, đổi mật khẩu, hoặc đặt lại mật khẩu quên qua link email dùng một lần.
+
+Hệ thống tự làm các việc nền. Mỗi 15 phút gắn cờ các đơn bị treo quá lâu hoặc quá hạn nộp chứng từ. Mỗi đêm xóa file và dữ liệu hết thời hạn lưu, trừ đơn có yêu cầu bồi thường đang chờ. Mỗi sáng nhắc giấy tờ xe và bằng lái sắp hết hạn, và xe hết hạn đăng kiểm tự chuyển sang Inactive.
+
+Ngoài đơn và chuyến, mỗi thứ sau cũng có vòng đời riêng:
+
+Xe: Available, On Trip, Maintenance, Inactive. Hệ thống tự đổi giữa Available và On Trip. Maintenance và Inactive do Manager đặt, riêng việc xe hết hạn đăng kiểm tự về Inactive.
+
+Sự cố: Reported rồi Resolved, hoặc Reported rồi Escalated rồi Resolved khi là sự cố nặng.
+
+Yêu cầu bồi thường: Pending rồi Approved hoặc Rejected.
+
+Chứng từ của khách: thiếu, đã tải lên, rồi được xác nhận hoặc bị từ chối để tải lại. Chứng từ hết thời hạn lưu sẽ bị xóa.
+
+Ca làm: Requested rồi Approved hoặc Rejected.
+
+Phí: Proposed rồi Confirmed hoặc Rejected. Phí do Dispatcher tự ghi thì Confirmed ngay.
+
+Giấy vận tải: Valid, và thành Replaced khi đổi xe hoặc tài xế.
+
+Nhà xe ngoài: Pending rồi Approved. Hợp đồng khung: Active, Expired hoặc Inactive, và mỗi khách chỉ có một hợp đồng Active.
+
+Bài tin tức: Draft rồi Published, có thể gỡ xuống hoặc xóa.
+
+Thông báo trong hệ thống nhắc những việc cần xử lý: đơn Draft mới, tài xế vừa báo từ chối giao hàng, đơn bị treo hoặc quá hạn chứng từ, chuyến bị đổi khi điện thoại đang offline, tài xế sắp chạm 4 giờ lái hoặc hết ca, kết quả yêu cầu bồi thường, và tài xế xe cũ được báo khi xe bị thay. Thông báo cũ hơn 90 ngày bị xóa tự động.
+
+Mỗi vai trò chỉ làm được phần việc của mình:
+
+Dispatcher tạo, sửa, hủy đơn và xử lý chuyến, nhưng chỉ xem được danh sách xe.
+
+Manager xem đơn, chuyển đơn giữa các Dispatcher, quản lý xe, tài xế, ca, nhà xe, duyệt bồi thường, nhưng không tạo hay sửa đơn.
+
+Tài xế chỉ thấy chuyến của mình.
+
+Guest chỉ gửi đơn qua link của một Dispatcher hoặc xem một đơn qua link theo dõi.
+
+Administrator quản lý tài khoản, quyền và cài đặt, không xử lý đơn.
+
+Khi hệ thống ở chế độ bảo trì, chỉ Administrator đăng nhập được, người khác thấy thông báo đang bảo trì.
+
+Các con số chính của hệ thống
+
+Đơn và file. Đơn gửi qua form tối đa 4.000 kg. File tối đa 10 MB. Cân quy đổi theo kích thước = dài × rộng × cao (cm) chia 5000*.
+
+Thời gian chuyến. Hệ số xe tải 1,2*. Thời gian dừng 60 phút ở kho nhập của ALS (tiêu chuẩn dịch vụ của ALS), 15 phút* ở nơi khác, cộng thêm theo số tấn*. Chuyến dài hơn 8 giờ* thì gợi ý 2 tài xế.
+
+Theo dõi. Lấy vị trí GPS mỗi phút. ETA tính lại mỗi 5 phút*, và bỏ qua lần đó nếu không có sự kiện mới và xe nhích dưới 500 m.
+
+Giờ lái (theo luật). Lái liên tục tối đa 4 giờ, mỗi ngày làm tối đa 10 giờ, mỗi tuần tối đa 48 giờ. Trên 3 km/h tính là đang lái. Đứng yên từ 15 phút trở lên tính là nghỉ. Mất tín hiệu GPS giữa hai điểm dừng vẫn tính là đang lái. Trên chuyến 2 tài xế, giờ lái tính cho cả hai.
+
+Vùng quanh điểm dừng. Bán kính mặc định 150 m*. Sai số của điện thoại được cộng thêm tối đa 50 m. Nếu điện thoại không lấy được vị trí trong 10 giây thì hệ thống lưu thao tác và đánh dấu, không chặn tài xế.
+
+Sơ đồ xếp hàng 3D. Một kiện phải được đỡ ít nhất 75%* diện tích đáy mới được xếp chồng. Tối đa 500 khối được vẽ, vượt thì chỉ liệt kê.
+
+Điện thoại tài xế. Hàng đợi offline tối đa 50 thao tác.
+
+Bồi thường. Khách gửi trong 14 ngày* sau khi nhận hàng, tối đa 5 ảnh. Mức bồi thường tối đa là mức trong hợp đồng, hoặc 500 triệu đồng khi không có hợp đồng.
+
+Tài khoản. Phiên đăng nhập sống 15 phút và tự gia hạn khi còn dùng. Link đặt lại mật khẩu chỉ dùng một lần và hết hạn sau 30 phút*.
+
+Lưu trữ và dọn dẹp. Giấy vận tải lưu 3 năm. Ảnh bằng chứng lưu lên tới 2 năm (theo lý do nêu trong Report 3). Phiên đăng nhập hết hạn quá 7 ngày bị xóa. Thông báo cũ hơn 90 ngày bị xóa.
+

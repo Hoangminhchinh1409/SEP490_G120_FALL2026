@@ -48,6 +48,20 @@ Client Request
 
 > ⚠️ **Lưu ý thực tế:** `managerController.js` hiện tại đang query trực tiếp bằng `pool.query()` trong controller. Với các module **mới**, hãy tách ra theo đúng 3 tầng Controller → Service → Model. Các module cũ sẽ được refactor dần.
 
+### 1.3 Quy tắc Phân rã 19 Modules & Phụ thuộc Một Chiều (Report 4 SDS)
+
+Dự án tuân thủ phân rã 19 modules và quy tắc gọi phụ thuộc một chiều (Strict One-Way Dependency Rules):
+- **Phân rã 19 modules:** `auth`, `users`, `locations`, `customers`, `orders`, `documents`, `tracking`, `trips`, `fleet`, `vendors`, `monitoring`, `driver`, `incidents`, `claims`, `news`, `dashboard`, `notifications`, `workflows`, `shared`.
+- **Quy tắc gọi một chiều:**
+  - `driver` → `trips`, `orders`, `documents`, `incidents`
+  - `trips` → `orders`, `fleet`, `locations`, `vendors`
+  - `incidents` → `trips`, `orders`, `claims`
+  - `tracking` → `orders`, `documents`, `claims`
+  - `dashboard`, `monitoring` → Đọc dữ liệu từ các module khác
+  - **Tuyệt đối KHÔNG module nào được gọi ngược vào `driver` hay `tracking`.**
+  - Mọi luồng giao tiếp tương tác hai chiều hoặc liên phân hệ phức tạp bắt buộc phải đưa vào `workflows`.
+  - Một module chỉ truy xuất dữ liệu của module khác thông qua Service công khai của module đó (không truy vấn trực tiếp DB của nhau).
+
 ---
 
 ## 2. Quy tắc đặt tên (Naming Conventions)
