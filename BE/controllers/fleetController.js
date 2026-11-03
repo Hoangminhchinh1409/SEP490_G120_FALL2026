@@ -568,6 +568,9 @@ const createDriver = async (req, res) => {
 
       // Băm mật khẩu mặc định (bắt buộc vì password_hash NOT NULL)
       const rawPassword = password || 'Nexlog@2026';
+      if (typeof rawPassword !== 'string' || Buffer.byteLength(rawPassword, 'utf8') > 72) {
+        return res.status(400).json({ message: 'Mật khẩu không được vượt quá 72 byte.' });
+      }
       const password_hash = await bcrypt.hash(rawPassword, 10);
 
       const { data: newUser, error: userErr } = await supabase
@@ -844,4 +847,3 @@ module.exports = {
   rejectShift,
   deleteShift
 };
-

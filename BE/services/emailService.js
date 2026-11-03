@@ -20,11 +20,11 @@ const getTransporter = async () => {
       });
       await realTransporter.verify();
       transporter = realTransporter;
-      console.log('[EmailService] Connected & verified Gmail SMTP Service with account:', process.env.SMTP_USER);
+      console.log('[EmailService] SMTP transport connected and verified.');
       return transporter;
     } catch (smtpErr) {
       console.warn(
-        `[EmailService] Gmail SMTP verify failed for ${process.env.SMTP_USER} (${smtpErr.message}). Falling back to Ethereal test email...`
+        `[EmailService] SMTP verification failed (${smtpErr.code || smtpErr.name}). Falling back to Ethereal test email...`
       );
     }
   }
@@ -41,15 +41,14 @@ const getTransporter = async () => {
         pass: testAccount.pass,
       },
     });
-    console.log('[EmailService] Created ethereal test email account:', testAccount.user);
+    console.log('[EmailService] Created an Ethereal test email account.');
     return transporter;
   } catch (err) {
-    console.warn('[EmailService] Could not create Ethereal test account, fallback to direct console log:', err.message);
+    console.warn('[EmailService] Could not create an Ethereal test email account.');
     transporter = {
       sendMail: async (mailOptions) => {
         console.log('--------------------------------------------------');
         console.log('[EMAIL PREVIEW MOCK SENT]');
-        console.log('To:', mailOptions.to);
         console.log('Subject:', mailOptions.subject);
         console.log('--------------------------------------------------');
         return { messageId: `mock-${Date.now()}` };
@@ -414,7 +413,12 @@ const sendContractSigningEmail = async ({
   }
 };
 
-const sendPasswordResetEmail = async ({ email, customerName, resetUrl }) => {
+const sendPasswordResetEmail = async ({
+  email,
+  customerName,
+  resetUrl,
+  ttlMinutes = 30
+}) => {
   const mailTransporter = await getTransporter();
   const fromAddress = process.env.SMTP_FROM || `NEXLOG Logistics <${process.env.SMTP_USER || 'no-reply@nexlog.vn'}>`;
 
@@ -422,12 +426,12 @@ const sendPasswordResetEmail = async ({ email, customerName, resetUrl }) => {
     from: fromAddress,
     to: email,
     subject: '[NEXLOG] Yêu cầu đặt lại mật khẩu',
-    text: `Xin chào ${customerName || 'bạn'},\n\nĐể đặt lại mật khẩu NEXLOG, hãy mở liên kết sau (có hiệu lực trong 60 phút):\n${resetUrl}\n\nNếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.`,
+    text: `Xin chào ${customerName || 'bạn'},\n\nĐể đặt lại mật khẩu NEXLOG, hãy mở liên kết sau (có hiệu lực trong ${ttlMinutes} phút):\n${resetUrl}\n\nNếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 24px auto; color: #1e293b;">
         <h2>Đặt lại mật khẩu NEXLOG</h2>
         <p>Xin chào,</p>
-        <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn. Liên kết có hiệu lực trong 60 phút.</p>
+        <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn. Liên kết có hiệu lực trong ${ttlMinutes} phút.</p>
         <p><a href="${resetUrl}" style="display: inline-block; padding: 12px 20px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px;">Đặt lại mật khẩu</a></p>
         <p>Nếu nút không hoạt động, hãy sao chép liên kết sau vào trình duyệt:<br><a href="${resetUrl}">${resetUrl}</a></p>
         <p>Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.</p>
