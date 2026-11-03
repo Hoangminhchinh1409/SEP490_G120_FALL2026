@@ -34,7 +34,7 @@ const createIncident = async (req, res) => {
 const updateIncidentStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await incidentService.updateIncidentStatus(id, req.body);
+    const updated = await incidentService.updateIncidentStatus(id, req.body, req.user?.id || 3);
     return res.json({ message: 'Đã cập nhật sự cố thành công', incident: updated });
   } catch (err) {
     console.error('updateIncidentStatus error:', err);

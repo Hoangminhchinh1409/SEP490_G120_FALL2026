@@ -155,15 +155,19 @@ export default function TripAssignmentFleetConfig({
             onChange={setSelectedDriver1}
             placeholder="Chọn tài xế 1"
           >
-            {drivers.map(d => (
-              <Option 
-                key={d.id} 
-                value={d.name}
-                disabled={d.status === 'Chờ khám' || d.hours_driven >= 9}
-              >
-                {d.name} · {d.status} · Đã lái {d.hours_driven}h {d.hours_driven >= 9 ? '(Vượt trần MSG64)' : ''}
-              </Option>
-            ))}
+            {drivers.map(d => {
+              const drivenHours = Number(d.hours_driven ?? d.shift_hours_today ?? 2.0);
+              const statusLabel = d.status === 'AVAILABLE' ? 'Sẵn sàng' : (d.status || 'Sẵn sàng');
+              return (
+                <Option 
+                  key={d.id} 
+                  value={d.name}
+                  disabled={d.status === 'Chờ khám' || drivenHours >= 9}
+                >
+                  {d.name} · {statusLabel} · Đã lái {drivenHours}h {drivenHours >= 9 ? '(Vượt trần MSG64)' : ''}
+                </Option>
+              );
+            })}
           </Select>
         </div>
 
@@ -178,15 +182,19 @@ export default function TripAssignmentFleetConfig({
             placeholder={driverCount === 2 ? "Chọn tài xế 2" : "Không áp dụng"}
             disabled={driverCount === 1}
           >
-            {drivers.map(d => (
-              <Option 
-                key={d.id} 
-                value={d.name}
-                disabled={d.name === selectedDriver1 || d.status === 'Chờ khám' || d.hours_driven >= 9}
-              >
-                {d.name} · {d.status} · Đã lái {d.hours_driven}h
-              </Option>
-            ))}
+            {drivers.map(d => {
+              const drivenHours = Number(d.hours_driven ?? d.shift_hours_today ?? 2.0);
+              const statusLabel = d.status === 'AVAILABLE' ? 'Sẵn sàng' : (d.status || 'Sẵn sàng');
+              return (
+                <Option 
+                  key={d.id} 
+                  value={d.name}
+                  disabled={d.name === selectedDriver1 || d.status === 'Chờ khám' || drivenHours >= 9}
+                >
+                  {d.name} · {statusLabel} · Đã lái {drivenHours}h
+                </Option>
+              );
+            })}
           </Select>
         </div>
       </div>

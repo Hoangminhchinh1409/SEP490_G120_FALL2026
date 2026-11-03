@@ -191,6 +191,16 @@ export const dispatcherApi = {
     }
   },
 
+  getTripReplay: async (id) => {
+    try {
+      const data = await fetchWithoutAuth(`/trips/${id}/replay`);
+      return data;
+    } catch (error) {
+      console.error('dispatcherApi.getTripReplay error:', error);
+      throw error;
+    }
+  },
+
   getIncidents: async () => {
     try {
       const data = await fetchWithoutAuth('/incidents');
@@ -214,11 +224,16 @@ export const dispatcherApi = {
     }
   },
 
-  updateIncidentStatus: async (id, status) => {
+  updateIncidentStatus: async (id, statusOrPayload) => {
     try {
+      const bodyPayload =
+        typeof statusOrPayload === 'object' && statusOrPayload !== null
+          ? statusOrPayload
+          : { status: statusOrPayload };
+
       const data = await fetchWithoutAuth(`/incidents/${id}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status })
+        body: JSON.stringify(bodyPayload)
       });
       return data.incident;
     } catch (error) {

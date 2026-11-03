@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Modal, Button, Tag, message } from 'antd';
+import { Modal, Button, Tag, Input, message } from 'antd';
 import { Box, ExternalLink } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { dispatcherApi } from '../../api/dispatcherApi';
@@ -150,13 +150,14 @@ export default function TripAssignmentModal({
     }
   }, [defaultOption]);
   const [driverCount, setDriverCount] = useState(1);
-  const [selectedDriver1, setSelectedDriver1] = useState('Hồ Chí Học · Đã lái 4,5h');
+  const [selectedDriver1, setSelectedDriver1] = useState('Nguyễn Văn Lái');
   const [selectedDriver2, setSelectedDriver2] = useState(undefined);
-  const [selectedVendor, setSelectedVendor] = useState('Vận tải Hải Long');
+  const [selectedVendor, setSelectedVendor] = useState('Công ty TNHH Vận tải & Tiếp vận Hà Nội (Hanoitrans)');
   const [vendorVehicleCount, setVendorVehicleCount] = useState(1);
   const [vendorCost, setVendorCost] = useState('3.500.000');
   const [vendorTrackingCode, setVendorTrackingCode] = useState('');
   const [changeReason, setChangeReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [is3DOpen, setIs3DOpen] = useState(false);
 
   const [draggedIndex, setDraggedIndex] = useState(null);
@@ -164,10 +165,9 @@ export default function TripAssignmentModal({
 
   const [trucks, setTrucks] = useState([]);
   const [drivers, setDrivers] = useState([
-    { id: 1, name: 'Hồ Chí Học', status: 'Sẵn sàng', hours_driven: 4.5 },
-    { id: 2, name: 'Trần Sức Hải', status: 'Sẵn sàng', hours_driven: 1.0 },
-    { id: 3, name: 'Lê Văn Hùng', status: 'Sẵn sàng', hours_driven: 3.0 },
-    { id: 4, name: 'Phạm Văn Nam', status: 'Sẵn sàng', hours_driven: 5.5 }
+    { id: 6, name: 'Nguyễn Văn Lái', status: 'AVAILABLE', hours_driven: 2.0 },
+    { id: 15, name: 'Nguyễn Tấn Tài', status: 'AVAILABLE', hours_driven: 3.5 },
+    { id: 16, name: 'Đỗ Duy Hải', status: 'AVAILABLE', hours_driven: 2.0 }
   ]);
   const [vendors, setVendors] = useState([]);
 
@@ -182,8 +182,18 @@ export default function TripAssignmentModal({
         ]);
         if (active) {
           if (Array.isArray(truckData) && truckData.length > 0) setTrucks(truckData);
-          if (Array.isArray(driverData) && driverData.length > 0) setDrivers(driverData);
-          if (Array.isArray(vendorData) && vendorData.length > 0) setVendors(vendorData);
+          if (Array.isArray(driverData) && driverData.length > 0) {
+            setDrivers(driverData);
+            if (driverData[0]?.name) {
+              setSelectedDriver1(driverData[0].name);
+            }
+          }
+          if (Array.isArray(vendorData) && vendorData.length > 0) {
+            setVendors(vendorData);
+            if (vendorData[0]?.name) {
+              setSelectedVendor(vendorData[0].name);
+            }
+          }
         }
       } catch (err) {
         console.error('Không tải được dữ liệu đội xe / tài xế:', err);
@@ -229,6 +239,47 @@ export default function TripAssignmentModal({
       }
     ];
   });
+
+  useEffect(() => {
+    if (!order) return;
+    const pickupAddr = order.pickup_address || order.pickup || 'Kho ALS Sân Bay Nội Bài';
+    const dropoffAddr = order.delivery_address || order.dropoff || 'KCN Quế Võ, Bắc Ninh';
+    const pickupCoords = order.pickup_coords || getCoordsFromAddress(pickupAddr, 'A') || { lat: 21.2187, lng: 105.8042 };
+    const dropoffCoords = order.dropoff_coords || order.delivery_coords || getCoordsFromAddress(dropoffAddr, 'B') || { lat: 21.1458, lng: 106.1265 };
+
+    setStops([
+      {
+        id: 'start',
+        badge: 'S',
+        name: 'Bãi xe ALS – Long Biên',
+        action: 'Xuất phát',
+        eta: 'dự kiến 07:00',
+        type: 'START',
+        coords: { lat: 21.0375, lng: 105.8942 }
+      },
+      {
+        id: 'pickup',
+        badge: '1',
+        name: `Lấy hàng: ${pickupAddr}`,
+        action: 'bốc 30 phút',
+        eta: 'dự kiến 07:45',
+        type: 'PICKUP',
+        coords: pickupCoords
+      },
+      {
+        id: 'dropoff-1',
+        badge: '2',
+        name: `Điểm trả 1: ${dropoffAddr}`,
+        action: 'dỡ 30 phút',
+        eta: 'dự kiến 09:15',
+        type: 'DROPOFF',
+        coords: dropoffCoords
+      }
+    ]);
+    setMultiDropMode('STANDALONE');
+    setShowAddDropoffInput(false);
+    setVendorTrackingCode(`3PL-${order.order_id || order.id || '8829'}`);
+  }, [order]);
 
   const [routePolyline, setRoutePolyline] = useState([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
@@ -445,7 +496,7 @@ export default function TripAssignmentModal({
     message.info('Đã xóa điểm dừng khỏi hành trình');
   };
 
-  const handleAssignInternal = () => {
+  const handleAssignInternal = async () => {
     if (!selectedDriver1) {
       message.error('Vui lòng chọn Tài xế 1!');
       return;
@@ -455,49 +506,119 @@ export default function TripAssignmentModal({
       return;
     }
 
-    onAssignSuccess?.({
-      ...order,
-      status: 'ASSIGNED',
-      truck: selectedTruckPlate,
-      truck_model: selectedTruckSpec.label,
-      driver1: selectedDriver1,
-      driver2: driverCount === 2 ? selectedDriver2 : null,
-      stops: stops,
-      distanceKm: routeSummary.distanceKm,
-      durationMins: routeSummary.durationMins
-    });
-    message.success(`Đã giao xe ${currentFleetItem.plate} và tạo chuyến thành công!`);
+    const cleanPlate = currentFleetItem?.plate || String(selectedTruckPlate || '').split(' ')[0].trim();
+    const cleanDriver1 = String(selectedDriver1).split('·')[0].trim();
+    const cleanDriver2 = driverCount === 2 && selectedDriver2 ? String(selectedDriver2).split('·')[0].trim() : null;
+
+    setSubmitting(true);
+    try {
+      const createdTrip = await dispatcherApi.createTrip({
+        order_id: order.id,
+        order_code: order.order_code || order.order_id || orderCode,
+        allocation_type: 'INTERNAL',
+        truck_plate: cleanPlate,
+        driver_name: cleanDriver1,
+        driver1_name: cleanDriver1,
+        driver2_name: cleanDriver2,
+        stops: stops,
+        planned_distance: routeSummary.distanceKm,
+        planned_duration: routeSummary.durationMins
+      });
+
+      onAssignSuccess?.({
+        ...order,
+        ...createdTrip,
+        trip_id: createdTrip?.id || createdTrip?.trip_id,
+        order_id: order.id || order.order_id,
+        order_code: orderCode,
+        allocation_type: 'INTERNAL',
+        status: 'ASSIGNED',
+        truck: cleanPlate,
+        truck_model: selectedTruckSpec.label,
+        driver1: cleanDriver1,
+        driver2: cleanDriver2,
+        stops: stops,
+        distanceKm: routeSummary.distanceKm,
+        durationMins: routeSummary.durationMins
+      });
+    } catch (err) {
+      console.error('handleAssignInternal error:', err);
+      message.error(err.message || 'Lỗi khi tạo chuyến và phân bổ xe trên máy chủ');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleAssignVendor = () => {
+  const handleAssignVendor = async () => {
     if (!vendorTrackingCode.trim()) {
       message.error('Vui lòng nhập Mã vận đơn nhà xe đối tác!');
       return;
     }
-    onAssignSuccess?.({
-      ...order,
-      status: 'ASSIGNED',
-      vendor: selectedVendor,
-      vendor_tracking: vendorTrackingCode,
-      vendor_cost: vendorCost,
-      vendor_vehicles_count: vendorVehicleCount
-    });
-    message.success(`Đã chuyển đơn sang Nhà xe đối tác: ${selectedVendor}!`);
+
+    setSubmitting(true);
+    try {
+      const createdVendorTrip = await dispatcherApi.createTrip({
+        order_id: order.id,
+        order_code: order.order_code || order.order_id || orderCode,
+        allocation_type: 'VENDOR',
+        vendor_name: selectedVendor,
+        vendor_tracking_code: vendorTrackingCode.trim(),
+        vendor_cost: vendorCost,
+        vendor_vehicles_count: vendorVehicleCount
+      });
+
+      onAssignSuccess?.({
+        ...order,
+        ...createdVendorTrip,
+        order_id: order.id || order.order_id,
+        order_code: orderCode,
+        allocation_type: 'VENDOR',
+        status: 'HANDED_OVER_TO_VENDOR',
+        vendor: selectedVendor,
+        vendor_tracking: vendorTrackingCode.trim(),
+        vendor_cost: vendorCost,
+        vendor_vehicles_count: vendorVehicleCount
+      });
+    } catch (err) {
+      console.error('handleAssignVendor error:', err);
+      message.error(err.message || 'Lỗi khi bàn giao đơn hàng cho nhà xe đối tác');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleSaveChange = () => {
+  const handleSaveChange = async () => {
     if (!changeReason.trim()) {
       message.error('Vui lòng nhập lý do thay đổi xe / tài xế!');
       return;
     }
-    onAssignSuccess?.({
-      ...order,
-      status: 'ASSIGNED',
-      truck: selectedTruckPlate,
-      driver1: selectedDriver1,
-      change_reason: changeReason
-    });
-    message.success('Đã lưu thay đổi phương tiện và tái cấp vận đơn mới thành công!');
+    const cleanPlate = currentFleetItem?.plate || String(selectedTruckPlate || '').split(' ')[0].trim();
+    const cleanDriver1 = String(selectedDriver1).split('·')[0].trim();
+
+    setSubmitting(true);
+    try {
+      if (incidentContext?.id || incidentContext?.raw_id) {
+        await dispatcherApi.updateIncidentStatus(incidentContext.raw_id || incidentContext.id, {
+          status: 'RESOLVED_REPLACED',
+          new_truck: cleanPlate,
+          new_driver: cleanDriver1,
+          replacement_reason: changeReason.trim()
+        });
+      }
+      onAssignSuccess?.({
+        ...order,
+        status: 'ASSIGNED',
+        truck: cleanPlate,
+        driver1: cleanDriver1,
+        change_reason: changeReason
+      });
+      message.success('Đã lưu thay đổi phương tiện và tái cấp vận đơn mới thành công!');
+    } catch (err) {
+      console.error('handleSaveChange error:', err);
+      message.error(err.message || 'Lỗi khi lưu thay đổi phương tiện');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -668,6 +789,8 @@ export default function TripAssignmentModal({
                 setVendorVehicleCount={setVendorVehicleCount}
                 vendorCost={vendorCost}
                 setVendorCost={setVendorCost}
+                vendorTrackingCode={vendorTrackingCode}
+                setVendorTrackingCode={setVendorTrackingCode}
                 vendors={vendors}
               />
             )}
@@ -691,6 +814,7 @@ export default function TripAssignmentModal({
                   <div className="pt-4 sm:pt-4">
                     <Button
                       type="primary"
+                      loading={submitting}
                       onClick={handleSaveChange}
                       className="bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs h-8 px-6 rounded"
                     >
@@ -729,6 +853,7 @@ export default function TripAssignmentModal({
                 <div className="flex flex-col items-end">
                   <Button
                     type="primary"
+                    loading={submitting}
                     onClick={handleAssignInternal}
                     className="bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs h-9 px-8 rounded shadow-sm"
                   >
@@ -739,6 +864,7 @@ export default function TripAssignmentModal({
               ) : (
                 <Button
                   type="primary"
+                  loading={submitting}
                   onClick={handleAssignVendor}
                   className="bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs h-9 px-8 rounded shadow-sm"
                 >
