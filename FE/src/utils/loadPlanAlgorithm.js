@@ -240,11 +240,30 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
     const customerName = ord.customer || ord.customer_name || "Khách hàng";
 
     // Lấy danh sách loại hàng trong đơn (nếu có mảng items), hoặc lấy trực tiếp từ order
+    // Tự động đối chiếu với tổng trọng lượng đơn hàng (ord.weight = 700 kg) để xác định it.weight là tổng trọng lượng dòng hàng (450 + 250 = 700 kg) hay trọng lượng từng kiện
+    const orderKnownTotalKg = Number(ord.weight || ord.actual_weight_kg || ord.chargeable) || 0;
+    const sumDirectKg = Array.isArray(ord.items)
+      ? ord.items.reduce((s, it) => s + (Number(it.weight || it.weight_kg) || 0), 0)
+      : 0;
+    const sumMultipliedKg = Array.isArray(ord.items)
+      ? ord.items.reduce(
+          (s, it) => s + (Number(it.weight || it.weight_kg) || 0) * Math.max(1, parseInt(it.package_count) || 1),
+          0
+        )
+      : 0;
+    const isItemWeightAlreadyTotal =
+      orderKnownTotalKg > 0
+        ? Math.abs(sumDirectKg - orderKnownTotalKg) <= Math.abs(sumMultipliedKg - orderKnownTotalKg)
+        : true;
+
     const rawItems =
       Array.isArray(ord.items) && ord.items.length > 0
         ? ord.items.map((it) => {
             const pCount = Math.max(1, parseInt(it.package_count) || 1);
-            const totalKg = Number(it.total_weight) || (Number(it.weight) > 0 ? Number(it.weight) * pCount : 0);
+            const rawW = Number(it.weight || it.weight_kg) || 0;
+            const totalKg =
+              Number(it.total_weight) ||
+              (isItemWeightAlreadyTotal ? rawW : rawW * pCount);
             return {
               cargo_name: it.cargo_name || ord.cargo_name || "Hàng hóa",
               cargo_type: it.cargo_type || ord.cargo_type || "GENERAL",
@@ -361,7 +380,8 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
       });
 
       const isFragile = cargoItem.cargo_type === "FRAGILE";
-      const isStackable = !isFragile && unitH <= truck.height_cm * 0.75;
+      const isLightCarton = unitWeightKg <= 45 && unitH <= 60;
+      const isStackable = (!isFragile || isLightCarton) && unitH <= truck.height_cm * 0.75;
 
       for (let k = 0; k < boxesToCreate; k++) {
         // Phân bổ kiện hàng vào các điểm dừng (nếu có nhiều điểm trả thì chia đều theo stop)
@@ -547,16 +567,16 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
         }
       }
     } else {
-      // Kiện hàng bị tràn kích thước hoặc vượt tải trọng (MSG66)
-      let reason = "Hết không gian thể tích thùng xe (MSG66)";
+      // Kiện hàng bị tràn kích thước hoặc vượt tải trọng
+      let reason = "Hết không gian thể tích thùng xe";
       if (
         item.length_cm > truck.length_cm ||
         item.width_cm > truck.width_cm ||
         item.height_cm > truck.height_cm
       ) {
-        reason = `Kích thước kiện (${item.length_cm}×${item.width_cm}×${item.height_cm} cm) vượt lòng thùng xe (${truck.length_cm}×${truck.width_cm}×${truck.height_cm} cm) (MSG66)`;
+        reason = `Kích thước kiện (${item.length_cm}×${item.width_cm}×${item.height_cm} cm) vượt lòng thùng xe (${truck.length_cm}×${truck.width_cm}×${truck.height_cm} cm)`;
       } else if (exceedsPayload) {
-        reason = `Vượt tải trọng cho phép của xe (${truck.max_payload.toLocaleString()} kg) (MSG66)`;
+        reason = `Vượt tải trọng cho phép của xe (${truck.max_payload.toLocaleString()} kg)`;
       }
 
       overflowBlocks.push({

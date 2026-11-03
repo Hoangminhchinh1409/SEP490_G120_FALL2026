@@ -135,7 +135,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
             icon={<ArrowUpRight size={14} />}
             onClick={() => setMode('ESCALATE')}
           >
-            Chuyển tiếp Quản lý (UC-16)
+            Chuyển tiếp Quản lý
           </Button>
         ),
         !isAlreadyResolved && mode === 'ESCALATE' && (
@@ -157,7 +157,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
             className="bg-amber-600 hover:bg-amber-700"
             onClick={() => setMode('REPLACE')}
           >
-            Điều xe thay thế (UC-15)
+            Điều xe thay thế
           </Button>
         ),
         !isAlreadyResolved && mode === 'REPLACE' && (
@@ -184,7 +184,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
             className="bg-emerald-600 hover:bg-emerald-700"
             onClick={handleMarkResolved}
           >
-            Xác nhận đã xử lý (UC-14)
+            Xác nhận đã xử lý
           </Button>
         )
       ].filter(Boolean)}
@@ -223,7 +223,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
         ) : mode === 'REPLACE' ? (
           <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-300 space-y-3">
             <div className="font-bold text-amber-900 text-xs uppercase flex items-center gap-1.5">
-              <RotateCcw size={16} /> Phương án điều xe &amp; tài xế thay thế (UC-15, BR-09):
+              <RotateCcw size={16} /> Phương án điều xe &amp; tài xế thay thế:
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -261,7 +261,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
             </div>
 
             <div>
-              <label className="text-xs font-bold text-gray-700 block mb-1">Lý do thay đổi xe / tài xế (Bắt buộc theo BR-09):</label>
+              <label className="text-xs font-bold text-gray-700 block mb-1">Lý do thay đổi xe / tài xế:</label>
               <Input.TextArea
                 rows={2}
                 className="text-xs"
@@ -274,7 +274,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
         ) : mode === 'ESCALATE' ? (
           <div className="p-4 bg-red-50/50 rounded-xl border border-red-200 space-y-2">
             <label className="text-xs font-bold text-red-800 block">
-              Lý do chuyển tiếp sự cố nghiêm trọng lên Quản lý (UC-16):
+              Lý do chuyển tiếp sự cố nghiêm trọng lên Quản lý:
             </label>
             <Input.TextArea
               rows={3}
@@ -286,7 +286,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
           </div>
         ) : (
           <div>
-            <label className="text-xs font-bold text-gray-700 block mb-1">Phương án xử lý tại chỗ (UC-14):</label>
+            <label className="text-xs font-bold text-gray-700 block mb-1">Phương án xử lý tại chỗ:</label>
             <Input.TextArea
               rows={3}
               placeholder="Nhập hướng dẫn cho tài xế khắc phục sự cố hoặc phương án cứu hộ tại chỗ..."

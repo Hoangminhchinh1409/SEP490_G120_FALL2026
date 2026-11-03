@@ -20,7 +20,8 @@ export default function TripAssignmentStopsList({
   moveStop,
   handleRemoveStop,
   handleAddBreak,
-  routeSummary
+  routeSummary,
+  trafficSummary
 }) {
   return (
     <div className="space-y-2">
@@ -173,7 +174,14 @@ export default function TripAssignmentStopsList({
               </div>
               
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-gray-500 font-mono text-[11px]">{stop.eta}</span>
+                {stop.legDistanceKm && (
+                  <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-mono">
+                    +{stop.legDistanceKm}km · {stop.legDriveMins}p
+                  </span>
+                )}
+                <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono font-bold text-[11px]">
+                  {stop.eta}
+                </span>
 
                 {/* Nút di chuyển Lên / Xuống */}
                 {isDraggable && (
@@ -224,8 +232,13 @@ export default function TripAssignmentStopsList({
         >
           + Thêm điểm nghỉ
         </Button>
-        <span className="text-xs text-gray-500 font-medium">
-          Tổng quãng đường ngắn nhất: <b>{routeSummary.distanceKm} km</b> · <b>chuyến {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</b>
+        <span className="text-xs text-gray-600 font-medium">
+          Tổng quãng đường VietMap: <b>{routeSummary.distanceKm} km</b> · <b>ETA chuyến {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</b>
+          {trafficSummary?.delayMins > 0 && (
+            <span className="text-amber-700 font-semibold ml-1">
+              (đã cộng +{trafficSummary.delayMins}p mật độ giao thông)
+            </span>
+          )}
         </span>
       </div>
     </div>

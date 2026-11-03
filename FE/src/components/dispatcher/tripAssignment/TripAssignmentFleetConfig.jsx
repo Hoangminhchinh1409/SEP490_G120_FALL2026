@@ -129,7 +129,7 @@ export default function TripAssignmentFleetConfig({
         <div className="p-2.5 bg-red-50 border border-red-300 rounded text-[11px] text-red-900 flex items-center gap-1.5">
           <AlertTriangle size={14} className="text-red-600 shrink-0" />
           <span>
-            Cảnh báo quá tải (BR-25 / MSG66): Khối lượng hàng (<b>{chargeableWeight.toLocaleString()} kg</b>) vượt tải trọng xe đang chọn (<b>{selectedTruckSpec.maxPayloadKg.toLocaleString()} kg</b>). Đề xuất chọn <b>{vehicleAnalysis?.recommendedVehicle?.label}</b>!
+            Cảnh báo quá tải: Khối lượng hàng (<b>{chargeableWeight.toLocaleString()} kg</b>) vượt tải trọng xe đang chọn (<b>{selectedTruckSpec.maxPayloadKg.toLocaleString()} kg</b>). Đề xuất chọn <b>{vehicleAnalysis?.recommendedVehicle?.label}</b>!
           </span>
         </div>
       )}
@@ -138,7 +138,7 @@ export default function TripAssignmentFleetConfig({
         <div className="p-2.5 bg-amber-50 border border-amber-300 rounded text-[11px] text-amber-900 flex items-center gap-1.5">
           <AlertTriangle size={14} className="text-amber-600 shrink-0" />
           <span>
-            Chỉ còn đủ thời gian chuyển &gt; 8 giờ: <b>Thời gian chạy dự kiến {totalTripHours.toFixed(1)} giờ – đề xuất 2 tài xế (MSG62)</b>
+            Chỉ còn đủ thời gian chuyển &gt; 8 giờ: <b>Thời gian chạy dự kiến {totalTripHours.toFixed(1)} giờ – đề xuất 2 tài xế</b>
           </span>
         </div>
       )}
@@ -164,7 +164,7 @@ export default function TripAssignmentFleetConfig({
                   value={d.name}
                   disabled={d.status === 'Chờ khám' || drivenHours >= 9}
                 >
-                  {d.name} · {statusLabel} · Đã lái {drivenHours}h {drivenHours >= 9 ? '(Vượt trần MSG64)' : ''}
+                  {d.name} · {statusLabel} · Đã lái {drivenHours}h {drivenHours >= 9 ? '(Vượt trần giờ lái)' : ''}
                 </Option>
               );
             })}

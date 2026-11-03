@@ -34,6 +34,8 @@ const formatIncident = (inc) => {
     feStatus = 'ESCALATED';
   }
 
+  const upperType = String(inc.type || 'OTHER').toUpperCase().replace(/\s+/g, '_');
+
   return {
     id: `INC-${inc.id}`,
     raw_id: inc.id,
@@ -42,9 +44,9 @@ const formatIncident = (inc) => {
     truck: truckObj.plate_number || '29H-995.72',
     driver: driverObj.full_name || 'Tài xế',
     phone: driverObj.phone || '0901234567',
-    type: typeDisplayMap[inc.type] || inc.type,
+    type: typeDisplayMap[upperType] || inc.type,
     raw_type: inc.type,
-    severity: inc.type === 'ACCIDENT' || inc.type === 'BREAKDOWN' || inc.type === 'CARGO_DAMAGED' ? 'HIGH' : 'MEDIUM',
+    severity: upperType === 'ACCIDENT' || upperType === 'BREAKDOWN' || upperType === 'CARGO_DAMAGED' ? 'HIGH' : 'MEDIUM',
     status: feStatus,
     db_status: inc.status,
     reported_at: reportedAt ? new Date(reportedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '09:15',

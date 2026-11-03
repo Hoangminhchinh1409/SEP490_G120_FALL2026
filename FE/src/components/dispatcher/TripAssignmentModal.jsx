@@ -8,7 +8,7 @@ import {
   getVehicleSpecByKey,
   analyzeVehicleRecommendation
 } from '../../data/dispatcherPresets';
-import { fetchShortestRoadRoute, optimizeDropoffsByRoadDistance } from '../../utils/roadRouting';
+import { fetchShortestRoadRoute, optimizeDropoffsByRoadDistance, computeStopsLiveEta } from '../../utils/roadRouting';
 import LoadPlan3DModal from './LoadPlan3DModal';
 
 // Các subcomponents tách module
@@ -130,10 +130,11 @@ export default function TripAssignmentModal({
 
   // Bộ lọc danh sách xe: CHỈ hiển thị các xe CÙNG HẠNG TẢI TRỌNG đã chốt (khác biển số)
   const filteredFleetOptions = useMemo(() => {
-    const specKeyNorm = agreedVehicleSpecKey.replace('TRUCK_', '');
+    const safeKey = String(agreedVehicleSpecKey || 'TRUCK_3.5T');
+    const specKeyNorm = safeKey.replace('TRUCK_', '');
     const matchedOptions = INTERNAL_FLEET_OPTIONS.filter(o => 
-      o.specKey === agreedVehicleSpecKey ||
-      o.specKey.replace('TRUCK_', '') === specKeyNorm
+      o.specKey === safeKey ||
+      String(o.specKey || '').replace('TRUCK_', '') === specKeyNorm
     );
     return matchedOptions.length > 0 ? matchedOptions : INTERNAL_FLEET_OPTIONS;
   }, [agreedVehicleSpecKey]);
@@ -282,8 +283,17 @@ export default function TripAssignmentModal({
   }, [order]);
 
   const [routePolyline, setRoutePolyline] = useState([]);
+  const [trafficSegments, setTrafficSegments] = useState([]);
+  const [trafficSummary, setTrafficSummary] = useState(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
-  const [routeSummary, setRouteSummary] = useState({ distanceKm: 68, durationMins: 160 });
+  const [routeSummary, setRouteSummary] = useState({
+    distanceKm: 68,
+    durationMins: 160,
+    delayMins: 0,
+    etaText: null,
+    legs: [],
+    provider: 'vietmap_live'
+  });
 
   useEffect(() => {
     let isCancelled = false;
@@ -295,9 +305,15 @@ export default function TripAssignmentModal({
           const res = await fetchShortestRoadRoute(waypoints);
           if (!isCancelled && res) {
             setRoutePolyline(res.polyline || res.coordinates || []);
+            setTrafficSegments(Array.isArray(res.trafficSegments) ? res.trafficSegments : []);
+            setTrafficSummary(res.trafficSummary || null);
             setRouteSummary({
               distanceKm: res.distanceKm || 68,
-              durationMins: res.durationMins || 160
+              durationMins: res.durationMins || 160,
+              delayMins: res.delayMins || 0,
+              etaText: res.etaText || null,
+              legs: Array.isArray(res.legs) ? res.legs : [],
+              provider: res.provider || 'vietmap_live'
             });
           }
         }
@@ -310,6 +326,13 @@ export default function TripAssignmentModal({
     fetchRoute();
     return () => { isCancelled = true; };
   }, [stops]);
+
+  const stopsWithLiveEta = useMemo(() => {
+    if (typeof computeStopsLiveEta === 'function') {
+      return computeStopsLiveEta(stops, routeSummary, plannedStart);
+    }
+    return stops;
+  }, [stops, routeSummary, plannedStart]);
 
   const currentFleetItem = useMemo(() => {
     return INTERNAL_FLEET_OPTIONS.find(o => o.value === selectedTruckPlate) || INTERNAL_FLEET_OPTIONS[2];
@@ -735,7 +758,7 @@ export default function TripAssignmentModal({
                   />
 
                   <TripAssignmentStopsList
-                    stops={stops}
+                    stops={stopsWithLiveEta}
                     multiDropMode={multiDropMode}
                     showAddDropoffInput={showAddDropoffInput}
                     setShowAddDropoffInput={setShowAddDropoffInput}
@@ -753,6 +776,7 @@ export default function TripAssignmentModal({
                     handleRemoveStop={handleRemoveStop}
                     handleAddBreak={handleAddBreak}
                     routeSummary={routeSummary}
+                    trafficSummary={trafficSummary}
                   />
                 </div>
 
@@ -760,19 +784,65 @@ export default function TripAssignmentModal({
                 <div className="lg:col-span-5 flex flex-col justify-between">
                   <div className="border border-gray-300 rounded overflow-hidden h-full flex flex-col bg-white">
                     <div className="p-2 border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-700 flex items-center justify-between">
-                      <span>Bản đồ tuyến đường bộ ngắn nhất (Ôm sát đường giao thông)</span>
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-mono font-medium">
-                        Geoapify Road / OSRM
+                      <span>Bản đồ Giao thông &amp; ETA Thời gian thực</span>
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono font-bold">
+                        VietMap Live Traffic &amp; Tilemap
                       </span>
                     </div>
 
+                    {/* Thanh cảnh báo mật độ giao thông & ETA trực tiếp */}
+                    {trafficSummary && (
+                      <div
+                        className={`px-2.5 py-1.5 border-b text-[11px] flex flex-wrap items-center justify-between gap-1.5 ${
+                          trafficSummary.status === 'CONGESTED'
+                            ? 'bg-red-50 border-red-200 text-red-800'
+                            : trafficSummary.status === 'SLOW'
+                              ? 'bg-amber-50 border-amber-200 text-amber-900'
+                              : 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
+                        }`}
+                      >
+                        <div className="font-semibold">
+                          {trafficSummary.status === 'CONGESTED' ? (
+                            <span>
+                              🔴 Đang ùn tắc trên: <b>{trafficSummary.congestedRoads.join(', ')}</b>
+                              {trafficSummary.slowRoads?.length > 0 && (
+                                <span> · Đông xe: {trafficSummary.slowRoads.join(', ')}</span>
+                              )}
+                            </span>
+                          ) : trafficSummary.status === 'SLOW' ? (
+                            <span>
+                              🟠 Đông xe di chuyển chậm trên: <b>{trafficSummary.slowRoads.join(', ')}</b>
+                            </span>
+                          ) : (
+                            <span>🟢 Toàn tuyến thông thoáng, không có điểm ùn tắc</span>
+                          )}
+                        </div>
+                        <div className="font-mono font-bold shrink-0">
+                          TB {trafficSummary.avgSpeedKmh} km/h
+                          {trafficSummary.delayMins > 0 ? ` · Trễ +${trafficSummary.delayMins}p` : ''}
+                          {routeSummary.etaText ? ` · Dự kiến đến ${routeSummary.etaText}` : ''}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex-1 min-h-[340px] relative">
-                      <TripAssignmentMap stops={stops} routePolyline={routePolyline} loadingRoute={loadingRoute} />
+                      <TripAssignmentMap
+                        stops={stopsWithLiveEta}
+                        routePolyline={routePolyline}
+                        trafficSegments={trafficSegments}
+                        trafficSummary={trafficSummary}
+                        loadingRoute={loadingRoute}
+                      />
                     </div>
 
                     <div className="p-2 bg-white border-t border-gray-200 text-[11px] text-gray-700 font-mono flex items-center justify-between">
-                      <span>{stops.map(s => s.badge).join(' → ')}</span>
-                      <span>{routeSummary.distanceKm} km · {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</span>
+                      <span>{stopsWithLiveEta.map(s => s.badge).join(' → ')}</span>
+                      <span>
+                        {routeSummary.distanceKm} km · {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph
+                        {stopsWithLiveEta.length > 0 && stopsWithLiveEta[stopsWithLiveEta.length - 1]?.liveEtaTime
+                          ? ` · Hoàn tất ${stopsWithLiveEta[stopsWithLiveEta.length - 1].liveEtaTime}`
+                          : ''}
+                      </span>
                       <span>{currentFleetItem.plate} ({selectedTruckSpec.shortLabel})</span>
                     </div>
                   </div>

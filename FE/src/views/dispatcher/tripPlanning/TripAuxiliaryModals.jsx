@@ -192,7 +192,7 @@ export function TripWaybillModal({ selectedTripWaybill, onClose, onPrintWaybill 
         <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
           <Printer size={20} className="text-emerald-600" />
           <div>
-            <h3 className="text-base font-bold text-gray-800">Lệnh điều xe &amp; Vận đơn vận tải (UC-41)</h3>
+            <h3 className="text-base font-bold text-gray-800">Lệnh điều xe &amp; Vận đơn vận tải</h3>
             <p className="text-xs text-gray-500 font-normal">Xuất bản Vận đơn giao cho tài xế và phòng kế toán</p>
           </div>
         </div>
@@ -381,7 +381,7 @@ export function TripReplayModal({ selectedTripReplay, onClose }) {
         <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
           <PlayCircle size={20} className="text-amber-600" />
           <div>
-            <h3 className="text-base font-bold text-gray-800">Xem lại Hành trình GPS Chuyến xe (UC-42)</h3>
+            <h3 className="text-base font-bold text-gray-800">Xem lại Hành trình GPS Chuyến xe</h3>
             <p className="text-xs text-gray-500 font-normal">Đối chiếu vết chạy GPS thực tế với kế hoạch lộ trình</p>
           </div>
         </div>
@@ -478,7 +478,7 @@ export function TripReplayModal({ selectedTripReplay, onClose }) {
             ))}
           </div>
           <ul className="space-y-1 text-gray-600 list-disc pl-4 text-[11px] pt-1">
-            <li>Đã kiểm tra bán kính Geofence 200m tại kho lấy hàng — Hợp lệ (BR-36).</li>
+            <li>Đã kiểm tra bán kính Geofence 200m tại kho lấy hàng — Hợp lệ.</li>
             <li>Tín hiệu thiết bị GPS hộp đen ổn định, chu kỳ đồng bộ 30 giây/lần.</li>
           </ul>
         </div>

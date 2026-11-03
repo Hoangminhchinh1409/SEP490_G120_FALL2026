@@ -99,7 +99,7 @@ export default function TripIncidentsTab({
               {r.status === 'RESOLVED'
                 ? 'ĐÃ XỬ LÝ / ĐỔI XE'
                 : r.status === 'ESCALATED'
-                  ? 'ĐÃ CHUYỂN QUẢN LÝ (UC-16)'
+                  ? 'ĐÃ CHUYỂN QUẢN LÝ'
                   : 'CHỜ ĐIỀU PHỐI XỬ LÝ'}
             </Tag>
           </div>
@@ -132,7 +132,7 @@ export default function TripIncidentsTab({
     <div className="space-y-5 pt-2">
       <div className="p-4 bg-gray-50/70 rounded-xl border border-gray-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
         <div>
-          <h3 className="font-bold text-sm text-gray-800">Quản lý &amp; Xử lý Sự cố Hiện trường (UC-14, UC-15, UC-16)</h3>
+          <h3 className="font-bold text-sm text-gray-800">Quản lý &amp; Xử lý Sự cố Hiện trường</h3>
           <p className="text-xs text-gray-500 mt-0.5">Tiếp nhận thông tin hỏng xe, tai nạn hoặc ùn tắc, phát lệnh điều xe thay thế và cấp lại vận đơn</p>
         </div>
         <Button

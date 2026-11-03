@@ -145,9 +145,9 @@ export default function TripPlanningAndMonitoring() {
       if (actionStatus === 'RESOLVED_REPLACED') {
         message.success(`Đã điều xe cứu hộ ${payload.new_truck || ''}, đổi tài xế ${payload.new_driver || ''} và cấp lại Vận đơn phiên bản mới thành công!`);
       } else if (actionStatus === 'ESCALATED' || actionStatus === 'ESCALATED_TO_MANAGER') {
-        message.warning('Đã chuyển tiếp sự cố nghiêm trọng lên Quản lý (UC-16)!');
+        message.warning('Đã chuyển tiếp sự cố nghiêm trọng lên Quản lý!');
       } else {
-        message.success('Đã xác nhận xử lý xong sự cố hiện trường (UC-14)!');
+        message.success('Đã xác nhận xử lý xong sự cố hiện trường!');
       }
       setActiveIncidentModal(null);
       await fetchData();

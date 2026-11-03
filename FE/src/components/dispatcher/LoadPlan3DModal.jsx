@@ -199,7 +199,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               showIcon
               title={
                 <span className="font-bold text-xs">
-                  Phát hiện {overflowBlocks.length}/{summary.totalPackagesCount} kiện hàng không vừa thùng xe hoặc vượt tải trọng (MSG66):
+                  Phát hiện {overflowBlocks.length}/{summary.totalPackagesCount} kiện hàng không vừa thùng xe hoặc vượt tải trọng:
                 </span>
               }
               description={

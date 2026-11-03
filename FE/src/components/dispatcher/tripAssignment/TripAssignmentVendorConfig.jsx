@@ -17,7 +17,7 @@ export default function TripAssignmentVendorConfig({
   return (
     <div className="p-4 bg-gray-50 border border-gray-300 rounded space-y-3">
       <div className="font-semibold text-xs text-gray-700">
-        Khi chọn &quot;Nhà xe đối tác&quot; <span className="text-gray-400 font-normal">(Bàn giao đơn hàng sang nhà xe 3PL đã duyệt — UC-10, BR-13)</span>
+        Khi chọn &quot;Nhà xe đối tác&quot; <span className="text-gray-400 font-normal">(Bàn giao đơn hàng sang nhà xe 3PL đã duyệt)</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
         <div className="sm:col-span-4 space-y-1">
