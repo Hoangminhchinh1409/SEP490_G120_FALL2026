@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip, Space } from 'antd';
-import { Search, Plus, Download, Eye, PhoneCall, Globe, RefreshCw, ArrowUpRight, XCircle } from 'lucide-react';
+import { Search, Plus, Download, Eye, PhoneCall, Globe, RefreshCw, ArrowUpRight, XCircle, Sparkles, Bot } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import OrderDetailsModal from '../../components/dispatcher/OrderDetailsModal';
 import CancelOrderModal from '../../components/dispatcher/CancelOrderModal';
+import DocumentAssistantDrawer from '../../components/dispatcher/DocumentAssistantDrawer';
 import { orderApi } from '../../api/orderApi';
+import { useAuth } from '../../providers/AuthProvider';
 
 const { RangePicker } = DatePicker;
 
@@ -35,6 +37,7 @@ const statusLabels = {
 
 const OrderManagement = () => {
   const router = useRouter();
+  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState('');
@@ -44,6 +47,7 @@ const OrderManagement = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState(null);
   const [selectedOrderForCancel, setSelectedOrderForCancel] = useState(null);
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
 
   // Tải danh sách đơn hàng từ Backend Supabase (silent: true khi cập nhật nền không bật loading)
   const fetchOrders = useCallback(async (isSilent = false) => {
@@ -163,10 +167,21 @@ const OrderManagement = () => {
     }
   };
 
-  // Filter logic
+  // Filter logic (Lọc theo dispatcher phụ trách nếu đang đăng nhập là Điều phối viên)
   const filteredData = useMemo(() => {
     const searchLower = filterText.trim().toLowerCase();
+    const currentUserId = user?.id ? Number(user.id) : null;
+    const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
+
     return orders.filter(item => {
+      // Nếu là Dispatcher, chỉ xem đơn được phân công cho mình
+      if (isDispatcher && currentUserId) {
+        const orderDispId = item.responsible_dispatcher_id ? Number(item.responsible_dispatcher_id) : null;
+        if (orderDispId && orderDispId !== currentUserId) {
+          return false;
+        }
+      }
+
       const matchSearch = !searchLower || 
         (item.order_id && item.order_id.toLowerCase().includes(searchLower)) ||
         (item.customer && item.customer.toLowerCase().includes(searchLower)) ||
@@ -188,7 +203,7 @@ const OrderManagement = () => {
       }
       return matchSearch && matchStatus;
     });
-  }, [orders, filterText, filterStatus]);
+  }, [orders, filterText, filterStatus, user]);
 
   const columns = useMemo(() => [
     { 
@@ -311,6 +326,13 @@ const OrderManagement = () => {
             </Tag>
           );
         }
+        if (record.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER') {
+          return (
+            <Tag color="cyan" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap border-cyan-400 text-cyan-800 bg-cyan-50">
+              Đã báo giá (Chờ khách chốt)
+            </Tag>
+          );
+        }
         if (status === 'CONFIRMED') {
           const hasRej = record.web_workflow?.stage === 'DOCS_REJECTED' || (record.documents || []).some(d => d.status === 'REJECTED');
           if (hasRej) {
@@ -371,17 +393,30 @@ const OrderManagement = () => {
             </>
           ) : record.status === 'DRAFT' ? (
             <>
-              <Tooltip title="Xử lý đơn nháp">
-                <Button 
-                  size="small" 
-                  type="primary"
-                  ghost
-                  className="text-xs border-indigo-400 text-indigo-700 font-semibold"
-                  onClick={() => setSelectedOrderForDetails(record)}
-                >
-                  Xử lý
-                </Button>
-              </Tooltip>
+              {record.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' ? (
+                <Tooltip title="Đã gửi báo giá qua email cho khách. Nhấn để xem chi tiết / điều chỉnh lại">
+                  <Button 
+                    size="small" 
+                    type="primary"
+                    className="text-xs bg-cyan-600 hover:bg-cyan-700 border-cyan-600 font-semibold"
+                    onClick={() => setSelectedOrderForDetails(record)}
+                  >
+                    Xem báo giá
+                  </Button>
+                </Tooltip>
+              ) : (
+                <Tooltip title="Xử lý đơn nháp">
+                  <Button 
+                    size="small" 
+                    type="primary"
+                    ghost
+                    className="text-xs border-indigo-400 text-indigo-700 font-semibold"
+                    onClick={() => setSelectedOrderForDetails(record)}
+                  >
+                    Xử lý
+                  </Button>
+                </Tooltip>
+              )}
               <Tooltip title="Hủy đơn (Miễn phí)">
                 <Button 
                   size="small" 
@@ -512,6 +547,14 @@ const OrderManagement = () => {
 
           <div className="flex flex-wrap gap-2">
             <Button 
+              icon={<Sparkles size={15} className="text-purple-600 animate-pulse" />} 
+              className="h-10 px-3.5 border-purple-200 bg-purple-50/70 text-purple-700 hover:bg-purple-100 font-semibold"
+              onClick={() => setAssistantDrawerOpen(true)}
+            >
+              Trợ lý AI Logistics (Gemini)
+            </Button>
+
+            <Button 
               icon={<RefreshCw size={15} className={loading ? "animate-spin text-indigo-600" : "text-gray-600"} />} 
               className="h-10 px-3 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium"
               onClick={() => fetchOrders()}
@@ -612,6 +655,17 @@ const OrderManagement = () => {
         order={selectedOrderForCancel}
         onCancel={() => setSelectedOrderForCancel(null)}
         onConfirmCancel={handleConfirmCancel}
+      />
+
+      {/* Trợ lý AI Logistics (Gemini) mở trực tiếp ngoài màn hình Quản lý đơn hàng */}
+      <DocumentAssistantDrawer
+        open={assistantDrawerOpen}
+        onClose={() => setAssistantDrawerOpen(false)}
+        currentCargo="Lô hàng thiết bị điện tử, linh kiện máy tính nhập khẩu từ Hàn Quốc về Sân bay Nội Bài giao KCN Tiên Sơn Bắc Ninh"
+        onApplyRecommendations={() => {
+          setAssistantDrawerOpen(false);
+          setIsCreateModalOpen(true);
+        }}
       />
     </div>
   );

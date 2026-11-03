@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Form, DatePicker, TimePicker, Input, Button, Tag, message, Spin, Empty } from "antd";
+import { Form, DatePicker, TimePicker, Input, Button, Tag, message, Spin, Empty, Card, Popconfirm } from "antd";
 import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, XCircle, CloudOff, Cloud } from "lucide-react";
 import dayjs from "dayjs";
 import "dayjs/locale/vi";
@@ -133,6 +133,16 @@ export default function ShiftRegistrationPage() {
       message.error(err.message || "Không thể đăng ký ca làm việc");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCancelShift = async (shiftId) => {
+    try {
+      await driverApi.cancelShift(shiftId);
+      message.success("Đã hủy yêu cầu đăng ký ca làm việc thành công.");
+      fetchShifts();
+    } catch (err) {
+      message.error(err.message || "Không thể hủy ca làm việc");
     }
   };
 
@@ -321,6 +331,26 @@ export default function ShiftRegistrationPage() {
                         <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                           Chờ đồng bộ
                         </span>
+                      )}
+                    </div>
+<div className="flex items-center gap-2">
+                      {getStatusTag(shift.status, shift.rejection_reason)}
+                      {shift.status === "Requested" && (
+                        <Popconfirm
+                          title="Hủy yêu cầu ca?"
+                          description="Bạn có chắc chắn muốn hủy yêu cầu đăng ký ca này không?"
+                          onConfirm={() => handleCancelShift(shift.id)}
+                          okText="Hủy ca"
+                          cancelText="Không"
+                          okButtonProps={{ danger: true }}
+                        >
+                          <button
+                            type="button"
+                            className="text-xs text-red-400 hover:text-red-300 underline cursor-pointer"
+                          >
+                            Hủy
+                          </button>
+                        </Popconfirm>
                       )}
                     </div>
                   </div>

@@ -165,6 +165,17 @@ const registerShift = async (req, res) => {
   }
 };
 
+const cancelShift = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await driverService.cancelShift(req.user.id, id);
+    return res.json(result);
+  } catch (error) {
+    console.error("cancelShift error:", error);
+    return res.status(error.statusCode || 400).json({ message: error.message });
+  }
+};
+
 // ==========================================
 // 4. NOTIFICATIONS (Screen 6.5, MSG80)
 // ==========================================
@@ -238,6 +249,7 @@ module.exports = {
   proposeExtraFee,
   getMyShifts,
   registerShift,
+  cancelShift,
   getDriverNotifications,
   markNotificationRead,
   markAllNotificationsRead,

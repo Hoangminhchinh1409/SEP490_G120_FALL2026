@@ -49,6 +49,17 @@ export const managerApi = {
     }
   },
 
+  // Lấy danh sách tài xế đội xe
+  getFleetDrivers: async () => {
+    try {
+      const data = await fetchWithAuth('/manager/vehicles');
+      return data.drivers || [];
+    } catch (error) {
+      console.error('managerApi.getFleetDrivers Error:', error);
+      return [];
+    }
+  },
+
   // 3. Lấy danh sách đơn hàng & điều phối viên
   getOrders: async () => {
     try {
@@ -514,6 +525,19 @@ export const managerApi = {
       return data;
     } catch (error) {
       console.error('managerApi.rejectShift Error:', error);
+      throw error;
+    }
+  },
+
+  updateShift: async (id, payload) => {
+    try {
+      const data = await fetchWithAuth(`/manager/shifts/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.updateShift Error:', error);
       throw error;
     }
   },

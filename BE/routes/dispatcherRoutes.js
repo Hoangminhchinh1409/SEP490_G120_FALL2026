@@ -27,10 +27,11 @@ router.get('/contracts', contractController.getAllContracts);
 router.post('/contracts', contractController.createContract);
 router.get('/customers', contractController.getAllCustomers);
 
-// 4. Trips & Routing (UC-06, UC-07, UC-09, UC-10, UC-41)
+// 4. Trips & Routing (UC-06, UC-07, UC-09, UC-10, UC-41, UC-42)
 router.get('/trips', tripController.getAllTrips);
 router.post('/trips', tripController.createTrip);
 router.patch('/trips/:id/status', tripController.updateTripStatus);
+router.get('/trips/:id/replay', tripController.getTripReplay);
 router.get('/routing/road-route', tripController.calculateRoadRoute);
 
 // 5. Incidents (UC-14, UC-15, UC-16)

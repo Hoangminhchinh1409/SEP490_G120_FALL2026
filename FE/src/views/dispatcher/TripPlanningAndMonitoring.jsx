@@ -7,6 +7,7 @@ import IncidentDetailsModal from '../../components/dispatcher/IncidentDetailsMod
 import CancelOrderModal from '../../components/dispatcher/CancelOrderModal';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
+import { useAuth } from '../../providers/AuthProvider';
 
 // Subcomponents đã được tách
 import TripPlanningTab from './tripPlanning/TripPlanningTab';
@@ -20,6 +21,7 @@ import {
 } from './tripPlanning/TripAuxiliaryModals';
 
 export default function TripPlanningAndMonitoring() {
+  const { user } = useAuth();
   const [activeMainTab, setActiveMainTab] = useState('planning');
   const [trips, setTrips] = useState([]);
   const [incidents, setIncidents] = useState([]);
@@ -49,7 +51,19 @@ export default function TripPlanningAndMonitoring() {
         dispatcherApi.getTrucks(),
         dispatcherApi.getDrivers()
       ]);
-      const readyOrders = (ordersData || []).filter(o => o.status === 'READY_FOR_PLANNING');
+      const currentUserId = user?.id ? Number(user.id) : null;
+      const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
+
+      const readyOrders = (ordersData || []).filter(o => {
+        if (o.status !== 'READY_FOR_PLANNING') return false;
+        if (isDispatcher && currentUserId) {
+          const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id) : null;
+          if (orderDispId && orderDispId !== currentUserId) {
+            return false;
+          }
+        }
+        return true;
+      });
       setPendingOrders(readyOrders);
       setTrips(tripsData || []);
       setIncidents(incidentsData || []);
@@ -61,7 +75,7 @@ export default function TripPlanningAndMonitoring() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     let active = true;
@@ -76,7 +90,19 @@ export default function TripPlanningAndMonitoring() {
           dispatcherApi.getDrivers()
         ]);
         if (!active) return;
-        const readyOrders = (ordersData || []).filter(o => o.status === 'READY_FOR_PLANNING');
+        const currentUserId = user?.id ? Number(user.id) : null;
+        const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
+
+        const readyOrders = (ordersData || []).filter(o => {
+          if (o.status !== 'READY_FOR_PLANNING') return false;
+          if (isDispatcher && currentUserId) {
+            const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id) : null;
+            if (orderDispId && orderDispId !== currentUserId) {
+              return false;
+            }
+          }
+          return true;
+        });
         setPendingOrders(readyOrders);
         setTrips(tripsData || []);
         setIncidents(incidentsData || []);
@@ -93,31 +119,58 @@ export default function TripPlanningAndMonitoring() {
 
     loadInitialData();
     return () => { active = false; };
-  }, []);
+  }, [user]);
 
-  const handleAssignSuccess = (createdTrip) => {
-    message.success(`Đã phân bổ chuyến ${createdTrip.trip_id} thành công!`);
+  const handleAssignSuccess = async (createdTrip) => {
     setSelectedOrderForAssign(null);
-    fetchData();
+    if (createdTrip?.allocation_type === 'VENDOR') {
+      message.success(`Đã bàn giao đơn ${createdTrip.order_code || createdTrip.order_id} cho nhà xe đối tác (${createdTrip.vendor}) thành công!`);
+    } else {
+      message.success(`Đã lập chuyến ${createdTrip.trip_id || createdTrip.id || ''}, gán xe ${createdTrip.truck || ''} và phát hành Vận đơn V1 thành công!`);
+      setActiveMainTab('monitoring');
+    }
+    await fetchData();
   };
 
-  const handleResolveIncident = (incidentId, resolution) => {
-    setIncidents(prev => prev.map(i => i.id === incidentId ? { ...i, status: 'RESOLVED', resolution } : i));
-    setTrips(prev => prev.map(t => {
-      const inc = incidents.find(i => i.id === incidentId);
-      if (inc && inc.trip_code === t.id) {
-        return {
-          ...t,
-          has_incident: false,
-          waybill_version: (t.waybill_version || 1) + 1,
-          late_reason: `Đã thay thế bằng xe ${resolution.relief_truck_plate}`
-        };
+  const handleResolveIncident = async (incidentIdOrObj, resolutionPayload) => {
+    const isSingleArg = typeof incidentIdOrObj === 'object' && incidentIdOrObj !== null && !resolutionPayload;
+    const targetId = isSingleArg ? (incidentIdOrObj.raw_id || incidentIdOrObj.id) : incidentIdOrObj;
+    const payload = isSingleArg ? incidentIdOrObj : (resolutionPayload || {});
+
+    try {
+      setLoading(true);
+      await dispatcherApi.updateIncidentStatus(targetId, payload);
+
+      const actionStatus = String(payload.status || '').toUpperCase();
+      if (actionStatus === 'RESOLVED_REPLACED') {
+        message.success(`Đã điều xe cứu hộ ${payload.new_truck || ''}, đổi tài xế ${payload.new_driver || ''} và cấp lại Vận đơn phiên bản mới thành công!`);
+      } else if (actionStatus === 'ESCALATED' || actionStatus === 'ESCALATED_TO_MANAGER') {
+        message.warning('Đã chuyển tiếp sự cố nghiêm trọng lên Quản lý!');
+      } else {
+        message.success('Đã xác nhận xử lý xong sự cố hiện trường!');
       }
-      return t;
-    }));
-    setActiveIncidentModal(null);
-    message.success('Đã giải quyết sự cố, phát lệnh đổi xe cứu hộ và tái cấp Vận đơn phiên bản mới thành công!');
-    fetchData();
+      setActiveIncidentModal(null);
+      await fetchData();
+    } catch (err) {
+      console.error('handleResolveIncident error:', err);
+      message.error(err.message || 'Lỗi khi cập nhật trạng thái sự cố trên máy chủ');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReportIncident = async (incidentForm) => {
+    try {
+      setLoading(true);
+      await dispatcherApi.createIncident(incidentForm);
+      message.warning(`Đã ghi nhận báo cáo sự cố hiện trường trên chuyến ${incidentForm.trip_id}!`);
+      await fetchData();
+    } catch (err) {
+      console.error('handleReportIncident error:', err);
+      message.error(err.message || 'Không thể tạo báo cáo sự cố');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancelPendingOrder = async (cancelData) => {
@@ -268,7 +321,9 @@ export default function TripPlanningAndMonitoring() {
             children: (
               <TripIncidentsTab
                 incidents={incidents}
+                trips={trips}
                 setActiveIncidentModal={setActiveIncidentModal}
+                onReportIncident={handleReportIncident}
               />
             )
           }

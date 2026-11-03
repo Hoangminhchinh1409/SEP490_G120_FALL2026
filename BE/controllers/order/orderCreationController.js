@@ -1,5 +1,5 @@
 const supabase = require('../../config/supabase');
-const { generateTrackingToken, getOrCreateLocation, saveOrderMeta } = require('../../services/orderHelperService');
+const { generateTrackingToken, getOrCreateLocation, saveOrderMeta, getNextDispatcherForWebOrder } = require('../../services/orderHelperService');
 
 // 2. KHÁCH HÀNG GỬI YÊU CẦU TƯ VẤN TỪ HOMEPAGE
 const createConsultationOrder = async (req, res) => {
@@ -117,12 +117,19 @@ const createConsultationOrder = async (req, res) => {
 
     if (items && Array.isArray(items) && items.length > 0) {
       totalPackages = items.reduce((sum, it) => sum + (parseInt(it.package_count, 10) || 1), 0);
-      actualWeight = items.reduce((sum, it) => sum + (parseFloat(it.weight) || 0), 0);
+      actualWeight = items.reduce((sum, it) => {
+        const unitW = parseFloat(it.weight) || 0;
+        const cnt = parseInt(it.package_count, 10) || 1;
+        return sum + (unitW * cnt);
+      }, 0);
       chargeableWeight = items.reduce((sum, it) => {
-        const itemWeight = parseFloat(it.weight) || 0;
-        if (it.cargo_type === 'BULK') return sum + itemWeight;
-        const itemVol = ((parseFloat(it.length_cm) || 0) * (parseFloat(it.width_cm) || 0) * (parseFloat(it.height_cm) || 0)) / 5000;
-        return sum + Math.max(itemWeight, itemVol);
+        const unitW = parseFloat(it.weight) || 0;
+        const cnt = parseInt(it.package_count, 10) || 1;
+        const totalItemW = unitW * cnt;
+        if (it.cargo_type === 'BULK') return sum + totalItemW;
+        const unitVol = ((parseFloat(it.length_cm) || 0) * (parseFloat(it.width_cm) || 0) * (parseFloat(it.height_cm) || 0)) / 5000;
+        const totalItemVol = unitVol * cnt;
+        return sum + Math.max(totalItemW, totalItemVol);
       }, 0);
       finalCargoDesc = items.map(it => `${it.cargo_name || 'Hàng'} (${it.package_count || 1} ${it.package_unit || 'kiện'})`).join(', ');
       l = Math.max(1, parseFloat(items[0]?.length_cm) || 100);
@@ -171,7 +178,10 @@ const createConsultationOrder = async (req, res) => {
       user_note: notes || null
     };
 
-    // 4. Insert vào bảng orders
+    // 4. Tìm điều phối viên nhận đơn Web xoay vòng (Least Loaded Round-Robin)
+    const assignedDispatcherId = await getNextDispatcherForWebOrder();
+
+    // 5. Insert vào bảng orders
     const { data: newOrder, error: orderErr } = await supabase
       .from('orders')
       .insert([{
@@ -187,8 +197,8 @@ const createConsultationOrder = async (req, res) => {
         agreed_price: 0,
         status: 'Draft',
         source: 'Web',
-        responsible_dispatcher_id: 1,
-        created_by: 1,
+        responsible_dispatcher_id: assignedDispatcherId,
+        created_by: assignedDispatcherId,
         requested_pickup_date: required_pickup_date || flight_arrival_date || null,
         truck_type_requested: vehicle_type_required || 'TRUCK_2.5T',
         loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
@@ -386,8 +396,14 @@ const createDirectOrder = async (req, res) => {
       customer_email: customer_email || null,
       accounting_email: accounting_email || customer_email || null,
       authorized_bank: authorized_bank || 'Vietcombank',
-      items: req.body.items || null
+      items: req.body.items || null,
+      documents: req.body.documents || null
     };
+
+    const hasUploadedDocs = Array.isArray(req.body.documents) && req.body.documents.some(d => d.file && d.file !== 'Chờ tải lên');
+
+    // Nếu điều phối viên đang đăng nhập trực tiếp tạo đơn, gán chính điều phối viên đó
+    const directDispatcherId = req.body.dispatcher_id || req.user?.id || 1;
 
     const { data: newOrder, error: orderErr } = await supabase
       .from('orders')
@@ -402,16 +418,16 @@ const createDirectOrder = async (req, res) => {
         receiver_name: (receiver_name && (receiver_name + '').trim()) || customer_name || 'Người nhận',
         receiver_phone: (receiver_phone && (receiver_phone + '').replace(/[^0-9]/g, '')) || cleanPhone || '0988123456',
         agreed_price: parseInt(agreed_price, 10) || 0,
-        status: 'Assigned',
+        status: hasUploadedDocs ? 'Confirmed' : 'READY_FOR_PLANNING',
         source: 'Direct',
-        responsible_dispatcher_id: 1,
-        created_by: 1,
+        responsible_dispatcher_id: directDispatcherId,
+        created_by: directDispatcherId,
         requested_pickup_date: required_pickup_date || req.body.flight_arrival_date || null,
         truck_type_requested: vehicle_type_required || 'TRUCK_2.5T',
         loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
         warehouse_type: 'ALS warehouse',
         customer_agrees_to_grouping: false,
-        document_status: 'Pending Documents',
+        document_status: hasUploadedDocs ? 'Approved' : 'Pending Documents',
         is_closed: false,
         waiting_too_long: false,
         late_risk: false,

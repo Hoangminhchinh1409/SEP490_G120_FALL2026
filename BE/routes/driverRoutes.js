@@ -26,6 +26,7 @@ router.post("/trips/:id/extra-fees", driverController.proposeExtraFee);
 // 3. Quản lý Ca làm việc (UC-20, BR-60)
 router.get("/shifts", driverController.getMyShifts);
 router.post("/shifts", driverController.registerShift);
+router.delete("/shifts/:id", driverController.cancelShift);
 
 // 4. Thông báo Tài xế (Screen 6.5, MSG80)
 router.get("/notifications", driverController.getDriverNotifications);

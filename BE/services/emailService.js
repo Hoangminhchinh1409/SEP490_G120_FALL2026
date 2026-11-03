@@ -20,11 +20,11 @@ const getTransporter = async () => {
       });
       await realTransporter.verify();
       transporter = realTransporter;
-      console.log('[EmailService] Connected & verified Gmail SMTP Service with account:', process.env.SMTP_USER);
+      console.log('[EmailService] SMTP transport connected and verified.');
       return transporter;
     } catch (smtpErr) {
       console.warn(
-        `[EmailService] Gmail SMTP verify failed for ${process.env.SMTP_USER} (${smtpErr.message}). Falling back to Ethereal test email...`
+        `[EmailService] SMTP verification failed (${smtpErr.code || smtpErr.name}). Falling back to Ethereal test email...`
       );
     }
   }
@@ -41,15 +41,14 @@ const getTransporter = async () => {
         pass: testAccount.pass,
       },
     });
-    console.log('[EmailService] Created ethereal test email account:', testAccount.user);
+    console.log('[EmailService] Created an Ethereal test email account.');
     return transporter;
   } catch (err) {
-    console.warn('[EmailService] Could not create Ethereal test account, fallback to direct console log:', err.message);
+    console.warn('[EmailService] Could not create an Ethereal test email account.');
     transporter = {
       sendMail: async (mailOptions) => {
         console.log('--------------------------------------------------');
         console.log('[EMAIL PREVIEW MOCK SENT]');
-        console.log('To:', mailOptions.to);
         console.log('Subject:', mailOptions.subject);
         console.log('--------------------------------------------------');
         return { messageId: `mock-${Date.now()}` };
@@ -73,13 +72,19 @@ const sendOrderPriceConfirmationEmail = async ({
   cargoDescription,
   pickupDate,
   flightSchedule,
-  confirmUrl
+  confirmUrl,
+  dispatcherPhone,
+  dispatcherZalo
 }) => {
   const mailTransporter = await getTransporter();
   const formattedPrice = (agreedPrice || 0).toLocaleString('vi-VN');
   const isExport = (orderType || '').toUpperCase().includes('EXPORT') || (orderType || '').toUpperCase().includes('XUẤT');
   const typeText = isExport ? 'ĐƠN HÀNG XUẤT KHẨU (AIR CARGO EXPORT)' : 'ĐƠN HÀNG NHẬP KHẨU (AIR CARGO IMPORT)';
   const typeBadgeColor = isExport ? '#4f46e5' : '#0284c7';
+
+  const cleanPhone = (dispatcherPhone || '0988 123 456').toString().trim();
+  const rawDigitsPhone = cleanPhone.replace(/[^0-9]/g, '');
+  const zaloUrl = dispatcherZalo || (rawDigitsPhone ? `https://zalo.me/${rawDigitsPhone}` : 'https://zalo.me/0988123456');
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -181,10 +186,10 @@ const sendOrderPriceConfirmationEmail = async ({
               Quý khách có thể trao đổi trực tiếp với Điều phối viên phụ trách đơn hàng qua Hotline hoặc Zalo:
             </p>
             <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
-              <a href="tel:0988123456" style="display: inline-block; background: #16a34a; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
-                📞 Gọi Hotline: 0988 123 456
+              <a href="tel:${rawDigitsPhone || '0988123456'}" style="display: inline-block; background: #16a34a; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
+                📞 Gọi Hotline / Điều Phối: ${cleanPhone}
               </a>
-              <a href="https://zalo.me/0988123456" target="_blank" style="display: inline-block; background: #0284c7; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
+              <a href="${zaloUrl}" target="_blank" style="display: inline-block; background: #0284c7; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
                 💬 Chat Zalo Điều Phối
               </a>
             </div>
@@ -408,7 +413,12 @@ const sendContractSigningEmail = async ({
   }
 };
 
-const sendPasswordResetEmail = async ({ email, customerName, resetUrl }) => {
+const sendPasswordResetEmail = async ({
+  email,
+  customerName,
+  resetUrl,
+  ttlMinutes = 30
+}) => {
   const mailTransporter = await getTransporter();
   const fromAddress = process.env.SMTP_FROM || `NEXLOG Logistics <${process.env.SMTP_USER || 'no-reply@nexlog.vn'}>`;
 
@@ -416,12 +426,12 @@ const sendPasswordResetEmail = async ({ email, customerName, resetUrl }) => {
     from: fromAddress,
     to: email,
     subject: '[NEXLOG] Yêu cầu đặt lại mật khẩu',
-    text: `Xin chào ${customerName || 'bạn'},\n\nĐể đặt lại mật khẩu NEXLOG, hãy mở liên kết sau (có hiệu lực trong 60 phút):\n${resetUrl}\n\nNếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.`,
+    text: `Xin chào ${customerName || 'bạn'},\n\nĐể đặt lại mật khẩu NEXLOG, hãy mở liên kết sau (có hiệu lực trong ${ttlMinutes} phút):\n${resetUrl}\n\nNếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 24px auto; color: #1e293b;">
         <h2>Đặt lại mật khẩu NEXLOG</h2>
         <p>Xin chào,</p>
-        <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn. Liên kết có hiệu lực trong 60 phút.</p>
+        <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn. Liên kết có hiệu lực trong ${ttlMinutes} phút.</p>
         <p><a href="${resetUrl}" style="display: inline-block; padding: 12px 20px; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 8px;">Đặt lại mật khẩu</a></p>
         <p>Nếu nút không hoạt động, hãy sao chép liên kết sau vào trình duyệt:<br><a href="${resetUrl}">${resetUrl}</a></p>
         <p>Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.</p>

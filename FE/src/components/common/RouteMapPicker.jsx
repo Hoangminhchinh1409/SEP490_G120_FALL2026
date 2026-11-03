@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Route, Clock } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { calculateRouteEstimate, getCoordsFromAddress } from '../../data/dispatcherPresets';
+import { fetchShortestRoadRoute } from '../../utils/roadRouting';
 
 // Dynamic import component Leaflet bản đồ để tránh lỗi SSR trong Next.js
 const InnerRouteMap = dynamic(
@@ -27,6 +28,7 @@ const RouteMapPicker = ({
 }) => {
   const [routePolyline, setRoutePolyline] = useState([]);
   const [routeInfo, setRouteInfo] = useState({ distanceKm: 0, durationMins: 0 });
+  const [loadingRoute, setLoadingRoute] = useState(false);
 
   // Tự động suy luận tọa độ hiệu lực nếu chưa có tọa độ nhưng đã có địa chỉ
   const effectivePickupCoords = useMemo(() => {
@@ -45,87 +47,55 @@ const RouteMapPicker = ({
     return null;
   }, [deliveryCoords, deliveryAddress]);
 
-  // Tự động tính toán lộ trình thực tế qua OSRM Driving API khi có đủ tọa độ 2 điểm
+  // Tự động tính toán lộ trình đường bộ ngắn nhất ôm sát mặt đường giao thông
   useEffect(() => {
     if (!effectivePickupCoords?.lat || !effectivePickupCoords?.lng || !effectiveDeliveryCoords?.lat || !effectiveDeliveryCoords?.lng) {
-      const clearTimer = setTimeout(() => {
-        setRoutePolyline([]);
-        setRouteInfo({ distanceKm: 0, durationMins: 0 });
-        if (onRouteChange) onRouteChange({ distanceKm: 0, durationMins: 0 });
-      }, 0);
-      return () => clearTimeout(clearTimer);
+      setRoutePolyline([]);
+      setRouteInfo({ distanceKm: 0, durationMins: 0 });
+      if (onRouteChange) onRouteChange({ distanceKm: 0, durationMins: 0 });
+      return;
     }
 
     let isCancelled = false;
     const controller = new AbortController();
 
-    const fetchRoute = async () => {
+    const loadRoadRoute = async () => {
+      setLoadingRoute(true);
       try {
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        
-        // 1. Ưu tiên gọi qua Backend Proxy chuyên dụng (Không bị lỗi SSL/CORS trình duyệt, luôn lấy tuyến đường bộ ngắn nhất)
-        const beUrl = `http://localhost:9999/api/routing/road-route?startLng=${effectivePickupCoords.lng}&startLat=${effectivePickupCoords.lat}&endLng=${effectiveDeliveryCoords.lng}&endLat=${effectiveDeliveryCoords.lat}`;
-        
-        const res = await fetch(beUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
+        const result = await fetchShortestRoadRoute(
+          [effectivePickupCoords, effectiveDeliveryCoords],
+          controller.signal
+        );
 
-        if (res.ok) {
-          const data = await res.json();
-          if (!isCancelled && data?.success && Array.isArray(data.polyline) && data.polyline.length > 0) {
-            setRoutePolyline(data.polyline);
-            setRouteInfo({ distanceKm: data.distanceKm, durationMins: data.durationMins });
-            if (onRouteChange) {
-              onRouteChange({ distanceKm: data.distanceKm, durationMins: data.durationMins });
-            }
-            return;
+        if (!isCancelled && result.success && result.polyline.length > 1) {
+          setRoutePolyline(result.polyline);
+          setRouteInfo({ distanceKm: result.distanceKm, durationMins: result.durationMins });
+          if (onRouteChange) {
+            onRouteChange({ distanceKm: result.distanceKm, durationMins: result.durationMins });
           }
+          setLoadingRoute(false);
+          return;
         }
       } catch (err) {
-        console.warn('Backend Routing Proxy warning:', err.message);
-      }
-
-      // 2. Thử gọi trực tiếp OpenStreetMap Routing Server nếu backend bận
-      try {
-        const directUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${effectivePickupCoords.lng},${effectivePickupCoords.lat};${effectiveDeliveryCoords.lng},${effectiveDeliveryCoords.lat}?overview=full&geometries=geojson&alternatives=true`;
-        const directRes = await fetch(directUrl);
-        if (directRes.ok) {
-          const directData = await directRes.json();
-          if (!isCancelled && directData?.routes?.length > 0) {
-            const sortedRoutes = [...directData.routes].sort((a, b) => a.distance - b.distance);
-            const shortestRoute = sortedRoutes[0];
-            const distKm = parseFloat((shortestRoute.distance / 1000).toFixed(1));
-            const durMins = Math.max(5, Math.round(shortestRoute.duration / 60));
-            const poly = shortestRoute.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-
-            setRoutePolyline(poly);
-            setRouteInfo({ distanceKm: distKm, durationMins: durMins });
-            if (onRouteChange) {
-              onRouteChange({ distanceKm: distKm, durationMins: durMins });
-            }
-            return;
-          }
-        }
-      } catch (directErr) {
-        console.warn('Direct routing warning:', directErr.message);
+        // ignore abort
       }
 
       if (!isCancelled) {
+        setLoadingRoute(false);
         const fallback = calculateRouteEstimate(
           effectivePickupCoords.lat,
           effectivePickupCoords.lng,
           effectiveDeliveryCoords.lat,
           effectiveDeliveryCoords.lng
         );
-        setRoutePolyline([
-          [effectivePickupCoords.lat, effectivePickupCoords.lng],
-          [effectiveDeliveryCoords.lat, effectiveDeliveryCoords.lng]
-        ]);
+        // Không vẽ đường thẳng chim bay, chỉ cập nhật ước tính km nếu mạng mất kết nối hoàn toàn
+        setRoutePolyline([]);
         setRouteInfo(fallback);
         if (onRouteChange) onRouteChange(fallback);
       }
     };
 
-    fetchRoute();
+    loadRoadRoute();
 
     return () => {
       isCancelled = true;
@@ -162,7 +132,7 @@ const RouteMapPicker = ({
           <div className="absolute top-2.5 right-2.5 z-[1000] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-md border border-gray-100 flex items-center gap-3 text-xs animate-in fade-in">
             <div className="flex items-center gap-1 font-bold text-indigo-700">
               <Route size={14} className="text-indigo-600" />
-              <span>{routeInfo.distanceKm} km</span>
+              <span>{routeInfo.distanceKm} km (Đường bộ ngắn nhất)</span>
             </div>
             <span className="text-gray-300">|</span>
             <div className="flex items-center gap-1 text-gray-700">
@@ -172,7 +142,11 @@ const RouteMapPicker = ({
           </div>
         ) : (
           <div className="absolute top-2.5 right-2.5 z-[1000] bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] text-gray-500 border border-gray-100 shadow-xs">
-            {effectivePickupCoords?.lat ? 'Chọn tiếp điểm giao hàng' : 'Nhập địa chỉ để định vị'}
+            {loadingRoute
+              ? 'Đang dò lộ trình đường bộ ngắn nhất...'
+              : effectivePickupCoords?.lat
+                ? 'Chọn tiếp điểm giao hàng'
+                : 'Nhập địa chỉ để định vị'}
           </div>
         )}
 

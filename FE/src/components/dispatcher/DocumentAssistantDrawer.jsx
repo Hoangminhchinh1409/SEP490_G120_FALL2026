@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { Drawer, Button, Input, Tag, Spin, message, Divider } from 'antd';
-import { Sparkles, Bot, CheckCircle2, ShieldCheck, FileText } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Drawer, Button, Input, Tag, Spin, message, Divider, Alert } from 'antd';
+import { Sparkles, Bot, CheckCircle2, ShieldCheck, FileText, AlertTriangle } from 'lucide-react';
 import { BASIC_CUSTOMS_DOCUMENTS, SPECIALIZED_CARGO_CATEGORIES } from '../../data/dispatcherPresets';
+import { aiApi } from '../../api/aiApi';
 
-export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommendations, currentCargo = '' }) {
+export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommendations, currentCargo = '', order = null }) {
   const [selectedCategoryKey, setSelectedCategoryKey] = useState('GENERAL');
   const [cargoDesc, setCargoDesc] = useState(
     currentCargo || 'Lô hàng linh kiện viễn thông và thiết bị quang nhập khẩu từ Hàn Quốc về Nội Bài giao nhà máy tại KCN Tiên Sơn Bắc Ninh'
@@ -12,37 +13,79 @@ export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommen
   const [activeAnalysis, setActiveAnalysis] = useState(() => {
     return SPECIALIZED_CARGO_CATEGORIES[0];
   });
+  const [aiInsight, setAiInsight] = useState(null);
+
+  useEffect(() => {
+    if (open && order) {
+      const desc = `${order.cargo_name || currentCargo || 'Hàng hóa'} (${order.cargo_type || 'GENERAL'}), SL: ${order.package_count || 1} ${order.package_unit || 'kiện'}, nặng ${order.weight || order.actual_weight_kg || 0} kg, lộ trình từ ${order.pickup_address || order.pickup || 'Nội Bài'} đi ${order.delivery_address || order.dropoff || 'kho khách hàng'}`;
+      setCargoDesc(desc);
+    }
+  }, [open, order, currentCargo]);
 
   const handleSelectPresetCategory = (catKey) => {
     setSelectedCategoryKey(catKey);
     const cat = SPECIALIZED_CARGO_CATEGORIES.find(c => c.categoryKey === catKey);
     if (cat) {
       setActiveAnalysis(cat);
-      setCargoDesc(cat.categoryName);
+      setAiInsight(null);
       message.info(`Đã chuyển sang: ${cat.categoryName}`);
     }
   };
 
-  const handleAskAI = () => {
+  const handleAskAI = async () => {
     if (!cargoDesc.trim()) return;
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const aiRes = await aiApi.analyzeCustomsDocuments({
+        cargoDesc,
+        order: order || { cargo_name: cargoDesc }
+      });
+
+      const matched =
+        SPECIALIZED_CARGO_CATEGORIES.find((c) => c.categoryKey === aiRes.categoryKey) ||
+        SPECIALIZED_CARGO_CATEGORIES.find((c) =>
+          c.keywords.some((kw) => cargoDesc.toLowerCase().includes(kw))
+        ) ||
+        SPECIALIZED_CARGO_CATEGORIES[0];
+
+      // Gộp các chứng từ chuyên ngành do Gemini AI đề xuất với bộ khung chuẩn
+      const aiDocs = Array.isArray(aiRes.recommendedSpecializedDocs) && aiRes.recommendedSpecializedDocs.length > 0
+        ? aiRes.recommendedSpecializedDocs.map((d) => ({
+            name: d.name,
+            shortCode: d.shortCode || 'AI-DOC',
+            description: d.description
+          }))
+        : matched.specializedDocs;
+
+      setSelectedCategoryKey(matched.categoryKey);
+      setActiveAnalysis({
+        ...matched,
+        categoryName: aiRes.categoryName || matched.categoryName,
+        specializedDocs: aiDocs
+      });
+      setAiInsight({
+        model: aiRes.model || 'gemini-3.8-flash',
+        hsCodeSuggestion: aiRes.hsCodeSuggestion,
+        aiSummary: aiRes.aiSummary,
+        riskNotes: Array.isArray(aiRes.riskNotes) ? aiRes.riskNotes : []
+      });
+      message.success(`Gemini AI (${aiRes.model || 'Gemini Pro'}) đã phân tích xong hồ sơ chứng từ!`);
+    } catch (err) {
       const text = cargoDesc.toLowerCase();
       let matched = SPECIALIZED_CARGO_CATEGORIES[0];
-
       for (const cat of SPECIALIZED_CARGO_CATEGORIES) {
         if (cat.keywords.some(kw => text.includes(kw))) {
           matched = cat;
           break;
         }
       }
-
       setSelectedCategoryKey(matched.categoryKey);
       setActiveAnalysis(matched);
       message.success(`Đã nhận diện nhóm hàng: ${matched.categoryName}`);
-    }, 450);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleApply = () => {
@@ -87,31 +130,62 @@ export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommen
           </div>
           <div>
             <span className="font-bold text-gray-800 text-base block leading-tight">
-              Trợ lý Chứng từ Xuất Nhập Khẩu
+              Trợ lý AI Chứng từ Xuất Nhập Khẩu (Google Gemini)
             </span>
             <span className="text-[11px] text-gray-400 font-normal">
-              Quy chuẩn 5 chứng từ cơ bản &amp; Chuyên ngành theo nhóm hàng hóa
+              Phân tích mã HS, kiểm tra chuyên ngành &amp; gợi ý chứng từ tự động bằng Gemini AI
             </span>
           </div>
         </div>
       }
       placement="right"
-      size={560}
+      size={580}
       onClose={onClose}
       open={open}
     >
       <div className="space-y-4">
+        {/* Ô nhập mô tả tự do để Gemini AI tự động phân tích */}
+        <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200 space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+              <Bot size={15} className="text-indigo-600" />
+              Phân tích chuyên sâu bằng Google Gemini AI:
+            </label>
+            <Tag color="purple" className="m-0 text-[10px] font-bold">
+              Gemini AI Active
+            </Tag>
+          </div>
+          <Input.TextArea 
+            rows={2} 
+            value={cargoDesc} 
+            onChange={(e) => setCargoDesc(e.target.value)}
+            placeholder="Nhập mô tả chi tiết lô hàng để Gemini AI phân tích chính sách mặt hàng & chứng từ..."
+            className="text-xs bg-white"
+          />
+          <div className="flex justify-end">
+            <Button 
+              type="primary" 
+              icon={<Sparkles size={14} />}
+              loading={loading}
+              onClick={handleAskAI}
+              className="bg-indigo-600 hover:bg-indigo-700 text-xs h-8 font-bold shadow-xs"
+            >
+              Phân tích bằng Gemini AI
+            </Button>
+          </div>
+        </div>
+
         {/* Phím tắt chọn nhanh 5 nhóm hàng */}
         <div>
           <label className="text-xs font-bold text-gray-700 mb-1.5 block uppercase tracking-wider">
-            Chọn nhanh nhóm hàng theo quy chuẩn:
+            Hoặc chọn nhanh nhóm hàng theo quy chuẩn:
           </label>
           <div className="space-y-1.5">
             {SPECIALIZED_CARGO_CATEGORIES.map(cat => (
               <div 
                 key={cat.categoryKey}
                 onClick={() => handleSelectPresetCategory(cat.categoryKey)}
-                className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all flex items-center justify-between ${
+                className={`p-2 rounded-lg border text-xs cursor-pointer transition-all flex items-center justify-between ${
                   selectedCategoryKey === cat.categoryKey 
                     ? 'border-indigo-600 bg-indigo-50/70 font-semibold text-indigo-900 shadow-xs' 
                     : 'border-gray-200 hover:border-indigo-200 hover:bg-gray-50 text-gray-700'
@@ -126,40 +200,47 @@ export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommen
           </div>
         </div>
 
-        {/* Ô nhập mô tả tự do để AI tự động phân tích */}
-        <div className="pt-2 border-t border-gray-150">
-          <label className="text-xs font-bold text-gray-700 mb-1 block">
-            Hoặc nhập mô tả chi tiết lô hàng để AI nhận diện:
-          </label>
-          <Input.TextArea 
-            rows={2} 
-            value={cargoDesc} 
-            onChange={(e) => setCargoDesc(e.target.value)}
-            placeholder="VD: Nhập khẩu 5 máy ép kim loại đã qua sử dụng từ Nhật về Hải Phòng..."
-            className="text-xs"
-          />
-          <div className="mt-2 flex justify-end">
-            <Button 
-              type="primary" 
-              icon={<Bot size={14} />}
-              loading={loading}
-              onClick={handleAskAI}
-              className="bg-indigo-600 hover:bg-indigo-700 text-xs h-8 font-semibold shadow-xs"
-            >
-              Phân tích nhóm hàng
-            </Button>
-          </div>
-        </div>
-
         <Divider className="my-2" />
 
         {loading ? (
           <div className="py-12 text-center space-y-2">
             <Spin size="large" />
-            <p className="text-xs text-gray-500">Đang đối chiếu quy định hải quan chuyên ngành...</p>
+            <p className="text-xs text-indigo-600 font-medium">Google Gemini AI đang phân tích mã HS &amp; quy định hải quan chuyên ngành...</p>
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Kết quả phân tích chuyên sâu từ Gemini AI */}
+            {aiInsight && (
+              <div className="p-3.5 bg-gradient-to-br from-purple-50 via-indigo-50 to-white rounded-xl border border-indigo-200 text-xs space-y-2 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-indigo-900 flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-purple-600" />
+                    Nhận định từ Google Gemini ({aiInsight.model})
+                  </span>
+                  {aiInsight.hsCodeSuggestion && (
+                    <Tag color="geekblue" className="m-0 font-mono text-[10px]">
+                      {aiInsight.hsCodeSuggestion}
+                    </Tag>
+                  )}
+                </div>
+                {aiInsight.aiSummary && (
+                  <p className="text-gray-700 m-0 leading-relaxed">{aiInsight.aiSummary}</p>
+                )}
+                {aiInsight.riskNotes?.length > 0 && (
+                  <div className="p-2 bg-amber-50/90 border border-amber-200 rounded-lg text-[11px] text-amber-900 space-y-0.5">
+                    <div className="font-bold flex items-center gap-1">
+                      <AlertTriangle size={12} className="text-amber-600" /> Lưu ý rủi ro thông quan &amp; kiểm tra chuyên ngành:
+                    </div>
+                    <ul className="list-disc pl-4 m-0 space-y-0.5">
+                      {aiInsight.riskNotes.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Phân loại được xác định */}
             <div className="p-3 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-indigo-100 text-xs">
               <div className="flex items-center justify-between mb-1">
@@ -203,7 +284,7 @@ export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommen
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-gray-900 uppercase tracking-wide flex items-center gap-1.5">
                   <FileText size={15} className="text-purple-600" />
-                  II. Chứng từ theo nhóm hàng hóa cụ thể:
+                  II. Chứng từ chuyên ngành đề xuất:
                 </span>
                 <Tag color="purple">+{activeAnalysis.specializedDocs.length} chứng từ chuyên ngành</Tag>
               </div>

@@ -1,30 +1,65 @@
 const supabase = require("../config/supabase");
 
 const findUserByIdentifier = async (identifier) => {
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .or(`username.eq.${identifier},email.eq.${identifier}`)
-    .maybeSingle();
-
-  if (error) {
+  if (typeof identifier !== "string" || !identifier.trim() || identifier.trim().length > 100) {
+    const error = new TypeError("Identifier must be a non-empty string of at most 100 characters");
+    error.statusCode = 400;
+    error.code = "INVALID_IDENTIFIER";
     throw error;
   }
 
-  return data;
+  const trimmedIdentifier = identifier.trim();
+  const normalizedIdentifier = trimmedIdentifier.includes("@")
+    ? trimmedIdentifier.toLowerCase()
+    : trimmedIdentifier;
+
+  const { data: usernameMatch, error: usernameError } = await supabase
+    .from("users")
+    .select("*")
+    .eq("username", normalizedIdentifier)
+    .maybeSingle();
+
+  if (usernameError) {
+    throw usernameError;
+  }
+
+  if (usernameMatch) {
+    return usernameMatch;
+  }
+
+  const { data: emailMatch, error: emailError } = await supabase
+    .from("users")
+    .select("*")
+    .eq("email", normalizedIdentifier)
+    .maybeSingle();
+
+  if (emailError) {
+    throw emailError;
+  }
+
+  return emailMatch;
 };
 
 const findUserByEmail = async (email) => {
+  if (typeof email !== "string" || !email.trim()) {
+    const error = new TypeError("Email must be a non-empty string");
+    error.statusCode = 400;
+    throw error;
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
 
   const { data, error } = await supabase
     .from("users")
-    .select("id, email, full_name")
-    .ilike("email", normalizedEmail)
+    .select("id, email, full_name, status")
+    .eq("email", normalizedEmail)
     .maybeSingle();
 
   if (error) {
-    console.error("Find user by email error:", error);
+    console.error("Find user by email failed:", {
+      name: error.name,
+      code: error.code || null
+    });
     throw error;
   }
 
@@ -36,7 +71,21 @@ const findUserById = async (id) => {
     .from("users")
     .select("*")
     .eq("id", id)
-    .single();
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+};
+
+const getAuthSessionState = async (id) => {
+  const { data, error } = await supabase
+    .from("users")
+    .select("status, password_changed_at")
+    .eq("id", id)
+    .maybeSingle();
 
   if (error) {
     throw error;
@@ -161,10 +210,7 @@ const updateProfile = async (id, payload) => {
       .maybeSingle();
 
     if (error) {
-      const err = new Error(error.message || "Không thể cập nhật hồ sơ");
-      err.statusCode = 400;
-      err.code = error.code;
-      throw err;
+      throw error;
     }
 
     return data;
@@ -203,7 +249,7 @@ const updatePassword = async (id, passwordHash) => {
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .select("id")
+    .select("id, password_changed_at")
     .single();
 
   if (error) {
@@ -217,6 +263,8 @@ module.exports = {
   findUserByIdentifier,
   findUserByEmail,
   findUserById,
+  getAuthSessionState,
+  getAuthSessionState,
   createPasswordResetToken,
   consumePasswordResetToken,
   updateLastLogin,

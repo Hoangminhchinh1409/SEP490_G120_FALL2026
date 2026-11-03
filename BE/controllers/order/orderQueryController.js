@@ -1,4 +1,5 @@
 const supabase = require("../../config/supabase");
+const jwt = require("jsonwebtoken");
 const {
   mapDbStatusToFe,
   parseOrderMeta,
@@ -9,7 +10,31 @@ const {
 // 1. LẤY TOÀN BỘ DANH SÁCH ĐƠN HÀNG
 const getAllOrders = async (req, res) => {
   try {
-    const { data: dbOrders, error } = await supabase
+    // Kiểm tra thông tin người dùng nếu có token (Cookie / Bearer) hoặc query param
+    let dispatcherFilterId = null;
+    let isDispatcherRole = false;
+
+    if (req.query?.dispatcher_id) {
+      dispatcherFilterId = Number(req.query.dispatcher_id);
+    } else {
+      let token = req.cookies?.token;
+      if (!token && req.headers?.authorization?.startsWith('Bearer ')) {
+        token = req.headers.authorization.split(' ')[1];
+      }
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          if (decoded && (Number(decoded.role_id) === 3 || decoded.role === 'DISPATCHER')) {
+            dispatcherFilterId = Number(decoded.id);
+            isDispatcherRole = true;
+          }
+        } catch {
+          // Token không hợp lệ hoặc đã hết hạn
+        }
+      }
+    }
+
+    let query = supabase
       .from("orders")
       .select(
         `
@@ -17,11 +42,18 @@ const getAllOrders = async (req, res) => {
         customer:customers(id, company_name, tax_code, email, registered_address),
         pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, latitude, longitude, type, province),
         delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude, type, province),
+        responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
         order_cargos(*),
         order_notes(*)
       `,
       )
       .order("created_at", { ascending: false });
+
+    if (dispatcherFilterId && (isDispatcherRole || req.query?.dispatcher_id)) {
+      query = query.eq("responsible_dispatcher_id", dispatcherFilterId);
+    }
+
+    const { data: dbOrders, error } = await query;
 
     if (error) {
       console.error("Error fetching orders from Supabase:", error);
@@ -238,6 +270,16 @@ const getAllOrders = async (req, res) => {
             meta.web_workflow?.documents;
           return Array.isArray(docs) && docs.length > 0 ? docs : null;
         })(),
+        responsible_dispatcher_id: order.responsible_dispatcher_id ? Number(order.responsible_dispatcher_id) : (order.responsible_dispatcher?.id ? Number(order.responsible_dispatcher.id) : null),
+        dispatcher_name:
+          order.responsible_dispatcher?.full_name ||
+          order.responsible_dispatcher?.username ||
+          meta.dispatcher_name ||
+          "Điều phối viên NEXLOG",
+        dispatcher_phone:
+          order.responsible_dispatcher?.phone ||
+          meta.dispatcher_phone ||
+          "0988 123 456",
         shipping_direction:
           meta.shipping_direction ||
           (order.order_type === "PICKUP" || order.order_type === "Export"
@@ -281,6 +323,7 @@ const getOrderByToken = async (req, res) => {
         customer:customers(id, company_name, tax_code, email, registered_address),
         pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, latitude, longitude),
         delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude),
+        responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
         order_cargos(*),
         order_notes(*)
       `);
@@ -375,6 +418,21 @@ const getOrderByToken = async (req, res) => {
           "",
         status: order.status,
         source: order.source,
+        dispatcher_phone:
+          extraMeta.dispatcher_phone ||
+          order.responsible_dispatcher?.phone ||
+          "0988 123 456",
+        dispatcher_zalo:
+          extraMeta.dispatcher_zalo ||
+          order.responsible_dispatcher?.zalo_link ||
+          (order.responsible_dispatcher?.phone
+            ? `https://zalo.me/${order.responsible_dispatcher.phone.replace(/[^0-9]/g, "")}`
+            : "https://zalo.me/0988123456"),
+        dispatcher_name:
+          extraMeta.dispatcher_name ||
+          order.responsible_dispatcher?.full_name ||
+          order.responsible_dispatcher?.username ||
+          "Điều phối viên NEXLOG",
         tracking_token: (order.tracking_token || "").trim(),
         web_workflow: extraMeta.web_workflow || {
           stage: "WAITING_PRICE_CONFIRMATION",

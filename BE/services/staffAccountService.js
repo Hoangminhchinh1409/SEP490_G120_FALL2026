@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
+const supabase = require("../config/supabase");
 const staffAccountModel = require("../models/staffAccountModel");
 
 // Role IDs hợp lệ theo đặc tả BR-28: Chỉ Dispatcher (3) và Driver (4)
@@ -127,6 +128,11 @@ const staffAccountService = {
 
         // Mật khẩu mặc định nếu Manager không chỉ định
         const rawPassword = password || "Nexlog@2026";
+        if (typeof rawPassword !== "string" || Buffer.byteLength(rawPassword, "utf8") > 72) {
+            const err = new Error("Mật khẩu không được vượt quá 72 byte.");
+            err.statusCode = 400;
+            throw err;
+        }
         const password_hash = await bcrypt.hash(rawPassword, 10);
 
         // BR-44: Tự động sinh order_form_token duy nhất cho Dispatcher
@@ -144,6 +150,23 @@ const staffAccountService = {
             status: normalizedStatus,
             order_form_token
         });
+
+        // BR-28: Nếu tạo tài khoản là Driver (role_id = 4), tự động tạo bản ghi hồ sơ tài xế driver_profiles
+        if (targetRoleId === 4 && newAccount?.id) {
+            try {
+                const licNum = `GPLX-${(phone || '').slice(-6) || Math.floor(100000 + Math.random() * 900000)}`;
+                const licExp = new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                await supabase.from('driver_profiles').insert({
+                    user_account_id: newAccount.id,
+                    license_number: licNum,
+                    license_class: 'C',
+                    license_expiry: licExp,
+                    status: 'ACTIVE'
+                });
+            } catch (dpErr) {
+                console.warn('Tạo driver_profiles phụ trợ cảnh báo:', dpErr.message);
+            }
+        }
 
         return {
             ...newAccount,
@@ -207,8 +230,16 @@ const staffAccountService = {
             updateData.status = status.toUpperCase() === 'LOCKED' ? 'LOCKED' : 'ACTIVE';
         }
 
-        if (password && password.trim() !== '') {
-            updateData.password_hash = await bcrypt.hash(password.trim(), 10);
+        if (password !== undefined && password !== null && password !== '') {
+            if (typeof password !== "string" || Buffer.byteLength(password.trim(), "utf8") > 72) {
+                const err = new Error("Mật khẩu không được vượt quá 72 byte.");
+                err.statusCode = 400;
+                throw err;
+            }
+            if (password.trim()) {
+                updateData.password_hash = await bcrypt.hash(password.trim(), 10);
+                updateData.password_changed_at = new Date().toISOString();
+            }
         }
 
         const updated = await staffAccountModel.updateStaffAccount(id, updateData);

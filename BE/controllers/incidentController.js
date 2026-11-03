@@ -34,7 +34,7 @@ const createIncident = async (req, res) => {
 const updateIncidentStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await incidentService.updateIncidentStatus(id, req.body);
+    const updated = await incidentService.updateIncidentStatus(id, req.body, req.user?.id || 3);
     return res.json({ message: 'Đã cập nhật sự cố thành công', incident: updated });
   } catch (err) {
     console.error('updateIncidentStatus error:', err);
@@ -303,7 +303,23 @@ const getClaims = async (req, res) => {
       .from('compensation_claims')
       .select(`
         *,
-        incident:incidents(id, type, fault, description),
+        incident:incidents(
+          id, 
+          type, 
+          fault, 
+          description,
+          photos,
+          status,
+          reported_time,
+          trip_id,
+          trip:trips(
+            id,
+            trip_code,
+            status,
+            trip_trucks(truck:trucks(plate_number)),
+            trip_drivers(driver:driver_profiles(user:users(full_name, phone)))
+          )
+        ),
         order:orders(id, order_code, order_type, agreed_price, customer_id, receiver_name)
       `)
       .order('id', { ascending: false });
@@ -322,8 +338,25 @@ const getClaims = async (req, res) => {
       }
     });
 
+    const typeDisplayMap = {
+      'Vehicle Issue': 'Hỏng xe',
+      'BREAKDOWN': 'Hỏng xe',
+      'Traffic': 'Cấm đường / Ùn tắc',
+      'ROAD_BAN': 'Cấm đường / Ùn tắc',
+      'TRAFFIC_ACCIDENT': 'Tai nạn giao thông',
+      'ACCIDENT': 'Tai nạn giao thông',
+      'DAMAGED_CARGO': 'Hàng hư hỏng/mất',
+      'CARGO_DAMAGED': 'Hàng hư hỏng/mất',
+      'CARGO_LOST': 'Thất lạc hàng hóa',
+      'SEIZED_BY_AUTHORITY': 'Cơ quan chức năng giữ xe',
+      'HELD_BY_AUTHORITIES': 'Kiểm tra hải quan / CSGT',
+      'FAILED_DELIVERY': 'Giao hàng không thành công',
+      'OTHER': 'Sự cố khác'
+    };
+
     const formattedClaims = (claims || []).map((c) => {
       const order = c.order;
+      const incident = c.incident;
       const customerId = order?.customer_id;
       const contractCap = customerId && contractMap[customerId] ? contractMap[customerId] : 0;
       const declaredValue = Number(order?.agreed_price || 0) * 10;
@@ -340,12 +373,37 @@ const getClaims = async (req, res) => {
 
       const isExceedingCap = Number(c.amount || 0) > liabilityLimit;
 
-      const sourceDisplay =
-        c.source === 'CUSTOMER_CLAIM'
-          ? 'Khách hàng tự khiếu nại (Tracking Portal)'
-          : c.incident_id
-          ? `Sự cố INC-${String(c.incident_id).padStart(3, '0')}`
-          : 'Sự cố vận chuyển';
+      const incidentCode = incident?.id ? `INC-${String(incident.id).padStart(3, '0')}` : null;
+
+      let sourceDisplay = 'Sự cố vận chuyển';
+      if (c.source === 'CUSTOMER_CLAIM') {
+        sourceDisplay = 'Khách hàng khiếu nại (Tracking Portal)';
+      } else if (c.source === 'DISPATCHER_ESCALATED') {
+        sourceDisplay = 'ĐPV chuyển tiếp sự cố nghiêm trọng';
+      } else if (c.source === 'DRIVER_REPORTED') {
+        sourceDisplay = 'Tài xế báo cáo sự cố hiện trường';
+      } else if (incidentCode) {
+        sourceDisplay = `Sự cố ${incidentCode}`;
+      }
+
+      const tripObj = incident?.trip;
+      const truckPlate = tripObj?.trip_trucks?.[0]?.truck?.plate_number || null;
+      const driverObj = tripObj?.trip_drivers?.[0]?.driver?.user;
+      const driverName = driverObj?.full_name || null;
+      const driverPhone = driverObj?.phone || null;
+
+      let incidentPhotos = [];
+      if (incident?.photos) {
+        if (Array.isArray(incident.photos)) {
+          incidentPhotos = incident.photos;
+        } else if (typeof incident.photos === 'string') {
+          try {
+            incidentPhotos = JSON.parse(incident.photos);
+          } catch {
+            incidentPhotos = [incident.photos];
+          }
+        }
+      }
 
       return {
         id: c.id,
@@ -353,7 +411,22 @@ const getClaims = async (req, res) => {
         order_id: c.order_id,
         order_code: order?.order_code || 'N/A',
         order_type: order?.order_type || 'Export',
+        customer_id: customerId,
+        receiver_name: order?.receiver_name || null,
         incident_id: c.incident_id,
+        incident_code: incidentCode,
+        incident_type: incident?.type || null,
+        incident_type_display: incident?.type ? (typeDisplayMap[incident.type] || incident.type) : 'Sự cố vận tải',
+        incident_fault: incident?.fault || 'COMPANY',
+        incident_description: incident?.description || '',
+        incident_status: incident?.status || null,
+        incident_photos: incidentPhotos,
+        incident_reported_time: incident?.reported_time || null,
+        trip_id: incident?.trip_id || tripObj?.id || null,
+        trip_code: tripObj?.trip_code || (incident?.trip_id ? `TRIP-${incident.trip_id}` : null),
+        truck_plate: truckPlate,
+        driver_name: driverName,
+        driver_phone: driverPhone,
         source: c.source || 'INCIDENT',
         source_display: sourceDisplay,
         amount: Number(c.amount || 0),

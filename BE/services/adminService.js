@@ -117,8 +117,11 @@ const createUser = async (userData, adminId = null, ipAddress = null) => {
     if (!email || !email.trim()) {
         throw new Error("Email is required");
     }
-    if (!password || password.length < 6) {
+    if (typeof password !== "string" || password.length < 6) {
         throw new Error("Password must be at least 6 characters long");
+    }
+    if (Buffer.byteLength(password, "utf8") > 72) {
+        throw new Error("Password must not exceed 72 UTF-8 bytes");
     }
     if (!full_name || !full_name.trim()) {
         throw new Error("Full name is required");
@@ -198,12 +201,20 @@ const updateUser = async (id, updateData, adminId = null, ipAddress = null) => {
     if (role_id) fieldsToUpdate.role_id = Number(role_id);
     if (status) fieldsToUpdate.status = status;
 
-    if (password && password.trim()) {
-        if (password.length < 6) {
-            throw new Error("Password must be at least 6 characters long");
+    if (password !== undefined && password !== null && password !== "") {
+        if (typeof password !== "string") {
+            throw new Error("Password must be a string");
         }
-        fieldsToUpdate.password_hash = await bcrypt.hash(password, 10);
-        fieldsToUpdate.password_changed_at = new Date().toISOString();
+        if (password.trim()) {
+            if (password.length < 6) {
+                throw new Error("Password must be at least 6 characters long");
+            }
+            if (Buffer.byteLength(password, "utf8") > 72) {
+                throw new Error("Password must not exceed 72 UTF-8 bytes");
+            }
+            fieldsToUpdate.password_hash = await bcrypt.hash(password, 10);
+            fieldsToUpdate.password_changed_at = new Date().toISOString();
+        }
     }
 
     const updated = await adminModel.updateUser(id, fieldsToUpdate);

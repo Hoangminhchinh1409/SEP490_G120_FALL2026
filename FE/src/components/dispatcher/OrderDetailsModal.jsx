@@ -1,11 +1,10 @@
 'use client';
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Modal, Tabs, Tag, Button, Input, message } from 'antd';
+import { Modal, Tabs, Tag, Button, message } from 'antd';
 import { 
   MessageCircle, 
-  ArrowUpRight,
-  AlertTriangle
+  ArrowUpRight
 } from 'lucide-react';
 import CancelOrderModal from './CancelOrderModal';
 import DocumentAssistantDrawer from './DocumentAssistantDrawer';
@@ -25,8 +24,7 @@ import OrderDocumentsTab from './orderDetails/OrderDocumentsTab';
 import OrderContractTab from './orderDetails/OrderContractTab';
 import OrderFinancialTab from './orderDetails/OrderFinancialTab';
 import OrderDriverChatTab from './orderDetails/OrderDriverChatTab';
-
-const { TextArea } = Input;
+import { RejectDocModal } from './orderDetails/RejectDocModal';
 
 // Danh mục phụ phí gợi ý phổ biến
 const EXTRA_FEE_TYPES = [
@@ -44,7 +42,7 @@ export default function OrderDetailsModal({ open, order, onCancel, onUpdateOrder
 
   return (
     <OrderDetailsModalContent
-      key={`${order.id || order.order_id}-${order.web_workflow?.stage || order.status}-${order.web_workflow?.negotiation?.submitted_at || ''}`}
+      key={`${order.id || order.order_id}`}
       open={open}
       order={order}
       onCancel={onCancel}
@@ -56,6 +54,7 @@ export default function OrderDetailsModal({ open, order, onCancel, onUpdateOrder
 function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   const router = useRouter();
   const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
+  const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
 
   // Xác định tab mặc định dựa trên trạng thái đơn hàng
   const defaultTab = order.targetTab || (
@@ -69,6 +68,54 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [savingPrice, setSavingPrice] = useState(false);
   const [confirmingDocs, setConfirmingDocs] = useState(false);
+  const [scanningCustoms, setScanningCustoms] = useState(false);
+
+  // Scan thông tin từ chứng từ khách upload để fill tự động vào Tờ khai hải quan
+  const handleScanCustomsFromDocs = async () => {
+    try {
+      setScanningCustoms(true);
+      const res = await aiApi.autoScanCustomsDeclaration({
+        order,
+        uploadedDocs: documents.filter(d => d.file !== 'Chờ tải lên')
+      });
+
+      const customsDocKey = documents.find(d => d.key === 'doc-basic-1' || d.key === 'basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'))?.key || 'doc-basic-1';
+      
+      const updatedDocs = documents.map(d => {
+        if (d.key === customsDocKey || d.name?.toLowerCase().includes('tờ khai hải quan')) {
+          return {
+            ...d,
+            file: res.fileName || `To_khai_hai_quan_${order.order_id || 'NEX'}_VNACCS.pdf`,
+            size: res.fileSize || '245 KB',
+            uploadDate: new Date().toLocaleString('vi-VN'),
+            status: 'APPROVED',
+            customs_data: res
+          };
+        }
+        return d;
+      });
+
+      setDocuments(updatedDocs);
+      await orderApi.uploadOrderDocuments(order.id || order.order_id, updatedDocs);
+
+      onUpdateOrder?.({
+        ...order,
+        documents: updatedDocs,
+        web_workflow: {
+          ...(order.web_workflow || {}),
+          documents: updatedDocs,
+          customs_declaration: res
+        }
+      });
+
+      message.success(`Đã tự động trích xuất thông tin & sinh Tờ khai hải quan điện tử (${res.declarationNumber || 'VNACCS'}) thành công!`);
+    } catch (err) {
+      console.error('handleScanCustomsFromDocs error:', err);
+      message.error(err.message || 'Lỗi khi quét thông tin tờ khai hải quan');
+    } finally {
+      setScanningCustoms(false);
+    }
+  };
 
   // State Modal Từ chối 1 chứng từ
   const [rejectDocModalOpen, setRejectDocModalOpen] = useState(false);
@@ -158,7 +205,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   });
   const [newMessageText, setNewMessageText] = useState('');
 
-  // Phân tích gợi ý chọn xe dựa trên kích thước, thể tích & tải trọng thực tế của đơn hàng
+  // Phân tích gợi ý chọn xe
   const vehicleRecommendation = useMemo(() => {
     return analyzeVehicleRecommendation({
       actualWeightKg: parseFloat(order.weight || order.weight_kg || 0),
@@ -175,7 +222,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     });
   }, [order]);
 
-  // Tính giá cước sàn gợi ý theo Biểu giá chuẩn ALS (FedEx Express & Phụ phí) dựa trên loại xe đề xuất
+  // Tính giá cước sàn gợi ý
   const pricingBreakdown = useMemo(() => {
     const dist = parseFloat(routeInfo.distanceKm) || 35.5;
     const weight = parseFloat(order.chargeable || order.chargeable_weight || order.weight || 1000);
@@ -244,7 +291,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     return getCoordsFromAddress(deliveryAddress, 'B');
   }, [order, deliveryAddress]);
 
-  // 1. Chốt giá cước thỏa thuận (hoặc Chốt lại giá khi khách thương lượng)
+  // 1. Chốt giá cước thỏa thuận
   const handleConfirmPriceAndOrder = async () => {
     if (!currentAgreedPrice || currentAgreedPrice <= 0) {
       message.error('Vui lòng nhập giá cước thỏa thuận đã chốt với khách hàng (> 0 VNĐ)!');
@@ -258,6 +305,8 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
 
     try {
       setSavingPrice(true);
+      await orderApi.uploadOrderDocuments(order.id || order.order_id, documents).catch(console.error);
+
       const res = await orderApi.updateAgreedPrice(
         order.id || order.order_id,
         currentAgreedPrice,
@@ -277,6 +326,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         vehicle_type_required: proposedVehicleType,
         proposed_vehicle_type: proposedVehicleType,
         vehicle_analysis_note: vehicleAnalysisNote.trim(),
+        documents: documents,
         web_workflow: res?.web_workflow || {
           ...(order.web_workflow || {}),
           stage: 'PRICE_AGREED_BY_DISPATCHER',
@@ -292,7 +342,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         message.success(`Đã chốt lại phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ (Lý do: ${adjustmentReason.trim()}) và gửi lại cho khách hàng!`);
         setAdjustmentReason('');
       } else if (isWebOrder) {
-        message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ, đồng thời gửi email báo giá cho khách hàng xác nhận!`);
+        message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ, đồng thời gửi email báo giá và yêu cầu chứng từ cho khách hàng!`);
       } else {
         message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ! Đơn đã chuyển sang trạng thái Cần xác nhận chứng từ.`);
         setActiveTab('2');
@@ -446,7 +496,6 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     }
   };
 
-  // Mở modal nhập lý do từ chối chứng từ & tự động gửi email cho khách
   const handleRejectDoc = (docKey) => {
     setRejectingDocKey(docKey);
     setRejectDocReason('Chứng từ bị mờ hoặc thông tin chưa khớp, vui lòng tải lại tệp đúng quy định.');
@@ -571,7 +620,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
     message.info('Đã xóa mục chứng từ.');
   };
 
-  // 5. Xác nhận toàn bộ chứng từ (Chặn tuyệt đối nếu có bất kỳ chứng từ nào bị REJECTED hoặc chưa tải lên)
+  // 5. Xác nhận toàn bộ chứng từ
   const handleConfirmAllDocuments = async () => {
     const rejectedList = documents.filter(d => d.status === 'REJECTED');
     if (rejectedList.length > 0) {
@@ -581,13 +630,12 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
 
     const unuploaded = documents.filter(d => d.file === 'Chờ tải lên' || d.status === 'WAITING_UPLOAD');
     if (unuploaded.length > 0) {
-      const hasUnuploadedCustoms = unuploaded.some(d => d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'));
-      if (hasUnuploadedCustoms) {
-        message.warning(`Vui lòng đính kèm Tệp Tờ khai hải quan (phần Điều phối chuẩn bị) trước khi phê duyệt toàn bộ hồ sơ!`);
-      } else {
-        message.warning(`Còn ${unuploaded.length} chứng từ chưa được tải tệp lên! Hãy tải đầy đủ trước khi xác nhận toàn bộ.`);
+      // Bỏ bắt buộc Tờ khai hải quan phải nộp trước (vì tờ khai sẽ được tự sinh bằng AI sau khi khách ký hợp đồng)
+      const nonCustomsUnuploaded = unuploaded.filter(d => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan')));
+      if (nonCustomsUnuploaded.length > 0) {
+        message.warning(`Còn ${nonCustomsUnuploaded.length} chứng từ của khách chưa được tải tệp lên! Hãy tải đầy đủ trước khi xác nhận.`);
+        return;
       }
-      return;
     }
 
     const isWebOrder = order.source === 'HOMEPAGE';
@@ -725,6 +773,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           vehicleRecommendation={vehicleRecommendation}
           savingPrice={savingPrice}
           handleConfirmPriceAndOrder={handleConfirmPriceAndOrder}
+          documents={documents}
+          setDocuments={setDocuments}
+          onOpenAssistant={() => setAssistantDrawerOpen(true)}
         />
       )
     }
@@ -752,6 +803,8 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           triggerUploadDoc={triggerUploadDoc}
           handleConfirmAllDocuments={handleConfirmAllDocuments}
           confirmingDocs={confirmingDocs}
+          handleScanCustomsFromDocs={handleScanCustomsFromDocs}
+          scanningCustoms={scanningCustoms}
         />
       )
     });
@@ -882,7 +935,10 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         open={open}
         onCancel={onCancel}
         width={980}
-        footer={[
+        footer={
+          isClosed ? [
+            <Button key="close" type="primary" onClick={onCancel}>Đóng</Button>
+          ] : [
           <Button key="close" onClick={onCancel}>Đóng</Button>,
           (order.status === 'DRAFT' || isNegotiating) && (
             <Button 
@@ -949,48 +1005,19 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         </div>
       </Modal>
 
-      {/* Modal nhập lý do từ chối chứng từ & gửi email yêu cầu khách tải lại */}
-      <Modal
-        title={
-          <div className="flex items-center gap-2 text-sm font-bold text-red-700">
-            <AlertTriangle size={17} className="text-red-600" />
-            Từ chối chứng từ &amp; Gửi Email yêu cầu khách tải lại
-          </div>
-        }
+      {/* Modal nhập lý do từ chối chứng từ */}
+      <RejectDocModal
         open={rejectDocModalOpen}
         onCancel={() => {
           setRejectDocModalOpen(false);
           setRejectingDocKey(null);
         }}
-        onOk={handleConfirmRejectDoc}
+        rejectingDocObj={rejectingDocObj}
+        rejectDocReason={rejectDocReason}
+        setRejectDocReason={setRejectDocReason}
+        onConfirm={handleConfirmRejectDoc}
         confirmLoading={submittingRejectDoc}
-        okText="Xác nhận Từ chối & Gửi Email"
-        cancelText="Hủy"
-        okButtonProps={{ danger: true, className: 'font-semibold' }}
-        destroyOnHidden
-        centered
-      >
-        <div className="py-2 space-y-3 text-xs">
-          <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-red-900">
-            Chứng từ từ chối: <b>{rejectingDocObj?.name || 'Chứng từ vận tải'}</b>
-          </div>
-          <div>
-            <label className="font-semibold text-gray-700 block mb-1">
-              Lý do từ chối / Hướng dẫn khách tải lại (*)
-            </label>
-            <TextArea
-              rows={3}
-              value={rejectDocReason}
-              onChange={(e) => setRejectDocReason(e.target.value)}
-              placeholder="Nhập lý do tại sao chứng từ này chưa đạt để gửi qua email cho khách hàng..."
-              className="text-xs"
-            />
-          </div>
-          <p className="text-[11px] text-gray-500 m-0">
-            * Hệ thống sẽ chuyển mục này sang trạng thái <b>Cần upload lại</b> trên trang của khách hàng và tự động gửi Email thông báo kèm link tải lại.
-          </p>
-        </div>
-      </Modal>
+      />
 
       <CancelOrderModal
         open={cancelModalOpen}
@@ -1004,6 +1031,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         onClose={() => setAssistantDrawerOpen(false)}
         onApplyRecommendations={handleApplyAssistantRecommendations}
         currentCargo={order.cargo_name || order.cargo_type || ''}
+        order={order}
       />
     </>
   );

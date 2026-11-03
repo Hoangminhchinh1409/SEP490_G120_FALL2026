@@ -106,8 +106,41 @@ const hydrateHeavyFields = (orderId, metaObj) => {
 
 // Helper map status từ DB sang FE
 const mapDbStatusToFe = (dbStatus, order, meta = null) => {
-  if (dbStatus === 'CANCELLED' || dbStatus === 'CANCELLED_RETURNING' || (order?.cancelled_at && order?.cancel_reason)) {
+  const upperStatus = (dbStatus || '').toUpperCase().replace(/\s+/g, '_');
+
+  if (
+    upperStatus === 'CANCELLED' ||
+    upperStatus === 'CANCELLED_RETURNING' ||
+    (order?.cancelled_at && order?.cancel_reason)
+  ) {
     return 'CANCELLED';
+  }
+
+  // Ưu tiên các trạng thái sau bước xếp xe (ASSIGNED, IN_TRANSIT, DELIVERED, CLOSED)
+  if (upperStatus === 'CLOSED' || (order?.is_closed && upperStatus === 'DELIVERED')) {
+    return 'CLOSED';
+  }
+  if (upperStatus === 'DELIVERED') {
+    return 'DELIVERED';
+  }
+  if (
+    upperStatus === 'HANDED_OVER_TO_VENDOR' ||
+    upperStatus === 'PICKED_UP' ||
+    upperStatus === 'IN_TRANSIT' ||
+    upperStatus === 'IN_PROGRESS'
+  ) {
+    return 'IN_TRANSIT';
+  }
+  if (
+    upperStatus === 'PLANNED' ||
+    upperStatus === 'ASSIGNED' ||
+    upperStatus === 'ACCEPTED' ||
+    upperStatus === 'DISPATCHED'
+  ) {
+    return 'ASSIGNED';
+  }
+  if (upperStatus === 'READY_FOR_PLANNING') {
+    return 'READY_FOR_PLANNING';
   }
 
   const resolvedMeta = meta || parseOrderMeta(order);
@@ -122,29 +155,13 @@ const mapDbStatusToFe = (dbStatus, order, meta = null) => {
     return 'READY_FOR_PLANNING';
   }
 
-  switch (dbStatus) {
+  switch (upperStatus) {
     case 'WAITING_FOR_DOCUMENTS':
+    case 'PENDING_DOCUMENTS':
       if (order?.source === 'HOMEPAGE' && (!order?.agreed_price || order.agreed_price === 0)) {
         return 'DRAFT';
       }
       return 'CONFIRMED';
-    case 'READY_FOR_PLANNING':
-      return 'READY_FOR_PLANNING';
-    case 'PLANNED':
-    case 'ASSIGNED':
-    case 'ACCEPTED':
-      return 'ASSIGNED';
-    case 'HANDED_OVER_TO_VENDOR':
-    case 'PICKED_UP':
-    case 'IN_TRANSIT':
-      return 'IN_TRANSIT';
-    case 'DELIVERED':
-      return 'DELIVERED';
-    case 'CLOSED':
-      return 'CLOSED';
-    case 'CANCELLED':
-    case 'CANCELLED_RETURNING':
-      return 'CANCELLED';
     default:
       if (resolvedMeta?.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' && order?.agreed_price > 0) {
         return 'DRAFT';
@@ -279,7 +296,7 @@ const assembleMetaFromNotes = (notesList) => {
   if (chunkNotes.length > 0) {
     // Lấy bộ chunk mới nhất theo index tăng dần
     const byIndex = new Map();
-    chunkNotes.sort((a, b) => a.id - b.id);
+    chunkNotes.sort((a, b) => Number(a.id) - Number(b.id));
     chunkNotes.forEach((c) => byIndex.set(c.index, c.body));
     const sortedIndices = [...byIndex.keys()].sort((a, b) => a - b);
     const fullJson = sortedIndices.map((idx) => byIndex.get(idx)).join('');
@@ -431,6 +448,92 @@ const saveOrderMeta = async (orderId, meta) => {
   }
 };
 
+/**
+ * Thuật toán Phân bổ Đơn Web Xoay vòng (Least Loaded Round-Robin):
+ * 1. Lọc tất cả Điều phối viên đang ACTIVE (role_id = 3).
+ * 2. Đếm số đơn đang hoạt động (Draft, Confirmed, Ready for Planning, Assigned, In Transit).
+ * 3. Tìm nhóm Điều phối viên có ít đơn nhất (Least Loaded).
+ * 4. Nếu có nhiều người cùng có số đơn ít nhất bằng nhau, thực hiện Xoay vòng (Round-Robin)
+ *    dựa trên người phụ trách đơn Web gần nhất để đảm bảo phân bổ đều đặn, công bằng.
+ */
+const getNextDispatcherForWebOrder = async () => {
+  try {
+    const prisma = require('../config/prisma');
+    const activeDispatchers = await prisma.users.findMany({
+      where: { role_id: 3n, status: 'ACTIVE' },
+      select: { id: true, full_name: true, username: true }
+    });
+
+    if (!activeDispatchers || activeDispatchers.length === 0) {
+      return 1; // Fallback dispatcher ID mặc định nếu chưa có tài khoản nào
+    }
+
+    const dispIds = activeDispatchers.map((d) => d.id);
+    const activeStatuses = [
+      'DRAFT',
+      'Draft',
+      'CONFIRMED',
+      'Confirmed',
+      'READY_FOR_PLANNING',
+      'Ready for Planning',
+      'ASSIGNED',
+      'Assigned',
+      'IN_TRANSIT',
+      'In Transit'
+    ];
+
+    const activeOrders = await prisma.orders.findMany({
+      where: {
+        responsible_dispatcher_id: { in: dispIds },
+        status: { in: activeStatuses }
+      },
+      select: { id: true, responsible_dispatcher_id: true }
+    });
+
+    const counts = {};
+    dispIds.forEach((id) => {
+      counts[id.toString()] = 0;
+    });
+    activeOrders.forEach((o) => {
+      if (o.responsible_dispatcher_id) {
+        const k = o.responsible_dispatcher_id.toString();
+        counts[k] = (counts[k] || 0) + 1;
+      }
+    });
+
+    const minCount = Math.min(...dispIds.map((id) => counts[id.toString()]));
+    const candidateDispatchers = activeDispatchers.filter(
+      (d) => counts[d.id.toString()] === minCount
+    );
+
+    if (candidateDispatchers.length === 1) {
+      return Number(candidateDispatchers[0].id);
+    }
+
+    // Nếu nhiều điều phối viên có cùng số đơn ít nhất, xoay vòng theo đơn Web gần nhất
+    const lastAssignedOrder = await prisma.orders.findFirst({
+      where: {
+        source: 'Web',
+        responsible_dispatcher_id: { in: candidateDispatchers.map((d) => d.id) }
+      },
+      orderBy: { id: 'desc' },
+      select: { id: true, responsible_dispatcher_id: true }
+    });
+
+    if (!lastAssignedOrder || !lastAssignedOrder.responsible_dispatcher_id) {
+      return Number(candidateDispatchers[0].id);
+    }
+
+    const lastId = lastAssignedOrder.responsible_dispatcher_id;
+    const lastIndex = candidateDispatchers.findIndex((d) => d.id === lastId);
+    const nextIndex = (lastIndex + 1) % candidateDispatchers.length;
+    return Number(candidateDispatchers[nextIndex].id);
+  } catch (err) {
+    console.error('Error in getNextDispatcherForWebOrder (fallback to 1):', err.message);
+    return 1;
+  }
+};
+
 module.exports = {
   META_NOTE_PREFIX,
   META_CHUNK_PREFIX,
@@ -439,5 +542,6 @@ module.exports = {
   getOrCreateLocation,
   parseOrderMeta,
   loadOrderMeta,
-  saveOrderMeta
+  saveOrderMeta,
+  getNextDispatcherForWebOrder
 };

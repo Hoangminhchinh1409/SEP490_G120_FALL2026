@@ -5,6 +5,7 @@ import { Table, Tag, Button, Row, Col, Space } from 'antd';
 import { Users, Plus, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell, RefreshCw } from 'lucide-react';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
+import { useAuth } from '../../providers/AuthProvider';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 const OrderFormModal = dynamic(() => import('../../components/dispatcher/OrderFormModal'), { ssr: false });
@@ -19,6 +20,7 @@ const getCleanShortName = (fullText, defaultText) => {
 };
 
 const DispatcherDashboard = () => {
+  const { user } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [data, setData] = useState([]);
   const [dbStats, setDbStats] = useState(null);
@@ -32,7 +34,20 @@ const DispatcherDashboard = () => {
         dispatcherApi.getDashboardStats()
       ]);
 
-      setData((ordersRes || []).map(o => ({
+      const currentUserId = user?.id ? Number(user.id) : null;
+      const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
+
+      const userOrders = (ordersRes || []).filter(o => {
+        if (isDispatcher && currentUserId) {
+          const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id) : null;
+          if (orderDispId && orderDispId !== currentUserId) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      setData(userOrders.map(o => ({
         ...o,
         route: `${getCleanShortName(o.pickup, 'Kho ALS')} → ${getCleanShortName(o.dropoff, 'Điểm giao')}`
       })));
@@ -42,7 +57,7 @@ const DispatcherDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     let active = true;
@@ -55,7 +70,20 @@ const DispatcherDashboard = () => {
         ]);
 
         if (active) {
-          setData((ordersRes || []).map(o => ({
+          const currentUserId = user?.id ? Number(user.id) : null;
+          const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
+
+          const userOrders = (ordersRes || []).filter(o => {
+            if (isDispatcher && currentUserId) {
+              const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id) : null;
+              if (orderDispId && orderDispId !== currentUserId) {
+                return false;
+              }
+            }
+            return true;
+          });
+
+          setData(userOrders.map(o => ({
             ...o,
             route: `${getCleanShortName(o.pickup, 'Kho ALS')} → ${getCleanShortName(o.dropoff, 'Điểm giao')}`
           })));
@@ -77,7 +105,7 @@ const DispatcherDashboard = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [user]);
 
   // Tính toán số liệu thống kê động từ cơ sở dữ liệu thật
   const stats = useMemo(() => {
