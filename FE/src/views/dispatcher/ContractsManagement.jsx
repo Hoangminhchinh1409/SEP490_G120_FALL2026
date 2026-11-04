@@ -444,7 +444,7 @@ export default function ContractsManagement() {
         footer={[
           <Button key="close" onClick={() => setExportModalContract(null)}>Đóng</Button>,
           <Button key="print" type="primary" icon={<Download size={14} />} onClick={() => { message.success('Đã tải xuống bản PDF hợp đồng ký kết!'); setExportModalContract(null); }} className="bg-[#7367f0]">
-            Tải PDF có dấu mộc điện tử
+            Tải bản PDF hợp đồng
           </Button>
         ]}
         width={700}
@@ -478,14 +478,14 @@ export default function ContractsManagement() {
               <div className="text-center w-40">
                 <p className="font-bold">ĐẠI DIỆN BÊN A</p>
                 <div className="h-14 flex items-center justify-center text-emerald-600 font-mono text-[10px] border border-dashed border-emerald-400 rounded bg-emerald-50 my-1">
-                  [Đã ký số điện tử NEXLOG]
+                  [Ký trực tiếp &amp; Đóng dấu pháp nhân NEXLOG]
                 </div>
                 <p className="font-medium text-gray-700">{exportModalContract.signed_by}</p>
               </div>
               <div className="text-center w-40">
                 <p className="font-bold">ĐẠI DIỆN BÊN B</p>
                 <div className="h-14 flex items-center justify-center text-blue-600 font-mono text-[10px] border border-dashed border-blue-400 rounded bg-blue-50 my-1">
-                  [Đã ký nhận số điện tử]
+                  [Ký trực tiếp &amp; Đóng dấu pháp nhân Đối tác]
                 </div>
                 <p className="font-medium text-gray-700">Giám đốc Chuỗi cung ứng</p>
               </div>

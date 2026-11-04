@@ -445,25 +445,18 @@ export default function OrderDocumentsView() {
           />
         )}
 
-        {/* Thông báo nếu đã được duyệt toàn bộ chứng từ -> chuyển sang ký hợp đồng */}
+        {/* Thông báo nếu đã được duyệt toàn bộ chứng từ -> chờ điều phối đính kèm hợp đồng scan PDF 2 bên ký trực tiếp */}
         {isDocsApproved && (
           <Alert
             title="Toàn bộ hồ sơ chứng từ đã được phê duyệt hợp lệ!"
             description={
               <div className="space-y-2 text-xs text-slate-700 mt-1">
                 <p className="m-0">
-                  Bộ phận Điều phối NEXLOG đã phê duyệt hồ sơ pháp lý và gửi Hợp đồng điện tử tới email <b>{order?.customer_email}</b> của Quý khách.
+                  Bộ phận Điều phối NEXLOG đã phê duyệt hồ sơ pháp lý của Quý khách. Theo quy định pháp lý, hợp đồng vận chuyển được ký trực tiếp và đóng dấu giữa hai bên (Khách hàng &amp; NEXLOG).
                 </p>
-                <div className="pt-1">
-                  <Button
-                    type="primary"
-                    icon={<ArrowRight size={14} />}
-                    onClick={() => router.push(`/customer/contract-sign/${token}`)}
-                    className="bg-emerald-600 hover:bg-emerald-700 font-bold"
-                  >
-                    Chuyển sang Ký Hợp Đồng Điện Tử Ngay
-                  </Button>
-                </div>
+                <p className="m-0 font-semibold text-emerald-700">
+                  ✓ Điều phối viên phụ trách đang thực hiện đính kèm bản scan PDF hợp đồng đã ký của 2 bên lên hệ thống để chuyển đơn hàng sang công đoạn Xếp xe!
+                </p>
               </div>
             }
             type="success"
@@ -482,7 +475,7 @@ export default function OrderDocumentsView() {
                   Điều phối viên đang thẩm định tính hợp lệ của từng loại chứng từ.
                 </p>
                 <p className="m-0 text-emerald-700 font-semibold">
-                  Ngay sau khi phê duyệt xong, hệ thống sẽ tự động gửi hợp đồng điện tử PDF kèm đường link chữ ký số tới email <b>{order?.customer_email}</b> của Quý khách!
+                  Ngay sau khi phê duyệt xong chứng từ và hai bên hoàn tất ký hợp đồng vận chuyển trực tiếp, Điều phối viên sẽ đính kèm bản scan PDF hợp đồng lên hệ thống để điều xe vận chuyển cho Quý khách!
                 </p>
               </div>
             }
@@ -523,15 +516,9 @@ export default function OrderDocumentsView() {
             </div>
           ) : isDocsApproved ? (
             <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-              <Button
-                type="primary"
-                size="large"
-                icon={<ArrowRight size={16} />}
-                onClick={() => router.push(`/customer/contract-sign/${token}`)}
-                className="bg-emerald-600 hover:bg-emerald-700 font-bold px-8 h-12 rounded-xl"
-              >
-                Tiến hành Ký Chữ Ký Số Hợp Đồng
-              </Button>
+              <Tag color="success" className="py-1.5 px-4 text-xs font-bold rounded-full">
+                Trạng thái: Đã duyệt chứng từ — Điều phối viên đính kèm Hợp đồng đã scan (PDF) có chữ ký trực tiếp của 2 bên
+              </Tag>
             </div>
           ) : (
             <div className="mt-6 pt-4 border-t border-slate-100 text-center">

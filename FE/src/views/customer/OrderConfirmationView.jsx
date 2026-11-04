@@ -409,7 +409,7 @@ export default function OrderConfirmationView() {
             <ul className="text-xs text-slate-600 space-y-1 list-disc pl-5 m-0">
               <li>Phương tiện vận tải chuyên dùng đạt chuẩn kiểm định an toàn kỹ thuật.</li>
               <li>Hỗ trợ thủ tục kiểm duyệt chứng từ thông quan nhanh tại ga/kho ALS.</li>
-              <li>Hợp đồng điện tử ký số hợp pháp theo Luật Giao dịch Điện tử.</li>
+              <li>Hợp đồng vận chuyển pháp lý ký kết trực tiếp giữa hai bên và lưu trữ bản scan PDF đầy đủ.</li>
             </ul>
           </div>
 

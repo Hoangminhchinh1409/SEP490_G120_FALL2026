@@ -345,7 +345,7 @@ const OrderManagement = () => {
           if (record.web_workflow?.stage === 'DOCS_APPROVED') {
             return (
               <Tag color="cyan" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
-                Đã duyệt CT - Chờ ký HĐ
+                Đã duyệt CT - Chờ đính kèm HĐ PDF
               </Tag>
             );
           }
@@ -428,14 +428,14 @@ const OrderManagement = () => {
             </>
           ) : record.status === 'CONFIRMED' ? (
             <>
-              <Tooltip title={record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Xem hợp đồng đã gửi cho khách ký số' : 'Kiểm duyệt & Xác nhận danh mục chứng từ'}>
+              <Tooltip title={record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Đính kèm bản scan PDF hợp đồng 2 bên đã ký' : 'Kiểm duyệt & Xác nhận danh mục chứng từ'}>
                 <Button 
                   size="small" 
                   type="primary"
                   className={`text-xs font-semibold ${record.web_workflow?.stage === 'DOCS_APPROVED' ? 'bg-cyan-600 hover:bg-cyan-700 border-cyan-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
                   onClick={() => setSelectedOrderForDetails({ ...record, targetTab: record.web_workflow?.stage === 'DOCS_APPROVED' ? '3' : '2' })}
                 >
-                  {record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Hợp đồng & Chờ ký' : 'Xác nhận chứng từ'}
+                  {record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Đính kèm HĐ PDF' : 'Xác nhận chứng từ'}
                 </Button>
               </Tooltip>
               <Tooltip title="Hủy đơn (Miễn phí)">
