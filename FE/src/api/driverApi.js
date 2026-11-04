@@ -165,6 +165,11 @@ export const driverApi = {
     });
   },
 
+  // Lấy chi tiết lịch sử phiên đồng bộ ngoại tuyến từ Database
+  getSyncLogDetail: async (logId) => {
+    return await fetchWithAuth(`/driver/sync-log/${logId}`);
+  },
+
   // Đồng bộ ngoại tuyến (BR-27, MSG39)
   syncOffline: async (actions) => {
     return await fetchWithAuth("/driver/sync", {
