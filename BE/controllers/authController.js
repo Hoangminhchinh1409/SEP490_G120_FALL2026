@@ -205,14 +205,13 @@ const resetPassword = async (req, res) => {
                 code: error.code || null
             });
         }
-console.error("resetPassword failed:", {
+        console.error("resetPassword failed:", {
             name: error.name,
             code: error.code || null
         });
         return res.status(500).json({
             message: "Không thể đặt lại mật khẩu lúc này."
         });
-    });
     }
 };
 

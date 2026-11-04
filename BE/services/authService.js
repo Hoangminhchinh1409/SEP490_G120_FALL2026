@@ -65,24 +65,6 @@ const login = async (identifier, password) => {
         throw error;
     }
 
-    // Kiểm tra Chế độ bảo trì hệ thống (SRS v2 / Report 4 - MSG86)
-    // Khi bật bảo trì, chỉ duy nhất Administrator (role_id = 1) được phép đăng nhập
-    if (Number(user.role_id) !== 1) {
-        const { data: maintenanceSetting } = await supabase
-            .from("system_settings")
-            .select("value")
-            .eq("key", "maintenance_mode")
-            .maybeSingle();
-
-        if (maintenanceSetting && (maintenanceSetting.value === "true" || maintenanceSetting.value === true)) {
-            const error = new Error("Hệ thống đang bảo trì. Vui lòng quay lại sau.");
-            error.code = "MSG86";
-            error.statusCode = 403;
-            throw error;
-        }
-    }
-}
-
     const isPasswordValid = await bcrypt.compare(
         password,
         user.password_hash
@@ -115,6 +97,7 @@ const login = async (identifier, password) => {
         if (maintenanceSetting && (maintenanceSetting.value === "true" || maintenanceSetting.value === true)) {
             const error = new Error("Hệ thống đang bảo trì. Vui lòng quay lại sau.");
             error.code = "MSG86";
+            error.statusCode = 503;
             throw error;
         }
     }
@@ -272,14 +255,14 @@ const updateProfile = async (userId, payload = {}) => {
 
 const changePassword = async (userId, currentPassword, newPassword) => {
     if (typeof currentPassword !== "string" || !currentPassword) {
-const error = new Error("Mật khẩu hiện tại không đúng.");
+        const error = new Error("Mật khẩu hiện tại không đúng.");
         error.statusCode = 400;
         error.code = "MSG58";
         throw error;
     }
 
     if (typeof newPassword !== "string" || !newPassword) {
-const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
+        const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
         error.statusCode = 400;
         error.code = "MSG59";
         throw error;
@@ -342,13 +325,13 @@ const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và
 
     return {
         message: "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.",
-code: "MSG60",
+        code: "MSG60",
         token
     };
 };
 
 const requestPasswordReset = async (email, requestId) => {
-const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
     const genericResponse = {
         message: "Nếu email có trong hệ thống, link đặt lại mật khẩu đã được gửi.",
         code: "MSG70"
@@ -358,49 +341,6 @@ const normalizedEmail = email.trim().toLowerCase();
     if (!user || String(user.status).toUpperCase() !== "ACTIVE") {
         return genericResponse;
     }
-
-    setImmediate(async () => {
-        try {
-            const ttlMinutes = await getPasswordResetTtlMinutes();
-            const rawToken = crypto.randomBytes(32).toString("hex");
-            const tokenHash = crypto
-                .createHash("sha256")
-                .update(rawToken)
-                .digest("hex");
-            const expiresAt = new Date(
-                Date.now() + ttlMinutes * 60 * 1000
-            ).toISOString();
-
-            await userModel.createPasswordResetToken(
-                user.id,
-                tokenHash,
-                expiresAt
-            );
-
-            const resetPageUrl =
-                process.env.PASSWORD_RESET_URL ||
-                `${(process.env.FRONTEND_URL || "http://localhost:3000")
-                    .replace(/\/+$/, "")}/reset-password`;
-
-            const resetUrl = new URL(resetPageUrl);
-            resetUrl.searchParams.set("token", rawToken);
-
-            await sendPasswordResetEmail({
-                email: user.email,
-                customerName: user.full_name,
-                resetUrl: resetUrl.toString(),
-                ttlMinutes
-            });
-        } catch (error) {
-            console.error(`[forgotPassword:${requestId}] Reset email dispatch failed`, {
-                name: error.name,
-                code: error.code || null
-            });
-        }
-    });
-
-    return genericResponse;
-}
 
     setImmediate(async () => {
         try {
@@ -453,7 +393,12 @@ const resetPassword = async (token, newPassword) => {
         throw error;
     }
 
-if (typeof newPassword !== "string" || !newPassword || newPassword.length < PASSWORD_MIN_LENGTH || Buffer.byteLength(newPassword, "utf8") > PASSWORD_MAX_BYTES) {
+    if (
+        typeof newPassword !== "string" ||
+        !newPassword ||
+        newPassword.length < PASSWORD_MIN_LENGTH ||
+        Buffer.byteLength(newPassword, "utf8") > PASSWORD_MAX_BYTES
+    ) {
         const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và không vượt quá 72 byte.");
         error.statusCode = 400;
         error.code = "MSG59";
@@ -465,7 +410,6 @@ if (typeof newPassword !== "string" || !newPassword || newPassword.length < PASS
 
     if (!resetToken) {
         const error = new Error("Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu link mới.");
-
         error.statusCode = 400;
         error.code = "MSG61";
         throw error;
@@ -483,7 +427,7 @@ if (typeof newPassword !== "string" || !newPassword || newPassword.length < PASS
     await userModel.updatePassword(resetToken.user_id, passwordHash);
 
     return {
-message: "Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.",
+        message: "Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.",
         code: "MSG60"
     };
 };
