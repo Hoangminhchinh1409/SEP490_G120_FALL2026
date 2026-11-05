@@ -12,7 +12,9 @@ import {
   FileCheck,
   Send,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  PhoneCall,
+  MessageSquare
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
 import { getRecommendedDocsByCargo } from '../../../src/data/dispatcherPresets';
@@ -91,7 +93,7 @@ export default function OrderDocumentsView() {
           } else if (nextStage === 'DOCS_APPROVED' && prevStage !== 'DOCS_APPROVED') {
             setDocuments(latestDocs);
             setSubmitted(true);
-            message.success('Hồ sơ chứng từ đã được Điều phối viên phê duyệt hoàn tất!');
+            message.success('Hồ sơ chứng từ đã được chấp nhận! Điều phối viên sẽ sớm liên hệ với Quý khách để tiến hành ký kết hợp đồng.');
           }
           return latestData;
         });
@@ -445,18 +447,34 @@ export default function OrderDocumentsView() {
           />
         )}
 
-        {/* Thông báo nếu đã được duyệt toàn bộ chứng từ -> chờ điều phối đính kèm hợp đồng scan PDF 2 bên ký trực tiếp */}
+        {/* Thông báo nếu đã được duyệt toàn bộ chứng từ */}
         {isDocsApproved && (
           <Alert
-            title="Toàn bộ hồ sơ chứng từ đã được phê duyệt hợp lệ!"
+            title="Hồ sơ chứng từ đã được chấp nhận hợp lệ!"
             description={
               <div className="space-y-2 text-xs text-slate-700 mt-1">
                 <p className="m-0">
-                  Bộ phận Điều phối NEXLOG đã phê duyệt hồ sơ pháp lý của Quý khách. Theo quy định pháp lý, hợp đồng vận chuyển được ký trực tiếp và đóng dấu giữa hai bên (Khách hàng &amp; NEXLOG).
+                  Bộ phận Điều phối NEXLOG đã kiểm tra và xác nhận chấp nhận toàn bộ hồ sơ chứng từ, giấy tờ của Quý khách.
                 </p>
                 <p className="m-0 font-semibold text-emerald-700">
-                  ✓ Điều phối viên phụ trách đang thực hiện đính kèm bản scan PDF hợp đồng đã ký của 2 bên lên hệ thống để chuyển đơn hàng sang công đoạn Xếp xe!
+                  ✓ Điều phối viên phụ trách ({order?.dispatcher_name || 'Ban Điều phối NEXLOG'}) sẽ sớm liên lạc trực tiếp với Quý khách để tiến hành ký kết hợp đồng vận chuyển và sắp xếp phương tiện theo đúng lộ trình!
                 </p>
+                <div className="pt-1 flex flex-wrap items-center gap-2">
+                  <a
+                    href={`tel:${(order?.dispatcher_phone || '0988 123 456').replace(/[^0-9]/g, '')}`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all"
+                  >
+                    <PhoneCall size={13} /> Liên hệ Điều phối: {order?.dispatcher_phone || '0988 123 456'}
+                  </a>
+                  <a
+                    href={order?.dispatcher_zalo || `https://zalo.me/${(order?.dispatcher_phone || '0988123456').replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition-all"
+                  >
+                    <MessageSquare size={13} /> Nhắn Zalo Điều phối
+                  </a>
+                </div>
               </div>
             }
             type="success"
@@ -472,10 +490,10 @@ export default function OrderDocumentsView() {
             description={
               <div className="space-y-1 text-xs text-slate-700 mt-1">
                 <p className="m-0">
-                  Điều phối viên đang thẩm định tính hợp lệ của từng loại chứng từ.
+                  Điều phối viên đang thẩm định tính hợp lệ của từng loại chứng từ, giấy tờ.
                 </p>
                 <p className="m-0 text-emerald-700 font-semibold">
-                  Ngay sau khi phê duyệt xong chứng từ và hai bên hoàn tất ký hợp đồng vận chuyển trực tiếp, Điều phối viên sẽ đính kèm bản scan PDF hợp đồng lên hệ thống để điều xe vận chuyển cho Quý khách!
+                  Ngay sau khi giấy tờ được chấp nhận, Điều phối viên sẽ liên lạc sớm với Quý khách để tiến hành ký hợp đồng vận chuyển!
                 </p>
               </div>
             }
@@ -517,7 +535,7 @@ export default function OrderDocumentsView() {
           ) : isDocsApproved ? (
             <div className="mt-6 pt-4 border-t border-slate-100 text-center">
               <Tag color="success" className="py-1.5 px-4 text-xs font-bold rounded-full">
-                Trạng thái: Đã duyệt chứng từ — Điều phối viên đính kèm Hợp đồng đã scan (PDF) có chữ ký trực tiếp của 2 bên
+                Trạng thái: Giấy tờ đã được chấp nhận — Điều phối viên sẽ sớm liên hệ để ký hợp đồng
               </Tag>
             </div>
           ) : (

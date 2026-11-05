@@ -181,7 +181,7 @@ export const orderApi = {
     }
   },
 
-  // 12. Điều phối viên: Kiểm duyệt chứng từ cho đơn web & Tự động gửi email kèm hợp đồng điện tử & Link ký số
+  // 12. Điều phối viên: Kiểm duyệt toàn bộ chứng từ của đơn hàng
   approveWebOrderDocuments: async (orderId, approvedDocuments) => {
     try {
       const data = await fetchWithoutAuth(`/orders/${orderId}/approve-web-docs`, {
@@ -195,21 +195,7 @@ export const orderApi = {
     }
   },
 
-  // 13. Khách hàng: Ký chữ ký số hợp đồng điện tử
-  customerSignContract: async (token, { signature_data, signer_name }) => {
-    try {
-      const data = await fetchWithoutAuth(`/orders/customer-sign/${token}`, {
-        method: 'POST',
-        body: JSON.stringify({ signature_data, signer_name })
-      });
-      return data;
-    } catch (error) {
-      console.error('orderApi.customerSignContract Error:', error);
-      throw error;
-    }
-  },
-
-  // 14. Điều phối viên: Tải lên tệp hợp đồng đã ký thật
+  // 14. Điều phối viên: Tải lên tệp hợp đồng đã scan (PDF)
   uploadContractFile: async (orderId, { file_name, file_data, file_size }) => {
     try {
       const data = await fetchWithoutAuth(`/orders/${orderId}/contract-file`, {

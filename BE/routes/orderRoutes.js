@@ -14,7 +14,6 @@ const {
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,
-  customerSignContract,
   uploadContractFile,
   uploadOrderDocuments,
   issueInvoiceToAccounting
@@ -43,11 +42,8 @@ router.post('/customer-upload-docs/:token', customerUploadDocuments);
 // 5b. Điều phối viên: Từ chối 1 chứng từ & tự động gửi email yêu cầu khách tải lại
 router.post('/:id/reject-document', rejectOrderDocument);
 
-// 6. Điều phối viên: Kiểm duyệt chứng từ cho đơn web & Tự động gửi email kèm hợp đồng điện tử & Link ký số
+// 6. Điều phối viên: Kiểm duyệt chứng từ cho đơn web
 router.post('/:id/approve-web-docs', approveWebOrderDocuments);
-
-// 7. Khách hàng: Ký chữ ký số lên hợp đồng & Lưu trực tiếp vào hồ sơ (Public)
-router.post('/customer-sign/:token', customerSignContract);
 
 // 8. Điều phối viên tạo đơn trực tiếp
 router.post('/', createDirectOrder);

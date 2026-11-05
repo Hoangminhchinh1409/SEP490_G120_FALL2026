@@ -83,7 +83,6 @@ export default function TripAssignmentMap({
   trafficSummary = null,
   loadingRoute = false
 }) {
-  const [tileMode, setTileMode] = useState('VIETMAP'); // 'VIETMAP' | 'GOOGLE'
   const [showTrafficLayer, setShowTrafficLayer] = useState(true);
 
   const getStopPosition = (stop) => {
@@ -122,21 +121,12 @@ export default function TripAssignmentMap({
         scrollWheelZoom={true}
         maxZoom={20}
       >
-        {tileMode === 'VIETMAP' ? (
-          <TileLayer
-            key="vietmap-tiles"
-            attribution='&copy; VietMap Tilemap Live'
-            url={SAFE_VIETMAP_TILE_URL}
-            maxZoom={20}
-          />
-        ) : (
-          <TileLayer
-            key="google-tiles"
-            attribution='&copy; Google Maps'
-            url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-            maxZoom={20}
-          />
-        )}
+        <TileLayer
+          key="vietmap-tiles"
+          attribution='&copy; VietMap Tilemap Live'
+          url={SAFE_VIETMAP_TILE_URL}
+          maxZoom={20}
+        />
 
         <MultiStopBoundsUpdater stops={stops} routePolyline={polylinePositions} />
 
@@ -217,7 +207,7 @@ export default function TripAssignmentMap({
         )}
       </MapContainer>
 
-      {/* Bộ nút chuyển đổi nền bản đồ VietMap & Lớp Giao thông Live */}
+      {/* Nút bật/tắt Lớp Giao thông VietMap Live */}
       <div className="absolute top-2.5 right-2.5 z-[1000] flex items-center gap-1.5">
         <button
           type="button"
@@ -228,14 +218,7 @@ export default function TripAssignmentMap({
               : 'bg-white/95 text-gray-700 border-gray-300'
           }`}
         >
-          {showTrafficLayer ? 'Traffic Live: BẬT' : 'Traffic Live: TẮT'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setTileMode((prev) => (prev === 'VIETMAP' ? 'GOOGLE' : 'VIETMAP'))}
-          className="px-2 py-1 rounded text-[10px] font-bold bg-white/95 text-indigo-800 border border-indigo-200 shadow-sm hover:bg-indigo-50 transition"
-        >
-          {tileMode === 'VIETMAP' ? 'Nền: VietMap Số' : 'Nền: Google Maps'}
+          {showTrafficLayer ? 'VietMap Traffic Live: BẬT' : 'VietMap Traffic Live: TẮT'}
         </button>
       </div>
 

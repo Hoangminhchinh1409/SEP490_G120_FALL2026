@@ -125,7 +125,6 @@ function MapController({ center }) {
 
 const TrackingMap = () => {
   const [mapCenter, setMapCenter] = useState([21.1285, 105.8542]);
-  const [tileMode, setTileMode] = useState('VIETMAP');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTrucks, setActiveTrucks] = useState(fallbackTrucks);
   const [selectedTruck, setSelectedTruck] = useState(null);
@@ -391,21 +390,12 @@ const TrackingMap = () => {
       {/* Leaflet Map Integration với VietMap Tilemap & Traffic Polylines */}
       <div className="flex-1 h-[65%] md:h-full relative z-[1]">
         <MapContainer center={mapCenter} zoom={11} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-          {tileMode === 'VIETMAP' ? (
-            <TileLayer
-              key="vietmap-live-tile"
-              attribution='&copy; VietMap Tilemap'
-              url={SAFE_VIETMAP_TILE_URL}
-              maxZoom={20}
-            />
-          ) : (
-            <TileLayer
-              key="google-live-tile"
-              attribution='&copy; Google Maps'
-              url="https://mt1.google.com/vt/lyrs=r&x={x}&y={y}&z={z}"
-              maxZoom={20}
-            />
-          )}
+          <TileLayer
+            key="vietmap-live-tile"
+            attribution='&copy; VietMap Tilemap'
+            url={SAFE_VIETMAP_TILE_URL}
+            maxZoom={20}
+          />
 
           <MapController center={mapCenter} />
 
@@ -443,15 +433,11 @@ const TrackingMap = () => {
           ))}
         </MapContainer>
 
-        {/* Thanh điều khiển góc phải trên */}
+        {/* Nhãn VietMap góc phải trên */}
         <div className="absolute top-3 right-3 z-[1000] flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setTileMode((prev) => (prev === 'VIETMAP' ? 'GOOGLE' : 'VIETMAP'))}
-            className="px-3 py-1.5 rounded-md text-xs font-bold bg-white/95 text-indigo-900 border border-indigo-200 shadow hover:bg-indigo-50 transition"
-          >
-            {tileMode === 'VIETMAP' ? 'Bản đồ: VietMap Official' : 'Bản đồ: Google Maps'}
-          </button>
+          <span className="px-3 py-1.5 rounded-md text-xs font-bold bg-white/95 text-indigo-900 border border-indigo-200 shadow">
+            Bản đồ: VietMap Official
+          </span>
         </div>
 
         {/* Khung thông tin Traffic & ETA của chuyến đang chọn */}

@@ -247,12 +247,21 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
     const pCoords = pickupCoords || getCoordsFromAddress(watchedValues?.pickup_address, 'A');
     const dCoords = deliveryCoords || getCoordsFromAddress(watchedValues?.delivery_address, 'B');
     if (!pCoords || !dCoords) {
-      return { distanceKm: 30, durationMins: 45, isDefault: true };
+      return { distanceKm: 0, durationMins: 0, isDefault: true };
     }
     return calculateRouteEstimate(pCoords.lat, pCoords.lng, dCoords.lat, dCoords.lng);
   }, [pickupCoords, deliveryCoords, watchedValues?.pickup_address, watchedValues?.delivery_address]);
 
+  const hasBothLocations = Boolean(
+    (pickupCoords || watchedValues?.pickup_address) && 
+    (deliveryCoords || watchedValues?.delivery_address) && 
+    routeInfo.distanceKm > 0
+  );
+
   const estimatedPricing = useMemo(() => {
+    if (!hasBothLocations) {
+      return { baseTransportFee: 0, loadingFee: 0, customsFee: 0, totalRate: 0, isFixedRoute: false };
+    }
     return calculateAlsPricing({
       distanceKm: routeInfo.distanceKm,
       chargeableWeightKg: parseFloat(totals.chargeableWeight) || 0,
@@ -264,6 +273,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
       customsServiceRequired: customsServiceRequired
     });
   }, [
+    hasBothLocations,
     routeInfo.distanceKm,
     totals.chargeableWeight,
     watchedValues?.vehicle_type_required,
@@ -408,6 +418,23 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
     }
 
     form.validateFields().then((fieldValues) => {
+      // Kiểm tra bắt buộc đủ Địa chỉ cụ thể + Phường/Xã + Tỉnh/Thành phố chuẩn hành chính 2026
+      if (pickupMode === 'CUSTOM' || shippingDirection === 'EXPORT') {
+        const pickupParts = (fieldValues.pickup_address || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (pickupParts.length < 3 || (fieldValues.pickup_address || '').trim().length < 10) {
+          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm lấy hàng (A)!');
+          return;
+        }
+      }
+
+      if (deliveryMode === 'CUSTOM' || shippingDirection === 'IMPORT') {
+        const deliveryParts = (fieldValues.delivery_address || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (deliveryParts.length < 3 || (fieldValues.delivery_address || '').trim().length < 10) {
+          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm giao hàng (B)!');
+          return;
+        }
+      }
+
       const primaryItem = cargoItems[0] || {};
       const cargoDescription = cargoItems
         .map(it => `${it.cargo_name}${it.package_count ? ` (${it.package_count} ${it.package_unit || 'kiện'})` : ''}`)
@@ -512,7 +539,12 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           loading_unloading_required: false
         }}
       >
-        <OrderFormCustomerSection form={form} shippingDirection={shippingDirection} />
+        <OrderFormCustomerSection
+          form={form}
+          shippingDirection={shippingDirection}
+          setPickupCoords={setPickupCoords}
+          setDeliveryCoords={setDeliveryCoords}
+        />
 
         <OrderFormRouteSection
           form={form}

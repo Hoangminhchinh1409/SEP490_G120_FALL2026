@@ -289,7 +289,7 @@ const sendDocumentRejectionEmail = async ({
           </div>
 
           <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-            Quý khách vui lòng nhấn vào đường liên kết bên dưới để tải lại tệp mới cho mục <b>${rejectedDocName}</b>. Sau khi nhận được tệp bổ sung hợp lệ, Điều phối viên sẽ phê duyệt và gửi Hợp đồng điện tử ngay lập tức:
+            Quý khách vui lòng nhấn vào đường liên kết bên dưới để tải lại tệp mới cho mục <b>${rejectedDocName}</b>. Sau khi nhận được tệp bổ sung hợp lệ, Điều phối viên sẽ phê duyệt hồ sơ và tiến hành sắp xếp phương tiện vận chuyển:
           </p>
 
           <div class="btn-container">

@@ -1,9 +1,12 @@
 import React from 'react';
 import { Form, Input, Select, Checkbox } from 'antd';
+import LocationSearchInput, { validateVietnamAddressText } from '../../common/LocationSearchInput';
 
 const { Option } = Select;
 
-export default function OrderFormCustomerSection({ form, shippingDirection }) {
+export default function OrderFormCustomerSection({ form, shippingDirection, setPickupCoords, setDeliveryCoords }) {
+  const watchedCustomerAddress = Form.useWatch('customer_address', form);
+
   return (
     <>
       <div className="flex items-center justify-between mb-2">
@@ -36,14 +39,45 @@ export default function OrderFormCustomerSection({ form, shippingDirection }) {
           <Input placeholder="Email liên hệ" />
         </Form.Item>
 
-        <Form.Item label="Địa chỉ" name="customer_address" className="sm:col-span-2 lg:col-span-3 mb-2">
-          <Input 
-            placeholder="Địa chỉ trụ sở hoặc văn phòng của khách hàng" 
-            onChange={(e) => {
-              const val = e.target.value;
+        <Form.Item
+          name="customer_address"
+          className="sm:col-span-2 lg:col-span-3 mb-2"
+          rules={[
+            {
+              validator: (_, val) => {
+                if (!val || !val.trim()) return Promise.resolve();
+                const res = validateVietnamAddressText(val);
+                if (!res.valid) return Promise.reject(new Error(res.reason));
+                return Promise.resolve();
+              }
+            }
+          ]}
+        >
+          <LocationSearchInput
+            label="Địa chỉ trụ sở / kho của khách hàng"
+            markerLetter="🏢"
+            markerColor="#4f46e5"
+            placeholder="Gõ tìm và chọn địa chỉ trụ sở hoặc kho của khách hàng từ VietMap..."
+            value={watchedCustomerAddress}
+            onChange={(val) => {
+              form.setFieldsValue({ customer_address: val });
               if (form.getFieldValue('address_same_as_customer')) {
                 if (shippingDirection === 'IMPORT') form.setFieldsValue({ delivery_address: val });
                 else form.setFieldsValue({ pickup_address: val });
+              }
+            }}
+            onSelectLocation={(loc) => {
+              if (loc?.address) {
+                form.setFieldsValue({ customer_address: loc.address });
+                if (form.getFieldValue('address_same_as_customer')) {
+                  if (shippingDirection === 'IMPORT') {
+                    form.setFieldsValue({ delivery_address: loc.address });
+                    if (loc.lat && loc.lng && setDeliveryCoords) setDeliveryCoords({ lat: loc.lat, lng: loc.lng });
+                  } else {
+                    form.setFieldsValue({ pickup_address: loc.address });
+                    if (loc.lat && loc.lng && setPickupCoords) setPickupCoords({ lat: loc.lat, lng: loc.lng });
+                  }
+                }
               }
             }}
           />

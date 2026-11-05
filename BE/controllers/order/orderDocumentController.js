@@ -537,14 +537,6 @@ const approveWebOrderDocuments = async (req, res) => {
 };
 
 
-// 4.5. KHÁCH HÀNG KÝ CHỮ KÝ SỐ (ĐÃ NGỪNG HỖ TRỢ THEO YÊU CẦU PHÁP LÝ - CHỈ ĐIỀU PHỐI ĐÍNH KÈM BẢN SCAN PDF 2 BÊN KÝ TRỰC TIẾP)
-const customerSignContract = async (req, res) => {
-  return res.status(400).json({
-    message: 'Chức năng ký hợp đồng chữ ký số trực tuyến đã ngừng áp dụng. Hợp đồng vận chuyển bắt buộc hai bên ký trực tiếp có pháp lý và do Điều phối viên đính kèm bản scan PDF lên hệ thống.'
-  });
-};
-
-
 // 9. ĐIỀU PHỐI VIÊN TẢI TỆP HỢP ĐỒNG ĐÃ SCAN (PDF) CÓ CHỮ KÝ 2 BÊN VÀO HỒ SƠ ĐƠN HÀNG
 const uploadContractFile = async (req, res) => {
   try {
@@ -756,7 +748,6 @@ module.exports = {
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,
-  customerSignContract,
   uploadContractFile,
   uploadOrderDocuments,
   issueInvoiceToAccounting

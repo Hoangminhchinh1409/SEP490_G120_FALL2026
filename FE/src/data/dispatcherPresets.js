@@ -115,7 +115,7 @@ export const calculateAlsPricing = ({
   loadingUnloadingRequired = false,
   customsServiceRequired = false
 }) => {
-  if (!distanceKm && !pickupAddress && !deliveryAddress) {
+  if (!distanceKm || (!pickupAddress && !deliveryAddress)) {
     return { baseTransportFee: 0, loadingFee: 0, customsFee: 0, totalRate: 0, isFixedRoute: false };
   }
 
