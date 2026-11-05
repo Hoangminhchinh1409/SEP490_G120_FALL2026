@@ -224,7 +224,7 @@ export default function TripAssignmentModal({
         id: 'pickup',
         badge: '1',
         name: `Lấy hàng: ${pickupAddr}`,
-        action: 'bốc 30 phút',
+        action: 'Đã đóng chì xuất phát',
         eta: 'dự kiến 07:45',
         type: 'PICKUP',
         coords: pickupCoords
@@ -233,7 +233,7 @@ export default function TripAssignmentModal({
         id: 'dropoff-1',
         badge: '2',
         name: `Điểm trả 1: ${dropoffAddr}`,
-        action: 'dỡ 30 phút',
+        action: 'Giao hàng',
         eta: 'dự kiến 09:15',
         type: 'DROPOFF',
         coords: dropoffCoords
@@ -262,7 +262,7 @@ export default function TripAssignmentModal({
         id: 'pickup',
         badge: '1',
         name: `Lấy hàng: ${pickupAddr}`,
-        action: 'bốc 30 phút',
+        action: 'Đã đóng chì xuất phát',
         eta: 'dự kiến 07:45',
         type: 'PICKUP',
         coords: pickupCoords
@@ -271,7 +271,7 @@ export default function TripAssignmentModal({
         id: 'dropoff-1',
         badge: '2',
         name: `Điểm trả 1: ${dropoffAddr}`,
-        action: 'dỡ 30 phút',
+        action: 'Giao hàng',
         eta: 'dự kiến 09:15',
         type: 'DROPOFF',
         coords: dropoffCoords
@@ -354,7 +354,7 @@ export default function TripAssignmentModal({
 
   if (!open || !order) return null;
 
-  const totalTripHours = (routeSummary.durationMins / 60) + (stops.length * 0.5);
+  const totalTripHours = routeSummary.durationMins / 60;
 
   const moveStop = (fromIndex, toIndex) => {
     if (fromIndex <= 0 || toIndex <= 0 || fromIndex >= stops.length || toIndex >= stops.length) return;
@@ -398,7 +398,7 @@ export default function TripAssignmentModal({
           id: 'pickup',
           badge: '1',
           name: `Lấy hàng: ${pickupAddr}`,
-          action: 'bốc 30 phút',
+          action: 'Đã đóng chì xuất phát',
           eta: 'dự kiến 07:45',
           type: 'PICKUP',
           coords: pickupCoords
@@ -407,7 +407,7 @@ export default function TripAssignmentModal({
           id: 'dropoff-1',
           badge: '2',
           name: `Điểm trả 1: ${dropoffAddr}`,
-          action: 'dỡ 30 phút',
+          action: 'Giao hàng',
           eta: 'dự kiến 09:15',
           type: 'DROPOFF',
           coords: dropoffCoords
@@ -436,7 +436,7 @@ export default function TripAssignmentModal({
       id: `dropoff-${Date.now()}`,
       badge: String(stops.length),
       name: `Điểm trả ${newDropoffIndex}: ${targetAddr}`,
-      action: 'dỡ 20 phút',
+      action: 'Giao hàng',
       eta: 'dự kiến +30p',
       type: 'DROPOFF',
       coords: newCoords
@@ -488,24 +488,7 @@ export default function TripAssignmentModal({
   };
 
   const handleAddBreak = () => {
-    const newBreak = {
-      id: `break-${Date.now()}`,
-      badge: 'Nghỉ',
-      name: 'Nghỉ 15 phút (Trạm dừng Km18)',
-      action: 'Nghỉ ngơi',
-      eta: 'dự kiến 08:30',
-      type: 'REST',
-      coords: { lat: 21.1850, lng: 105.9520 }
-    };
-    setStops(prev => {
-      const next = [...prev];
-      next.splice(2, 0, newBreak);
-      return next.map((s, idx) => ({
-        ...s,
-        badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
-      }));
-    });
-    message.success('Đã thêm 1 điểm nghỉ 15 phút vào chuyến');
+    // Đã bỏ tính năng thêm điểm nghỉ - hệ thống chỉ quản lý thời gian xe lăn bánh trên đường
   };
 
   const handleRemoveStop = (id) => {

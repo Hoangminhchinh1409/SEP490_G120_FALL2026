@@ -193,14 +193,8 @@ export function computeStopsLiveEta(stops = [], routeResult = {}, plannedStartSt
     cursorMinutes += legDriveMins;
     const arrivalTimeStr = formatHm(cursorMinutes);
 
-    // Cộng thêm thời gian bốc/dỡ/nghỉ tại điểm dừng này trước khi đi tới điểm tiếp theo
-    let dwellMins = 20;
-    if (stop.type === 'PICKUP') dwellMins = 30;
-    else if (stop.type === 'REST') dwellMins = 15;
-    else if (stop.type === 'DROPOFF') dwellMins = 25;
-
-    cursorMinutes += dwellMins;
-
+    // Chỉ tính thời gian xe chạy thực tế trên đường (bỏ thời gian bốc/dỡ và điểm nghỉ)
+    // Thời gian chờ bốc dỡ nếu vượt quá định mức sẽ chuyển vào phụ phí (phí chờ/waiting fee)
     return {
       ...stop,
       legDistanceKm: legInfo?.distanceKm || null,

@@ -170,7 +170,7 @@ export default function TripAssignmentStopsList({
                 <span className="font-semibold text-gray-900 truncate" title={stop.name}>
                   {stop.name}
                 </span>
-                <span className="text-gray-500 text-[11px] shrink-0">· {stop.action}</span>
+                {stop.action && <span className="text-gray-500 text-[11px] shrink-0">· {stop.action}</span>}
               </div>
               
               <div className="flex items-center gap-1.5 shrink-0">
@@ -223,20 +223,12 @@ export default function TripAssignmentStopsList({
         })}
       </div>
 
-      <div className="flex items-center justify-between pt-1">
-        <Button
-          size="small"
-          icon={<Plus size={12} />}
-          onClick={handleAddBreak}
-          className="text-xs border-dashed border-gray-400 text-gray-700 hover:text-gray-900 hover:border-gray-600"
-        >
-          + Thêm điểm nghỉ
-        </Button>
+      <div className="flex items-center justify-end pt-1">
         <span className="text-xs text-gray-600 font-medium">
-          Tổng quãng đường VietMap: <b>{routeSummary.distanceKm} km</b> · <b>ETA chuyến {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</b>
+          Tổng quãng đường VietMap: <b>{routeSummary.distanceKm} km</b> · <b>ETA xe chạy {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</b>
           {trafficSummary?.delayMins > 0 && (
             <span className="text-amber-700 font-semibold ml-1">
-              (đã cộng +{trafficSummary.delayMins}p mật độ giao thông)
+              (đã tính +{trafficSummary.delayMins}p mật độ giao thông)
             </span>
           )}
         </span>
