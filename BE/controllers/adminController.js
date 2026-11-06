@@ -2,7 +2,7 @@ const adminService = require("../services/adminService");
 
 // Helper to extract client IP address
 const getClientIp = (req) => {
-    return req.headers["x-forwarded-for"] || req.socket?.remoteAddress || req.ip || "127.0.0.1";
+    return req?.headers?.["x-forwarded-for"] || req?.socket?.remoteAddress || req?.ip || "127.0.0.1";
 };
 
 // ==========================================
@@ -106,9 +106,10 @@ const getUserById = async (req, res) => {
         });
     } catch (error) {
         console.error(`[AdminController] getUserById error for id ${req.params.id}:`, error);
-        const status = error.message === "User not found" ? 404 : 500;
+        const isNotFound = error.statusCode === 404 || error.message === "User not found";
+        const status = isNotFound ? 404 : 500;
         return res.status(status).json({
-            message: "Failed to fetch user details",
+            message: isNotFound ? "User not found" : "Failed to fetch user details",
             error: error.message
         });
     }
@@ -127,10 +128,10 @@ const createUser = async (req, res) => {
         });
     } catch (error) {
         console.error("[AdminController] createUser error:", error);
-        const isConflict = error.message.includes("already exists");
-        const status = isConflict ? 409 : 400;
+        const isConflict = error.statusCode === 409 || error.message.includes("already exists");
+        const status = isConflict ? 409 : (error.statusCode || 400);
         return res.status(status).json({
-            message: "Failed to create user",
+            message: isConflict ? error.message : (error.message || "Failed to create user"),
             error: error.message
         });
     }
@@ -150,11 +151,11 @@ const updateUser = async (req, res) => {
         });
     } catch (error) {
         console.error(`[AdminController] updateUser error for id ${req.params.id}:`, error);
-        const isConflict = error.message.includes("already taken");
-        const isNotFound = error.message === "User not found";
-        const status = isNotFound ? 404 : isConflict ? 409 : 400;
+        const isNotFound = error.statusCode === 404 || error.message === "User not found";
+        const isConflict = error.statusCode === 409 || error.message.includes("already exists") || error.message.includes("already taken");
+        const status = isNotFound ? 404 : isConflict ? 409 : (error.statusCode || 400);
         return res.status(status).json({
-            message: "Failed to update user",
+            message: isNotFound ? "User not found" : (isConflict ? error.message : (error.message || "Failed to update user")),
             error: error.message
         });
     }
@@ -181,10 +182,10 @@ const updateUserStatus = async (req, res) => {
         });
     } catch (error) {
         console.error(`[AdminController] updateUserStatus error for id ${req.params.id}:`, error);
-        const isNotFound = error.message === "User not found";
-        const status = isNotFound ? 404 : 400;
+        const isNotFound = error.statusCode === 404 || error.message === "User not found";
+        const status = isNotFound ? 404 : (error.statusCode || 400);
         return res.status(status).json({
-            message: "Failed to update user status",
+            message: isNotFound ? "User not found" : (error.message || "Failed to update user status"),
             error: error.message
         });
     }

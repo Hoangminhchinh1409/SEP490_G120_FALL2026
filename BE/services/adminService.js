@@ -1,6 +1,83 @@
 const bcrypt = require("bcrypt");
 const adminModel = require("../models/adminModel");
 
+// Validation constants
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_BYTES = 72;
+const USERNAME_MIN_LENGTH = 3;
+const USERNAME_MAX_LENGTH = 50;
+const USERNAME_REGEX = /^[a-zA-Z0-9._-]+$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const VALID_ROLES = [1, 2, 3, 4];
+const VALID_STATUSES = ["ACTIVE", "LOCKED", "INACTIVE"];
+
+const validateUsername = (username) => {
+    if (!username || typeof username !== "string" || !username.trim()) {
+        const err = new Error("Username is required");
+        err.statusCode = 400;
+        throw err;
+    }
+    const trimmed = username.trim();
+    if (trimmed.length < USERNAME_MIN_LENGTH || trimmed.length > USERNAME_MAX_LENGTH) {
+        const err = new Error(`Username must be between ${USERNAME_MIN_LENGTH} and ${USERNAME_MAX_LENGTH} characters`);
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!USERNAME_REGEX.test(trimmed)) {
+        const err = new Error("Username can only contain alphanumeric characters, dots, underscores, and hyphens");
+        err.statusCode = 400;
+        throw err;
+    }
+    return trimmed;
+};
+
+const validateEmail = (email) => {
+    if (!email || typeof email !== "string" || !email.trim()) {
+        const err = new Error("Email is required");
+        err.statusCode = 400;
+        throw err;
+    }
+    const trimmed = email.trim().toLowerCase();
+    if (trimmed.length > 255 || !EMAIL_REGEX.test(trimmed)) {
+        const err = new Error("Invalid email format");
+        err.statusCode = 400;
+        throw err;
+    }
+    return trimmed;
+};
+
+const validatePassword = (password) => {
+    if (typeof password !== "string" || password.length < PASSWORD_MIN_LENGTH) {
+        const err = new Error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters long`);
+        err.statusCode = 400;
+        throw err;
+    }
+    if (Buffer.byteLength(password, "utf8") > PASSWORD_MAX_BYTES) {
+        const err = new Error(`Password must not exceed ${PASSWORD_MAX_BYTES} UTF-8 bytes`);
+        err.statusCode = 400;
+        throw err;
+    }
+};
+
+const validateRole = (roleId) => {
+    const numRoleId = Number(roleId);
+    if (!Number.isInteger(numRoleId) || !VALID_ROLES.includes(numRoleId)) {
+        const err = new Error(`Invalid role_id: ${roleId}. Must be one of ${VALID_ROLES.join(", ")}`);
+        err.statusCode = 400;
+        throw err;
+    }
+    return numRoleId;
+};
+
+const validateStatus = (status) => {
+    if (!VALID_STATUSES.includes(status)) {
+        const err = new Error(`Invalid status: ${status}. Must be one of ${VALID_STATUSES.join(", ")}`);
+        err.statusCode = 400;
+        throw err;
+    }
+    return status;
+};
+
 // ==========================================
 // 1. ACTIVITY LOGS
 // ==========================================
@@ -102,7 +179,9 @@ const getUsers = async ({
 const getUserById = async (id) => {
     const user = await adminModel.getUserById(id);
     if (!user) {
-        throw new Error("User not found");
+        const err = new Error("User not found");
+        err.statusCode = 404;
+        throw err;
     }
     return user;
 };
@@ -111,48 +190,49 @@ const createUser = async (userData, adminId = null, ipAddress = null) => {
     const { username, password, full_name, email, phone, zalo_link, role_id, status } = userData;
 
     // Validation
-    if (!username || !username.trim()) {
-        throw new Error("Username is required");
-    }
-    if (!email || !email.trim()) {
-        throw new Error("Email is required");
-    }
-    if (typeof password !== "string" || password.length < 6) {
-        throw new Error("Password must be at least 6 characters long");
-    }
-    if (Buffer.byteLength(password, "utf8") > 72) {
-        throw new Error("Password must not exceed 72 UTF-8 bytes");
-    }
-    if (!full_name || !full_name.trim()) {
-        throw new Error("Full name is required");
-    }
-    if (!role_id) {
-        throw new Error("Role ID is required");
+    const cleanUsername = validateUsername(username);
+    const cleanEmail = validateEmail(email);
+    validatePassword(password);
+
+    if (!full_name || typeof full_name !== "string" || !full_name.trim()) {
+        const err = new Error("Full name is required");
+        err.statusCode = 400;
+        throw err;
     }
 
-    // Check unique username & email
-    const existing = await adminModel.findUserByUsernameOrEmail(username.trim(), email.trim());
+    const numRoleId = validateRole(role_id);
+    const cleanStatus = status ? validateStatus(status) : "ACTIVE";
+
+    // Check unique username & email (case-insensitive)
+    const existing = await adminModel.findUserByUsernameOrEmail(cleanUsername, cleanEmail);
     if (existing) {
-        if (existing.username === username.trim()) {
-            throw new Error("Username already exists");
+        if (existing.username && existing.username.toLowerCase() === cleanUsername.toLowerCase()) {
+            const err = new Error("Username already exists");
+            err.statusCode = 409;
+            throw err;
         }
-        if (existing.email === email.trim()) {
-            throw new Error("Email already exists");
+        if (existing.email && existing.email.toLowerCase() === cleanEmail) {
+            const err = new Error("Email already exists");
+            err.statusCode = 409;
+            throw err;
         }
+        const err = new Error("Username or Email already exists");
+        err.statusCode = 409;
+        throw err;
     }
 
     // Hash password with bcrypt (rounds >= 10)
     const password_hash = await bcrypt.hash(password, 10);
 
     const newUser = await adminModel.createUser({
-        username: username.trim(),
+        username: cleanUsername,
         password_hash,
         full_name: full_name.trim(),
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         phone: phone ? phone.trim() : null,
         zalo_link: zalo_link ? zalo_link.trim() : null,
-        role_id: Number(role_id),
-        status: status || "ACTIVE"
+        role_id: numRoleId,
+        status: cleanStatus
     });
 
     // Auto-audit log
@@ -162,7 +242,7 @@ const createUser = async (userData, adminId = null, ipAddress = null) => {
         action: "CREATE_USER",
         targetType: "USER",
         targetId: newUser.id,
-        changes: { username: newUser.username, email: newUser.email, role_id: newUser.role_id },
+        changes: { username: newUser.username, email: newUser.email, role_id: newUser.role_id, status: newUser.status },
         reason: "Administrator created user account",
         ipAddress
     }).catch(err => console.error("Auto audit log failed:", err.message));
@@ -171,53 +251,107 @@ const createUser = async (userData, adminId = null, ipAddress = null) => {
 };
 
 const updateUser = async (id, updateData, adminId = null, ipAddress = null) => {
-    const existingUser = await adminModel.getUserById(id);
+    const numId = Number(id);
+    if (!Number.isSafeInteger(numId) || numId <= 0) {
+        const err = new Error("User not found");
+        err.statusCode = 404;
+        throw err;
+    }
+
+    const existingUser = await adminModel.getUserById(numId);
     if (!existingUser) {
-        throw new Error("User not found");
+        const err = new Error("User not found");
+        err.statusCode = 404;
+        throw err;
     }
 
     const { username, password, full_name, email, phone, zalo_link, role_id, status } = updateData;
     const fieldsToUpdate = {};
 
-    if (username && username.trim() !== existingUser.username) {
-        const dup = await adminModel.findUserByUsernameOrEmail(username.trim(), "", id);
-        if (dup && dup.username === username.trim()) {
-            throw new Error("Username already taken by another user");
+    if (username !== undefined && username !== null) {
+        const cleanUsername = validateUsername(username);
+        if (cleanUsername.toLowerCase() !== existingUser.username?.toLowerCase()) {
+            const dup = await adminModel.findUserByUsernameOrEmail(cleanUsername, "", numId);
+            if (dup && dup.username && dup.username.toLowerCase() === cleanUsername.toLowerCase()) {
+                const err = new Error("Username already taken by another user");
+                err.statusCode = 409;
+                throw err;
+            }
+            fieldsToUpdate.username = cleanUsername;
         }
-        fieldsToUpdate.username = username.trim();
     }
 
-    if (email && email.trim().toLowerCase() !== existingUser.email) {
-        const dup = await adminModel.findUserByUsernameOrEmail("", email.trim().toLowerCase(), id);
-        if (dup && dup.email === email.trim().toLowerCase()) {
-            throw new Error("Email already taken by another user");
+    if (email !== undefined && email !== null) {
+        const cleanEmail = validateEmail(email);
+        if (cleanEmail !== existingUser.email?.toLowerCase()) {
+            const dup = await adminModel.findUserByUsernameOrEmail("", cleanEmail, numId);
+            if (dup && dup.email && dup.email.toLowerCase() === cleanEmail) {
+                const err = new Error("Email already taken by another user");
+                err.statusCode = 409;
+                throw err;
+            }
+            fieldsToUpdate.email = cleanEmail;
         }
-        fieldsToUpdate.email = email.trim().toLowerCase();
     }
 
-    if (full_name) fieldsToUpdate.full_name = full_name.trim();
+    if (full_name !== undefined) {
+        if (!full_name || typeof full_name !== "string" || !full_name.trim()) {
+            const err = new Error("Full name cannot be empty");
+            err.statusCode = 400;
+            throw err;
+        }
+        fieldsToUpdate.full_name = full_name.trim();
+    }
     if (phone !== undefined) fieldsToUpdate.phone = phone ? phone.trim() : null;
     if (zalo_link !== undefined) fieldsToUpdate.zalo_link = zalo_link ? zalo_link.trim() : null;
-    if (role_id) fieldsToUpdate.role_id = Number(role_id);
-    if (status) fieldsToUpdate.status = status;
 
-    if (password !== undefined && password !== null && password !== "") {
-        if (typeof password !== "string") {
-            throw new Error("Password must be a string");
-        }
-        if (password.trim()) {
-            if (password.length < 6) {
-                throw new Error("Password must be at least 6 characters long");
+    if (role_id !== undefined && role_id !== null) {
+        const numRoleId = validateRole(role_id);
+        if (numRoleId !== existingUser.role_id) {
+            if (adminId && Number(adminId) === numId) {
+                const err = new Error("You cannot change your own administrator role");
+                err.statusCode = 400;
+                throw err;
             }
-            if (Buffer.byteLength(password, "utf8") > 72) {
-                throw new Error("Password must not exceed 72 UTF-8 bytes");
+            if (existingUser.role_id === 1 && existingUser.status === "ACTIVE" && numRoleId !== 1) {
+                const activeAdmins = await adminModel.countActiveAdmins(numId);
+                if (activeAdmins < 1) {
+                    const err = new Error("Cannot change the role of the only active administrator in the system");
+                    err.statusCode = 400;
+                    throw err;
+                }
             }
-            fieldsToUpdate.password_hash = await bcrypt.hash(password, 10);
-            fieldsToUpdate.password_changed_at = new Date().toISOString();
+            fieldsToUpdate.role_id = numRoleId;
         }
     }
 
-    const updated = await adminModel.updateUser(id, fieldsToUpdate);
+    if (status !== undefined && status !== null) {
+        const cleanStatus = validateStatus(status);
+        if (cleanStatus !== existingUser.status) {
+            if (adminId && Number(adminId) === numId && cleanStatus !== "ACTIVE") {
+                const err = new Error("You cannot lock or deactivate your own administrator account");
+                err.statusCode = 400;
+                throw err;
+            }
+            if (existingUser.role_id === 1 && existingUser.status === "ACTIVE" && cleanStatus !== "ACTIVE") {
+                const activeAdmins = await adminModel.countActiveAdmins(numId);
+                if (activeAdmins < 1) {
+                    const err = new Error("Cannot lock or deactivate the only active administrator in the system");
+                    err.statusCode = 400;
+                    throw err;
+                }
+            }
+            fieldsToUpdate.status = cleanStatus;
+        }
+    }
+
+    if (password !== undefined && password !== null && password !== "") {
+        validatePassword(password);
+        fieldsToUpdate.password_hash = await bcrypt.hash(password, 10);
+        fieldsToUpdate.password_changed_at = new Date().toISOString();
+    }
+
+    const updated = await adminModel.updateUser(numId, fieldsToUpdate);
 
     // Auto-audit log
     await adminModel.createActivityLog({
@@ -225,7 +359,7 @@ const updateUser = async (id, updateData, adminId = null, ipAddress = null) => {
         actorType: "USER",
         action: "UPDATE_USER",
         targetType: "USER",
-        targetId: id,
+        targetId: numId,
         changes: fieldsToUpdate,
         reason: "Administrator updated user details",
         ipAddress
@@ -235,33 +369,51 @@ const updateUser = async (id, updateData, adminId = null, ipAddress = null) => {
 };
 
 const updateUserStatus = async (id, status, adminId = null, ipAddress = null) => {
-    const validStatuses = ["ACTIVE", "LOCKED", "INACTIVE"];
-    if (!validStatuses.includes(status)) {
-        throw new Error(`Invalid status: ${status}. Must be one of ${validStatuses.join(", ")}`);
+    const numId = Number(id);
+    if (!Number.isSafeInteger(numId) || numId <= 0) {
+        const err = new Error("User not found");
+        err.statusCode = 404;
+        throw err;
     }
 
-    const user = await adminModel.getUserById(id);
+    const cleanStatus = validateStatus(status);
+
+    const user = await adminModel.getUserById(numId);
     if (!user) {
-        throw new Error("User not found");
+        const err = new Error("User not found");
+        err.statusCode = 404;
+        throw err;
     }
 
     // Safety guard: Admin cannot lock their own account
-    if (adminId && Number(adminId) === Number(id) && status !== "ACTIVE") {
-        throw new Error("You cannot lock or deactivate your own administrator account");
+    if (adminId && Number(adminId) === numId && cleanStatus !== "ACTIVE") {
+        const err = new Error("You cannot lock or deactivate your own administrator account");
+        err.statusCode = 400;
+        throw err;
     }
 
-    const updated = await adminModel.updateUserStatus(id, status);
+    // Safety guard: Cannot lock/deactivate the only active administrator
+    if (user.role_id === 1 && user.status === "ACTIVE" && cleanStatus !== "ACTIVE") {
+        const activeAdmins = await adminModel.countActiveAdmins(numId);
+        if (activeAdmins < 1) {
+            const err = new Error("Cannot lock or deactivate the only active administrator in the system");
+            err.statusCode = 400;
+            throw err;
+        }
+    }
+
+    const updated = await adminModel.updateUserStatus(numId, cleanStatus);
 
     // Auto-audit log
-    const action = status === "LOCKED" ? "LOCK_USER" : status === "ACTIVE" ? "ACTIVATE_USER" : "DEACTIVATE_USER";
+    const action = cleanStatus === "LOCKED" ? "LOCK_USER" : cleanStatus === "ACTIVE" ? "ACTIVATE_USER" : "DEACTIVATE_USER";
     await adminModel.createActivityLog({
         actorId: adminId,
         actorType: "USER",
         action,
         targetType: "USER",
-        targetId: id,
-        changes: { previousStatus: user.status, newStatus: status },
-        reason: `Administrator changed user status to ${status}`,
+        targetId: numId,
+        changes: { previousStatus: user.status, newStatus: cleanStatus },
+        reason: `Administrator changed user status to ${cleanStatus}`,
         ipAddress
     }).catch(err => console.error("Auto audit log failed:", err.message));
 
