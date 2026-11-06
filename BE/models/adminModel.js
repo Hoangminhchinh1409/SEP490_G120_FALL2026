@@ -458,8 +458,27 @@ const getPermissionsMatrix = async () => {
     };
 };
 
+const getExistingPermissionIds = async (ids = []) => {
+    if (!ids || ids.length === 0) return [];
+    const { data, error } = await supabase
+        .from("permissions")
+        .select("id")
+        .in("id", ids);
+
+    if (error) throw error;
+    return (data || []).map(r => r.id);
+};
+
 const updateRolePermissions = async (roleId, permissionIds = []) => {
     const numRoleId = Number(roleId);
+
+    // Lưu lại quyền cũ để hỗ trợ rollback nếu có lỗi bất ngờ khi insert
+    const { data: oldPerms, error: fetchErr } = await supabase
+        .from("role_permissions")
+        .select("permission_id")
+        .eq("role_id", numRoleId);
+
+    if (fetchErr) throw fetchErr;
 
     // Xóa toàn bộ quyền cũ của vai trò này
     const { error: delError } = await supabase
@@ -480,13 +499,25 @@ const updateRolePermissions = async (roleId, permissionIds = []) => {
             .from("role_permissions")
             .insert(rowsToInsert);
 
-        if (insError) throw insError;
+        if (insError) {
+            // Rollback khôi phục quyền cũ để đảm bảo tính atomic
+            if (oldPerms && oldPerms.length > 0) {
+                await supabase
+                    .from("role_permissions")
+                    .insert(oldPerms.map(r => ({
+                        role_id: numRoleId,
+                        permission_id: r.permission_id
+                    })));
+            }
+            throw insError;
+        }
     }
 
     return { roleId: numRoleId, permissionIds };
 };
 
 module.exports = {
+    getExistingPermissionIds,
     sanitizePostgrestParam,
     countActiveAdmins,
     getActivityLogs,

@@ -67,8 +67,18 @@ const requireAuth = async (req, res, next) => {
             });
         }
 
+        // Kiểm tra nếu vai trò đã bị thay đổi trong DB so với token JWT (BUG-ADM-18)
+        const dbRoleId = Number(sessionState.role_id);
+        const tokenRoleId = Number(decoded.role_id);
+        if (dbRoleId && dbRoleId !== tokenRoleId) {
+            return res.status(401).json({
+                message: "User role has been updated. Please log in again.",
+                code: "ROLE_CHANGED"
+            });
+        }
+
         // Kiểm tra chế độ bảo trì hệ thống (Report 4 / MSG86)
-        if (Number(decoded.role_id) !== 1) {
+        if (dbRoleId !== 1) {
             const maintenance = await isMaintenanceActive();
             if (maintenance) {
                 return res.status(403).json({
@@ -78,7 +88,11 @@ const requireAuth = async (req, res, next) => {
             }
         }
 
-        req.user = decoded;
+        req.user = {
+            ...decoded,
+            role_id: dbRoleId || tokenRoleId,
+            role: sessionState.role?.name || decoded.role
+        };
         return next();
     } catch (error) {
         console.error('Authentication session check failed:', {

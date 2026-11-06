@@ -245,7 +245,7 @@ const createUser = async (userData, adminId = null, ipAddress = null) => {
         changes: { username: newUser.username, email: newUser.email, role_id: newUser.role_id, status: newUser.status },
         reason: "Administrator created user account",
         ipAddress
-    }).catch(err => console.error("Auto audit log failed:", err.message));
+    });
 
     return newUser;
 };
@@ -322,6 +322,7 @@ const updateUser = async (id, updateData, adminId = null, ipAddress = null) => {
                 }
             }
             fieldsToUpdate.role_id = numRoleId;
+            fieldsToUpdate.password_changed_at = new Date().toISOString();
         }
     }
 
@@ -363,7 +364,7 @@ const updateUser = async (id, updateData, adminId = null, ipAddress = null) => {
         changes: fieldsToUpdate,
         reason: "Administrator updated user details",
         ipAddress
-    }).catch(err => console.error("Auto audit log failed:", err.message));
+    });
 
     return updated;
 };
@@ -404,18 +405,26 @@ const updateUserStatus = async (id, status, adminId = null, ipAddress = null) =>
 
     const updated = await adminModel.updateUserStatus(numId, cleanStatus);
 
-    // Auto-audit log
+    // Auto-audit log (BUG-ADM-17: Rollback if audit log fails to ensure compliance)
     const action = cleanStatus === "LOCKED" ? "LOCK_USER" : cleanStatus === "ACTIVE" ? "ACTIVATE_USER" : "DEACTIVATE_USER";
-    await adminModel.createActivityLog({
-        actorId: adminId,
-        actorType: "USER",
-        action,
-        targetType: "USER",
-        targetId: numId,
-        changes: { previousStatus: user.status, newStatus: cleanStatus },
-        reason: `Administrator changed user status to ${cleanStatus}`,
-        ipAddress
-    }).catch(err => console.error("Auto audit log failed:", err.message));
+    try {
+        await adminModel.createActivityLog({
+            actorId: adminId,
+            actorType: "USER",
+            action,
+            targetType: "USER",
+            targetId: numId,
+            changes: { previousStatus: user.status, newStatus: cleanStatus },
+            reason: `Administrator changed user status to ${cleanStatus}`,
+            ipAddress
+        });
+    } catch (auditErr) {
+        console.error("[AdminService] Critical: Failed to record audit log, rolling back status:", auditErr.message);
+        await adminModel.updateUserStatus(numId, user.status);
+        const err = new Error("Failed to record activity log. Operation aborted for compliance.");
+        err.statusCode = 500;
+        throw err;
+    }
 
     return updated;
 };
@@ -461,7 +470,7 @@ const updateSystemSetting = async (key, value, adminId = null, ipAddress = null)
         changes: { key: key.trim(), value },
         reason: "Administrator updated system configuration",
         ipAddress
-    }).catch(err => console.error("Auto audit log failed:", err.message));
+    });
 
     return updated;
 };
@@ -475,11 +484,60 @@ const getPermissionsMatrix = async () => {
 };
 
 const updateRolePermissions = async (roleId, permissionIds, adminId = null, ipAddress = null) => {
-    if (!roleId) {
-        throw new Error("Role ID is required");
+    const numRoleId = Number(roleId);
+    if (!Number.isInteger(numRoleId) || numRoleId <= 0) {
+        const err = new Error("Invalid role ID");
+        err.statusCode = 400;
+        throw err;
     }
 
-    const result = await adminModel.updateRolePermissions(roleId, permissionIds);
+    // Không cho phép chỉnh sửa quyền của Administrator (bảo vệ quyền tối cao của Admin)
+    if (numRoleId === 1) {
+        const err = new Error("Cannot modify permissions of Administrator role");
+        err.statusCode = 400;
+        throw err;
+    }
+
+    // Kiểm tra vai trò hợp lệ (chỉ cho phép sửa 2: MANAGER, 3: DISPATCHER, 4: DRIVER)
+    if (![2, 3, 4].includes(numRoleId)) {
+        const err = new Error("Role not found or cannot be modified");
+        err.statusCode = 404;
+        throw err;
+    }
+
+    // Validate permissionIds phải là một array
+    if (!Array.isArray(permissionIds)) {
+        const err = new Error("permissionIds must be an array of permission IDs");
+        err.statusCode = 400;
+        throw err;
+    }
+
+    // Validate và lọc trùng lặp danh sách permissionIds
+    const cleanPermIds = [];
+    for (const p of permissionIds) {
+        const numP = Number(p);
+        if (!Number.isInteger(numP) || numP <= 0) {
+            const err = new Error(`Invalid permission ID: ${p}. Must be a positive integer`);
+            err.statusCode = 400;
+            throw err;
+        }
+        if (!cleanPermIds.includes(numP)) {
+            cleanPermIds.push(numP);
+        }
+    }
+
+    // Validate sự tồn tại của tất cả permissionIds TRƯỚC KHI thực hiện xóa/chèn (tránh lỗi FK và mất dữ liệu)
+    if (cleanPermIds.length > 0) {
+        const existingIds = await adminModel.getExistingPermissionIds(cleanPermIds);
+        const invalidIds = cleanPermIds.filter(id => !existingIds.includes(id));
+        if (invalidIds.length > 0) {
+            const err = new Error(`Invalid permission ID(s): ${invalidIds.join(", ")}`);
+            err.statusCode = 400;
+            throw err;
+        }
+    }
+
+    const result = await adminModel.updateRolePermissions(numRoleId, cleanPermIds);
 
     // Auto-audit log (UC-35)
     await adminModel.createActivityLog({
@@ -487,9 +545,9 @@ const updateRolePermissions = async (roleId, permissionIds, adminId = null, ipAd
         actorType: "USER",
         action: "UPDATE_ROLE_PERMISSIONS",
         targetType: "ROLE",
-        targetId: roleId,
-        changes: { roleId, permissionIds },
-        reason: `Administrator updated permissions for role ID ${roleId}`,
+        targetId: numRoleId,
+        changes: { roleId: numRoleId, permissionIds: cleanPermIds },
+        reason: `Administrator updated permissions for role ID ${numRoleId}`,
         ipAddress
     }).catch(err => console.error("Auto audit log failed:", err.message));
 

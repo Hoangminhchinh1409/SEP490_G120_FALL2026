@@ -34,6 +34,7 @@ export default function RolesPage() {
   const [permissions, setPermissions] = useState([]);
   // roleMap: { [roleId]: Set of permissionIds }
   const [roleMap, setRoleMap] = useState({});
+  const [initialRoleMap, setInitialRoleMap] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
 
   const fetchMatrix = async () => {
@@ -48,17 +49,21 @@ export default function RolesPage() {
       setPermissions(pList);
 
       const mapping = {};
+      const initialMapping = {};
       rList.forEach(r => {
         mapping[r.id] = new Set();
+        initialMapping[r.id] = new Set();
       });
 
       rpList.forEach(rp => {
         if (mapping[rp.role_id]) {
           mapping[rp.role_id].add(rp.permission_id);
+          initialMapping[rp.role_id].add(rp.permission_id);
         }
       });
 
       setRoleMap(mapping);
+      setInitialRoleMap(initialMapping);
       setHasChanges(false);
     } catch (error) {
       console.error('Lỗi khi tải ma trận phân quyền:', error);
@@ -91,12 +96,36 @@ export default function RolesPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Cập nhật từng role đã thay đổi
-      for (const role of roles) {
+      // Chỉ tìm các role thực sự có thay đổi và bỏ qua role 1 (Administrator)
+      const changedRoles = roles.filter(role => {
+        if (Number(role.id) === 1) return false;
+        const currentSet = roleMap[role.id] || new Set();
+        const initialSet = initialRoleMap[role.id] || new Set();
+        if (currentSet.size !== initialSet.size) return true;
+        for (const id of currentSet) {
+          if (!initialSet.has(id)) return true;
+        }
+        return false;
+      });
+
+      if (changedRoles.length === 0) {
+        message.info('Không có thay đổi nào cần lưu');
+        setHasChanges(false);
+        return;
+      }
+
+      for (const role of changedRoles) {
         const permIds = Array.from(roleMap[role.id] || []);
         await adminApi.updateRolePermissions(role.id, permIds);
       }
-      message.success('Đã lưu toàn bộ thay đổi ma trận phân quyền thành công!');
+
+      message.success(`Đã lưu thay đổi phân quyền cho ${changedRoles.length} vai trò thành công!`);
+
+      const updatedInitial = {};
+      roles.forEach(r => {
+        updatedInitial[r.id] = new Set(roleMap[r.id] || []);
+      });
+      setInitialRoleMap(updatedInitial);
       setHasChanges(false);
     } catch (error) {
       console.error('Lỗi khi lưu phân quyền:', error);

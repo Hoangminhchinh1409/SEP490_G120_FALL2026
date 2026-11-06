@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Table, Tag, Button, Input, Select, Modal, Form, Switch, message, Popconfirm, Tooltip } from 'antd';
 import { Search, Plus, Edit, Lock, Unlock, RotateCcw, User, Mail, Phone, Shield } from 'lucide-react';
 import { adminApi } from '../../api/adminApi';
+import { useAuth } from '../../contexts/AuthContext';
 
 const SYSTEM_ROLES = [
   { id: 1, name: 'ADMINISTRATOR (Quản trị viên)' },
@@ -12,6 +13,7 @@ const SYSTEM_ROLES = [
 ];
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState(SYSTEM_ROLES);
   const [loading, setLoading] = useState(true);
@@ -46,14 +48,14 @@ export default function UsersPage() {
           phone: selectedUser.phone,
           zalo_link: selectedUser.zalo_link,
           role_id: Number(selectedUser.role_id),
-          status: selectedUser.status === 'ACTIVE',
+          status: selectedUser.status || 'ACTIVE',
           password: '',
           confirmPassword: ''
         });
       } else if (modalMode === 'CREATE') {
         form.resetFields();
         form.setFieldsValue({
-          status: true,
+          status: 'ACTIVE',
           role_id: 3 // Default Dispatcher
         });
       }
@@ -201,7 +203,7 @@ export default function UsersPage() {
         phone: values.phone || null,
         zalo_link: values.zalo_link || null,
         role_id: Number(values.role_id),
-        status: values.status ? 'ACTIVE' : 'LOCKED'
+        status: values.status || 'ACTIVE'
       };
 
       if (values.password && values.password.trim()) {
@@ -300,11 +302,19 @@ export default function UsersPage() {
       dataIndex: 'status',
       key: 'status',
       width: 140,
-      render: (status) => (
-        <Tag color={status === 'ACTIVE' ? 'success' : 'error'} className="font-semibold">
-          {status === 'ACTIVE' ? 'Đang hoạt động' : 'Đã khóa (Locked)'}
-        </Tag>
-      )
+      render: (status) => {
+        const map = {
+          ACTIVE: { color: 'success', text: 'Đang hoạt động' },
+          LOCKED: { color: 'error', text: 'Đã khóa (Locked)' },
+          INACTIVE: { color: 'default', text: 'Vô hiệu hóa (Inactive)' }
+        };
+        const cfg = map[status] || { color: 'default', text: status || 'Không xác định' };
+        return (
+          <Tag color={cfg.color} className="font-semibold">
+            {cfg.text}
+          </Tag>
+        );
+      }
     },
     {
       title: 'Đăng nhập gần nhất',
@@ -324,7 +334,7 @@ export default function UsersPage() {
       key: 'actions',
       width: 120,
       render: (_, record) => {
-        const isSelfAdmin = record.role_id === 1 && record.username === 'admin';
+        const isSelf = currentUser && (Number(currentUser.id) === Number(record.id) || currentUser.username === record.username);
         return (
           <div className="flex items-center gap-1">
             <Tooltip title="Chỉnh sửa thông tin">
@@ -335,7 +345,7 @@ export default function UsersPage() {
               />
             </Tooltip>
 
-            {!isSelfAdmin && (
+            {!isSelf && (
               <Popconfirm
                 title={record.status === 'ACTIVE' ? 'Khóa tài khoản này?' : 'Mở khóa tài khoản này?'}
                 description={record.status === 'ACTIVE' ? 'Người dùng sẽ không thể đăng nhập sau khi bị khóa.' : 'Người dùng sẽ có thể đăng nhập bình thường.'}
@@ -430,6 +440,7 @@ export default function UsersPage() {
             { value: 'ALL', label: 'Tất cả trạng thái' },
             { value: 'ACTIVE', label: 'Đang hoạt động' },
             { value: 'LOCKED', label: 'Đã khóa (Locked)' },
+            { value: 'INACTIVE', label: 'Vô hiệu hóa (Inactive)' }
           ]}
         />
       </div>
@@ -564,8 +575,15 @@ export default function UsersPage() {
             />
           </Form.Item>
 
-          <Form.Item name="status" label="Trạng thái kích hoạt" valuePropName="checked">
-            <Switch checkedChildren="ACTIVE (Hoạt động)" unCheckedChildren="LOCKED (Đã khóa)" />
+          <Form.Item name="status" label="Trạng thái tài khoản" rules={[{ required: true, message: 'Vui lòng chọn trạng thái' }]}>
+            <Select
+              className="h-10"
+              options={[
+                { value: 'ACTIVE', label: 'ACTIVE (Đang hoạt động)' },
+                { value: 'LOCKED', label: 'LOCKED (Đã khóa)' },
+                { value: 'INACTIVE', label: 'INACTIVE (Vô hiệu hóa)' }
+              ]}
+            />
           </Form.Item>
         </Form>
       </Modal>

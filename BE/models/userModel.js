@@ -83,7 +83,7 @@ const findUserById = async (id) => {
 const getAuthSessionState = async (id) => {
   const { data, error } = await supabase
     .from("users")
-    .select("status, password_changed_at")
+    .select("id, status, password_changed_at, role_id, role:roles(id, name)")
     .eq("id", id)
     .maybeSingle();
 
