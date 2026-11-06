@@ -63,13 +63,13 @@ const getTripDetail = async (userId, tripId) => {
 };
 
 // ==========================================
-// 2. TRIP WORKFLOW: ACCEPT TRIP (UC-29)
+// 2. TRIP WORKFLOW: ACCEPT TRIP
 // ==========================================
 
 const acceptTrip = async (userId, tripId, { clientActionId = null, phoneTime = null } = {}) => {
   const actionId = clientActionId || crypto.randomUUID();
 
-  // 1. Kiểm tra tính bất biến Offline Sync (BR-27)
+  // 1. Kiểm tra tính bất biến Offline Sync
   if (await driverModel.checkIdempotency(actionId)) {
     return { success: true, message: "Hành động đã được ghi nhận trước đó (Idempotent)" };
   }
@@ -90,7 +90,7 @@ const acceptTrip = async (userId, tripId, { clientActionId = null, phoneTime = n
 
   const updatedTrip = await driverModel.updateTripStatus(tripId, "Accepted");
 
-  // Cập nhật trạng thái các đơn hàng thuộc chuyến xe sang Accepted (UC-28)
+  // Cập nhật trạng thái các đơn hàng thuộc chuyến xe sang Accepted
   const orderIds = (trip.stops || [])
     .map(s => s.order_id)
     .filter(Boolean);
@@ -133,7 +133,7 @@ const acceptTrip = async (userId, tripId, { clientActionId = null, phoneTime = n
 };
 
 // ==========================================
-// 3. TRIP WORKFLOW: STOP ARRIVAL (BR-36)
+// 3. TRIP WORKFLOW: STOP ARRIVAL
 // ==========================================
 
 const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng = null, phoneTime = null, clientActionId = null } = {}) => {
@@ -162,7 +162,7 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
     return { success: true, message: "Điểm dừng đã được đánh dấu tới nơi", stop };
   }
 
-  // Kiểm tra bán kính Geofence (BR-36)
+  // Kiểm tra bán kính Geofence
   let isOutsideRadius = false;
   if (phoneLat && phoneLng && stop.location?.latitude && stop.location?.longitude) {
     const radiusMeters = stop.location.geofence_radius || 500;
@@ -190,7 +190,7 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
     await driverModel.updateDriverProfileStatus(profile.id, "On Trip");
   }
 
-  // Nếu là điểm giao hàng (Drop-off): Chuyển đơn hàng sang In Transit (UC-30)
+  // Nếu là điểm giao hàng (Drop-off): Chuyển đơn hàng sang In Transit
   if (stop.stop_type === "Drop-off" && stop.order_id) {
     await driverModel.updateOrdersStatus(
       [stop.order_id],
@@ -219,7 +219,7 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
     action: "STOP_ARRIVED",
     targetType: "TRIP_STOP",
     targetId: stopId,
-    reason: `Tài xế đã đến điểm dừng #${stop.sequence} (${stop.location?.address || 'Kho hàng'})${isOutsideRadius ? ' [NGOÀI BÁN KÍNH GEOFENCE]' : ''}`,
+    reason: `Tài xế đã đến điểm dừng #${stop.sequence} (${stop.location?.address || 'Kho hàng'})${isOutsideRadius ? ' [NGOÀI BÁN KÍNH GEOFENCE]': ''}`,
     clientActionId: actionId
   });
 
@@ -232,7 +232,7 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
 };
 
 // ==========================================
-// 4. TRIP WORKFLOW: RECORD PICKUP (BR-11, BR-31, BR-33)
+// 4. TRIP WORKFLOW: RECORD PICKUP
 // ==========================================
 
 const recordPickup = async (userId, tripId, stopId, pickupData) => {
@@ -255,15 +255,15 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     return { success: true, message: "Hành động đã được ghi nhận trước đó" };
   }
 
-  // 1. Kiểm tra các trường bắt buộc (BR-11 & MSG18 & MSG02)
+  // 1. Kiểm tra các trường bắt buộc
   if (!seal_photo_url || !seal_number || !seal_number.trim()) {
-    const error = new Error("Hãy chụp rõ số chì và biển số xe, rồi nhập số chì (MSG18)");
+    const error = new Error("Hãy chụp rõ số chì và biển số xe, rồi nhập số chì");
     error.statusCode = 400;
     throw error;
   }
 
   if (!loaded_packages || !loaded_weight) {
-    const error = new Error("Vui lòng nhập đủ số kiện và khối lượng hàng bốc thực tế (MSG02)");
+    const error = new Error("Vui lòng nhập đủ số kiện và khối lượng hàng bốc thực tế");
     error.statusCode = 400;
     throw error;
   }
@@ -279,10 +279,10 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     throw error;
   }
 
-  // 2. Kiểm tra quá tải trọng xe (BR-33 & MSG45)
+  // 2. Kiểm tra quá tải trọng xe
   const truckPayload = trip.truck?.allowed_payload || 5000;
   if (parsedWeight > truckPayload) {
-    const error = new Error(`Tổng khối lượng ${parsedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe (MSG45)`);
+    const error = new Error(`Tổng khối lượng ${parsedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe`);
     error.statusCode = 400;
     throw error;
   }
@@ -321,7 +321,7 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     }
   });
 
-  // 5. Cập nhật đơn hàng liên kết sang Picked Up (BR-11, BR-14)
+  // 5. Cập nhật đơn hàng liên kết sang Picked Up
   if (stop.order_id) {
     await driverModel.updateOrdersStatus(
       [stop.order_id],
@@ -343,13 +343,13 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
 
   return {
     success: true,
-    message: "Ghi nhận lấy hàng và niêm chì thành công! (BR-11)",
+    message: "Ghi nhận lấy hàng và niêm chì thành công!",
     stop: updatedStop
   };
 };
 
 // ==========================================
-// 5. TRIP WORKFLOW: RECORD DELIVERY & POD (BR-12, BR-39, BR-24)
+// 5. TRIP WORKFLOW: RECORD DELIVERY & POD
 // ==========================================
 
 const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
@@ -387,17 +387,17 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     throw error;
   }
 
-  // 1. Kiểm tra ảnh theo loại hàng (BR-12 & MSG20)
+  // 1. Kiểm tra ảnh theo loại hàng
   const isExport = stop.order?.order_type === "Export" || !!cut_seal_photo_url;
   if (isExport) {
     if (!cut_seal_photo_url || !unloaded_cargo_photo_url) {
-      const error = new Error("Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng (BR-12)");
+      const error = new Error("Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng");
       error.statusCode = 400;
       throw error;
     }
   } else {
     if (!pod_photo_url || !pod_photo_url.trim()) {
-      const error = new Error("Hãy chụp biên bản giao nhận đã ký (MSG20)");
+      const error = new Error("Hãy chụp biên bản giao nhận đã ký");
       error.statusCode = 400;
       throw error;
     }
@@ -430,7 +430,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     }
   });
 
-  // 4. Cập nhật đơn hàng liên kết sang Delivered (BR-39)
+  // 4. Cập nhật đơn hàng liên kết sang Delivered
   if (stop.order_id) {
     await driverModel.updateOrdersStatus(
       [stop.order_id],
@@ -440,7 +440,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     );
   }
 
-  // 5. Kiểm tra xem có phải điểm dừng cuối cùng của chuyến không (BR-24, BR-40)
+  // 5. Kiểm tra xem có phải điểm dừng cuối cùng của chuyến không
   const allStops = trip.stops || [];
   const remainingIncompleteStops = allStops.filter(s => s.id !== stopId && s.status !== "Done");
 
@@ -449,7 +449,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     isTripCompleted = true;
     await driverModel.updateTripStatus(tripId, "Completed");
 
-    // Giải phóng xe và tài xế về trạng thái Available / Active (BR-24)
+    // Giải phóng xe và tài xế về trạng thái Available / Active
     if (trip.truck?.id) {
       await driverModel.updateTruckStatus(trip.truck.id, "Available");
     }
@@ -459,7 +459,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
   await driverModel.logDriverActivity({
     actorId: userId,
     actorType: "DRIVER",
-    action: isTripCompleted ? "COMPLETE_TRIP" : "RECORD_DELIVERY",
+    action: isTripCompleted ? "COMPLETE_TRIP": "RECORD_DELIVERY",
     targetType: "TRIP_STOP",
     targetId: stopId,
     reason: isTripCompleted 
@@ -479,7 +479,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
 };
 
 // ==========================================
-// 6. REPORT INCIDENT (UC-32 & BF-04)
+// 6. REPORT INCIDENT
 // ==========================================
 
 const reportIncident = async (userId, incidentData) => {
@@ -518,13 +518,13 @@ const reportIncident = async (userId, incidentData) => {
 
   return {
     success: true,
-    message: "Đã báo sự cố. Điều phối viên đã được báo (MSG21)!",
+    message: "Đã báo sự cố. Điều phối viên đã được báo!",
     incident: newIncident
   };
 };
 
 // ==========================================
-// 7. STOP EVENTS & GEOFENCE (BR-36)
+// 7. STOP EVENTS & GEOFENCE
 // ==========================================
 
 const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = null, phoneLng = null, phoneTime = null, clientActionId = null, payload = null } = {}) => {
@@ -546,7 +546,7 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
     throw error;
   }
 
-  // Geofence check (BR-36)
+  // Geofence check
   let isOutsideRadius = false;
   if (phoneLat && phoneLng && stop.location?.latitude && stop.location?.longitude) {
     const radiusMeters = stop.location.geofence_radius || 500;
@@ -581,7 +581,7 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
 };
 
 // ==========================================
-// 8. CUSTOMER REFUSAL (BR-57, MSG74, MSG75)
+// 8. CUSTOMER REFUSAL
 // ==========================================
 
 const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
@@ -601,13 +601,13 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
   }
 
   if (!reason || !reason.trim()) {
-    const error = new Error("Vui lòng nhập lý do khách từ chối nhận hàng (MSG02)");
+    const error = new Error("Vui lòng nhập lý do khách từ chối nhận hàng");
     error.statusCode = 400;
     throw error;
   }
 
   if (!cargo_photo || !cargo_photo.trim()) {
-    const error = new Error("Vui lòng chụp ảnh hiện trường hàng hóa bị từ chối (MSG02)");
+    const error = new Error("Vui lòng chụp ảnh hiện trường hàng hóa bị từ chối");
     error.statusCode = 400;
     throw error;
   }
@@ -633,8 +633,8 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
     throw error;
   }
 
-  // 1. Cập nhật đơn hàng sang Delivered (Exception) (BR-57)
-  const fullReason = note && note.trim() ? `${reason.trim()} - Ghi chú: ${note.trim()}` : reason.trim();
+  // 1. Cập nhật đơn hàng sang Delivered (Exception)
+  const fullReason = note && note.trim() ? `${reason.trim()} - Ghi chú: ${note.trim()}`: reason.trim();
   await driverModel.updateOrderRefusal(stop.order_id, {
     reason: fullReason,
     photoUrl: cargo_photo.trim(),
@@ -663,14 +663,14 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
     }
   });
 
-  // 4. Tạo thông báo cho Điều phối viên (MSG75)
+  // 4. Tạo thông báo cho Điều phối viên
   const orderCode = stop.order?.order_code || stop.order_id;
   if (trip.created_by) {
     await driverModel.createSystemNotification({
       userAccountId: trip.created_by,
       targetType: "ORDER",
       targetId: stop.order_id,
-      message: `Khách không nhận hàng của đơn ${orderCode}. Hãy điều tài xế về kho ALS. (MSG75)`
+      message: `Khách không nhận hàng của đơn ${orderCode}. Hãy điều tài xế về kho ALS.`
     });
   }
 
@@ -686,12 +686,12 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
 
   return {
     success: true,
-    message: "Đã ghi nhận khách không nhận hàng. (MSG74)"
+    message: "Đã ghi nhận khách không nhận hàng."
   };
 };
 
 // ==========================================
-// 9. PROPOSE EXTRA FEE (BR-30, MSG85)
+// 9. PROPOSE EXTRA FEE
 // ==========================================
 
 const proposeExtraFee = async (userId, tripId, feeData) => {
@@ -739,7 +739,7 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
 
   const newFee = await driverModel.createProposedExtraFee({
     tripId,
-    orderId: order_id ? parseInt(order_id, 10) : null,
+    orderId: order_id ? parseInt(order_id, 10): null,
     feeType: fee_type,
     amount: parsedAmount,
     reason: reason.trim(),
@@ -747,9 +747,9 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
     recordedBy: userId
   });
 
-  // Thông báo cho Điều phối viên (MSG85)
+  // Thông báo cho Điều phối viên
   const driverName = profile.user?.full_name || profile.user?.username || "Tài xế";
-  const orderLabel = order_id ? `đơn #${order_id}` : `chuyến ${trip.trip_code}`;
+  const orderLabel = order_id ? `đơn #${order_id}`: `chuyến ${trip.trip_code}`;
   const formattedAmount = `${parsedAmount.toLocaleString("vi-VN")} đ`;
 
   if (trip.created_by) {
@@ -757,7 +757,7 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
       userAccountId: trip.created_by,
       targetType: "TRIP",
       targetId: tripId,
-      message: `Tài xế ${driverName} đề xuất phí ${fee_type} ${formattedAmount} cho ${orderLabel}. Hãy xác nhận hoặc từ chối. (MSG85)`
+      message: `Tài xế ${driverName} đề xuất phí ${fee_type} ${formattedAmount} cho ${orderLabel}. Hãy xác nhận hoặc từ chối.`
     });
   }
 
@@ -772,13 +772,13 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
 
   return {
     success: true,
-    message: `Đã gửi đề xuất phụ phí ${fee_type} ${formattedAmount}. Vui lòng chờ Điều phối viên xác nhận. (MSG85)`,
+    message: `Đã gửi đề xuất phụ phí ${fee_type} ${formattedAmount}. Vui lòng chờ Điều phối viên xác nhận.`,
     extraFee: newFee
   };
 };
 
 // ==========================================
-// 10. DRIVER SHIFTS (UC-20, BR-60, MSG77, MSG78)
+// 10. DRIVER SHIFTS
 // ==========================================
 
 const getMyShifts = async (userId, { from = null, to = null } = {}) => {
@@ -790,7 +790,7 @@ const registerShift = async (userId, shiftData) => {
   const { date, start_time, end_time, note = null } = shiftData;
 
   if (!date || !start_time || !end_time) {
-    const error = new Error("Vui lòng nhập đầy đủ ngày làm việc, giờ bắt đầu và kết thúc (MSG02)");
+    const error = new Error("Vui lòng nhập đầy đủ ngày làm việc, giờ bắt đầu và kết thúc");
     error.statusCode = 400;
     throw error;
   }
@@ -822,10 +822,10 @@ const registerShift = async (userId, shiftData) => {
 
   const profile = await getMyProfile(userId);
 
-  // Kiểm tra trùng ca (BR-60 & MSG78)
+  // Kiểm tra trùng ca
   const isOverlap = await driverModel.checkShiftOverlap(profile.id, date, start_time, end_time);
   if (isOverlap) {
-    const error = new Error("Ca này trùng với ca khác của bạn. (MSG78)");
+    const error = new Error("Ca này trùng với ca khác của bạn.");
     error.statusCode = 400;
     throw error;
   }
@@ -835,7 +835,7 @@ const registerShift = async (userId, shiftData) => {
     date,
     startTime: start_time,
     endTime: end_time,
-    note: note ? note.trim() : null,
+    note: note ? note.trim(): null,
     registeredBy: userId
   });
 
@@ -850,13 +850,13 @@ const registerShift = async (userId, shiftData) => {
 
   return {
     success: true,
-    message: "Đã gửi đăng ký ca. Vui lòng chờ Quản lý duyệt. (MSG77)",
+    message: "Đã gửi đăng ký ca. Vui lòng chờ Quản lý duyệt.",
     shift
   };
 };
 
 // ==========================================
-// 11. DRIVER NOTIFICATIONS (Screen 6.5, MSG80)
+// 11. DRIVER NOTIFICATIONS
 // ==========================================
 
 const getDriverNotifications = async (userId) => {
@@ -872,7 +872,7 @@ const markAllNotificationsRead = async (userId) => {
 };
 
 // ==========================================
-// 12. OFFLINE SYNC (BR-27, MSG39)
+// 12. OFFLINE SYNC
 // ==========================================
 
 const syncOfflineActions = async (userId, actions = []) => {
@@ -881,7 +881,7 @@ const syncOfflineActions = async (userId, actions = []) => {
   }
 
   if (actions.length > 50) {
-    const error = new Error("Đã đạt giới hạn 50 thao tác ngoại tuyến chưa đồng bộ. (MSG39)");
+    const error = new Error("Đã đạt giới hạn 50 thao tác ngoại tuyến chưa đồng bộ.");
     error.statusCode = 400;
     throw error;
   }

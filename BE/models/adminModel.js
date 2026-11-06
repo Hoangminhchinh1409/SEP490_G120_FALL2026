@@ -71,17 +71,17 @@ const createActivityLog = async ({
     reason = null,
     ipAddress = null
 }) => {
-    const numericTargetId = isNaN(Number(targetId)) ? 0 : Number(targetId);
+    const numericTargetId = isNaN(Number(targetId)) ? 0: Number(targetId);
 
     const { data, error } = await supabase
         .from("activity_logs")
         .insert({
-            actor_id: actorId ? Number(actorId) : null,
+            actor_id: actorId ? Number(actorId): null,
             actor_type: actorType,
             action,
             target_type: targetType,
             target_id: numericTargetId,
-            changes: changes ? (typeof changes === "object" ? JSON.stringify(changes) : changes) : null,
+            changes: changes ? (typeof changes === "object" ? JSON.stringify(changes): changes): null,
             reason,
             ip_address: ipAddress,
             created_time: new Date().toISOString()
@@ -172,7 +172,7 @@ const findUserByUsernameOrEmail = async (username, email, excludeId = null) => {
         throw error;
     }
 
-    return data && data.length > 0 ? data[0] : null;
+    return data && data.length > 0 ? data[0]: null;
 };
 
 const createUser = async ({
@@ -313,7 +313,7 @@ const getDashboardStats = async () => {
 
     if (!errRoleCounts && roleCounts) {
         for (const u of roleCounts) {
-            const roleName = u.roles?.name || (u.role_id === 1 ? "ADMINISTRATOR" : u.role_id === 2 ? "MANAGER" : u.role_id === 3 ? "DISPATCHER" : "DRIVER");
+            const roleName = u.roles?.name || (u.role_id === 1 ? "ADMINISTRATOR": u.role_id === 2 ? "MANAGER": u.role_id === 3 ? "DISPATCHER": "DRIVER");
             if (usersByRole[roleName] !== undefined) {
                 usersByRole[roleName]++;
             }
@@ -366,7 +366,7 @@ const upsertSystemSetting = async (key, value, updatedBy = null) => {
 };
 
 // ==========================================
-// 6. PERMISSIONS & ROLES MATRIX (UC-34)
+// 6. PERMISSIONS & ROLES MATRIX
 // ==========================================
 
 const getPermissionsMatrix = async () => {

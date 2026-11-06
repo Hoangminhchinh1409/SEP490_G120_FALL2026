@@ -77,7 +77,7 @@ export default function ShiftRegistrationPage() {
         date: dateStr,
         start_time: `${dateStr}T${startTimeStr}Z`,
         end_time: `${dateStr}T${endTimeStr}Z`,
-        note: values.note ? values.note.trim() : null
+        note: values.note ? values.note.trim(): null
       };
 
       if (isOffline) {
@@ -85,14 +85,14 @@ export default function ShiftRegistrationPage() {
           type: "REGISTER_SHIFT",
           payload: {
             ...payload,
-            clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined
+            clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined
           }
         });
-        message.warning("Mất kết nối mạng. Đăng ký ca đã được lưu ngoại tuyến và sẽ tự động gửi khi có mạng (BR-27)!");
+        message.warning("Mất kết nối mạng. Đăng ký ca đã được lưu ngoại tuyến và sẽ tự động gửi khi có mạng!");
         form.resetFields();
       } else {
         const res = await driverApi.registerShift(payload);
-        message.success(res.message || "Đã gửi đăng ký ca. Vui lòng chờ Quản lý duyệt. (MSG77)");
+        message.success(res.message || "Đã gửi đăng ký ca. Vui lòng chờ Quản lý duyệt.");
         form.resetFields();
         fetchShifts();
       }
@@ -141,14 +141,14 @@ export default function ShiftRegistrationPage() {
           <h1 className="text-xl font-black text-white flex items-center gap-2">
             <Calendar className="text-blue-500" size={24} /> Đăng ký Ca làm việc
           </h1>
-          <p className="text-xs text-slate-400">Xem lịch và gửi đăng ký ca (UC-20 / BR-60)</p>
+          <p className="text-xs text-slate-400">Xem lịch và gửi đăng ký ca</p>
         </div>
         <div className="text-xs">
           {isOffline ? (
             <span className="flex items-center gap-1 text-amber-400 bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/30">
               <CloudOff size={12} /> Ngoại tuyến
             </span>
-          ) : (
+          ): (
             <span className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/30">
               <Cloud size={12} /> Trực tuyến
             </span>
@@ -233,7 +233,7 @@ export default function ShiftRegistrationPage() {
             onClick={handleRegister}
             className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 border-none font-black rounded-xl h-12 shadow-lg shadow-blue-600/30"
           >
-            Gửi Đăng Ký Ca (BR-60)
+            Gửi Đăng Ký Ca
           </Button>
         </Form>
       </Card>
@@ -253,11 +253,11 @@ export default function ShiftRegistrationPage() {
           <div className="text-center py-8">
             <Spin size="large" />
           </div>
-        ) : shifts.length === 0 ? (
+        ): shifts.length === 0 ? (
           <div className="bg-slate-800/40 border border-slate-800 rounded-2xl p-6 text-center">
             <Empty description={<span className="text-slate-400 text-xs">Chưa có ca làm việc nào trong tuần này</span>} />
           </div>
-        ) : (
+        ): (
           <div className="space-y-3">
             {shifts.map((shift) => {
               const startT = dayjs(shift.start_time).format("HH:mm");

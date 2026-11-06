@@ -4,7 +4,7 @@ const tripService = require('../services/tripService');
 
 /**
  * Trip Controller — Nhóm chức năng Hoạch định Chuyến đi, Tính Lộ trình & Tua lại Hành trình
- * (UC-06, UC-07, UC-09, UC-10, UC-41, UC-42 — Screen 11, 12, 13, 39, 40, 43)
+ *
  */
 
 // 1. Lấy danh sách chuyến xe (Dispatcher / Monitoring)
@@ -18,7 +18,7 @@ const getAllTrips = async (req, res) => {
   }
 };
 
-// 2. Tạo chuyến xe mới & Phân bổ xe / tài xế / nhà xe (UC-06, UC-09, UC-10)
+// 2. Tạo chuyến xe mới & Phân bổ xe / tài xế / nhà xe
 const createTrip = async (req, res) => {
   try {
     const userId = req.user?.id || 3;
@@ -46,7 +46,7 @@ const updateTripStatus = async (req, res) => {
   }
 };
 
-// 4. Tính toán lộ trình đường bộ thực tế ngắn nhất & thời gian di chuyển (UC-07)
+// 4. Tính toán lộ trình đường bộ thực tế ngắn nhất & thời gian di chuyển
 // Hỗ trợ cả 2 điểm (startLat, startLng, endLat, endLng) và nhiều điểm dừng (waypoints=lat1,lng1|lat2,lng2|...)
 const calculateRoadRoute = async (req, res) => {
   try {
@@ -186,7 +186,7 @@ const calculateRoadRoute = async (req, res) => {
   }
 };
 
-// 5. Xem lại chuyến đi GPS & Timeline (UC-42 - Screen 40)
+// 5. Xem lại chuyến đi GPS & Timeline
 const getTripReplay = async (req, res) => {
   try {
     const rawId = req.params.id;

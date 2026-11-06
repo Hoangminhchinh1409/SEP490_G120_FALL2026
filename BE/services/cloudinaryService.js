@@ -1,7 +1,7 @@
 const cloudinary = require('../config/cloudinary');
 
 /**
- * Service tích hợp Cloudinary Storage theo đặc tả SRS (API-02: Upload/Sign, API-03: Delete)
+ * Service tích hợp Cloudinary Storage theo quy chuẩn hệ thống (API-02: Upload/Sign, API-03: Delete)
  */
 class CloudinaryService {
   /**

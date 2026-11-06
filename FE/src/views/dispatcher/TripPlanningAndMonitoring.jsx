@@ -51,13 +51,13 @@ export default function TripPlanningAndMonitoring() {
         dispatcherApi.getTrucks(),
         dispatcherApi.getDrivers()
       ]);
-      const currentUserId = user?.id ? Number(user.id) : null;
+      const currentUserId = user?.id ? Number(user.id): null;
       const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
 
       const readyOrders = (ordersData || []).filter(o => {
         if (o.status !== 'READY_FOR_PLANNING') return false;
         if (isDispatcher && currentUserId) {
-          const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id) : null;
+          const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id): null;
           if (orderDispId && orderDispId !== currentUserId) {
             return false;
           }
@@ -90,13 +90,13 @@ export default function TripPlanningAndMonitoring() {
           dispatcherApi.getDrivers()
         ]);
         if (!active) return;
-        const currentUserId = user?.id ? Number(user.id) : null;
+        const currentUserId = user?.id ? Number(user.id): null;
         const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
 
         const readyOrders = (ordersData || []).filter(o => {
           if (o.status !== 'READY_FOR_PLANNING') return false;
           if (isDispatcher && currentUserId) {
-            const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id) : null;
+            const orderDispId = o.responsible_dispatcher_id ? Number(o.responsible_dispatcher_id): null;
             if (orderDispId && orderDispId !== currentUserId) {
               return false;
             }
@@ -136,7 +136,7 @@ export default function TripPlanningAndMonitoring() {
   };
 
   const handleResolveIncident = (incidentId, resolution) => {
-    setIncidents(prev => prev.map(i => i.id === incidentId ? { ...i, status: 'RESOLVED', resolution } : i));
+    setIncidents(prev => prev.map(i => i.id === incidentId ? {...i, status: 'RESOLVED', resolution }: i));
     setTrips(prev => prev.map(t => {
       const inc = incidents.find(i => i.id === incidentId);
       if (inc && inc.trip_code === t.id) {
@@ -221,7 +221,7 @@ export default function TripPlanningAndMonitoring() {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            icon={<RefreshCw size={14} className={loading ? "animate-spin" : ""} />}
+            icon={<RefreshCw size={14} className={loading ? "animate-spin": ""} />}
             onClick={() => {
               setLoading(true);
               fetchData();
@@ -350,7 +350,7 @@ export default function TripPlanningAndMonitoring() {
         onClose={() => setSelectedTripReplay(null)}
       />
 
-      {/* Modal Hủy Đơn Hàng theo chuẩn BR-18 */}
+      {/* Modal Hủy Đơn Hàng theo chuẩn */}
       <CancelOrderModal
         open={Boolean(selectedOrderForCancel)}
         order={selectedOrderForCancel}

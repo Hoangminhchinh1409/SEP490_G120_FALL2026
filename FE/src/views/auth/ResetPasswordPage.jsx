@@ -8,9 +8,9 @@ import AuthSplitLayout from "../../components/auth/AuthSplitLayout";
 import { API_ENDPOINTS } from "../../api/apiConfig";
 import { fetchWithoutAuth } from "../../api/apiClient";
 
-const MSG04 = "Mật khẩu mới không hợp lệ.";
-const MSG59 = "Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.";
-const MSG61 = "Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu link mới.";
+const ERR_PASSWORD_MISMATCH = "Mật khẩu mới không hợp lệ.";
+const ERR_PASSWORD_POLICY = "Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.";
+const ERR_TOKEN_EXPIRED = "Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu link mới.";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -38,15 +38,15 @@ export default function ResetPasswordPage() {
     setFieldError("");
 
     if (!token) {
-      setError(MSG61);
+      setError(ERR_TOKEN_EXPIRED);
       return;
     }
     if (!form.newPassword || form.newPassword.length < 8) {
-      setFieldError(MSG59);
+      setFieldError(ERR_PASSWORD_POLICY);
       return;
     }
     if (form.newPassword !== form.confirmPassword) {
-      setFieldError(MSG04);
+      setFieldError(ERR_PASSWORD_MISMATCH);
       return;
     }
 
@@ -63,9 +63,9 @@ export default function ResetPasswordPage() {
     } catch (err) {
       const apiMessage = err.message || "";
       if (apiMessage.toLowerCase().includes("invalid") || apiMessage.toLowerCase().includes("expired")) {
-        setError(MSG61);
+        setError(ERR_TOKEN_EXPIRED);
       } else {
-        setError(MSG61);
+        setError(ERR_TOKEN_EXPIRED);
       }
     } finally {
       setSubmitting(false);
@@ -83,7 +83,7 @@ export default function ResetPasswordPage() {
 
       {!token && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm font-medium">
-          {MSG61}
+          {ERR_TOKEN_EXPIRED}
         </div>
       )}
 

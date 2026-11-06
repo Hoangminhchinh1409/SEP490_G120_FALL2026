@@ -3,7 +3,7 @@ const { parseOrderMeta } = require('../services/orderHelperService');
 
 /**
  * Oversight Controller — Nhóm chức năng Giám sát Vận hành, Khối lượng Đơn & Báo cáo Hiệu suất
- * (UC-21, UC-22, UC-27, UC-43 — Screen 16, 18, 41 & Dispatcher Dashboard)
+ *
  */
 
 function parsePeriodRange(periodStr) {
@@ -83,7 +83,7 @@ const getDispatcherDashboardStats = async (req, res) => {
 
     const orderList = (orders || []).map((o) => {
       const meta = parseOrderMeta(o);
-      const cargos = Array.isArray(o.cargos) ? o.cargos : [];
+      const cargos = Array.isArray(o.cargos) ? o.cargos: [];
       const weight = cargos.reduce((s, c) => s + (Number(c.chargeable_weight) || Number(c.weight_kg) || Number(c.actual_weight_kg) || 0), 0);
       return {
         ...o,
@@ -105,7 +105,7 @@ const getDispatcherDashboardStats = async (req, res) => {
       return sum + (Number(o.agreed_price) || 0);
     }, 0);
 
-    const avgRevenue = nonCancelledOrders.length > 0 ? Math.round(totalRevenue / nonCancelledOrders.length) : 0;
+    const avgRevenue = nonCancelledOrders.length > 0 ? Math.round(totalRevenue / nonCancelledOrders.length): 0;
     const totalWeight = nonCancelledOrders.reduce((sum, o) => sum + (Number(o.weight) || 0), 0);
     const uniqueCustomers = new Set(nonCancelledOrders.map((o) => o.customer_id).filter(Boolean)).size;
 
@@ -157,7 +157,7 @@ const getDispatcherDashboardStats = async (req, res) => {
         uniqueCustomers: uniqueCustomers || 8,
         deliveredCount: statusCounts.DELIVERED,
         inTransitCount: statusCounts.IN_TRANSIT + statusCounts.ASSIGNED,
-        deliveredRate: totalOrders > 0 ? ((statusCounts.DELIVERED / totalOrders) * 100).toFixed(1) : '100.0',
+        deliveredRate: totalOrders > 0 ? ((statusCounts.DELIVERED / totalOrders) * 100).toFixed(1): '100.0',
         statusCounts,
         fleetStats,
         activeTripsCount,
@@ -173,7 +173,7 @@ const getDispatcherDashboardStats = async (req, res) => {
 };
 
 // ==========================================
-// B. MANAGER PERFORMANCE DASHBOARD & DRIVER PERFORMANCE (UC-27, UC-43)
+// B. MANAGER PERFORMANCE DASHBOARD & DRIVER PERFORMANCE
 // ==========================================
 
 const getDashboardStats = async (req, res) => {
@@ -281,7 +281,7 @@ const getDashboardStats = async (req, res) => {
       tripDrivers.forEach((td) => {
         if (td.assigned_time) {
           const relStop = tripStops.find((ts) => ts.trip_id === td.trip_id);
-          const matchOrder = relStop ? (orders || []).find((o) => o.id === relStop.order_id) : orders[0];
+          const matchOrder = relStop ? (orders || []).find((o) => o.id === relStop.order_id): orders[0];
           if (matchOrder && matchOrder.created_at) {
             const diffMin = Math.max(0, Math.round((new Date(td.assigned_time) - new Date(matchOrder.created_at)) / 60000));
             assignedDiffs.push(diffMin);
@@ -332,13 +332,13 @@ const getDashboardStats = async (req, res) => {
       const isError = type.toLowerCase().includes('vehicle') || type.toLowerCase().includes('hỏng');
       const isAmber = type.toLowerCase().includes('cargo') || type.toLowerCase().includes('hàng');
       const isOrange = type.toLowerCase().includes('traffic') || type.toLowerCase().includes('tai nạn');
-      const label = type === 'Vehicle Issue' ? 'Hỏng xe' : type === 'Traffic' ? 'Cấm đường / Ùn tắc' : type;
+      const label = type === 'Vehicle Issue' ? 'Hỏng xe': type === 'Traffic' ? 'Cấm đường / Ùn tắc': type;
       return {
         type: label,
         rawType: type,
         count,
-        icon: isError ? 'build' : isAmber ? 'inventory_2' : isOrange ? 'car_crash' : 'report_problem',
-        color: isError ? 'error' : isAmber ? 'amber' : isOrange ? 'orange' : 'neutral'
+        icon: isError ? 'build': isAmber ? 'inventory_2': isOrange ? 'car_crash': 'report_problem',
+        color: isError ? 'error': isAmber ? 'amber': isOrange ? 'orange': 'neutral'
       };
     });
 
@@ -481,7 +481,7 @@ const getDriverPerformance = async (req, res) => {
       const totalDurationMins = driverTrips.reduce((acc, cur) => {
         return acc + Number(cur.trip?.actual_duration || cur.trip?.planned_duration || 0);
       }, 0);
-      const gpsDrivingHours = totalDurationMins > 0 ? `${Math.round(totalDurationMins / 60)}h` : '0h';
+      const gpsDrivingHours = totalDurationMins > 0 ? `${Math.round(totalDurationMins / 60)}h`: '0h';
 
       const driverEvents = (events || []).filter((e) => Number(e.driver_id) === Number(d.id));
       const limitDrivingCount = driverEvents.filter((e) => e.event_type === '4H_LIMIT').length;
@@ -495,9 +495,9 @@ const getDriverPerformance = async (req, res) => {
       const trips = driverTrips.map((td) => ({
         code: td.trip?.trip_code || `TRP-${td.trip?.id}`,
         route: 'Vận chuyển hàng hóa ALS',
-        time: td.trip?.planned_start ? new Date(td.trip.planned_start).toLocaleString('vi-VN') : 'Đang xử lý',
+        time: td.trip?.planned_start ? new Date(td.trip.planned_start).toLocaleString('vi-VN'): 'Đang xử lý',
         status: td.trip?.status || 'Assigned',
-        distance: td.trip?.actual_distance ? `${td.trip.actual_distance} km` : 'Chưa cập nhật'
+        distance: td.trip?.actual_distance ? `${td.trip.actual_distance} km`: 'Chưa cập nhật'
       }));
 
       return {
@@ -533,7 +533,7 @@ const getDriverPerformance = async (req, res) => {
 };
 
 // ==========================================
-// C. ORDER WORKLOAD & REASSIGN (UC-21, UC-22)
+// C. ORDER WORKLOAD & REASSIGN
 // ==========================================
 
 const getOrderWorkload = async (req, res) => {
@@ -599,15 +599,15 @@ const getOrderWorkload = async (req, res) => {
 
       if (statusUpper === 'CONFIRMED' && (o.document_status || '').toUpperCase() !== 'APPROVED' && ageHours > 12) {
         overdueDocs = true;
-        flagReason = flagReason ? `${flagReason} & Quá hạn chứng từ` : 'Quá hạn chứng từ';
+        flagReason = flagReason ? `${flagReason} & Quá hạn chứng từ`: 'Quá hạn chứng từ';
       }
 
       if (statusUpper === 'IN_TRANSIT' && ageHours > 24) {
         lateRisk = true;
-        flagReason = flagReason ? `${flagReason} & Nguy cơ trễ` : 'Nguy cơ trễ';
+        flagReason = flagReason ? `${flagReason} & Nguy cơ trễ`: 'Nguy cơ trễ';
       } else if (o.late_risk) {
         lateRisk = true;
-        flagReason = flagReason ? `${flagReason} & Nguy cơ trễ` : 'Nguy cơ trễ';
+        flagReason = flagReason ? `${flagReason} & Nguy cơ trễ`: 'Nguy cơ trễ';
       }
 
       const isFlagged = waitingTooLong || overdueDocs || lateRisk;
@@ -632,7 +632,7 @@ const getOrderWorkload = async (req, res) => {
         flag_reason: flagReason || 'Bình thường',
         dispatcher_id: o.dispatcher?.id || o.responsible_dispatcher_id || null,
         dispatcher_username: o.dispatcher?.username || null,
-        dispatcher_name: o.dispatcher?.full_name || o.dispatcher?.username || (o.responsible_dispatcher_id ? `ĐPV #${o.responsible_dispatcher_id}` : 'Chưa gán'),
+        dispatcher_name: o.dispatcher?.full_name || o.dispatcher?.username || (o.responsible_dispatcher_id ? `ĐPV #${o.responsible_dispatcher_id}`: 'Chưa gán'),
         tracking_token: o.tracking_token
       };
     });
@@ -664,7 +664,7 @@ const getOrderWorkload = async (req, res) => {
       const active = userOrders.filter((o) => activeNormalized.includes((o.status || '').toUpperCase())).length;
       const flagged = userOrders.filter((o) => o.is_flagged).length;
       const completed = userOrders.filter((o) => ['COMPLETED', 'DELIVERED'].includes((o.status || '').toUpperCase())).length;
-      const loadPercent = total > 0 ? Math.min(Math.round((active / 10) * 100), 100) : 0;
+      const loadPercent = total > 0 ? Math.min(Math.round((active / 10) * 100), 100): 0;
 
       return {
         id: d.id,
@@ -704,7 +704,7 @@ const reassignOrder = async (req, res) => {
     const managerId = req.user?.id || null;
 
     if (!newDispatcherId) {
-      return res.status(400).json({ message: 'Vui lòng chọn điều phối viên mới (MSG02).' });
+      return res.status(400).json({ message: 'Vui lòng chọn điều phối viên mới.' });
     }
 
     const { data: curOrder, error: curErr } = await supabase
@@ -748,14 +748,14 @@ const reassignOrder = async (req, res) => {
           old_dispatcher_id: curOrder.responsible_dispatcher_id,
           new_dispatcher_id: newDispatcherId
         },
-        reason: reason || 'Manager điều chuyển đơn giảm tải (UC-22)',
+        reason: reason || 'Manager điều chuyển đơn giảm tải',
         created_time: new Date().toISOString()
       });
     } catch (logErr) {
       console.warn('activity_logs insert warning:', logErr.message);
     }
 
-    const successMessage = `Đơn ${curOrder.order_code || curOrder.id} đã chuyển cho ${dispName} phụ trách (MSG29).`;
+    const successMessage = `Đơn ${curOrder.order_code || curOrder.id} đã chuyển cho ${dispName} phụ trách.`;
 
     return res.json({
       message: successMessage,

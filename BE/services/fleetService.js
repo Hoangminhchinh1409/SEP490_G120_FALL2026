@@ -30,13 +30,13 @@ const getAllTrucks = async () => {
     let volM3;
     if (length && width && height) {
       const rawVol = length * width * height;
-      volM3 = rawVol > 1000 ? parseFloat((rawVol / 1000000).toFixed(1)) : parseFloat(rawVol.toFixed(1));
+      volM3 = rawVol > 1000 ? parseFloat((rawVol / 1000000).toFixed(1)): parseFloat(rawVol.toFixed(1));
     } else {
       volM3 = parseFloat(((payload * 0.0068) || 9.5).toFixed(1));
     }
 
     // 1. Phân loại hạn đăng kiểm đa tầng theo Thông tư 02/2023/TT-BGTVT
-    const inspectionDate = t.inspection_expiry ? new Date(t.inspection_expiry) : new Date(now.getTime() + 60 * 86400000);
+    const inspectionDate = t.inspection_expiry ? new Date(t.inspection_expiry): new Date(now.getTime() + 60 * 86400000);
     const daysUntilInspection = Math.ceil((inspectionDate - now) / (1000 * 60 * 60 * 24));
     let inspectionAlertLevel = 'SAFE'; // > 30 ngày (An toàn)
     if (daysUntilInspection <= 0) {
@@ -65,8 +65,8 @@ const getAllTrucks = async () => {
 
     // 3. Quản lý thời gian sửa chữa & Downtime gián đoạn hoạt động
     const isMaintenance = t.status === 'MAINTENANCE';
-    const downtimeHours = isMaintenance ? (12 + (t.id * 7) % 36) : 0;
-    const garageName = isMaintenance ? 'Xưởng Dịch vụ Ô tô Tải Thaco Long Biên' : 'Gara Kỹ thuật NEXLOG Depot';
+    const downtimeHours = isMaintenance ? (12 + (t.id * 7) % 36): 0;
+    const garageName = isMaintenance ? 'Xưởng Dịch vụ Ô tô Tải Thaco Long Biên': 'Gara Kỹ thuật NEXLOG Depot';
 
     return {
       key: t.id.toString(),
@@ -81,7 +81,7 @@ const getAllTrucks = async () => {
       box_length_cm: t.box_length_cm,
       box_width_cm: t.box_width_cm,
       box_height_cm: t.box_height_cm,
-      cargo_type: payload > 10000 ? 'Moóc xương Container' : 'Thùng kín inox',
+      cargo_type: payload > 10000 ? 'Moóc xương Container': 'Thùng kín inox',
       equipment: 'Kẹp chì niêm phong, GPS, Cảm biến hành trình',
       assigned_driver: 'Nguyễn Văn Tài',
       driver_phone: '0901234567',
@@ -160,15 +160,15 @@ const getAllDrivers = async () => {
       name: u.full_name || `Tài xế ${d.id}`,
       phone: u.phone || '0901234567',
       email: u.email || '',
-      id_card: u.username?.includes('driver_') ? `0385722${d.id}9` : (u.username || '0385722949'),
+      id_card: u.username?.includes('driver_') ? `0385722${d.id}9`: (u.username || '0385722949'),
       license_type: `Hạng ${d.license_class || 'C'}`,
       license_class: d.license_class || 'C',
       license_number: d.license_number,
       license_expiry: d.license_expiry,
       experience_years: `${3 + d.id * 2} năm kinh nghiệm`,
-      shift_hours_today: index === 0 ? 3.5 : 2.0,
+      shift_hours_today: index === 0 ? 3.5: 2.0,
       max_shift_hours: 8.0,
-      assigned_truck: index === 0 ? '29H-123.45' : '29H-543.21',
+      assigned_truck: index === 0 ? '29H-123.45': '29H-543.21',
       current_trip: null,
       status: statusMap[d.status] || 'AVAILABLE',
       raw_status: d.status
@@ -194,14 +194,14 @@ const getAllVendors = async () => {
     contact_person: v.contact_person,
     phone: v.phone,
     truck_types: v.truck_types,
-    status: v.approval_status === 'APPROVED' ? 'APPROVED' : 'PENDING',
+    status: v.approval_status === 'APPROVED' ? 'APPROVED': 'PENDING',
     rating: 4.8
   }));
 };
 
 
 // ==========================================
-// DRIVER SHIFTS (UC-20, Screen 25, BR-08, BR-34, BR-60)
+// DRIVER SHIFTS
 // ==========================================
 
 const getShifts = async ({ from, to, status, driver_id }) => {
@@ -256,7 +256,7 @@ const createShift = async ({ driver_id, date, start_time, end_time, note, creato
 
   const hasOverlap = await driverModel.checkShiftOverlap(driver_id, date, isoStart, isoEnd);
   if (hasOverlap) {
-    throw new Error('Lỗi BR-08: Tài xế này đã có ca làm việc khác chồng lấn thời gian trong ngày này.');
+    throw new Error('Lỗi: Tài xế này đã có ca làm việc khác chồng lấn thời gian trong ngày này.');
   }
 
   const newShift = await driverModel.insertShiftRecord({
@@ -275,7 +275,7 @@ const createShift = async ({ driver_id, date, start_time, end_time, note, creato
   let warningMessage = null;
   const totalDailyHours = await driverModel.calculateDriverDailyHours(driver_id, date);
   if (totalDailyHours > 10) {
-    warningMessage = `Cảnh báo BR-34: Ca làm việc đã lưu nhưng tổng giờ làm việc trong ngày của tài xế đạt ${totalDailyHours}h, vượt quá 10 giờ/ngày.`;
+    warningMessage = `Cảnh báo: Ca làm việc đã lưu nhưng tổng giờ làm việc trong ngày của tài xế đạt ${totalDailyHours}h, vượt quá 10 giờ/ngày.`;
   }
 
   const driverProfile = newShift?.driver_profiles;
@@ -309,21 +309,21 @@ const updateShift = async (id, { date, start_time, end_time, note, reviewerId })
 
   const hasOverlap = await driverModel.checkShiftOverlap(existing.driver_id, targetDate, isoStart, isoEnd, id);
   if (hasOverlap) {
-    throw new Error('Lỗi BR-08: Thời gian mới bị chồng lấn với ca làm việc khác của tài xế.');
+    throw new Error('Lỗi: Thời gian mới bị chồng lấn với ca làm việc khác của tài xế.');
   }
 
   const updated = await driverModel.updateDriverShift(id, {
     date: targetDate,
     start_time: isoStart,
     end_time: isoEnd,
-    note: note !== undefined ? note : existing.note,
+    note: note !== undefined ? note: existing.note,
     reviewed_by: reviewerId || existing.reviewed_by
   });
 
   let warningMessage = null;
   const totalDailyHours = await driverModel.calculateDriverDailyHours(existing.driver_id, targetDate);
   if (totalDailyHours > 10) {
-    warningMessage = `Cảnh báo BR-34: Tổng giờ làm việc trong ngày của tài xế đạt ${totalDailyHours}h, vượt quá 10 giờ/ngày.`;
+    warningMessage = `Cảnh báo: Tổng giờ làm việc trong ngày của tài xế đạt ${totalDailyHours}h, vượt quá 10 giờ/ngày.`;
   }
 
   return { shift: updated, warning: warningMessage };
@@ -344,7 +344,7 @@ const approveShift = async (id, reviewerId) => {
   let warningMessage = null;
   const totalDailyHours = await driverModel.calculateDriverDailyHours(existing.driver_id, existing.date);
   if (totalDailyHours > 10) {
-    warningMessage = `Cảnh báo BR-34: Tổng giờ làm việc trong ngày ${existing.date} của tài xế đạt ${totalDailyHours}h, vượt quá giới hạn an toàn 10 giờ/ngày.`;
+    warningMessage = `Cảnh báo: Tổng giờ làm việc trong ngày ${existing.date} của tài xế đạt ${totalDailyHours}h, vượt quá giới hạn an toàn 10 giờ/ngày.`;
   }
 
   const driverProfile = existing.driver_profiles;
@@ -353,7 +353,7 @@ const approveShift = async (id, reviewerId) => {
       userAccountId: driverProfile.user_account_id,
       targetType: 'SHIFT',
       targetId: existing.id,
-      message: `Ca làm việc ngày ${existing.date} của bạn đã được Quản lý phê duyệt (MSG80).`
+      message: `Ca làm việc ngày ${existing.date} của bạn đã được Quản lý phê duyệt.`
     });
   }
 

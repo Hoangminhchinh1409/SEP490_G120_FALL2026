@@ -61,13 +61,13 @@ export default function ReportIncidentPage() {
           type: "REPORT_INCIDENT",
           payload: {
             ...payload,
-            clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined
+            clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined
           }
         });
-        message.warning("Đang mất kết nối mạng. Sự cố đã được lưu tạm trên máy (Offline First) và sẽ tự động gửi ngay khi có mạng (BR-27)!");
+        message.warning("Đang mất kết nối mạng. Sự cố đã được lưu tạm trên máy (Offline First) và sẽ tự động gửi ngay khi có mạng!");
       } else {
         await driverApi.reportIncident(payload);
-        message.success("Đã báo sự cố. Điều phối viên đã được báo (MSG21)!");
+        message.success("Đã báo sự cố. Điều phối viên đã được báo!");
       }
 
       setTimeout(() => router.push("/driver"), 1500);
@@ -94,7 +94,7 @@ export default function ReportIncidentPage() {
           <h1 className="text-xl font-black text-white flex items-center gap-2">
             <AlertTriangle className="text-red-500" size={24}/> Báo cáo Sự cố Khẩn cấp
           </h1>
-          <p className="text-xs text-slate-400">Ghi nhận sự cố trên tuyến đường (BF-04 / UC-32)</p>
+          <p className="text-xs text-slate-400">Ghi nhận sự cố trên tuyến đường</p>
         </div>
       </div>
 

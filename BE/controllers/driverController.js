@@ -141,7 +141,7 @@ const proposeExtraFee = async (req, res) => {
 };
 
 // ==========================================
-// 3. SHIFTS MANAGEMENT (UC-20, BR-60)
+// 3. SHIFTS MANAGEMENT
 // ==========================================
 
 const getMyShifts = async (req, res) => {
@@ -177,7 +177,7 @@ const cancelShift = async (req, res) => {
 };
 
 // ==========================================
-// 4. NOTIFICATIONS (Screen 6.5, MSG80)
+// 4. NOTIFICATIONS
 // ==========================================
 
 const getDriverNotifications = async (req, res) => {

@@ -244,7 +244,7 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
       Array.isArray(ord.items) && ord.items.length > 0
         ? ord.items.map((it) => {
             const pCount = Math.max(1, parseInt(it.package_count) || 1);
-            const totalKg = Number(it.total_weight) || (Number(it.weight) > 0 ? Number(it.weight) * pCount : 0);
+            const totalKg = Number(it.total_weight) || (Number(it.weight) > 0 ? Number(it.weight) * pCount: 0);
             return {
               cargo_name: it.cargo_name || ord.cargo_name || "Hàng hóa",
               cargo_type: it.cargo_type || ord.cargo_type || "GENERAL",
@@ -253,7 +253,7 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
               length_cm: parseFloat(it.length_cm) || parseFloat(ord.length_cm) || 0,
               width_cm: parseFloat(it.width_cm) || parseFloat(ord.width_cm) || 0,
               height_cm: parseFloat(it.height_cm) || parseFloat(ord.height_cm) || 0,
-              weight_kg: totalKg > 0 ? totalKg : Number(ord.weight || ord.actual_weight_kg || ord.chargeable || 200),
+              weight_kg: totalKg > 0 ? totalKg: Number(ord.weight || ord.actual_weight_kg || ord.chargeable || 200),
             };
           })
         : [
@@ -365,19 +365,19 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
 
       for (let k = 0; k < boxesToCreate; k++) {
         // Phân bổ kiện hàng vào các điểm dừng (nếu có nhiều điểm trả thì chia đều theo stop)
-        const assignedStopIdx = stops.length > 1 ? k % stops.length : 0;
+        const assignedStopIdx = stops.length > 1 ? k % stops.length: 0;
         const assignedStop = stops[assignedStopIdx];
 
-        assignedStop.packageCount += effectiveMode === "SINGLE_LOT_BLOCK" ? Math.round(pkgCount / stops.length) : 1;
+        assignedStop.packageCount += effectiveMode === "SINGLE_LOT_BLOCK" ? Math.round(pkgCount / stops.length): 1;
         assignedStop.weight = Math.round(assignedStop.weight + unitWeightKg);
 
-        const codeSuffix = boxesToCreate > 1 ? `#${String(k + 1).padStart(2, "0")}` : "";
+        const codeSuffix = boxesToCreate > 1 ? `#${String(k + 1).padStart(2, "0")}`: "";
 
         dimensionalItems.push({
           id: `${orderCode}-${itemIdx + 1}-${k + 1}`,
           orderCode,
-          palletCode: `${orderCode}${codeSuffix ? ` (${codeSuffix})` : ""}`,
-          shortLabel: boxesToCreate > 1 ? `${cargoItem.package_unit} ${codeSuffix}` : orderCode,
+          palletCode: `${orderCode}${codeSuffix ? ` (${codeSuffix})`: ""}`,
+          shortLabel: boxesToCreate > 1 ? `${cargoItem.package_unit} ${codeSuffix}`: orderCode,
           packageIndex: k + 1,
           totalPackagesInLot: pkgCount,
           packageUnit: cargoItem.package_unit,
@@ -399,7 +399,7 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
     });
   });
 
-  // 3. Sắp xếp kiện hàng theo quy tắc LIFO (BR-43) + Độ ổn định trọng tâm (Nặng dưới sàn, lớn xếp trước)
+  // 3. Sắp xếp kiện hàng theo quy tắc LIFO + Độ ổn định trọng tâm (Nặng dưới sàn, lớn xếp trước)
   // - Điểm dừng giao sau cùng (stopIndex lớn hơn) được xếp vào trước (sát vách đầu xe X = 0)
   // - Trong cùng điểm dừng: Kiện nặng hơn và diện tích đáy lớn hơn xếp trước xuống sàn
   dimensionalItems.sort((a, b) => {
@@ -407,7 +407,7 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
       return b.stopIndex - a.stopIndex; // LIFO: Giao sau xếp trong (X nhỏ), giao trước xếp ngoài (X lớn)
     }
     if (a.stackable !== b.stackable) {
-      return a.stackable ? -1 : 1; // Kiện chịu lực (stackable) đặt dưới sàn trước
+      return a.stackable ? -1: 1; // Kiện chịu lực (stackable) đặt dưới sàn trước
     }
     if (Math.abs(b.weight_kg - a.weight_kg) > 0.5) {
       return b.weight_kg - a.weight_kg; // Kiện nặng ở dưới
@@ -426,7 +426,7 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
   let packedVolumeCm3 = 0;
 
   for (const item of dimensionalItems) {
-    // Kiểm tra tải trọng cho phép (BR-25 / MSG66)
+    // Kiểm tra tải trọng cho phép
     const exceedsPayload = cumulativeWeightKg + item.weight_kg > truck.max_payload + 0.01;
 
     // 2 hướng xoay ngang trên mặt sàn (giữ nguyên trục đứng Z = height_cm)
@@ -498,7 +498,7 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
     }
 
     if (bestPlacement && !exceedsPayload) {
-      const tierLevel = bestPlacement.z > 0.5 ? Math.floor(bestPlacement.z / Math.max(1, item.height_cm)) + 1 : 1;
+      const tierLevel = bestPlacement.z > 0.5 ? Math.floor(bestPlacement.z / Math.max(1, item.height_cm)) + 1: 1;
       const placedRecord = {
         ...item,
         x: Math.round(bestPlacement.x),
@@ -547,16 +547,16 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
         }
       }
     } else {
-      // Kiện hàng bị tràn kích thước hoặc vượt tải trọng (MSG66)
-      let reason = "Hết không gian thể tích thùng xe (MSG66)";
+      // Kiện hàng bị tràn kích thước hoặc vượt tải trọng
+      let reason = "Hết không gian thể tích thùng xe";
       if (
         item.length_cm > truck.length_cm ||
         item.width_cm > truck.width_cm ||
         item.height_cm > truck.height_cm
       ) {
-        reason = `Kích thước kiện (${item.length_cm}×${item.width_cm}×${item.height_cm} cm) vượt lòng thùng xe (${truck.length_cm}×${truck.width_cm}×${truck.height_cm} cm) (MSG66)`;
+        reason = `Kích thước kiện (${item.length_cm}×${item.width_cm}×${item.height_cm} cm) vượt lòng thùng xe (${truck.length_cm}×${truck.width_cm}×${truck.height_cm} cm)`;
       } else if (exceedsPayload) {
-        reason = `Vượt tải trọng cho phép của xe (${truck.max_payload.toLocaleString()} kg) (MSG66)`;
+        reason = `Vượt tải trọng cho phép của xe (${truck.max_payload.toLocaleString()} kg)`;
       }
 
       overflowBlocks.push({

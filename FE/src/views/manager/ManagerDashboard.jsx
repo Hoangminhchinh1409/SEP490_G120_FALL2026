@@ -114,7 +114,7 @@ export default function ManagerDashboard() {
 
   return (
     <div className="flex flex-col w-full space-y-5">
-      {/* Top Header Section khớp Prototype Figure 35 */}
+      {/* Top Header Section khớp giao diện chuẩn */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-outline-variant/30">
         <div className="flex flex-col space-y-1">
           <div className="flex items-center gap-3 flex-wrap">
@@ -131,7 +131,7 @@ export default function ManagerDashboard() {
           </p>
         </div>
 
-        {/* Filter Kỳ (① trong Prototype Figure 35) & Thao tác */}
+        {/* Filter Kỳ (① trong giao diện chuẩn) & Thao tác */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-xl border border-surface-container">
             <span className="material-symbols-outlined text-[18px] text-primary">calendar_month</span>
@@ -168,7 +168,7 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
-      {/* Main Tabs Navigation (② trong Prototype Figure 35 & 36) */}
+      {/* Main Tabs Navigation (② trong giao diện chuẩn & 36) */}
       <div className="flex items-center gap-2 border-b border-surface-container pb-2">
         <button
           onClick={() => setActiveTab('OVERVIEW')}
@@ -195,7 +195,7 @@ export default function ManagerDashboard() {
         </button>
       </div>
 
-      {/* TAB 1: TỔNG QUAN (BÁM SÁT 100% CẤU TRÚC PROTOTYPE FIGURE 35 VỚI CSS NỀN NÃ HIỆN ĐẠI) */}
+      {/* TAB 1: TỔNG QUAN (BÁM SÁT 100% CẤU TRÚC giao diện chuẩn VỚI CSS NỀN NÃ HIỆN ĐẠI) */}
       {activeTab === 'OVERVIEW' && (
         <div className="space-y-4">
           {/* HÀNG 1 (Prototype 3, 4, 5): Doanh thu, Sử dụng xe, SLA điều phối (TB) */}
@@ -215,7 +215,7 @@ export default function ManagerDashboard() {
                 </div>
               </div>
               <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div className="bg-primary h-full rounded-full" style={{ width: stats.revenue > 0 ? '100%' : '0%' }}></div>
+                <div className="bg-primary h-full rounded-full" style={{ width: stats.revenue > 0 ? '100%': '0%' }}></div>
               </div>
             </div>
 
@@ -333,7 +333,7 @@ export default function ManagerDashboard() {
                         <span className="font-extrabold">{inc.count}</span>
                       </span>
                     ))
-                  ) : (
+                  ): (
                     <span className="text-xs text-on-surface-variant italic">Không có sự cố nào trong kỳ</span>
                   )}
                 </div>
@@ -406,7 +406,7 @@ export default function ManagerDashboard() {
                 </div>
               </div>
               <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div className="bg-secondary h-full rounded-full" style={{ width: stats.revenuePerKm !== '0 đ' ? '75%' : '0%' }}></div>
+                <div className="bg-secondary h-full rounded-full" style={{ width: stats.revenuePerKm !== '0 đ' ? '75%': '0%' }}></div>
               </div>
             </div>
 
@@ -478,7 +478,7 @@ export default function ManagerDashboard() {
                         <span className="font-extrabold text-tertiary">{loc.time}</span>
                       </span>
                     ))
-                  ) : (
+                  ): (
                     <span className="text-xs text-on-surface-variant italic">Chưa có thông tin điểm dừng</span>
                   )}
                 </div>
@@ -512,7 +512,7 @@ export default function ManagerDashboard() {
                         <span className="font-black text-error">{dr.count}</span>
                       </div>
                     ))
-                  ) : (
+                  ): (
                     <span className="text-xs text-on-surface-variant italic">Không có lịch trễ</span>
                   )}
                 </div>
@@ -526,7 +526,7 @@ export default function ManagerDashboard() {
         </div>
       )}
 
-      {/* TAB 2: HIỆU SUẤT TÀI XẾ (BÁM SÁT 100% PROTOTYPE FIGURE 36 - 8 CỘT CHUẨN XÁC) */}
+      {/* TAB 2: HIỆU SUẤT TÀI XẾ (BÁM SÁT 100% giao diện chuẩn - 8 CỘT CHUẨN XÁC) */}
       {activeTab === 'DRIVERS' && (
         <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-6 border border-outline-variant/30 space-y-4">
           {/* Header & Tìm kiếm tài xế */}
@@ -564,13 +564,13 @@ export default function ManagerDashboard() {
 
           {loading ? (
             <div className="py-16 flex justify-center"><Spin size="large" /></div>
-          ) : filteredDrivers.length === 0 ? (
+          ): filteredDrivers.length === 0 ? (
             <div className="py-12 text-center text-on-surface-variant text-sm">
               Không tìm thấy hồ sơ tài xế nào trong cơ sở dữ liệu.
             </div>
-          ) : (
+          ): (
             <div className="overflow-x-auto">
-              {/* BẢNG ĐÚNG CHUẨN 8 CỘT THEO FIGURE 36 */}
+              {/* BẢNG ĐÚNG CHUẨN 8 CỘT THEO  */}
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low text-on-surface-variant uppercase text-[11px] font-extrabold tracking-wider border-b border-surface-container">
@@ -622,7 +622,7 @@ export default function ManagerDashboard() {
                         {d.gps_driving_hours}
                       </td>
 
-                      {/* Cột 4: Chạm giới hạn lái (BR-34 / 4H Limit) */}
+                      {/* Cột 4: Chạm giới hạn lái (Giới hạn 4 giờ) */}
                       <td className="py-3.5 px-4 text-center">
                         {d.limit_driving_count > 0 ? (
                           <Tooltip title="Tài xế lái quá 4h liên tục không nghỉ ngơi">
@@ -630,7 +630,7 @@ export default function ManagerDashboard() {
                               {d.limit_driving_count}
                             </span>
                           </Tooltip>
-                        ) : (
+                        ): (
                           <span className="text-on-surface-variant">0</span>
                         )}
                       </td>
@@ -641,7 +641,7 @@ export default function ManagerDashboard() {
                           <span className="inline-block px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 font-extrabold">
                             {d.speeding_count}
                           </span>
-                        ) : (
+                        ): (
                           <span className="text-on-surface-variant">0</span>
                         )}
                       </td>
@@ -654,7 +654,7 @@ export default function ManagerDashboard() {
                               {d.outside_radius_count}
                             </span>
                           </Tooltip>
-                        ) : (
+                        ): (
                           <span className="text-on-surface-variant">0</span>
                         )}
                       </td>
@@ -664,9 +664,9 @@ export default function ManagerDashboard() {
                         {d.avg_dwell_time}
                       </td>
 
-                      {/* Cột 8: Sự cố · khiếu nại (Định dạng chuẩn Figure 36: e.g. 0 · 0 hoặc 1 · 1) */}
+                      {/* Cột 8: Sự cố · khiếu nại */}
                       <td className="py-3.5 px-4 text-center font-bold">
-                        <span className={d.incident_claim_text !== '0 · 0' ? 'text-error font-black' : 'text-on-surface-variant'}>
+                        <span className={d.incident_claim_text !== '0 · 0' ? 'text-error font-black': 'text-on-surface-variant'}>
                           {d.incident_claim_text}
                         </span>
                       </td>
@@ -675,7 +675,7 @@ export default function ManagerDashboard() {
                 </tbody>
               </table>
 
-              {/* Chú thích chân bảng khớp nguyên văn Prototype Figure 36 */}
+              {/* Chú thích chân bảng khớp nguyên văn giao diện chuẩn */}
               <div className="pt-4 text-xs italic text-on-surface-variant">
                 Giờ lái tính từ GPS xe. Bấm tên tài xế để xem danh sách chuyến của tài xế đó.
               </div>
@@ -712,7 +712,7 @@ export default function ManagerDashboard() {
               </div>
               <div className="flex justify-between">
                 <span className="text-on-surface-variant">Trạng thái:</span>
-                <Tag color={selectedDriverModal.status === 'Active' ? 'green' : 'orange'}>
+                <Tag color={selectedDriverModal.status === 'Active' ? 'green': 'orange'}>
                   {selectedDriverModal.status}
                 </Tag>
               </div>
@@ -742,7 +742,7 @@ export default function ManagerDashboard() {
                           <td className="py-2.5 px-3 text-on-surface-variant">{t.time}</td>
                           <td className="py-2.5 px-3">{t.distance}</td>
                           <td className="py-2.5 px-3">
-                            <Tag color={t.status === 'Completed' ? 'green' : t.status === 'Assigned' ? 'blue' : 'orange'}>
+                            <Tag color={t.status === 'Completed' ? 'green': t.status === 'Assigned' ? 'blue': 'orange'}>
                               {t.status}
                             </Tag>
                           </td>
@@ -751,7 +751,7 @@ export default function ManagerDashboard() {
                     </tbody>
                   </table>
                 </div>
-              ) : (
+              ): (
                 <div className="text-center py-6 text-on-surface-variant text-xs italic bg-surface-container-low rounded-xl">
                   Chưa có chuyến xe nào được ghi nhận cho tài xế này.
                 </div>

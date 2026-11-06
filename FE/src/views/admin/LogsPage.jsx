@@ -30,8 +30,8 @@ export default function LogsPage() {
         const res = await adminApi.getActivityLogs({
           page: pagination.current,
           limit: pagination.pageSize,
-          action: filters.action !== 'ALL' ? filters.action : null,
-          targetType: filters.targetType !== 'ALL' ? filters.targetType : null,
+          action: filters.action !== 'ALL' ? filters.action: null,
+          targetType: filters.targetType !== 'ALL' ? filters.targetType: null,
           startDate: filters.startDate,
           endDate: filters.endDate,
           keyword: filters.keyword
@@ -90,15 +90,15 @@ export default function LogsPage() {
   };
 
   const handleActionChange = (value) => {
-    setFilters(prev => ({ ...prev, action: value }));
+    setFilters(prev => ({...prev, action: value }));
   };
 
   const handleTargetTypeChange = (value) => {
-    setFilters(prev => ({ ...prev, targetType: value }));
+    setFilters(prev => ({...prev, targetType: value }));
   };
 
   const handleSearch = (value) => {
-    setFilters(prev => ({ ...prev, keyword: value }));
+    setFilters(prev => ({...prev, keyword: value }));
   };
 
   const handleResetFilters = () => {
@@ -169,7 +169,7 @@ export default function LogsPage() {
       width: 180,
       render: (_, record) => {
         if (record.actor) {
-          const roleName = record.actor.role_id === 1 ? 'Admin' : record.actor.role_id === 2 ? 'Manager' : record.actor.role_id === 3 ? 'Dispatcher' : 'Driver';
+          const roleName = record.actor.role_id === 1 ? 'Admin': record.actor.role_id === 2 ? 'Manager': record.actor.role_id === 3 ? 'Dispatcher': 'Driver';
           return (
             <div>
               <div className="font-medium text-slate-800 text-sm flex items-center gap-1.5">
@@ -218,7 +218,7 @@ export default function LogsPage() {
         let parsedChanges = null;
         if (record.changes) {
           try {
-            parsedChanges = typeof record.changes === 'string' ? JSON.parse(record.changes) : record.changes;
+            parsedChanges = typeof record.changes === 'string' ? JSON.parse(record.changes): record.changes;
           } catch {
             parsedChanges = record.changes;
           }
@@ -266,7 +266,7 @@ export default function LogsPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Nhật ký Hoạt động (Activity Logs)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Ghi nhận vết thao tác toàn hệ thống theo thời gian thực (Dữ liệu chỉ thêm mới <b>Append-only</b> theo chuẩn bảo mật BR-28/BR-47).
+            Ghi nhận vết thao tác toàn hệ thống theo thời gian thực (Dữ liệu chỉ thêm mới <b>Append-only</b> theo chuẩn an toàn hệ thống).
           </p>
         </div>
         <Button

@@ -21,7 +21,7 @@ router.get("/users/:id", adminController.getUserById);
 router.put("/users/:id", adminController.updateUser);
 router.patch("/users/:id/status", adminController.updateUserStatus);
 
-// 4. Roles & Permissions Matrix (UC-34)
+// 4. Roles & Permissions Matrix
 router.get("/roles", adminController.getRoles);
 router.get("/permissions", adminController.getPermissionsMatrix);
 router.put("/roles/:roleId/permissions", adminController.updateRolePermissions);

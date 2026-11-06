@@ -47,28 +47,28 @@ Hệ thống được tổ chức theo mô hình phân tán giữa Client (Web &
 
 ## 2. Kiến trúc phân tầng Module Backend (Package Diagram & Dependencies)
 
-Toàn bộ backend tuân thủ nghiêm ngặt **mô hình phân tầng 3 lớp phụ thuộc một chiều** (Top-Down Dependency, tuyệt đối không phụ thuộc vòng) và ánh xạ chuẩn với danh mục Use Case (UC-01 đến UC-48):
+Toàn bộ backend tuân thủ nghiêm ngặt **mô hình phân tầng 3 lớp phụ thuộc một chiều** (Top-Down Dependency, tuyệt đối không phụ thuộc vòng) và ánh xạ chuẩn với danh mục Use Case:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │ 1. ENTRY MODULES (Tầng đầu vào — Gọi xuống Business Modules)                              │
-│  - driver (UC-28 to 32)      - tracking (UC-01, 47)      - monitoring (UC-11, 42, 43, 48)│
-│  - dashboard (UC-21, 27)     - news (UC-44, 45)          - workflows (cancel order, ...) │
+│  - driver      - tracking      - monitoring│
+│  - dashboard     - news          - workflows (cancel order,...) │
 └────────────────────────────────────────────┬─────────────────────────────────────────────┘
                                              │ calls
                                              ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │ 2. BUSINESS MODULES (Tầng nghiệp vụ lõi — Gọi xuống Base Modules)                         │
-│  - orders (UC-03, 04, 08, 12, 13, 22)                    - trips (UC-06, 07, 09, 41)     │
-│  - incidents (UC-14, 15, 16, 25)                         - claims (UC-26)                │
-│  - vendors (UC-10, 23)                                   - documents (UC-02, 05, 39)     │
+│  - orders                    - trips     │
+│  - incidents                         - claims                │
+│  - vendors                                   - documents     │
 └────────────────────────────────────────────┬─────────────────────────────────────────────┘
                                              │ calls
                                              ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │ 3. BASE MODULES (Tầng nền tảng độc lập — KHÔNG chứa business rules của module khác)     │
-│  - fleet (UC-18, 19, 20)     - customers (UC-24)         - locations (UC-40)             │
-│  - users (UC-17, 33 to 36)   - auth (UC-37, 38, 46)      - notifications (alerts, msgs)  │
+│  - fleet     - customers         - locations             │
+│  - users   - auth      - notifications (alerts, msgs)  │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -108,12 +108,12 @@ Các Background Jobs chạy ngầm trong process Job Worker, quản lý qua `nod
 
 | Mã Job | Tên Job | Nghiệp vụ SRS liên quan | Tần suất & Mô tả |
 |:-------|:--------|:------------------------|:-----------------|
-| **JOB-01** | File Retention | BR-22 | Bảo lưu chứng từ, ảnh chì, POD của các đơn hàng có khiếu nại đang `PENDING` |
-| **JOB-02** | GPS & Shift Overtime Check | BR-34, MSG65, MSG83 | Cảnh báo tài xế lái xe liên tục quá 4 giờ và cảnh báo hết ca làm việc khi chuyến chưa hoàn tất |
-| **JOB-03** | Order Flagger | BR-25, MSG41, BR-13 | Tự động gắn cờ các đơn hàng Draft quá hạn và đơn Confirmed quá hạn chưa được gán chuyến |
-| **JOB-04** | Trip Status & ETA Tracking | BR-09, BR-12 | Cập nhật tự động tiến độ chuyến đi, đối soát toạ độ GPS và tính toán ETA |
-| **JOB-05** | Contract & License Expiry Check | BR-18, BR-20 | Kiểm tra cảnh báo hợp đồng nhà xe, bằng lái tài xế hoặc giấy tờ sắp hết hạn |
-| **JOB-06** | Auto-lock Expired Trucks | BR-24 | Tự động chuyển trạng thái các xe hết hạn đăng kiểm sang `INACTIVE` |
+| **JOB-01** | File Retention | | Bảo lưu chứng từ, ảnh chì, POD của các đơn hàng có khiếu nại đang `PENDING` |
+| **JOB-02** | GPS & Shift Overtime Check |,, | Cảnh báo tài xế lái xe liên tục quá 4 giờ và cảnh báo hết ca làm việc khi chuyến chưa hoàn tất |
+| **JOB-03** | Order Flagger |,, | Tự động gắn cờ các đơn hàng Draft quá hạn và đơn Confirmed quá hạn chưa được gán chuyến |
+| **JOB-04** | Trip Status & ETA Tracking |, | Cập nhật tự động tiến độ chuyến đi, đối soát toạ độ GPS và tính toán ETA |
+| **JOB-05** | Contract & License Expiry Check |, | Kiểm tra cảnh báo hợp đồng nhà xe, bằng lái tài xế hoặc giấy tờ sắp hết hạn |
+| **JOB-06** | Auto-lock Expired Trucks | | Tự động chuyển trạng thái các xe hết hạn đăng kiểm sang `INACTIVE` |
 
 ### 4.1 Mẫu cài đặt Advisory Lock cho Job Worker
 ```javascript
@@ -178,7 +178,7 @@ BE/
 ├── jobs/             # Các background jobs (JOB-01 đến JOB-06, advisory locks)
 ├── prisma/           # Prisma schema & migrations (quản lý 36 bảng)
 ├── server.js         # Entry point — khởi tạo Express app (API Process)
-├── .env              # Biến môi trường (TUYỆT ĐỐI KHÔNG commit)
+├──.env              # Biến môi trường (TUYỆT ĐỐI KHÔNG commit)
 └── package.json
 ```
 
@@ -223,7 +223,7 @@ Client Request (Browser / PWA)
 ```javascript
 // ✅ camelCase cho variables & functions
 const totalRevenue = 100;
-const calculateTripDuration = async (tripId) => { ... };
+const calculateTripDuration = async (tripId) => {... };
 
 // ✅ UPPER_SNAKE_CASE cho constants & enums
 const MAX_PAGE_SIZE = 100;
@@ -308,7 +308,7 @@ const getOrders = async ({ page, limit, status, userId }) => {
     // Xử lý Business Logic / Flagging
     const enriched = orders.map(order => ({
         ...order,
-        isOverdue: order.expected_delivery_time ? new Date(order.expected_delivery_time) < new Date() : false
+        isOverdue: order.expected_delivery_time ? new Date(order.expected_delivery_time) < new Date(): false
     }));
 
     return { orders: enriched, total, page, limit };
@@ -376,7 +376,7 @@ module.exports = router;
 
 ### 10.1 Parameterized Queries (BẮT BUỘC ĐỐI VỚI RAW SQL)
 ```javascript
-// ✅ ĐÚNG — Luôn dùng tham số ($1, $2, ...)
+// ✅ ĐÚNG — Luôn dùng tham số ($1, $2,...)
 const result = await pool.query(
     `SELECT * FROM users WHERE id = $1 AND status = $2`,
     [userId, 'ACTIVE']
@@ -451,7 +451,7 @@ return res.status(200).json({
 // Response lỗi có gắn mã thông báo hệ thống MSG (theo SRS)
 return res.status(400).json({
     message: "Dữ liệu không hợp lệ",
-    code: "MSG41",
+    code: "",
     error: "Đơn hàng đã quá hạn xử lý gán chuyến."
 });
 ```

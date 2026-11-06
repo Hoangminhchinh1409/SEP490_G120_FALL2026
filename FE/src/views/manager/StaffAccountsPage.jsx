@@ -39,7 +39,7 @@ export default function StaffAccountsPage() {
   const [selectedRole, setSelectedRole] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
 
-  // Modal Screen 27 (Chi tiết & Tạo mới)
+  // Modal  (Chi tiết & Tạo mới)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState(null);
@@ -109,7 +109,7 @@ export default function StaffAccountsPage() {
     }, 0);
   };
 
-  // Mở modal chi tiết / cập nhật (Screen 27)
+  // Mở modal chi tiết / cập nhật
   const handleOpenEditModal = (account) => {
     setIsEditMode(true);
     setSelectedAccount(account);
@@ -122,13 +122,13 @@ export default function StaffAccountsPage() {
         full_name: account.full_name,
         email: account.email,
         phone: account.phone,
-        role: account.role_id === 3 ? 'DISPATCHER' : 'DRIVER',
+        role: account.role_id === 3 ? 'DISPATCHER': 'DRIVER',
         status: account.status === 'ACTIVE'
       });
     }, 0);
   };
 
-  // Xử lý submit form Screen 27
+  // Xử lý submit form 
   const handleSubmitForm = async () => {
     try {
       const values = await form.validateFields();
@@ -140,7 +140,7 @@ export default function StaffAccountsPage() {
         email: values.email,
         phone: values.phone,
         role: values.role,
-        status: values.status ? 'ACTIVE' : 'LOCKED'
+        status: values.status ? 'ACTIVE': 'LOCKED'
       };
 
       if (values.password && values.password.trim() !== '') {
@@ -170,7 +170,7 @@ export default function StaffAccountsPage() {
   const handleToggleStatus = async (account) => {
     try {
       setStatusTogglingId(account.id);
-      const targetStatus = account.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
+      const targetStatus = account.status === 'ACTIVE' ? 'LOCKED': 'ACTIVE';
       const res = await managerApi.toggleStaffAccountStatus(account.id, targetStatus);
       message.success(res.message || 'Cập nhật trạng thái thành công.');
       fetchAccounts();
@@ -192,7 +192,7 @@ export default function StaffAccountsPage() {
     return { total, dispatchers, drivers, active, locked };
   }, [accounts]);
 
-  // Cấu hình các cột của Bảng Screen 26
+  // Cấu hình các cột của Bảng 
   const columns = [
     {
       title: 'Nhân viên',
@@ -202,7 +202,7 @@ export default function StaffAccountsPage() {
         return (
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm shadow-sm ${
-              record.role_id === 3 ? 'bg-gradient-to-tr from-blue-600 to-indigo-500' : 'bg-gradient-to-tr from-emerald-600 to-teal-500'
+              record.role_id === 3 ? 'bg-gradient-to-tr from-blue-600 to-indigo-500': 'bg-gradient-to-tr from-emerald-600 to-teal-500'
             }`}>
               {initial}
             </div>
@@ -248,8 +248,8 @@ export default function StaffAccountsPage() {
                 ? 'bg-blue-50 text-blue-700 border-blue-200' 
                 : 'bg-emerald-50 text-emerald-700 border-emerald-200'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isDispatcher ? 'bg-blue-600' : 'bg-emerald-600'}`}></span>
-              {isDispatcher ? 'Điều phối viên (Dispatcher)' : 'Tài xế (Driver)'}
+              <span className={`w-1.5 h-1.5 rounded-full ${isDispatcher ? 'bg-blue-600': 'bg-emerald-600'}`}></span>
+              {isDispatcher ? 'Điều phối viên (Dispatcher)': 'Tài xế (Driver)'}
             </span>
             {isDispatcher && record.order_form_token && (
               <Tooltip title="Sao chép liên kết đặt đơn">
@@ -285,8 +285,8 @@ export default function StaffAccountsPage() {
               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
               : 'bg-rose-50 text-rose-700 border border-rose-200'
           }`}>
-            {isActive ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> : <XCircle className="w-3.5 h-3.5 text-rose-600" />}
-            {isActive ? 'Hoạt động (Active)' : 'Đã khóa (Locked)'}
+            {isActive ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />: <XCircle className="w-3.5 h-3.5 text-rose-600" />}
+            {isActive ? 'Hoạt động (Active)': 'Đã khóa (Locked)'}
           </span>
         );
       }
@@ -298,7 +298,7 @@ export default function StaffAccountsPage() {
       render: (date) => (
         <span className="text-xs text-slate-500 flex items-center gap-1">
           <Calendar className="w-3.5 h-3.5 text-slate-400" />
-          {date ? new Date(date).toLocaleDateString('vi-VN') : '—'}
+          {date ? new Date(date).toLocaleDateString('vi-VN'): '—'}
         </span>
       )
     },
@@ -321,26 +321,26 @@ export default function StaffAccountsPage() {
           </Tooltip>
 
           <Popconfirm
-            title={record.status === 'ACTIVE' ? "Xác nhận khóa tài khoản?" : "Xác nhận mở khóa tài khoản?"}
+            title={record.status === 'ACTIVE' ? "Xác nhận khóa tài khoản?": "Xác nhận mở khóa tài khoản?"}
             description={
               record.status === 'ACTIVE' 
                 ? `Tài khoản ${record.username} sẽ không thể đăng nhập vào hệ thống.` 
                 : `Cho phép tài khoản ${record.username} đăng nhập lại hệ thống.`
             }
             onConfirm={() => handleToggleStatus(record)}
-            okText={record.status === 'ACTIVE' ? "Khóa tài khoản" : "Mở khóa"}
+            okText={record.status === 'ACTIVE' ? "Khóa tài khoản": "Mở khóa"}
             cancelText="Hủy"
             okButtonProps={{ danger: record.status === 'ACTIVE', loading: statusTogglingId === record.id }}
           >
-            <Tooltip title={record.status === 'ACTIVE' ? "Khóa tài khoản" : "Mở khóa tài khoản"}>
+            <Tooltip title={record.status === 'ACTIVE' ? "Khóa tài khoản": "Mở khóa tài khoản"}>
               <Button 
                 type="text" 
                 size="small"
                 danger={record.status === 'ACTIVE'}
-                className={record.status === 'ACTIVE' ? 'hover:bg-red-50 text-red-500' : 'hover:bg-emerald-50 text-emerald-600'}
+                className={record.status === 'ACTIVE' ? 'hover:bg-red-50 text-red-500': 'hover:bg-emerald-50 text-emerald-600'}
                 loading={statusTogglingId === record.id}
               >
-                {record.status === 'ACTIVE' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                {record.status === 'ACTIVE' ? <Lock className="w-4 h-4" />: <Unlock className="w-4 h-4" />}
               </Button>
             </Tooltip>
           </Popconfirm>
@@ -426,7 +426,7 @@ export default function StaffAccountsPage() {
         </div>
       </div>
 
-      {/* Screen 26: Toolbar tìm kiếm & bộ lọc */}
+      {/*: Toolbar tìm kiếm & bộ lọc */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
           <Input
@@ -477,7 +477,7 @@ export default function StaffAccountsPage() {
         </div>
       </div>
 
-      {/* Screen 26: Bảng danh sách tài khoản */}
+      {/*: Bảng danh sách tài khoản */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         <Table
           columns={columns}
@@ -501,16 +501,16 @@ export default function StaffAccountsPage() {
         />
       </div>
 
-      {/* Screen 27: Modal Chi tiết & Tạo mới tài khoản (Staff Account Details) */}
+      {/*: Modal Chi tiết & Tạo mới tài khoản (Staff Account Details) */}
       <Modal
         title={
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              {isEditMode ? <Edit3 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {isEditMode ? <Edit3 className="w-4 h-4" />: <Plus className="w-4 h-4" />}
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900 leading-none">
-                {isEditMode ? 'Chi tiết & Cập nhật tài khoản' : 'Thêm mới tài khoản nhân viên'}
+                {isEditMode ? 'Chi tiết & Cập nhật tài khoản': 'Thêm mới tài khoản nhân viên'}
               </h2>
             </div>
           </div>
@@ -528,7 +528,7 @@ export default function StaffAccountsPage() {
             onClick={handleSubmitForm}
             className="bg-blue-600 hover:bg-blue-500 rounded-xl font-semibold"
           >
-            {isEditMode ? 'Lưu thay đổi' : 'Tạo tài khoản'}
+            {isEditMode ? 'Lưu thay đổi': 'Tạo tài khoản'}
           </Button>
         ]}
         width={560}
@@ -549,7 +549,7 @@ export default function StaffAccountsPage() {
               { min: 3, message: 'Username tối thiểu 3 ký tự' },
               { pattern: /^[a-zA-Z0-9_.-]+$/, message: 'Username chỉ được gồm chữ cái, số, dấu gạch dưới hoặc chấm' }
             ]}
-            extra={isEditMode ? "Tên đăng nhập không thể thay đổi sau khi tạo." : "Tên đăng nhập là duy nhất và dùng để đăng nhập vào hệ thống."}
+            extra={isEditMode ? "Tên đăng nhập không thể thay đổi sau khi tạo.": "Tên đăng nhập là duy nhất và dùng để đăng nhập vào hệ thống."}
           >
             <Input 
               prefix={<User className="w-4 h-4 text-slate-400" />} 
@@ -623,18 +623,18 @@ export default function StaffAccountsPage() {
             name="password"
             label={
               <span className="font-semibold text-slate-700">
-                {isEditMode ? 'Đặt lại mật khẩu mới (Để trống nếu không đổi)' : 'Mật khẩu ban đầu (Tùy chọn)'}
+                {isEditMode ? 'Đặt lại mật khẩu mới (Để trống nếu không đổi)': 'Mật khẩu ban đầu (Tùy chọn)'}
               </span>
             }
-            extra={isEditMode ? null : "Nếu để trống, mật khẩu mặc định khởi tạo sẽ là: Nexlog@2026"}
+            extra={isEditMode ? null: "Nếu để trống, mật khẩu mặc định khởi tạo sẽ là: Nexlog@2026"}
           >
             <Input.Password 
-              placeholder={isEditMode ? "Nhập mật khẩu mới nếu muốn đổi" : "Mặc định: Nexlog@2026"} 
+              placeholder={isEditMode ? "Nhập mật khẩu mới nếu muốn đổi": "Mặc định: Nexlog@2026"} 
               className="rounded-xl h-10"
             />
           </Form.Item>
 
-          {/* Status (Active / Locked - Báo lỗi MSG06 khi đăng nhập nếu Locked) */}
+          {/* Status */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
             <div className="flex items-center justify-between">
               <div>
@@ -673,7 +673,7 @@ export default function StaffAccountsPage() {
                   </p>
                   <div className="mt-2 p-2 bg-white rounded-lg border border-blue-100 flex items-center justify-between gap-2">
                     <span className="font-mono text-xs text-slate-700 truncate select-all">
-                      {typeof window !== 'undefined' ? `${window.location.origin}/customer/order?token=${selectedAccount.order_form_token || 'chua-co-token'}` : `/customer/order?token=${selectedAccount.order_form_token}`}
+                      {typeof window !== 'undefined' ? `${window.location.origin}/customer/order?token=${selectedAccount.order_form_token || 'chua-co-token'}`: `/customer/order?token=${selectedAccount.order_form_token}`}
                     </span>
                     <Button 
                       size="small"

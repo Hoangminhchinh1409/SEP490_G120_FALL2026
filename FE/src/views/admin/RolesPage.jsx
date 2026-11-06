@@ -13,10 +13,10 @@ const PERMISSION_METADATA = {
   ORDER_ASSIGN: { module: 'Đơn hàng (Orders)', name: 'Điều phối & Lập Kế hoạch Chuyến xe' },
   TRIP_MONITOR: { module: 'Vận hành (Trips)', name: 'Giám sát Hành trình Chuyến xe (GPS/Trip)' },
   FLEET_MANAGE: { module: 'Đội xe (Fleet)', name: 'Quản lý Thông tin Xe & Hồ sơ Tài xế' },
-  DRIVER_SHIFT_MANAGE: { module: 'Đội xe (Fleet)', name: 'Quản lý & Phê duyệt Ca trực Tài xế (UC-20)' },
+  DRIVER_SHIFT_MANAGE: { module: 'Đội xe (Fleet)', name: 'Quản lý & Phê duyệt Ca trực Tài xế' },
   VENDOR_MANAGE: { module: 'Đối tác (Vendors)', name: 'Quản lý & Phê duyệt Nhà xe Đối tác (API-07)' },
   CONTRACT_MANAGE: { module: 'Hợp đồng (Contracts)', name: 'Quản lý Hợp đồng Vận chuyển Khách/Vendor' },
-  INCIDENT_MANAGE: { module: 'Sự cố & Khiếu nại', name: 'Xử lý Sự cố & Duyệt Bồi thường (UC-47)' },
+  INCIDENT_MANAGE: { module: 'Sự cố & Khiếu nại', name: 'Xử lý Sự cố & Duyệt Bồi thường' },
   NEWS_MANAGE: { module: 'Truyền thông (News)', name: 'Viết & Xuất bản Tin tức Website' },
 };
 
@@ -143,7 +143,7 @@ export default function RolesPage() {
         const isAdmin = Number(r.id) === 1;
 
         return (
-          <Tooltip title={isAdmin ? 'Administrator mặc định có đầy đủ quyền hạn' : `Bật/Tắt quyền cho ${r.name}`}>
+          <Tooltip title={isAdmin ? 'Administrator mặc định có đầy đủ quyền hạn': `Bật/Tắt quyền cho ${r.name}`}>
             <Checkbox
               checked={isChecked}
               disabled={isAdmin}
@@ -177,7 +177,7 @@ export default function RolesPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Ma Trận Phân Quyền Vai Trò (Roles & Permissions)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Thiết lập quyền truy cập cho từng chức năng theo Bảng ma trận phân quyền chuẩn của SRS (UC-34).
+            Thiết lập quyền truy cập cho từng chức năng theo bảng ma trận phân quyền hệ thống.
           </p>
         </div>
 
@@ -198,7 +198,7 @@ export default function RolesPage() {
             loading={saving}
             disabled={!hasChanges}
             className={`h-10 px-5 rounded-xl font-semibold shadow-sm ${
-              hasChanges ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20' : ''
+              hasChanges ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20': ''
             }`}
           >
             Lưu thay đổi phân quyền

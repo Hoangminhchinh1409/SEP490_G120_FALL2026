@@ -7,13 +7,13 @@ export default function VendorsPage() {
   const [loading, setLoading] = useState(true);
   const [activeMainTab, setActiveMainTab] = useState('VENDORS'); // 'VENDORS', 'CONTRACTS', 'LOCATIONS'
 
-  // Vendors state (Screen 28 & 29)
+  // Vendors state
   const [vendors, setVendors] = useState([]);
   const [vendorSummary, setVendorSummary] = useState({ total: 0, approved: 0, pending: 0, suspended: 0 });
   const [vendorFilter, setVendorFilter] = useState('ALL'); // 'ALL', 'APPROVED', 'PENDING', 'SUSPENDED'
   const [vendorSearch, setVendorSearch] = useState('');
 
-  // Modal Screen 29 (Add / Edit Vendor)
+  // Modal  (Add / Edit Vendor)
   const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
   const [editingVendor, setEditingVendor] = useState(null);
   const [vendorForm, setVendorForm] = useState({
@@ -24,12 +24,12 @@ export default function VendorsPage() {
   });
   const [savingVendor, setSavingVendor] = useState(false);
 
-  // Contracts state (Screen 30, 31 Read-only)
+  // Contracts state
   const [contracts, setContracts] = useState([]);
   const [contractsLoading, setContractsLoading] = useState(false);
   const [contractSearch, setContractSearch] = useState('');
 
-  // Locations state (Screen 37 Read-only)
+  // Locations state
   const [locations, setLocations] = useState([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
@@ -138,7 +138,7 @@ export default function VendorsPage() {
   // Save Vendor (Create or Update)
   const handleSaveVendor = async () => {
     if (!vendorForm.company_name?.trim()) {
-      message.warning('Vui lòng nhập tên công ty nhà xe đối tác (MSG02).');
+      message.warning('Vui lòng nhập tên công ty nhà xe đối tác.');
       return;
     }
 
@@ -244,7 +244,7 @@ export default function VendorsPage() {
           <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
             <div
               className="bg-secondary h-full rounded-full"
-              style={{ width: `${vendorSummary.total ? (vendorSummary.approved / vendorSummary.total) * 100 : 0}%` }}
+              style={{ width: `${vendorSummary.total ? (vendorSummary.approved / vendorSummary.total) * 100: 0}%` }}
             ></div>
           </div>
         </div>
@@ -261,7 +261,7 @@ export default function VendorsPage() {
           <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
             <div
               className="bg-amber-600 h-full rounded-full"
-              style={{ width: `${vendorSummary.total ? (vendorSummary.pending / vendorSummary.total) * 100 : 0}%` }}
+              style={{ width: `${vendorSummary.total ? (vendorSummary.pending / vendorSummary.total) * 100: 0}%` }}
             ></div>
           </div>
         </div>
@@ -278,7 +278,7 @@ export default function VendorsPage() {
           <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
             <div
               className="bg-error h-full rounded-full"
-              style={{ width: `${vendorSummary.total ? (vendorSummary.suspended / vendorSummary.total) * 100 : 0}%` }}
+              style={{ width: `${vendorSummary.total ? (vendorSummary.suspended / vendorSummary.total) * 100: 0}%` }}
             ></div>
           </div>
         </div>
@@ -323,7 +323,7 @@ export default function VendorsPage() {
         </button>
       </div>
 
-      {/* SUB-MODULE 1: VENDORS LIST & MANAGEMENT (SCREEN 28 & 29) */}
+      {/* SUB-MODULE 1: VENDORS LIST & MANAGEMENT */}
       {activeMainTab === 'VENDORS' && (
         <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md border border-outline-variant/20 space-y-space-md">
           {/* Filter & Search Bar */}
@@ -333,7 +333,7 @@ export default function VendorsPage() {
               <button
                 onClick={() => setVendorFilter('ALL')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
-                  vendorFilter === 'ALL' ? 'bg-primary text-on-primary' : 'bg-surface-container-low text-on-surface-variant'
+                  vendorFilter === 'ALL' ? 'bg-primary text-on-primary': 'bg-surface-container-low text-on-surface-variant'
                 }`}
               >
                 Tất cả ({vendors.length})
@@ -341,7 +341,7 @@ export default function VendorsPage() {
               <button
                 onClick={() => setVendorFilter('APPROVED')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
-                  vendorFilter === 'APPROVED' ? 'bg-secondary text-white' : 'bg-surface-container-low text-on-surface-variant'
+                  vendorFilter === 'APPROVED' ? 'bg-secondary text-white': 'bg-surface-container-low text-on-surface-variant'
                 }`}
               >
                 Đã duyệt ({vendorSummary.approved})
@@ -349,7 +349,7 @@ export default function VendorsPage() {
               <button
                 onClick={() => setVendorFilter('PENDING')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
-                  vendorFilter === 'PENDING' ? 'bg-amber-600 text-white' : 'bg-surface-container-low text-on-surface-variant'
+                  vendorFilter === 'PENDING' ? 'bg-amber-600 text-white': 'bg-surface-container-low text-on-surface-variant'
                 }`}
               >
                 Chờ duyệt ({vendorSummary.pending})
@@ -357,7 +357,7 @@ export default function VendorsPage() {
               <button
                 onClick={() => setVendorFilter('SUSPENDED')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
-                  vendorFilter === 'SUSPENDED' ? 'bg-error text-white' : 'bg-surface-container-low text-on-surface-variant'
+                  vendorFilter === 'SUSPENDED' ? 'bg-error text-white': 'bg-surface-container-low text-on-surface-variant'
                 }`}
               >
                 Bị đình chỉ ({vendorSummary.suspended})
@@ -380,9 +380,9 @@ export default function VendorsPage() {
 
           {loading ? (
             <div className="py-16 flex justify-center"><Spin size="large" /></div>
-          ) : filteredVendors.length === 0 ? (
+          ): filteredVendors.length === 0 ? (
             <div className="py-12 text-center text-outline">Không tìm thấy nhà xe đối tác nào phù hợp.</div>
-          ) : (
+          ): (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -419,20 +419,20 @@ export default function VendorsPage() {
                           <div className="flex flex-col">
                             <span className="font-mono text-xs font-bold text-primary">{v.contract_number}</span>
                             <span className="text-[10px] text-outline">
-                              Trần: {v.liability_cap ? `${v.liability_cap.toLocaleString('vi-VN')} đ` : 'N/A'}
+                              Trần: {v.liability_cap ? `${v.liability_cap.toLocaleString('vi-VN')} đ`: 'N/A'}
                             </span>
                           </div>
-                        ) : (
+                        ): (
                           <span className="text-xs text-outline italic">Chưa liên kết HĐ</span>
                         )}
                       </td>
                       <td className="py-3.5 px-space-md">
                         <Tag color={
-                          v.approval_status === 'APPROVED' ? 'green' :
-                          v.approval_status === 'SUSPENDED' ? 'red' : 'gold'
+                          v.approval_status === 'APPROVED' ? 'green':
+                          v.approval_status === 'SUSPENDED' ? 'red': 'gold'
                         }>
-                          {v.approval_status === 'APPROVED' ? 'ĐÃ DUYỆT' :
-                           v.approval_status === 'SUSPENDED' ? 'ĐÌNH CHỈ' : 'CHỜ DUYỆT'}
+                          {v.approval_status === 'APPROVED' ? 'ĐÃ DUYỆT':
+                           v.approval_status === 'SUSPENDED' ? 'ĐÌNH CHỈ': 'CHỜ DUYỆT'}
                         </Tag>
                       </td>
                       <td className="py-3.5 px-space-md text-right">
@@ -450,7 +450,7 @@ export default function VendorsPage() {
                             >
                               Phê duyệt
                             </button>
-                          ) : (
+                          ): (
                             <button
                               onClick={() => handleUpdateStatus(v.id, 'SUSPENDED')}
                               className="px-3 py-1 rounded-lg bg-error-container text-on-error-container hover:bg-error hover:text-white text-xs font-bold transition-all cursor-pointer"
@@ -469,7 +469,7 @@ export default function VendorsPage() {
         </div>
       )}
 
-      {/* SUB-MODULE 2: TRANSPORT CONTRACTS READ-ONLY (SCREEN 30 & 31) */}
+      {/* SUB-MODULE 2: TRANSPORT CONTRACTS READ-ONLY */}
       {activeMainTab === 'CONTRACTS' && (
         <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md border border-outline-variant/20 space-y-space-md">
           <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container pb-space-sm">
@@ -498,9 +498,9 @@ export default function VendorsPage() {
 
           {contractsLoading ? (
             <div className="py-16 flex justify-center"><Spin size="large" /></div>
-          ) : contracts.length === 0 ? (
+          ): contracts.length === 0 ? (
             <div className="py-12 text-center text-outline">Chưa có hợp đồng vận tải nào trong cơ sở dữ liệu.</div>
-          ) : (
+          ): (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -526,21 +526,21 @@ export default function VendorsPage() {
                           {c.partner_name}
                         </td>
                         <td className="py-3 px-space-md">
-                          <Tag color={c.partner_type === 'VENDOR' ? 'blue' : 'purple'}>
+                          <Tag color={c.partner_type === 'VENDOR' ? 'blue': 'purple'}>
                             {c.partner_type}
                           </Tag>
                         </td>
                         <td className="py-3 px-space-md font-mono font-bold text-error">
-                          {c.liability_cap ? `${c.liability_cap.toLocaleString('vi-VN')} đ` : '500.000.000 đ (Luật định)'}
+                          {c.liability_cap ? `${c.liability_cap.toLocaleString('vi-VN')} đ`: '500.000.000 đ (Luật định)'}
                         </td>
                         <td className="py-3 px-space-md font-mono text-outline">
-                          {c.waiting_fee_per_hour ? `${c.waiting_fee_per_hour.toLocaleString('vi-VN')} đ/h` : 'Miễn phí 60p'}
+                          {c.waiting_fee_per_hour ? `${c.waiting_fee_per_hour.toLocaleString('vi-VN')} đ/h`: 'Miễn phí 60p'}
                         </td>
                         <td className="py-3 px-space-md text-outline">
-                          {c.valid_from ? `${new Date(c.valid_from).toLocaleDateString('vi-VN')} ➔ ${new Date(c.valid_to).toLocaleDateString('vi-VN')}` : 'Vô thời hạn'}
+                          {c.valid_from ? `${new Date(c.valid_from).toLocaleDateString('vi-VN')} ➔ ${new Date(c.valid_to).toLocaleDateString('vi-VN')}`: 'Vô thời hạn'}
                         </td>
                         <td className="py-3 px-space-md">
-                          <Tag color={c.status === 'ACTIVE' ? 'green' : 'default'}>
+                          <Tag color={c.status === 'ACTIVE' ? 'green': 'default'}>
                             {c.status}
                           </Tag>
                         </td>
@@ -553,7 +553,7 @@ export default function VendorsPage() {
         </div>
       )}
 
-      {/* SUB-MODULE 3: LOCATIONS READ-ONLY (SCREEN 37) */}
+      {/* SUB-MODULE 3: LOCATIONS READ-ONLY */}
       {activeMainTab === 'LOCATIONS' && (
         <div className="bg-surface-container-lowest rounded-xl shadow-sm p-space-md border border-outline-variant/20 space-y-space-md">
           <div className="flex flex-wrap items-center justify-between gap-space-sm border-b border-surface-container pb-space-sm">
@@ -582,9 +582,9 @@ export default function VendorsPage() {
 
           {locationsLoading ? (
             <div className="py-16 flex justify-center"><Spin size="large" /></div>
-          ) : locations.length === 0 ? (
+          ): locations.length === 0 ? (
             <div className="py-12 text-center text-outline">Chưa có dữ liệu địa điểm trong hệ thống.</div>
-          ) : (
+          ): (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -625,12 +625,12 @@ export default function VendorsPage() {
         </div>
       )}
 
-      {/* MODAL SCREEN 29: THÊM / SỬA NHÀ XE ĐỐI TÁC (UC-23) */}
+      {/* MODAL: THÊM / SỬA NHÀ XE ĐỐI TÁC */}
       <Modal
         title={
           <div className="flex items-center gap-2 text-primary font-headline-sm font-bold">
             <span className="material-symbols-outlined text-secondary">domain</span>
-            <span>{editingVendor ? 'Cập Nhật Nhà Xe Đối Tác' : 'Khai Báo Nhà Xe Đối Tác Mới'}</span>
+            <span>{editingVendor ? 'Cập Nhật Nhà Xe Đối Tác': 'Khai Báo Nhà Xe Đối Tác Mới'}</span>
           </div>
         }
         open={isVendorModalOpen}
@@ -645,7 +645,7 @@ export default function VendorsPage() {
             </label>
             <Input
               value={vendorForm.company_name}
-              onChange={(e) => setVendorForm({ ...vendorForm, company_name: e.target.value })}
+              onChange={(e) => setVendorForm({...vendorForm, company_name: e.target.value })}
               placeholder="VD: Công ty Vận tải Quốc tế ALS Logistics"
             />
           </div>
@@ -657,7 +657,7 @@ export default function VendorsPage() {
               </label>
               <Input
                 value={vendorForm.contact_person}
-                onChange={(e) => setVendorForm({ ...vendorForm, contact_person: e.target.value })}
+                onChange={(e) => setVendorForm({...vendorForm, contact_person: e.target.value })}
                 placeholder="VD: Nguyễn Văn Nam"
               />
             </div>
@@ -667,7 +667,7 @@ export default function VendorsPage() {
               </label>
               <Input
                 value={vendorForm.phone}
-                onChange={(e) => setVendorForm({ ...vendorForm, phone: e.target.value })}
+                onChange={(e) => setVendorForm({...vendorForm, phone: e.target.value })}
                 placeholder="VD: 0988776655"
               />
             </div>
@@ -679,7 +679,7 @@ export default function VendorsPage() {
             </label>
             <Input
               value={vendorForm.truck_types}
-              onChange={(e) => setVendorForm({ ...vendorForm, truck_types: e.target.value })}
+              onChange={(e) => setVendorForm({...vendorForm, truck_types: e.target.value })}
               placeholder="VD: Xe tải 1.5T - 8T thùng kín, xe đông lạnh"
             />
           </div>
@@ -696,7 +696,7 @@ export default function VendorsPage() {
               disabled={savingVendor}
               className="px-5 py-2 rounded-xl bg-secondary text-on-secondary text-xs font-bold hover:bg-secondary-container transition-all cursor-pointer shadow-sm"
             >
-              {savingVendor ? 'Đang lưu...' : 'Lưu thông tin nhà xe'}
+              {savingVendor ? 'Đang lưu...': 'Lưu thông tin nhà xe'}
             </button>
           </div>
         </div>

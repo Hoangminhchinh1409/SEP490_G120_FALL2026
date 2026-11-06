@@ -20,13 +20,13 @@ export default function FleetPage() {
   const [selectedTruckStatus, setSelectedTruckStatus] = useState('ALL');
 
   // Modals
-  // 1. Truck Modal (Screen 22 - UC-18)
+  // 1. Truck Modal
   const [isTruckModalOpen, setIsTruckModalOpen] = useState(false);
   const [editingTruck, setEditingTruck] = useState(null);
   const [truckForm] = Form.useForm();
   const [submittingTruck, setSubmittingTruck] = useState(false);
 
-  // 2. Driver Modal (Screen 24 - UC-19)
+  // 2. Driver Modal
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [editingDriver, setEditingDriver] = useState(null);
   const [driverForm] = Form.useForm();
@@ -67,7 +67,7 @@ export default function FleetPage() {
   }, []);
 
   // ==========================================
-  // XỬ LÝ XE TẢI (UC-18 - Screen 21 & 22)
+  // XỬ LÝ XE TẢI
   // ==========================================
   const handleOpenCreateTruck = () => {
     setEditingTruck(null);
@@ -99,8 +99,8 @@ export default function FleetPage() {
         box_height: truck.box_height || truck.box_height_cm,
         required_license_class: truck.required_license_class,
         gps_device_id: truck.gps_device_id,
-        inspection_expiry: truck.inspection_expiry ? dayjs(truck.inspection_expiry) : null,
-        insurance_expiry: truck.insurance_expiry ? dayjs(truck.insurance_expiry) : null,
+        inspection_expiry: truck.inspection_expiry ? dayjs(truck.inspection_expiry): null,
+        insurance_expiry: truck.insurance_expiry ? dayjs(truck.insurance_expiry): null,
         status: truck.status
       });
     }, 0);
@@ -119,8 +119,8 @@ export default function FleetPage() {
         box_height: Number(values.box_height),
         required_license_class: values.required_license_class,
         gps_device_id: values.gps_device_id,
-        inspection_expiry: values.inspection_expiry ? values.inspection_expiry.format('YYYY-MM-DD') : null,
-        insurance_expiry: values.insurance_expiry ? values.insurance_expiry.format('YYYY-MM-DD') : null,
+        inspection_expiry: values.inspection_expiry ? values.inspection_expiry.format('YYYY-MM-DD'): null,
+        insurance_expiry: values.insurance_expiry ? values.insurance_expiry.format('YYYY-MM-DD'): null,
         status: values.status
       };
 
@@ -165,7 +165,7 @@ export default function FleetPage() {
   };
 
   // ==========================================
-  // XỬ LÝ HỒ SƠ TÀI XẾ (UC-19 - Screen 23 & 24)
+  // XỬ LÝ HỒ SƠ TÀI XẾ
   // ==========================================
   const handleOpenCreateDriver = () => {
     setEditingDriver(null);
@@ -191,7 +191,7 @@ export default function FleetPage() {
         phone: driver.phone,
         license_number: driver.license_number,
         license_class: driver.license_class || driver.license,
-        expiry: driver.expiry || driver.license_expiry ? dayjs(driver.expiry || driver.license_expiry) : null,
+        expiry: driver.expiry || driver.license_expiry ? dayjs(driver.expiry || driver.license_expiry): null,
         status: driver.status || 'ACTIVE'
       });
     }, 0);
@@ -207,7 +207,7 @@ export default function FleetPage() {
         phone: values.phone,
         license_number: values.license_number,
         license_class: values.license_class,
-        expiry: values.expiry ? values.expiry.format('YYYY-MM-DD') : null,
+        expiry: values.expiry ? values.expiry.format('YYYY-MM-DD'): null,
         status: values.status
       };
 

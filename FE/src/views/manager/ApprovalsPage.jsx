@@ -13,7 +13,7 @@ export default function ApprovalsPage() {
   const [sourceFilter, setSourceFilter] = useState('ALL'); // 'ALL', 'DRIVER_REPORTED', 'DISPATCHER_ESCALATED', 'CUSTOMER_CLAIM'
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modal Chi tiết & Xét duyệt bồi thường (UC-26)
+  // Modal Chi tiết & Xét duyệt bồi thường
   const [selectedClaim, setSelectedClaim] = useState(null);
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
   const [claimComment, setClaimComment] = useState('');
@@ -65,14 +65,14 @@ export default function ApprovalsPage() {
     setIsClaimModalOpen(true);
   };
 
-  // Xử lý Duyệt hoặc Từ chối bồi thường (UC-26)
+  // Xử lý Duyệt hoặc Từ chối bồi thường
   const handleDecideClaim = async (action) => {
     if (!selectedClaim) return;
     const isApprove = action === 'APPROVE';
 
     // Bắt buộc comment nếu từ chối hoặc duyệt vượt hạn mức trách nhiệm
     if (!isApprove && !claimComment.trim()) {
-      message.warning('Bắt buộc nhập nhận xét/lý do khi từ chối yêu cầu bồi thường (MSG02).');
+      message.warning('Bắt buộc nhập nhận xét/lý do khi từ chối yêu cầu bồi thường.');
       return;
     }
     if (isApprove && selectedClaim.is_exceeding_cap && !claimComment.trim()) {
@@ -160,7 +160,7 @@ export default function ApprovalsPage() {
               <Tag color="error" className="font-bold text-xs px-2.5 py-0.5 rounded-full">
                 {claimSummary.pending} Chờ phê duyệt
               </Tag>
-            ) : (
+            ): (
               <Tag color="green" className="font-bold text-xs px-2.5 py-0.5 rounded-full">
                 Tất cả đã xử lý
               </Tag>
@@ -276,7 +276,7 @@ export default function ApprovalsPage() {
         {/* Table: Danh sách yêu cầu bồi thường */}
         {loading ? (
           <div className="py-16 flex justify-center"><Spin size="large" /></div>
-        ) : filteredClaims.length === 0 ? (
+        ): filteredClaims.length === 0 ? (
           <div className="py-16 text-center text-on-surface-variant bg-surface-container-low/30 rounded-2xl border border-dashed border-surface-container">
             <span className="material-symbols-outlined text-4xl text-secondary mb-1">verified_user</span>
             <p className="font-bold text-sm text-primary">Không có yêu cầu bồi thường nào</p>
@@ -284,7 +284,7 @@ export default function ApprovalsPage() {
               Toàn bộ hàng hóa và chuyến vận chuyển hiện tại không phát sinh đền bù cần phê duyệt.
             </p>
           </div>
-        ) : (
+        ): (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -333,11 +333,11 @@ export default function ApprovalsPage() {
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-700 font-bold text-[10px] border border-blue-200">
                               <span>👨‍✈️ Tài xế báo cáo</span>
                             </span>
-                          ) : c.source === 'DISPATCHER_ESCALATED' ? (
+                          ): c.source === 'DISPATCHER_ESCALATED' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-700 font-bold text-[10px] border border-purple-200">
                               <span>🎧 ĐPV chuyển tiếp</span>
                             </span>
-                          ) : (
+                          ): (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 font-bold text-[10px] border border-emerald-200">
                               <span>🏢 Khách hàng khiếu nại</span>
                             </span>
@@ -354,7 +354,7 @@ export default function ApprovalsPage() {
                               {c.incident_description || c.reason || 'Sự cố trên tuyến'}
                             </span>
                           </div>
-                        ) : (
+                        ): (
                           <div>
                             <span className="text-[11px] text-on-surface-variant block truncate max-w-[200px]" title={c.reason}>
                               {c.reason || 'Khiếu nại hư hỏng hàng'}
@@ -370,10 +370,10 @@ export default function ApprovalsPage() {
                         <div>
                           <span className="font-mono font-bold text-primary block text-[11px]">{c.trip_code}</span>
                           <span className="text-[11px] text-on-surface-variant block">
-                            {c.truck_plate ? `${c.truck_plate} · ` : ''}{c.driver_name || 'Tài xế'}
+                            {c.truck_plate ? `${c.truck_plate} · `: ''}{c.driver_name || 'Tài xế'}
                           </span>
                         </div>
-                      ) : (
+                      ): (
                         <span className="text-on-surface-variant italic">Chưa gắn chuyến</span>
                       )}
                     </td>
@@ -394,10 +394,10 @@ export default function ApprovalsPage() {
                     {/* Cột 6: Trạng thái */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <Tag
-                        color={c.status === 'APPROVED' ? 'green' : c.status === 'REJECTED' ? 'red' : 'orange'}
+                        color={c.status === 'APPROVED' ? 'green': c.status === 'REJECTED' ? 'red': 'orange'}
                         className="font-bold text-xs"
                       >
-                        {c.status === 'APPROVED' ? 'Đã duyệt' : c.status === 'REJECTED' ? 'Từ chối' : 'Chờ duyệt'}
+                        {c.status === 'APPROVED' ? 'Đã duyệt': c.status === 'REJECTED' ? 'Từ chối': 'Chờ duyệt'}
                       </Tag>
                     </td>
 
@@ -408,7 +408,7 @@ export default function ApprovalsPage() {
                         month: '2-digit',
                         hour: '2-digit',
                         minute: '2-digit'
-                      }) : 'N/A'}
+                      }): 'N/A'}
                     </td>
 
                     {/* Cột 8: Thao tác */}
@@ -422,7 +422,7 @@ export default function ApprovalsPage() {
                         className="px-2.5 py-1.5 rounded-lg bg-surface-container-low group-hover:bg-primary group-hover:text-on-primary text-primary font-bold text-xs transition-colors cursor-pointer inline-flex items-center gap-1 border border-surface-container"
                       >
                         <span className="material-symbols-outlined text-[14px]">visibility</span>
-                        <span>{c.status === 'PENDING' ? 'Xét duyệt' : 'Chi tiết'}</span>
+                        <span>{c.status === 'PENDING' ? 'Xét duyệt': 'Chi tiết'}</span>
                       </button>
                     </td>
                   </tr>
@@ -439,7 +439,7 @@ export default function ApprovalsPage() {
         )}
       </div>
 
-      {/* MODAL CHI TIẾT & XÉT DUYỆT BỒI THƯỜNG (UC-26) */}
+      {/* MODAL CHI TIẾT & XÉT DUYỆT BỒI THƯỜNG */}
       <Modal
         title={
           <div className="flex items-center justify-between w-full pr-6">
@@ -449,8 +449,8 @@ export default function ApprovalsPage() {
                 Xét duyệt Bồi thường: {selectedClaim?.claim_code} – Đơn {selectedClaim?.order_code}
               </span>
             </div>
-            <Tag color={selectedClaim?.status === 'APPROVED' ? 'green' : selectedClaim?.status === 'REJECTED' ? 'red' : 'orange'} className="font-bold text-xs">
-              {selectedClaim?.status === 'APPROVED' ? 'Đã duyệt' : selectedClaim?.status === 'REJECTED' ? 'Từ chối' : 'Chờ phê duyệt'}
+            <Tag color={selectedClaim?.status === 'APPROVED' ? 'green': selectedClaim?.status === 'REJECTED' ? 'red': 'orange'} className="font-bold text-xs">
+              {selectedClaim?.status === 'APPROVED' ? 'Đã duyệt': selectedClaim?.status === 'REJECTED' ? 'Từ chối': 'Chờ phê duyệt'}
             </Tag>
           </div>
         }
@@ -470,7 +470,7 @@ export default function ApprovalsPage() {
                   <div>Xe vận chuyển: <strong className="font-mono text-primary">{selectedClaim.truck_plate}</strong></div>
                 )}
                 {selectedClaim.driver_name && (
-                  <div>Tài xế: <strong className="text-primary">{selectedClaim.driver_name}</strong> {selectedClaim.driver_phone ? `(${selectedClaim.driver_phone})` : ''}</div>
+                  <div>Tài xế: <strong className="text-primary">{selectedClaim.driver_name}</strong> {selectedClaim.driver_phone ? `(${selectedClaim.driver_phone})`: ''}</div>
                 )}
               </div>
               <div className="pt-2 border-t border-surface-container flex items-center justify-between">
@@ -514,7 +514,7 @@ export default function ApprovalsPage() {
                 </div>
                 <div>
                   <span className="text-on-surface-variant">Trách nhiệm lỗi: </span>
-                  <strong className={selectedClaim.incident_fault === 'COMPANY' ? 'text-error' : 'text-primary'}>
+                  <strong className={selectedClaim.incident_fault === 'COMPANY' ? 'text-error': 'text-primary'}>
                     {selectedClaim.incident_fault === 'COMPANY'
                       ? 'Lỗi Công ty / Đội xe'
                       : selectedClaim.incident_fault === 'CUSTOMER'
@@ -543,7 +543,7 @@ export default function ApprovalsPage() {
                     </div>
                   ))}
                 </div>
-              ) : (
+              ): (
                 <div className="grid grid-cols-3 gap-3">
                   <div className="p-3 border border-dashed border-surface-container rounded-xl text-center bg-surface-container-lowest flex flex-col items-center justify-center min-h-[85px]">
                     <span className="material-symbols-outlined text-outline text-[22px] mb-1">photo_camera</span>
@@ -561,23 +561,23 @@ export default function ApprovalsPage() {
               )}
             </div>
 
-            {/* Box 4: Điều khoản hợp đồng & Giới hạn trách nhiệm (BR-37) */}
+            {/* Box 4: Điều khoản hợp đồng & Giới hạn trách nhiệm */}
             <div className="p-4 bg-surface-container-low rounded-xl border border-surface-container">
               <h4 className="font-bold text-primary uppercase text-[11px] mb-2 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-secondary text-[16px]">verified</span>
-                <span>Hạn mức trách nhiệm hợp đồng (BR-37)</span>
+                <span>Hạn mức trách nhiệm hợp đồng</span>
               </h4>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex justify-between border-r border-surface-container pr-3">
                   <span className="text-on-surface-variant">Trần bồi thường HĐ:</span>
                   <span className="font-mono font-bold text-primary">
-                    {selectedClaim.contract_cap ? `${selectedClaim.contract_cap.toLocaleString('vi-VN')} đ` : '500.000.000 đ'}
+                    {selectedClaim.contract_cap ? `${selectedClaim.contract_cap.toLocaleString('vi-VN')} đ`: '500.000.000 đ'}
                   </span>
                 </div>
                 <div className="flex justify-between pl-1">
                   <span className="text-on-surface-variant">Giới hạn trách nhiệm:</span>
                   <span className="font-mono font-bold text-error">
-                    {selectedClaim.liability_limit ? `${selectedClaim.liability_limit.toLocaleString('vi-VN')} đ` : '500.000.000 đ'}
+                    {selectedClaim.liability_limit ? `${selectedClaim.liability_limit.toLocaleString('vi-VN')} đ`: '500.000.000 đ'}
                   </span>
                 </div>
               </div>
@@ -611,10 +611,10 @@ export default function ApprovalsPage() {
             {selectedClaim.status !== 'PENDING' && (
               <div className="p-3 bg-surface-container-low rounded-xl border border-surface-container flex items-center justify-between text-xs">
                 <span className="text-on-surface-variant">
-                  Đã được xử lý vào lúc: <strong>{selectedClaim.decided_at ? new Date(selectedClaim.decided_at).toLocaleString('vi-VN') : 'N/A'}</strong>
+                  Đã được xử lý vào lúc: <strong>{selectedClaim.decided_at ? new Date(selectedClaim.decided_at).toLocaleString('vi-VN'): 'N/A'}</strong>
                 </span>
-                <Tag color={selectedClaim.status === 'APPROVED' ? 'green' : 'red'} className="font-bold">
-                  {selectedClaim.status === 'APPROVED' ? 'ĐÃ DUYỆT BỒI THƯỜNG' : 'ĐÃ TỪ CHỐI'}
+                <Tag color={selectedClaim.status === 'APPROVED' ? 'green': 'red'} className="font-bold">
+                  {selectedClaim.status === 'APPROVED' ? 'ĐÃ DUYỆT BỒI THƯỜNG': 'ĐÃ TỪ CHỐI'}
                 </Tag>
               </div>
             )}
@@ -629,7 +629,7 @@ export default function ApprovalsPage() {
                   className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer transition-colors shadow-sm inline-flex items-center justify-center gap-1.5"
                 >
                   <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                  <span>{decidingClaim ? 'Đang lưu...' : 'Duyệt bồi thường'}</span>
+                  <span>{decidingClaim ? 'Đang lưu...': 'Duyệt bồi thường'}</span>
                 </button>
                 <button
                   type="button"
@@ -638,10 +638,10 @@ export default function ApprovalsPage() {
                   className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold cursor-pointer transition-colors shadow-sm inline-flex items-center justify-center gap-1.5"
                 >
                   <span className="material-symbols-outlined text-[18px]">cancel</span>
-                  <span>{decidingClaim ? 'Đang lưu...' : 'Từ chối bồi thường'}</span>
+                  <span>{decidingClaim ? 'Đang lưu...': 'Từ chối bồi thường'}</span>
                 </button>
               </div>
-            ) : (
+            ): (
               <div className="flex justify-end pt-2">
                 <button
                   type="button"
@@ -656,7 +656,7 @@ export default function ApprovalsPage() {
         )}
       </Modal>
 
-      {/* MODAL TUA LẠI HÀNH TRÌNH GPS (Screen 40) */}
+      {/* MODAL TUA LẠI HÀNH TRÌNH GPS */}
       <Modal
         title={
           <div className="flex items-center gap-2">
@@ -673,7 +673,7 @@ export default function ApprovalsPage() {
       >
         {replayLoading ? (
           <div className="py-12 flex justify-center"><Spin /></div>
-        ) : (
+        ): (
           <div className="space-y-4 pt-2 text-xs">
             <div className="p-4 bg-surface-container-low rounded-xl text-on-surface-variant">
               Mô phỏng lộ trình xe chạy qua định vị GPS hộp đen &amp; phát hiện vi phạm bán kính Geofence tại thời điểm xảy ra sự cố.

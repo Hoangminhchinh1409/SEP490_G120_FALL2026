@@ -7,7 +7,7 @@ import AuthSplitLayout from "../../components/auth/AuthSplitLayout";
 import { API_ENDPOINTS } from "../../api/apiConfig";
 import { fetchWithoutAuth } from "../../api/apiClient";
 
-const MSG70 = "Nếu email có trong hệ thống, link đặt lại mật khẩu đã được gửi.";
+const MSG_RESET_LINK_SENT = "Nếu email có trong hệ thống, link đặt lại mật khẩu đã được gửi.";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function ForgotPasswordPage() {
@@ -37,9 +37,9 @@ export default function ForgotPasswordPage() {
         method: "POST",
         body: JSON.stringify({ email: trimmed }),
       });
-      setInfo(MSG70);
+      setInfo(MSG_RESET_LINK_SENT);
     } catch {
-      setInfo(MSG70);
+      setInfo(MSG_RESET_LINK_SENT);
     } finally {
       setSubmitting(false);
     }

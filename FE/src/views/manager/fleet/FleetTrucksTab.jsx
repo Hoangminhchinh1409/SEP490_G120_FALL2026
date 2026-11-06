@@ -77,13 +77,13 @@ export default function FleetTrucksTab({
                     <Spin size="large" />
                   </td>
                 </tr>
-              ) : filteredTrucks.length === 0 ? (
+              ): filteredTrucks.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-slate-400">
                     Không tìm thấy xe tải phù hợp
                   </td>
                 </tr>
-              ) : (
+              ): (
                 filteredTrucks.map((truck) => {
                   const alertLevel = truck.inspection_alert_level;
                   const daysLeft = truck.days_until_inspection;
@@ -121,22 +121,22 @@ export default function FleetTrucksTab({
                                 <span className="material-symbols-outlined text-[13px]">block</span>
                                 Hết hạn (Khóa xe)
                               </span>
-                            ) : alertLevel === 'URGENT' ? (
+                            ): alertLevel === 'URGENT' ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-100 text-orange-800 font-bold text-[10px] border border-orange-300">
                                 <span className="material-symbols-outlined text-[13px]">alarm</span>
                                 Còn {daysLeft} ngày (Khẩn)
                               </span>
-                            ) : alertLevel === 'WARNING' ? (
+                            ): alertLevel === 'WARNING' ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[10px] border border-amber-300">
                                 Còn {daysLeft} ngày
                               </span>
-                            ) : (
+                            ): (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-medium text-[10px]">
                                 ✓ An toàn ({daysLeft} ngày)
                               </span>
                             )}
                           </div>
-                        ) : (
+                        ): (
                           <span className="text-slate-400 text-xs">—</span>
                         )}
                       </td>
@@ -148,9 +148,9 @@ export default function FleetTrucksTab({
                             <span className="text-slate-600 font-semibold">{truck.current_odometer_km?.toLocaleString('vi-VN') || 25000} km</span>
                             {truck.maintenance_status === 'OVERDUE' ? (
                               <span className="text-[10px] text-red-600 font-bold">Quá hạn BD</span>
-                            ) : truck.maintenance_status === 'DUE_SOON' ? (
+                            ): truck.maintenance_status === 'DUE_SOON' ? (
                               <span className="text-[10px] text-orange-600 font-bold">Cần BD</span>
-                            ) : (
+                            ): (
                               <span className="text-[10px] text-emerald-600 font-bold">Đạt chuẩn</span>
                             )}
                           </div>
@@ -164,12 +164,12 @@ export default function FleetTrucksTab({
                       {/* Cột 5: Trạng thái xe & Giờ gián đoạn sửa chữa (Downtime) */}
                       <td className="py-3.5 px-4 text-center">
                         {truck.status === 'ON_TRIP' ? (
-                          <Tooltip title="Xe đang thực hiện chuyến đi, không thể chuyển đổi trạng thái thủ công (UC-09)">
+                          <Tooltip title="Xe đang thực hiện chuyến đi, không thể chuyển đổi trạng thái thủ công">
                             <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200 cursor-not-allowed">
                               🚚 Đang chạy
                             </span>
                           </Tooltip>
-                        ) : (
+                        ): (
                           <div className="inline-flex flex-col items-center gap-1">
                             <Select
                               value={truck.status}

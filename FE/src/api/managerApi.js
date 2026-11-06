@@ -1,7 +1,7 @@
 import { fetchWithAuth } from './apiClient';
 
 export const managerApi = {
-  // 1. Thống kê Dashboard (Screen 16 V2)
+  // 1. Thống kê Dashboard
   getDashboardStats: async (period = 'Tháng 10/2026') => {
     try {
       const data = await fetchWithAuth(`/manager/dashboard/stats?period=${encodeURIComponent(period)}`);
@@ -12,10 +12,10 @@ export const managerApi = {
     }
   },
 
-  // Báo cáo hiệu suất tài xế (Screen 41 V2)
+  // Báo cáo hiệu suất tài xế
   getDriverPerformance: async (period) => {
     try {
-      const url = period ? `/manager/drivers/performance?period=${encodeURIComponent(period)}` : '/manager/drivers/performance';
+      const url = period ? `/manager/drivers/performance?period=${encodeURIComponent(period)}`: '/manager/drivers/performance';
       const data = await fetchWithAuth(url);
       return data;
     } catch (error) {
@@ -85,7 +85,7 @@ export const managerApi = {
     }
   },
 
-  // Xem chi tiết đơn hàng chỉ đọc (Screen 09)
+  // Xem chi tiết đơn hàng chỉ đọc
   getOrderDetail: async (orderId) => {
     try {
       const data = await fetchWithAuth(`/manager/orders/${orderId}`);
@@ -96,10 +96,10 @@ export const managerApi = {
     }
   },
 
-  // 4. NHÓM 6: NHÀ XE ĐỐI TÁC & HỢP ĐỒNG (UC-23 - Screen 28, 29, 30, 31, 37)
+  // 4. NHÓM 6: NHÀ XE ĐỐI TÁC & HỢP ĐỒNG
   getVendors: async (status = 'ALL') => {
     try {
-      const endpoint = status !== 'ALL' ? `/manager/vendors?status=${status}` : '/manager/vendors';
+      const endpoint = status !== 'ALL' ? `/manager/vendors?status=${status}`: '/manager/vendors';
       const data = await fetchWithAuth(endpoint);
       return data;
     } catch (error) {
@@ -161,7 +161,7 @@ export const managerApi = {
     }
   },
 
-  // Tra cứu hợp đồng vận tải Read-only (Screen 30, 31)
+  // Tra cứu hợp đồng vận tải Read-only
   getContracts: async () => {
     try {
       const data = await fetchWithAuth('/manager/contracts');
@@ -172,7 +172,7 @@ export const managerApi = {
     }
   },
 
-  // Tra cứu địa điểm kho bãi Read-only (Screen 37)
+  // Tra cứu địa điểm kho bãi Read-only
   getLocations: async () => {
     try {
       const data = await fetchWithAuth('/manager/locations');
@@ -183,11 +183,11 @@ export const managerApi = {
     }
   },
 
-  // 5. NHÓM 4: SỰ CỐ LỚN & KHIẾU NẠI BỒI THƯỜNG (UC-25, UC-26 V2, UC-42)
+  // 5. NHÓM 4: SỰ CỐ LỚN & KHIẾU NẠI BỒI THƯỜNG
   getIncidents: async (params = {}) => {
     try {
       const query = new URLSearchParams(params).toString();
-      const endpoint = query ? `/manager/incidents?${query}` : '/manager/incidents';
+      const endpoint = query ? `/manager/incidents?${query}`: '/manager/incidents';
       const data = await fetchWithAuth(endpoint);
       return data;
     } catch (error) {
@@ -276,11 +276,11 @@ export const managerApi = {
     }
   },
 
-  // 6. NHÓM 7: QUẢN LÝ TIN TỨC (UC-44 - Screen 46 & Screen 47)
+  // 6. NHÓM 7: QUẢN LÝ TIN TỨC
   getBlogs: async (params = {}) => {
     try {
       const query = new URLSearchParams(params).toString();
-      const endpoint = query ? `/manager/blogs?${query}` : '/manager/blogs';
+      const endpoint = query ? `/manager/blogs?${query}`: '/manager/blogs';
       const data = await fetchWithAuth(endpoint);
       return data;
     } catch (error) {
@@ -353,7 +353,7 @@ export const managerApi = {
     }
   },
 
-  // 7. Quản lý Tài khoản Nhân sự (Dispatcher & Driver) - Screen 26 & Screen 27
+  // 7. Quản lý Tài khoản Nhân sự (Dispatcher & Driver) -  & 
   getStaffAccounts: async (params = {}) => {
     try {
       const query = new URLSearchParams();
@@ -362,7 +362,7 @@ export const managerApi = {
       if (params.status && params.status !== 'ALL') query.append('status', params.status);
 
       const qs = query.toString();
-      const url = `/manager/accounts${qs ? `?${qs}` : ''}`;
+      const url = `/manager/accounts${qs ? `?${qs}`: ''}`;
       const data = await fetchWithAuth(url);
       return data;
     } catch (error) {
@@ -420,7 +420,7 @@ export const managerApi = {
     }
   },
 
-  // 8. Quản lý Đội xe tải (UC-18: Screen 21, 22, 15)
+  // 8. Quản lý Đội xe tải
   createTruck: async (payload) => {
     try {
       const data = await fetchWithAuth('/manager/trucks', {
@@ -485,7 +485,7 @@ export const managerApi = {
     }
   },
 
-  // 9. Quản lý Ca trực Tài xế (UC-20 V2: Screen 25)
+  // 9. Quản lý Ca trực Tài xế
   getShifts: async (params = {}) => {
     try {
       const query = new URLSearchParams();
@@ -495,7 +495,7 @@ export const managerApi = {
       if (params.driver_id) query.append('driver_id', params.driver_id);
 
       const qs = query.toString();
-      const url = `/manager/shifts${qs ? `?${qs}` : ''}`;
+      const url = `/manager/shifts${qs ? `?${qs}`: ''}`;
       const data = await fetchWithAuth(url);
       return data;
     } catch (error) {

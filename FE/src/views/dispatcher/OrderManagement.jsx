@@ -103,7 +103,7 @@ const OrderManagement = () => {
           setSelectedOrderForDetails(prevSelected => {
             if (!prevSelected) return null;
             const found = latestOrders.find(o => o.id === prevSelected.id || o.order_id === prevSelected.order_id);
-            return found ? { ...prevSelected, ...found } : prevSelected;
+            return found ? {...prevSelected,...found }: prevSelected;
           });
         }
       } catch (e) {
@@ -139,7 +139,7 @@ const OrderManagement = () => {
   };
 
   const handleUpdateOrder = (updatedOrder) => {
-    setOrders(prev => prev.map(o => (o.id === updatedOrder.id || o.order_id === updatedOrder.order_id) ? { ...o, ...updatedOrder } : o));
+    setOrders(prev => prev.map(o => (o.id === updatedOrder.id || o.order_id === updatedOrder.order_id) ? {...o,...updatedOrder }: o));
     setSelectedOrderForDetails(updatedOrder);
     fetchOrders(true);
   };
@@ -150,7 +150,7 @@ const OrderManagement = () => {
       await orderApi.cancelOrder(orderTargetId, cancelData);
       
       setOrders(prev => prev.map(o => (o.id === cancelData.id || o.order_id === cancelData.order_id)
-        ? { ...o, status: 'CANCELLED', cancel_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
+        ? {...o, status: 'CANCELLED', cancel_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
         : o
       ));
       setSelectedOrderForCancel(null);
@@ -170,13 +170,13 @@ const OrderManagement = () => {
   // Filter logic (Lọc theo dispatcher phụ trách nếu đang đăng nhập là Điều phối viên)
   const filteredData = useMemo(() => {
     const searchLower = filterText.trim().toLowerCase();
-    const currentUserId = user?.id ? Number(user.id) : null;
+    const currentUserId = user?.id ? Number(user.id): null;
     const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
 
     return orders.filter(item => {
       // Nếu là Dispatcher, chỉ xem đơn được phân công cho mình
       if (isDispatcher && currentUserId) {
-        const orderDispId = item.responsible_dispatcher_id ? Number(item.responsible_dispatcher_id) : null;
+        const orderDispId = item.responsible_dispatcher_id ? Number(item.responsible_dispatcher_id): null;
         if (orderDispId && orderDispId !== currentUserId) {
           return false;
         }
@@ -226,7 +226,7 @@ const OrderManagement = () => {
               <Tag color="purple" className="text-[10px] px-1.5 py-0 rounded font-semibold border-purple-300 bg-purple-50 text-purple-700 inline-flex items-center gap-1">
                 🛫 Xuất khẩu
               </Tag>
-            ) : (
+            ): (
               <Tag color="cyan" className="text-[10px] px-1.5 py-0 rounded font-semibold border-cyan-300 bg-cyan-50 text-cyan-700 inline-flex items-center gap-1">
                 🛬 Nhập khẩu
               </Tag>
@@ -235,7 +235,7 @@ const OrderManagement = () => {
               <Tag color="orange" className="text-[10px] px-1.5 py-0 rounded font-semibold border-amber-300 bg-amber-50 text-amber-700 inline-flex items-center gap-1">
                 <Globe size={10} /> Đơn Web
               </Tag>
-            ) : (
+            ): (
               <Tag color="processing" className="text-[10px] px-1.5 py-0 rounded font-semibold border-blue-200 bg-blue-50 text-blue-700 inline-flex items-center gap-1">
                 <PhoneCall size={10} /> Hotline / Trực tiếp
               </Tag>
@@ -263,7 +263,7 @@ const OrderManagement = () => {
           </div>
           {record.customs_location && record.customs_location !== 'NOI_BAI' && (
             <div className="text-[10px] text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded inline-block">
-              ICD thông quan: {record.customs_location === 'MY_DINH' ? 'Mỹ Đình' : record.customs_location === 'BAC_NINH' ? 'Bắc Ninh' : 'Gia Lâm'}
+              ICD thông quan: {record.customs_location === 'MY_DINH' ? 'Mỹ Đình': record.customs_location === 'BAC_NINH' ? 'Bắc Ninh': 'Gia Lâm'}
             </div>
           )}
         </div>
@@ -292,7 +292,7 @@ const OrderManagement = () => {
           <span className="font-bold text-gray-800 text-xs whitespace-nowrap">
             {val.toLocaleString()} đ
           </span>
-        ) : (
+        ): (
           <span className="font-bold text-amber-600 text-xs whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
             Chờ chốt giá
           </span>
@@ -377,7 +377,7 @@ const OrderManagement = () => {
                   size="small" 
                   type="primary"
                   className="text-xs bg-amber-600 hover:bg-amber-700 border-amber-600 font-semibold"
-                  onClick={() => setSelectedOrderForDetails({ ...record, targetTab: '1' })}
+                  onClick={() => setSelectedOrderForDetails({...record, targetTab: '1' })}
                 >
                   Chốt lại giá
                 </Button>
@@ -391,7 +391,7 @@ const OrderManagement = () => {
                 />
               </Tooltip>
             </>
-          ) : record.status === 'DRAFT' ? (
+          ): record.status === 'DRAFT' ? (
             <>
               {record.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' ? (
                 <Tooltip title="Đã gửi báo giá qua email cho khách. Nhấn để xem chi tiết / điều chỉnh lại">
@@ -404,7 +404,7 @@ const OrderManagement = () => {
                     Xem báo giá
                   </Button>
                 </Tooltip>
-              ) : (
+              ): (
                 <Tooltip title="Xử lý đơn nháp">
                   <Button 
                     size="small" 
@@ -426,16 +426,16 @@ const OrderManagement = () => {
                 />
               </Tooltip>
             </>
-          ) : record.status === 'CONFIRMED' ? (
+          ): record.status === 'CONFIRMED' ? (
             <>
-              <Tooltip title={record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Xem hợp đồng đã gửi cho khách ký số' : 'Kiểm duyệt & Xác nhận danh mục chứng từ'}>
+              <Tooltip title={record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Xem hợp đồng đã gửi cho khách ký số': 'Kiểm duyệt & Xác nhận danh mục chứng từ'}>
                 <Button 
                   size="small" 
                   type="primary"
-                  className={`text-xs font-semibold ${record.web_workflow?.stage === 'DOCS_APPROVED' ? 'bg-cyan-600 hover:bg-cyan-700 border-cyan-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                  onClick={() => setSelectedOrderForDetails({ ...record, targetTab: record.web_workflow?.stage === 'DOCS_APPROVED' ? '3' : '2' })}
+                  className={`text-xs font-semibold ${record.web_workflow?.stage === 'DOCS_APPROVED' ? 'bg-cyan-600 hover:bg-cyan-700 border-cyan-600': 'bg-indigo-600 hover:bg-indigo-700'}`}
+                  onClick={() => setSelectedOrderForDetails({...record, targetTab: record.web_workflow?.stage === 'DOCS_APPROVED' ? '3': '2' })}
                 >
-                  {record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Hợp đồng & Chờ ký' : 'Xác nhận chứng từ'}
+                  {record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Hợp đồng & Chờ ký': 'Xác nhận chứng từ'}
                 </Button>
               </Tooltip>
               <Tooltip title="Hủy đơn (Miễn phí)">
@@ -447,7 +447,7 @@ const OrderManagement = () => {
                 />
               </Tooltip>
             </>
-          ) : record.status === 'READY_FOR_PLANNING' ? (
+          ): record.status === 'READY_FOR_PLANNING' ? (
             <>
               <Tooltip title="Hồ sơ">
                 <Button 
@@ -479,7 +479,7 @@ const OrderManagement = () => {
                 />
               </Tooltip>
             </>
-          ) : (record.status === 'CANCELLED' || record.status === 'DELIVERED' || record.status === 'CLOSED') ? (
+          ): (record.status === 'CANCELLED' || record.status === 'DELIVERED' || record.status === 'CLOSED') ? (
             <>
               <Tooltip title="Xem chi tiết hồ sơ">
                 <Button 
@@ -492,7 +492,7 @@ const OrderManagement = () => {
                 </Button>
               </Tooltip>
             </>
-          ) : record.status === 'ASSIGNED' ? (
+          ): record.status === 'ASSIGNED' ? (
             <>
               <Tooltip title="Hồ sơ">
                 <Button 
@@ -513,7 +513,7 @@ const OrderManagement = () => {
                 />
               </Tooltip>
             </>
-          ) : (
+          ): (
             <Tooltip title="Hồ sơ">
               <Button 
                 size="small" 
@@ -555,7 +555,7 @@ const OrderManagement = () => {
             </Button>
 
             <Button 
-              icon={<RefreshCw size={15} className={loading ? "animate-spin text-indigo-600" : "text-gray-600"} />} 
+              icon={<RefreshCw size={15} className={loading ? "animate-spin text-indigo-600": "text-gray-600"} />} 
               className="h-10 px-3 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium"
               onClick={() => fetchOrders()}
               loading={loading}
@@ -649,7 +649,7 @@ const OrderManagement = () => {
         onUpdateOrder={handleUpdateOrder}
       />
 
-      {/* Modal Hủy Đơn Hàng theo chuẩn BR-18 */}
+      {/* Modal Hủy Đơn Hàng theo chuẩn */}
       <CancelOrderModal
         open={Boolean(selectedOrderForCancel)}
         order={selectedOrderForCancel}

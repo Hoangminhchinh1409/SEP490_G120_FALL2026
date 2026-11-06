@@ -37,10 +37,10 @@ const COMPANY_HQ = {
 };
 const PREFERRED_CARRIER = "NEXLOG Express";
 
-const MSG04 = "Mật khẩu mới không hợp lệ.";
-const MSG58 = "Mật khẩu hiện tại không đúng.";
-const MSG59 = "Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.";
-const MSG60 = "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.";
+const ERR_INVALID_NEW_PWD = "Mật khẩu mới không hợp lệ.";
+const ERR_WRONG_CURRENT_PWD = "Mật khẩu hiện tại không đúng.";
+const ERR_PWD_POLICY = "Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.";
+const MSG_PWD_CHANGED = "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.";
 
 function getInitials(name) {
   if (!name) return "U";
@@ -154,7 +154,7 @@ export default function UserProfile() {
   );
 
   const handleChange = (field, value) => {
-    setDraft((prev) => ({ ...(prev ?? profileFromUser(profile)), [field]: value }));
+    setDraft((prev) => ({...(prev ?? profileFromUser(profile)), [field]: value }));
   };
 
   const startEdit = () => setDraft(profileFromUser(profile));
@@ -200,11 +200,11 @@ export default function UserProfile() {
       return;
     }
     if (passwordForm.newPassword.length < 8 || passwordForm.newPassword === passwordForm.currentPassword) {
-      setPasswordError(MSG59);
+      setPasswordError(ERR_PWD_POLICY);
       return;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError(MSG04);
+      setPasswordError(ERR_INVALID_NEW_PWD);
       return;
     }
 
@@ -218,11 +218,11 @@ export default function UserProfile() {
         }),
       });
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      message.success(result?.message || MSG60);
+      message.success(result?.message || MSG_PWD_CHANGED);
     } catch (error) {
-      const text = error.message || MSG58;
-      if (text.includes("hiện tại")) setPasswordError(MSG58);
-      else if (text.includes("8 ký tự") || text.includes("khác")) setPasswordError(MSG59);
+      const text = error.message || ERR_WRONG_CURRENT_PWD;
+      if (text.includes("hiện tại")) setPasswordError(ERR_WRONG_CURRENT_PWD);
+      else if (text.includes("8 ký tự") || text.includes("khác")) setPasswordError(ERR_PWD_POLICY);
       else setPasswordError(text);
     } finally {
       setSavingPassword(false);
@@ -265,12 +265,12 @@ export default function UserProfile() {
             )}
             <button
               type="button"
-              onClick={editing ? saveProfile : startEdit}
+              onClick={editing ? saveProfile: startEdit}
               disabled={saving}
               className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-60"
             >
-              {editing ? <Save className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-              {saving ? "Đang lưu..." : editing ? "Lưu thay đổi" : "Chỉnh sửa hồ sơ"}
+              {editing ? <Save className="h-4 w-4" />: <Pencil className="h-4 w-4" />}
+              {saving ? "Đang lưu...": editing ? "Lưu thay đổi": "Chỉnh sửa hồ sơ"}
             </button>
           </div>
         )}
@@ -290,7 +290,7 @@ export default function UserProfile() {
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/15 text-xl font-bold ring-2 ring-white/25">
                 {initials}
               </div>
-              <span className={`absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full ring-2 ring-[#163a78] ${isActive ? "bg-emerald-400" : "bg-slate-300"}`} />
+              <span className={`absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full ring-2 ring-[#163a78] ${isActive ? "bg-emerald-400": "bg-slate-300"}`} />
             </div>
             <div>
               <h2 className="text-xl font-semibold leading-tight">
@@ -376,7 +376,7 @@ export default function UserProfile() {
                   value={form.zalo_link}
                   onChange={(e) => handleChange("zalo_link", e.target.value)}
                   readOnly={!editing}
-                  placeholder={editing ? "https://zalo.me/..." : "Chưa cập nhật"}
+                  placeholder={editing ? "https://zalo.me/...": "Chưa cập nhật"}
                   className={fieldClass}
                 />
               </label>
@@ -458,22 +458,22 @@ export default function UserProfile() {
                 <div className="relative">
                   <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
-                    type={showPasswords[field.show] ? "text" : "password"}
+                    type={showPasswords[field.show] ? "text": "password"}
                     value={passwordForm[field.key]}
                     onChange={(e) => {
                       setPasswordError("");
-                      setPasswordForm((prev) => ({ ...prev, [field.key]: e.target.value }));
+                      setPasswordForm((prev) => ({...prev, [field.key]: e.target.value }));
                     }}
                     className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15"
                   />
                   <button
                     type="button"
                     onClick={() =>
-                      setShowPasswords((prev) => ({ ...prev, [field.show]: !prev[field.show] }))
+                      setShowPasswords((prev) => ({...prev, [field.show]: !prev[field.show] }))
                     }
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
-                    {showPasswords[field.show] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPasswords[field.show] ? <EyeOff className="h-4 w-4" />: <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </label>
@@ -488,7 +488,7 @@ export default function UserProfile() {
               disabled={savingPassword}
               className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-60"
             >
-              {savingPassword ? "Đang đặt lại..." : "Đặt lại mật khẩu"}
+              {savingPassword ? "Đang đặt lại...": "Đặt lại mật khẩu"}
             </button>
           </form>
         </section>

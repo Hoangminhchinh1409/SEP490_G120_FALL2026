@@ -3,11 +3,11 @@ const customerService = require('../services/customerService');
 
 /**
  * Contract & Vendor Controller — Nhóm chức năng Quản lý Nhà xe đối tác (3PL) & Hợp đồng Vận tải
- * (UC-23, UC-24 — Screen 28, 29, 30, 31)
+ *
  */
 
 // ==========================================
-// A. DISPATCHER TRANSPORT CONTRACTS & CUSTOMERS (UC-24 - Screen 30, 31)
+// A. DISPATCHER TRANSPORT CONTRACTS & CUSTOMERS
 // ==========================================
 
 const getAllContracts = async (req, res) => {
@@ -41,7 +41,7 @@ const getAllCustomers = async (req, res) => {
 };
 
 // ==========================================
-// B. MANAGER VENDORS & READ-ONLY CONTRACTS (UC-23 - Screen 28, 29, 30, 31)
+// B. MANAGER VENDORS & READ-ONLY CONTRACTS
 // ==========================================
 
 const getVendors = async (req, res) => {
@@ -89,7 +89,7 @@ const getVendors = async (req, res) => {
         truck_types: v.truck_types || 'Xe tải 1.5T - 5T',
         contract_id: activeContract?.id || null,
         contract_number: activeContract?.contract_number || null,
-        liability_cap: activeContract?.liability_cap ? Number(activeContract.liability_cap) : null,
+        liability_cap: activeContract?.liability_cap ? Number(activeContract.liability_cap): null,
         contract_expiry: activeContract?.valid_to || null,
         contract_status: activeContract?.status || 'NO_CONTRACT',
         created_at: v.created_at
@@ -139,7 +139,7 @@ const createVendor = async (req, res) => {
     const { company_name, contact_person, phone, truck_types } = req.body;
 
     if (!company_name?.trim()) {
-      return res.status(400).json({ message: 'Tên công ty nhà xe là bắt buộc (MSG02).' });
+      return res.status(400).json({ message: 'Tên công ty nhà xe là bắt buộc.' });
     }
 
     const { data: existing } = await supabase
@@ -149,7 +149,7 @@ const createVendor = async (req, res) => {
       .maybeSingle();
 
     if (existing) {
-      return res.status(400).json({ message: 'Tên công ty nhà xe đã tồn tại trong hệ thống (MSG04).' });
+      return res.status(400).json({ message: 'Tên công ty nhà xe đã tồn tại trong hệ thống.' });
     }
 
     const { data: newVendor, error } = await supabase
@@ -243,7 +243,7 @@ const updateVendorStatus = async (req, res) => {
       await supabase.from('activity_logs').insert({
         actor_id: managerId,
         actor_type: 'MANAGER',
-        action: status === 'APPROVED' ? 'APPROVE_VENDOR' : 'SUSPEND_VENDOR',
+        action: status === 'APPROVED' ? 'APPROVE_VENDOR': 'SUSPEND_VENDOR',
         target_type: 'VENDOR',
         target_id: String(id),
         changes: { status },
@@ -268,7 +268,7 @@ const updateVendorStatus = async (req, res) => {
 };
 
 const approveVendor = (req, res) => {
-  req.body = { ...req.body, status: 'APPROVED' };
+  req.body = {...req.body, status: 'APPROVED' };
   return updateVendorStatus(req, res);
 };
 
@@ -302,12 +302,12 @@ const getContracts = async (req, res) => {
     const formatted = (contracts || []).map((c) => ({
       id: c.id,
       contract_number: c.contract_number,
-      contract_type: c.contract_type || (c.vendor_id ? 'VENDOR' : 'CUSTOMER'),
+      contract_type: c.contract_type || (c.vendor_id ? 'VENDOR': 'CUSTOMER'),
       partner_name: c.vendor?.company_name || c.customer?.company_name || 'Khách hàng / Đối tác',
-      partner_type: c.vendor_id ? 'VENDOR' : 'CUSTOMER',
-      liability_cap: c.liability_cap ? Number(c.liability_cap) : 0,
+      partner_type: c.vendor_id ? 'VENDOR': 'CUSTOMER',
+      liability_cap: c.liability_cap ? Number(c.liability_cap): 0,
       free_waiting_minutes: c.free_waiting_time || 60,
-      waiting_fee_per_hour: c.waiting_fee_rate ? Number(c.waiting_fee_rate) : 0,
+      waiting_fee_per_hour: c.waiting_fee_rate ? Number(c.waiting_fee_rate): 0,
       terms: c.terms_and_responsibilities,
       pricing_conditions: c.pricing_conditions,
       compensation_rules: c.compensation_terms,

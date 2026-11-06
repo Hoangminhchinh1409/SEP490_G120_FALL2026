@@ -102,7 +102,7 @@ export const adminApi = {
     }
   },
 
-  // 4. Danh mục Vai trò & Ma trận Phân quyền (Roles & Permissions - UC-34)
+  // 4. Danh mục Vai trò & Ma trận Phân quyền
   getRoles: async () => {
     try {
       const data = await fetchWithAuth('/admin/roles');

@@ -47,8 +47,8 @@ export default function UsersPage() {
         const res = await adminApi.getUsers({
           page: pagination.current,
           limit: pagination.pageSize,
-          roleId: filters.roleId !== 'ALL' ? filters.roleId : null,
-          status: filters.status !== 'ALL' ? filters.status : null,
+          roleId: filters.roleId !== 'ALL' ? filters.roleId: null,
+          status: filters.status !== 'ALL' ? filters.status: null,
           keyword: filters.keyword
         });
 
@@ -88,8 +88,8 @@ export default function UsersPage() {
       const res = await adminApi.getUsers({
         page: currentPage,
         limit: currentPageSize,
-        roleId: filters.roleId !== 'ALL' ? filters.roleId : null,
-        status: filters.status !== 'ALL' ? filters.status : null,
+        roleId: filters.roleId !== 'ALL' ? filters.roleId: null,
+        status: filters.status !== 'ALL' ? filters.status: null,
         keyword: filters.keyword
       });
 
@@ -118,15 +118,15 @@ export default function UsersPage() {
   };
 
   const handleRoleFilterChange = (value) => {
-    setFilters(prev => ({ ...prev, roleId: value }));
+    setFilters(prev => ({...prev, roleId: value }));
   };
 
   const handleStatusFilterChange = (value) => {
-    setFilters(prev => ({ ...prev, status: value }));
+    setFilters(prev => ({...prev, status: value }));
   };
 
   const handleSearch = (value) => {
-    setFilters(prev => ({ ...prev, keyword: value }));
+    setFilters(prev => ({...prev, keyword: value }));
   };
 
   // Mở modal tạo mới
@@ -170,7 +170,7 @@ export default function UsersPage() {
         phone: values.phone || null,
         zalo_link: values.zalo_link || null,
         role_id: Number(values.role_id),
-        status: values.status ? 'ACTIVE' : 'LOCKED'
+        status: values.status ? 'ACTIVE': 'LOCKED'
       };
 
       if (values.password && values.password.trim()) {
@@ -197,7 +197,7 @@ export default function UsersPage() {
 
   // Đổi trạng thái Khóa / Mở khóa
   const handleToggleStatus = async (record) => {
-    const nextStatus = record.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
+    const nextStatus = record.status === 'ACTIVE' ? 'LOCKED': 'ACTIVE';
     try {
       await adminApi.updateUserStatus(record.id, nextStatus);
       message.success(`Đã chuyển trạng thái tài khoản sang ${nextStatus}!`);
@@ -210,7 +210,7 @@ export default function UsersPage() {
   const getRoleName = (roleId, roleObj) => {
     if (roleObj?.name) return roleObj.name;
     const r = roles.find(item => item.id === roleId);
-    return r ? r.name : (roleId === 1 ? 'ADMINISTRATOR' : roleId === 2 ? 'MANAGER' : roleId === 3 ? 'DISPATCHER' : 'DRIVER');
+    return r ? r.name: (roleId === 1 ? 'ADMINISTRATOR': roleId === 2 ? 'MANAGER': roleId === 3 ? 'DISPATCHER': 'DRIVER');
   };
 
   const columns = [
@@ -256,7 +256,7 @@ export default function UsersPage() {
       width: 160,
       render: (roleId, record) => {
         const roleName = getRoleName(roleId, record.role);
-        const color = roleName === 'ADMINISTRATOR' ? 'red' : roleName === 'MANAGER' ? 'orange' : roleName === 'DISPATCHER' ? 'blue' : 'green';
+        const color = roleName === 'ADMINISTRATOR' ? 'red': roleName === 'MANAGER' ? 'orange': roleName === 'DISPATCHER' ? 'blue': 'green';
         return (
           <Tag color={color} className="font-semibold">
             {roleName}
@@ -270,8 +270,8 @@ export default function UsersPage() {
       key: 'status',
       width: 140,
       render: (status) => (
-        <Tag color={status === 'ACTIVE' ? 'success' : 'error'} className="font-semibold">
-          {status === 'ACTIVE' ? 'Đang hoạt động' : 'Đã khóa (Locked)'}
+        <Tag color={status === 'ACTIVE' ? 'success': 'error'} className="font-semibold">
+          {status === 'ACTIVE' ? 'Đang hoạt động': 'Đã khóa (Locked)'}
         </Tag>
       )
     },
@@ -284,7 +284,7 @@ export default function UsersPage() {
         <span className="text-xs text-slate-500 font-mono">
           {new Date(time).toLocaleString('vi-VN')}
         </span>
-      ) : (
+      ): (
         <span className="text-xs text-slate-400 italic">Chưa đăng nhập</span>
       )
     },
@@ -306,18 +306,18 @@ export default function UsersPage() {
 
             {!isSelfAdmin && (
               <Popconfirm
-                title={record.status === 'ACTIVE' ? 'Khóa tài khoản này?' : 'Mở khóa tài khoản này?'}
-                description={record.status === 'ACTIVE' ? 'Người dùng sẽ không thể đăng nhập sau khi bị khóa.' : 'Người dùng sẽ có thể đăng nhập bình thường.'}
+                title={record.status === 'ACTIVE' ? 'Khóa tài khoản này?': 'Mở khóa tài khoản này?'}
+                description={record.status === 'ACTIVE' ? 'Người dùng sẽ không thể đăng nhập sau khi bị khóa.': 'Người dùng sẽ có thể đăng nhập bình thường.'}
                 onConfirm={() => handleToggleStatus(record)}
                 okText="Đồng ý"
                 cancelText="Hủy"
                 okButtonProps={{ danger: record.status === 'ACTIVE' }}
               >
-                <Tooltip title={record.status === 'ACTIVE' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}>
+                <Tooltip title={record.status === 'ACTIVE' ? 'Khóa tài khoản': 'Mở khóa tài khoản'}>
                   <Button
                     type="text"
                     danger={record.status === 'ACTIVE'}
-                    icon={record.status === 'ACTIVE' ? <Lock size={16} className="text-red-500" /> : <Unlock size={16} className="text-emerald-500" />}
+                    icon={record.status === 'ACTIVE' ? <Lock size={16} className="text-red-500" />: <Unlock size={16} className="text-emerald-500" />}
                   />
                 </Tooltip>
               </Popconfirm>
@@ -341,7 +341,7 @@ export default function UsersPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Quản lý Tài khoản (User Accounts)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Quản trị danh sách người dùng toàn hệ thống, gán vai trò quyền hạn và quản lý trạng thái kích hoạt (BR-28).
+            Quản trị danh sách người dùng toàn hệ thống, gán vai trò quyền hạn và quản lý trạng thái kích hoạt.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -431,14 +431,14 @@ export default function UsersPage() {
       <Modal
         title={
           <div className="text-lg font-bold text-slate-800 pb-2 border-b border-slate-100">
-            {modalMode === 'CREATE' ? 'Tạo Tài khoản Người dùng Mới' : 'Cập nhật Thông tin Tài khoản'}
+            {modalMode === 'CREATE' ? 'Tạo Tài khoản Người dùng Mới': 'Cập nhật Thông tin Tài khoản'}
           </div>
         }
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={handleFormSubmit}
         confirmLoading={submitting}
-        okText={modalMode === 'CREATE' ? 'Tạo tài khoản' : 'Lưu thay đổi'}
+        okText={modalMode === 'CREATE' ? 'Tạo tài khoản': 'Lưu thay đổi'}
         cancelText="Hủy"
         destroyOnHidden
         className="rounded-2xl"
@@ -480,11 +480,11 @@ export default function UsersPage() {
 
           <Form.Item
             name="password"
-            label={modalMode === 'CREATE' ? 'Mật khẩu khởi tạo' : 'Mật khẩu mới (Để trống nếu không đổi)'}
+            label={modalMode === 'CREATE' ? 'Mật khẩu khởi tạo': 'Mật khẩu mới (Để trống nếu không đổi)'}
             rules={modalMode === 'CREATE' ? [
               { required: true, message: 'Vui lòng nhập mật khẩu' },
               { min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' }
-            ] : []}
+            ]: []}
           >
             <Input.Password placeholder="••••••••" className="h-10 rounded-lg" />
           </Form.Item>
@@ -494,11 +494,11 @@ export default function UsersPage() {
             label="Nhập lại mật khẩu"
             dependencies={['password']}
             rules={[
-              modalMode === 'CREATE' ? { required: true, message: 'Vui lòng xác nhận mật khẩu' } : {},
+              modalMode === 'CREATE' ? { required: true, message: 'Vui lòng xác nhận mật khẩu' }: {},
               ({ getFieldValue }) => ({
                 validator(_, value) {
                   if (getFieldValue('password') && value !== getFieldValue('password')) {
-                    return Promise.reject(new Error('Mật khẩu nhập lại không khớp.')); // MSG82
+                    return Promise.reject(new Error('Mật khẩu nhập lại không khớp.')); //
                   }
                   return Promise.resolve();
                 },

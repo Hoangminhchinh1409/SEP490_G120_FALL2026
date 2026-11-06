@@ -2,10 +2,10 @@ const supabase = require('../config/supabase');
 
 /**
  * Background Jobs Phân hệ Quản lý (Manager Background Jobs)
- * - JOB-01: File Retention (BR-22) - Bảo lưu chứng từ, ảnh chì, POD của các đơn có khiếu nại đang PENDING.
- * - JOB-02: GPS & Shift Overtime Check (BR-34, MSG65, MSG83) - Cảnh báo 4h lái liên tục và cảnh báo hết ca khi chuyến chưa hoàn tất.
- * - JOB-03: Order Flagger (BR-25) - Tự động gắn cờ các đơn Draft quá hạn và đơn Confirmed chưa gán chuyến quá hạn.
- * - JOB-06: Auto-lock Expired Trucks (BR-24) - Tự động khóa xe hết hạn đăng kiểm sang Inactive.
+ * - JOB-01: File Retention - Bảo lưu chứng từ, ảnh chì, POD của các đơn có khiếu nại đang PENDING.
+ * - JOB-02: GPS & Shift Overtime Check - Cảnh báo 4h lái liên tục và cảnh báo hết ca khi chuyến chưa hoàn tất.
+ * - JOB-03: Order Flagger - Tự động gắn cờ các đơn Draft quá hạn và đơn Confirmed chưa gán chuyến quá hạn.
+ * - JOB-06: Auto-lock Expired Trucks - Tự động khóa xe hết hạn đăng kiểm sang Inactive.
  */
 
 // JOB-06: Tự động khóa xe hết hạn đăng kiểm sang Inactive (chạy mỗi sáng hoặc định kỳ)
@@ -35,7 +35,7 @@ const runJob06_AutoLockExpiredTrucks = async () => {
           })
           .eq('id', truck.id);
 
-        console.log(`[JOB-06] Đã tự động chuyển xe ${truck.plate_number} sang INACTIVE (BR-24).`);
+        console.log(`[JOB-06] Đã tự động chuyển xe ${truck.plate_number} sang INACTIVE.`);
       }
     }
   } catch (err) {
@@ -43,7 +43,7 @@ const runJob06_AutoLockExpiredTrucks = async () => {
   }
 };
 
-// JOB-03: Tự động gắn cờ đơn chờ quá lâu (BR-25, MSG41, BR-13, SRS 11.3)
+// JOB-03: Tự động gắn cờ đơn chờ quá lâu
 const runJob03_FlagOverdueOrders = async () => {
   try {
     const now = new Date();
@@ -79,7 +79,7 @@ const runJob03_FlagOverdueOrders = async () => {
 
       let shouldFlag = false;
       // - Đơn DRAFT quá 4 giờ (240 phút) chưa gửi duyệt
-      // - Đơn CONFIRMED / READY_FOR_PLANNING chờ gán chuyến quá giới hạn cấu hình (mặc định 60p hoặc > 8h theo BR-25)
+      // - Đơn CONFIRMED / READY_FOR_PLANNING chờ gán chuyến quá giới hạn cấu hình
       if (o.status === 'DRAFT' && ageHours > 4) {
         shouldFlag = true;
       } else if (['CONFIRMED', 'READY_FOR_PLANNING'].includes(o.status) && ageMinutes > limitMinutes) {
@@ -95,7 +95,7 @@ const runJob03_FlagOverdueOrders = async () => {
           })
           .eq('id', o.id);
 
-        console.log(`[JOB-03] Đã gắn cờ đơn ách tắc ${o.order_code || o.id} (chờ ${Math.round(ageMinutes)} phút > giới hạn ${limitMinutes}p - BR-25).`);
+        console.log(`[JOB-03] Đã gắn cờ đơn ách tắc ${o.order_code || o.id} (chờ ${Math.round(ageMinutes)} phút > giới hạn ${limitMinutes}p -).`);
       }
     }
 
@@ -124,7 +124,7 @@ const runJob03_FlagOverdueOrders = async () => {
   }
 };
 
-// JOB-02: Kiểm tra hết ca của tài xế khi chuyến chưa xong (MSG83) & Lái 4h liên tục (MSG65)
+// JOB-02: Kiểm tra hết ca của tài xế khi chuyến chưa xong & Lái 4h liên tục
 const runJob02_CheckDriverShiftOvertime = async () => {
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -148,7 +148,7 @@ const runJob02_CheckDriverShiftOvertime = async () => {
         .lt('end_time', nowTime);
 
       if (!shiftErr && endedShifts && endedShifts.length > 0) {
-        // Ghi nhận cảnh báo MSG83
+        // Ghi nhận cảnh báo
         // console.log(`[JOB-02] Đã quét ${activeTrips.length} chuyến đang chạy, phát hiện ca tài xế đã hết.`);
       }
     }

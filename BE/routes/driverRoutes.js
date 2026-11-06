@@ -23,20 +23,20 @@ router.post("/trips/:id/stops/:stopId/delivery", driverController.recordDelivery
 router.post("/trips/:id/stops/:stopId/refuse", driverController.reportCustomerRefusal);
 router.post("/trips/:id/extra-fees", driverController.proposeExtraFee);
 
-// 3. Quản lý Ca làm việc (UC-20, BR-60)
+// 3. Quản lý Ca làm việc
 router.get("/shifts", driverController.getMyShifts);
 router.post("/shifts", driverController.registerShift);
 router.delete("/shifts/:id", driverController.cancelShift);
 
-// 4. Thông báo Tài xế (Screen 6.5, MSG80)
+// 4. Thông báo Tài xế
 router.get("/notifications", driverController.getDriverNotifications);
 router.patch("/notifications/read-all", driverController.markAllNotificationsRead);
 router.patch("/notifications/:id/read", driverController.markNotificationRead);
 
-// 5. Báo cáo sự cố khẩn cấp (BF-04 & UC-32)
+// 5. Báo cáo sự cố khẩn cấp
 router.post("/incidents", driverController.reportIncident);
 
-// 6. Đồng bộ hành động ngoại tuyến (BR-27, MSG39)
+// 6. Đồng bộ hành động ngoại tuyến
 router.post("/sync", driverController.syncOffline);
 
 module.exports = router;

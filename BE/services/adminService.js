@@ -146,8 +146,8 @@ const createUser = async (userData, adminId = null, ipAddress = null) => {
         password_hash,
         full_name: full_name.trim(),
         email: email.trim().toLowerCase(),
-        phone: phone ? phone.trim() : null,
-        zalo_link: zalo_link ? zalo_link.trim() : null,
+        phone: phone ? phone.trim(): null,
+        zalo_link: zalo_link ? zalo_link.trim(): null,
         role_id: Number(role_id),
         status: status || "ACTIVE"
     });
@@ -193,8 +193,8 @@ const updateUser = async (id, updateData, adminId = null, ipAddress = null) => {
     }
 
     if (full_name) fieldsToUpdate.full_name = full_name.trim();
-    if (phone !== undefined) fieldsToUpdate.phone = phone ? phone.trim() : null;
-    if (zalo_link !== undefined) fieldsToUpdate.zalo_link = zalo_link ? zalo_link.trim() : null;
+    if (phone !== undefined) fieldsToUpdate.phone = phone ? phone.trim(): null;
+    if (zalo_link !== undefined) fieldsToUpdate.zalo_link = zalo_link ? zalo_link.trim(): null;
     if (role_id) fieldsToUpdate.role_id = Number(role_id);
     if (status) fieldsToUpdate.status = status;
 
@@ -242,7 +242,7 @@ const updateUserStatus = async (id, status, adminId = null, ipAddress = null) =>
     const updated = await adminModel.updateUserStatus(id, status);
 
     // Auto-audit log
-    const action = status === "LOCKED" ? "LOCK_USER" : status === "ACTIVE" ? "ACTIVATE_USER" : "DEACTIVATE_USER";
+    const action = status === "LOCKED" ? "LOCK_USER": status === "ACTIVE" ? "ACTIVATE_USER": "DEACTIVATE_USER";
     await adminModel.createActivityLog({
         actorId: adminId,
         actorType: "USER",
@@ -304,7 +304,7 @@ const updateSystemSetting = async (key, value, adminId = null, ipAddress = null)
 };
 
 // ==========================================
-// 6. PERMISSIONS MATRIX (UC-34)
+// 6. PERMISSIONS MATRIX
 // ==========================================
 
 const getPermissionsMatrix = async () => {
@@ -318,7 +318,7 @@ const updateRolePermissions = async (roleId, permissionIds, adminId = null, ipAd
 
     const result = await adminModel.updateRolePermissions(roleId, permissionIds);
 
-    // Auto-audit log (UC-35)
+    // Auto-audit log
     await adminModel.createActivityLog({
         actorId: adminId,
         actorType: "USER",

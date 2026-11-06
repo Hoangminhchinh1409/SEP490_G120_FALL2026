@@ -29,10 +29,10 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
     const is5T = trip?.plate?.includes('767.99') || trip?.plate?.includes('649.48') || trip?.plate?.includes('888.99') || trip?.truck_model?.includes('5');
     const is125T = trip?.plate?.includes('112.34') || trip?.plate?.includes('115.68') || trip?.truck_model?.includes('1.25');
 
-    const defaultLength = is5T ? 620 : is35T ? 500 : is125T ? 310 : 420;
-    const defaultWidth = is5T ? 220 : is35T ? 205 : is125T ? 160 : 190;
-    const defaultHeight = is5T ? 220 : is35T ? 205 : is125T ? 160 : 190;
-    const defaultPayload = is5T ? 5000 : is35T ? 3500 : is125T ? 1250 : 2500;
+    const defaultLength = is5T ? 620: is35T ? 500: is125T ? 310: 420;
+    const defaultWidth = is5T ? 220: is35T ? 205: is125T ? 160: 190;
+    const defaultHeight = is5T ? 220: is35T ? 205: is125T ? 160: 190;
+    const defaultPayload = is5T ? 5000: is35T ? 3500: is125T ? 1250: 2500;
 
     return {
       length_cm: Number(trip?.truck_length_cm) || defaultLength,
@@ -91,7 +91,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
 
   const toggleStopVisibility = (stopId) => {
     setHiddenStopIds((prev) =>
-      prev.includes(stopId) ? prev.filter((id) => id !== stopId) : [...prev, stopId]
+      prev.includes(stopId) ? prev.filter((id) => id !== stopId): [...prev, stopId]
     );
   };
 
@@ -158,7 +158,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               Xe <b>{truckPlate}</b> – <b>{truckModel}</b> · <b>{boxDimText}</b> · Tải cho phép <b>{summary.maxPayload?.toLocaleString()} kg</b>
             </div>
             <div className="flex items-center gap-2">
-              <Tag color={summary.isOverloaded ? 'red' : 'green'} className="m-0 font-bold text-xs">
+              <Tag color={summary.isOverloaded ? 'red': 'green'} className="m-0 font-bold text-xs">
                 {summary.isOverloaded
                   ? `Cảnh báo vượt ngưỡng tải`
                   : `Đã xếp đủ ${summary.packedPackagesCount}/${summary.totalPackagesCount} kiện hợp lệ`}
@@ -199,7 +199,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               showIcon
               title={
                 <span className="font-bold text-xs">
-                  Phát hiện {overflowBlocks.length}/{summary.totalPackagesCount} kiện hàng không vừa thùng xe hoặc vượt tải trọng (MSG66):
+                  Phát hiện {overflowBlocks.length}/{summary.totalPackagesCount} kiện hàng không vừa thùng xe hoặc vượt tải trọng:
                 </span>
               }
               description={
@@ -217,7 +217,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
           {/* Danh sách điểm dừng */}
           <div className="lg:col-span-3 space-y-3">
             <div className="text-xs font-bold text-gray-700">
-              {stops.length > 1 ? 'Điểm giao hàng' : 'Điểm giao hàng duy nhất'}
+              {stops.length > 1 ? 'Điểm giao hàng': 'Điểm giao hàng duy nhất'}
             </div>
 
             <div className="space-y-2">
@@ -236,13 +236,13 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                     </div>
                   </div>
 
-                  <Tooltip title={stop.visible ? 'Ẩn kiện hàng điểm này' : 'Hiện kiện hàng điểm này'}>
+                  <Tooltip title={stop.visible ? 'Ẩn kiện hàng điểm này': 'Hiện kiện hàng điểm này'}>
                     <button
                       type="button"
                       onClick={() => toggleStopVisibility(stop.id)}
                       className="p-1 text-gray-400 hover:text-gray-700 transition shrink-0"
                     >
-                      {stop.visible ? <Eye size={16} /> : <EyeOff size={16} className="text-gray-300" />}
+                      {stop.visible ? <Eye size={16} />: <EyeOff size={16} className="text-gray-300" />}
                     </button>
                   </Tooltip>
                 </div>
@@ -296,7 +296,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                         : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    {view === '3D' ? 'Góc nhìn 3D' : `Chiếu ${view}`}
+                    {view === '3D' ? 'Góc nhìn 3D': `Chiếu ${view}`}
                   </button>
                 ))}
                 {activeView === '3D' && (
@@ -370,7 +370,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium px-2 pt-1.5">
                 <span>◀ Đầu xe</span>
                 <span className="text-indigo-600">
-                  {activeView === '3D' ? '💡 Kéo chuột để xoay 360°' : `Mặt cắt kỹ thuật tỷ lệ thực`}
+                  {activeView === '3D' ? '💡 Kéo chuột để xoay 360°': `Mặt cắt kỹ thuật tỷ lệ thực`}
                 </span>
                 <span>Cửa sau ▶</span>
               </div>
@@ -405,7 +405,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                     <Bot size={14} className="text-purple-600" />
                     Hướng dẫn Bốc xếp &amp; Chằng buộc từ Google Gemini AI:
                   </span>
-                  <Tag color={aiLoadPlanAdvice.safetyStatus === 'SAFE' ? 'green' : 'gold'} className="m-0 text-[10px] font-bold">
+                  <Tag color={aiLoadPlanAdvice.safetyStatus === 'SAFE' ? 'green': 'gold'} className="m-0 text-[10px] font-bold">
                     {aiLoadPlanAdvice.safetyStatus || 'SAFE'}
                   </Tag>
                 </div>

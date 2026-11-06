@@ -2,7 +2,7 @@ const supabase = require('../config/supabase');
 const locationService = require('../services/locationService');
 
 /**
- * Location Controller — Nhóm chức năng Quản lý Địa điểm / Kho bãi (UC-40 - Screen 37 & Screen 38)
+ * Location Controller — Nhóm chức năng Quản lý Địa điểm / Kho bãi
  * - Dispatcher: Xem danh sách, Thêm mới, Cập nhật, Xóa địa điểm (Geofence, tọa độ).
  * - Manager: Tra cứu danh sách địa điểm ở chế độ Chỉ đọc (Read-only).
  */
@@ -24,7 +24,7 @@ const createLocation = async (req, res) => {
     return res.status(201).json({ message: 'Thêm địa điểm thành công', location: newLoc });
   } catch (err) {
     console.error('createLocation error:', err);
-    const statusCode = err.message.includes('bắt buộc') ? 400 : 500;
+    const statusCode = err.message.includes('bắt buộc') ? 400: 500;
     return res.status(statusCode).json({ message: err.message || 'Lỗi thêm địa điểm' });
   }
 };
@@ -47,7 +47,7 @@ const deleteLocation = async (req, res) => {
     return res.json({ message: 'Đã xóa địa điểm thành công' });
   } catch (err) {
     console.error('deleteLocation error:', err);
-    const statusCode = err.statusCode || (err.code === '23503' ? 400 : 500);
+    const statusCode = err.statusCode || (err.code === '23503' ? 400: 500);
     return res.status(statusCode).json({
       message: err.message || 'Lỗi xóa địa điểm',
       error: err
@@ -55,7 +55,7 @@ const deleteLocation = async (req, res) => {
   }
 };
 
-// Tra cứu Danh sách Địa điểm / Kho bãi Read-only cho Manager (Screen 37)
+// Tra cứu Danh sách Địa điểm / Kho bãi Read-only cho Manager
 const getLocations = async (req, res) => {
   try {
     const { data: locations, error } = await supabase

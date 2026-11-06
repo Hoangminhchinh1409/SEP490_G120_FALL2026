@@ -133,13 +133,13 @@ export const calculateAlsPricing = ({
   if (matchedFixedRoute && matchedFixedRoute.rates[vType]) {
     isFixedRoute = true;
     const rates = matchedFixedRoute.rates[vType];
-    baseTransportFee = timeSlot === 'AFTERNOON' ? rates.afternoon : rates.fullDay;
+    baseTransportFee = timeSlot === 'AFTERNOON' ? rates.afternoon: rates.fullDay;
   } else {
     // Tuyến tự do tính theo km đường đi & hệ số loại xe
     const vSpec = ALS_TARIFF_RATES.VEHICLE_TYPES.find(v => v.key === vType) || ALS_TARIFF_RATES.VEHICLE_TYPES[1];
-    const baseOpenPrice = vType === 'TRUCK_1.25T' ? 600000 : (vType === 'TRUCK_2.5T' ? 800000 : 1000000);
+    const baseOpenPrice = vType === 'TRUCK_1.25T' ? 600000: (vType === 'TRUCK_2.5T' ? 800000: 1000000);
     const calculatedRate = baseOpenPrice + (distanceKm * vSpec.defaultRateKm) + (chargeableWeightKg * 250);
-    const discount = timeSlot === 'AFTERNOON' ? 0.9 : 1.0; // Khung giờ chiều giảm ~10%
+    const discount = timeSlot === 'AFTERNOON' ? 0.9: 1.0; // Khung giờ chiều giảm ~10%
     baseTransportFee = Math.round((calculatedRate * discount) / 50000) * 50000;
   }
 
@@ -147,7 +147,7 @@ export const calculateAlsPricing = ({
   const loadingFee = 0;
 
   // 3. Phí dịch vụ làm thủ tục hải quan
-  const customsFee = customsServiceRequired ? 500000 : 0;
+  const customsFee = customsServiceRequired ? 500000: 0;
 
   return {
     baseTransportFee,
@@ -155,7 +155,7 @@ export const calculateAlsPricing = ({
     customsFee,
     totalRate: baseTransportFee + loadingFee + customsFee,
     isFixedRoute,
-    routeName: matchedFixedRoute ? matchedFixedRoute.name : 'Vận chuyển nội địa theo khoảng cách'
+    routeName: matchedFixedRoute ? matchedFixedRoute.name: 'Vận chuyển nội địa theo khoảng cách'
   };
 };
 
@@ -549,7 +549,7 @@ export const getVehicleSpecByKey = (vehicleKey) => {
 
 /**
  * Phân tích thông số lô hàng (tải trọng thực, tải trọng tính cước, kích thước DxRxC, số kiện)
- * để gợi ý loại xe tối ưu nhất (BR-03, BR-33) và đối chiếu với loại xe khách hàng chọn ban đầu.
+ * để gợi ý loại xe tối ưu nhất và đối chiếu với loại xe khách hàng chọn ban đầu.
  */
 export const analyzeVehicleRecommendation = ({
   actualWeightKg = 0,
@@ -587,7 +587,7 @@ export const analyzeVehicleRecommendation = ({
   } else if (maxL > 0 && maxW > 0 && maxH > 0) {
     const qty = Math.max(1, parseInt(package_count, 10) || 1);
     const singleBoxM3 = (maxL * maxW * maxH) / 1000000;
-    totalVolM3 = (singleBoxM3 >= 1.5 && qty > 4) ? singleBoxM3 : singleBoxM3 * qty;
+    totalVolM3 = (singleBoxM3 >= 1.5 && qty > 4) ? singleBoxM3: singleBoxM3 * qty;
   }
 
   totalVolM3 = Number(totalVolM3.toFixed(2));
@@ -611,7 +611,7 @@ export const analyzeVehicleRecommendation = ({
   const custIdx = VEHICLE_SPECS.findIndex(v => v.key === customerSpec.key);
 
   let status = 'OPTIMAL'; // 'OPTIMAL' | 'UNDER_CAPACITY' | 'OVER_CAPACITY'
-  let reason = `Loại xe ${customerSpec.label} (${customerSpec.boxDimText}, tải ${customerSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) hoàn toàn phù hợp với lô hàng (${effectiveWeight.toLocaleString('vi-VN')} kg${totalVolM3 > 0 ? `, ~${totalVolM3} m³` : ''}).`;
+  let reason = `Loại xe ${customerSpec.label} (${customerSpec.boxDimText}, tải ${customerSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) hoàn toàn phù hợp với lô hàng (${effectiveWeight.toLocaleString('vi-VN')} kg${totalVolM3 > 0 ? `, ~${totalVolM3} m³`: ''}).`;
 
   if (custIdx < recIdx) {
     status = 'UNDER_CAPACITY';

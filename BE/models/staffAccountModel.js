@@ -2,7 +2,7 @@ const supabase = require("../config/supabase");
 
 /**
  * Model quản lý tài khoản nhân viên (Dispatcher & Driver)
- * BR-28: Chỉ truy vấn các tài khoản có role_id = 3 (DISPATCHER) hoặc role_id = 4 (DRIVER)
+ *: Chỉ truy vấn các tài khoản có role_id = 3 (DISPATCHER) hoặc role_id = 4 (DRIVER)
  */
 const staffAccountModel = {
     // 1. Lấy danh sách tài khoản nhân viên (hỗ trợ tìm kiếm, lọc theo role và status)

@@ -1,13 +1,13 @@
 const supabase = require('../config/supabase');
 
 /**
- * Blog Controller — Nhóm chức năng Tin tức Website & Quản lý Bản tin (UC-44 & UC-45 — Screen 45, 46, 47)
- * - Guest (UC-45): Xem danh sách bài viết đã xuất bản (PUBLISHED) & Xem chi tiết bài viết.
- * - Manager (UC-44): Quản lý bài viết (DRAFT ➔ PUBLISHED ➔ UNPUBLISHED, BR-48, MSG69, MSG25).
+ * Blog Controller — Nhóm chức năng Tin tức Website & Quản lý Bản tin
+ * - Guest: Xem danh sách bài viết đã xuất bản (PUBLISHED) & Xem chi tiết bài viết.
+ * - Manager: Quản lý bài viết.
  */
 
 // ==========================================
-// A. PUBLIC WEBSITE NEWS (UC-45 - Screen 45)
+// A. PUBLIC WEBSITE NEWS
 // ==========================================
 
 const getPublicBlogs = async (req, res) => {
@@ -54,7 +54,7 @@ const getPublicBlogs = async (req, res) => {
       authorInitial: b.author_initial,
       authorColor: b.author_color,
       views: b.views,
-      publishDate: b.published_at ? new Date(b.published_at).toLocaleDateString('vi-VN') : null,
+      publishDate: b.published_at ? new Date(b.published_at).toLocaleDateString('vi-VN'): null,
       status: b.status,
       statusLabel: b.status_label,
       image: b.image_url
@@ -102,7 +102,7 @@ const getPublicBlogById = async (req, res) => {
         authorInitial: currentBlog.author_initial,
         authorColor: currentBlog.author_color,
         views: (currentBlog.views || 0) + 1,
-        publishDate: currentBlog.published_at ? new Date(currentBlog.published_at).toLocaleDateString('vi-VN') : null,
+        publishDate: currentBlog.published_at ? new Date(currentBlog.published_at).toLocaleDateString('vi-VN'): null,
         status: currentBlog.status,
         statusLabel: currentBlog.status_label,
         image: currentBlog.image_url
@@ -115,7 +115,7 @@ const getPublicBlogById = async (req, res) => {
 };
 
 // ==========================================
-// B. MANAGER BLOG MANAGEMENT (UC-44 - Screen 46 & Screen 47)
+// B. MANAGER BLOG MANAGEMENT
 // ==========================================
 
 const getBlogs = async (req, res) => {
@@ -165,7 +165,7 @@ const getBlogs = async (req, res) => {
           : 'Bản nháp',
       image: b.image_url,
       is_featured: Boolean(b.is_featured),
-      publishDate: b.published_at ? new Date(b.published_at).toLocaleDateString('vi-VN') : null,
+      publishDate: b.published_at ? new Date(b.published_at).toLocaleDateString('vi-VN'): null,
       created_at: b.created_at
     }));
 
@@ -211,15 +211,15 @@ const createBlog = async (req, res) => {
 
     if (!title?.trim() || !category?.trim() || !content?.trim()) {
       return res.status(400).json({
-        message: 'Vui lòng điền đầy đủ các trường bắt buộc: Tiêu đề, Chuyên mục, Nội dung (MSG69).'
+        message: 'Vui lòng điền đầy đủ các trường bắt buộc: Tiêu đề, Chuyên mục, Nội dung.'
       });
     }
 
     if (title.length > 200) {
-      return res.status(400).json({ message: 'Tiêu đề không được vượt quá 200 ký tự (Screen 47).' });
+      return res.status(400).json({ message: 'Tiêu đề không được vượt quá 200 ký tự.' });
     }
     if (summary && summary.length > 200) {
-      return res.status(400).json({ message: 'Tóm tắt không được vượt quá 200 ký tự (Screen 47).' });
+      return res.status(400).json({ message: 'Tóm tắt không được vượt quá 200 ký tự.' });
     }
 
     const statusVal = status || 'DRAFT';
@@ -237,9 +237,9 @@ const createBlog = async (req, res) => {
         author_color: 'bg-secondary text-white',
         views: 0,
         status: statusVal,
-        status_label: statusVal === 'PUBLISHED' ? 'Đã đăng' : 'Bản nháp',
+        status_label: statusVal === 'PUBLISHED' ? 'Đã đăng': 'Bản nháp',
         image_url: image || null,
-        published_at: statusVal === 'PUBLISHED' ? new Date().toISOString() : null,
+        published_at: statusVal === 'PUBLISHED' ? new Date().toISOString(): null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
@@ -249,7 +249,7 @@ const createBlog = async (req, res) => {
     if (error) throw error;
 
     return res.status(201).json({
-      message: statusVal === 'PUBLISHED' ? 'Đăng bài viết thành công (MSG25)!' : 'Lưu bản nháp thành công!',
+      message: statusVal === 'PUBLISHED' ? 'Đăng bài viết thành công!': 'Lưu bản nháp thành công!',
       blog: newBlog
     });
   } catch (error) {
@@ -297,7 +297,7 @@ const updateBlog = async (req, res) => {
 
     if (error) throw error;
 
-    return res.json({ message: 'Cập nhật bài viết thành công (MSG25)!', blog: updatedBlog });
+    return res.json({ message: 'Cập nhật bài viết thành công!', blog: updatedBlog });
   } catch (error) {
     console.error('updateBlog Error:', error);
     return res.status(500).json({ message: 'Lỗi cập nhật bài viết', error: error.message });
@@ -310,7 +310,7 @@ const updateBlogStatus = async (req, res) => {
     const { status } = req.body;
 
     if (!['PUBLISHED', 'UNPUBLISHED', 'DRAFT'].includes(status)) {
-      return res.status(400).json({ message: 'Trạng thái bài viết không hợp lệ (BR-48).' });
+      return res.status(400).json({ message: 'Trạng thái bài viết không hợp lệ.' });
     }
 
     const updateData = {
@@ -352,7 +352,7 @@ const updateBlogStatus = async (req, res) => {
 };
 
 const approveBlog = (req, res) => {
-  req.body = { ...req.body, status: 'PUBLISHED' };
+  req.body = {...req.body, status: 'PUBLISHED' };
   return updateBlogStatus(req, res);
 };
 
@@ -362,7 +362,7 @@ const deleteBlog = async (req, res) => {
     const { error } = await supabase.from('blogs').delete().eq('id', id);
     if (error) throw error;
 
-    return res.json({ message: 'Đã xóa bài viết thành công (MSG25).' });
+    return res.json({ message: 'Đã xóa bài viết thành công.' });
   } catch (error) {
     console.error('deleteBlog Error:', error);
     return res.status(500).json({ message: 'Lỗi xóa bài viết', error: error.message });

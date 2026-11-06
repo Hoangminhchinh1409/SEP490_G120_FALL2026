@@ -15,7 +15,7 @@ const router = express.Router();
 router.use(requireAuth);
 router.use(requireRole(['MANAGER', 'ADMINISTRATOR', 'ADMIN']));
 
-// NHÓM 1: FLEET, DRIVERS, SHIFTS & STAFF ACCOUNTS (UC-17, UC-18, UC-19, UC-20)
+// NHÓM 1: FLEET, DRIVERS, SHIFTS & STAFF ACCOUNTS
 router.get('/accounts', fleetController.getStaffAccounts);
 router.get('/accounts/:id', fleetController.getStaffAccountDetail);
 router.post('/accounts', fleetController.createStaffAccount);
@@ -39,7 +39,7 @@ router.patch('/shifts/:id/approve', fleetController.approveShift);
 router.patch('/shifts/:id/reject', fleetController.rejectShift);
 router.delete('/shifts/:id', fleetController.deleteShift);
 
-// NHÓM 2: MANAGER OVERSIGHT — WORKLOAD, REASSIGN, DASHBOARD & DRIVER PERFORMANCE (UC-21, UC-22, UC-27, UC-43)
+// NHÓM 2: MANAGER OVERSIGHT — WORKLOAD, REASSIGN, DASHBOARD & DRIVER PERFORMANCE
 router.get('/orders', oversightController.getOrderWorkload);
 router.get('/orders/workload', oversightController.getOrderWorkload);
 router.get('/orders/:id', oversightController.getOrderDetailReadOnly);
@@ -48,7 +48,7 @@ router.patch('/orders/:id/reassign', oversightController.reassignOrder);
 router.get('/dashboard/stats', oversightController.getDashboardStats);
 router.get('/drivers/performance', oversightController.getDriverPerformance);
 
-// NHÓM 3: MAJOR INCIDENTS & COMPENSATION CLAIMS (UC-25, UC-26)
+// NHÓM 3: MAJOR INCIDENTS & COMPENSATION CLAIMS
 router.get('/incidents', incidentController.getIncidents);
 router.get('/incidents/:id', incidentController.getIncidentById);
 router.post('/incidents/:id/resolve', incidentController.resolveIncident);
@@ -58,10 +58,10 @@ router.post('/claims/:id/decide', incidentController.decideClaim);
 router.get('/approvals', incidentController.getApprovals);
 router.post('/approvals/:id/decide', incidentController.decideApproval);
 
-// NHÓM 4: TRIP REPLAY (UC-42)
+// NHÓM 4: TRIP REPLAY
 router.get('/trips/:id/replay', tripController.getTripReplay);
 
-// NHÓM 5: VENDORS & TRANSPORT CONTRACTS (UC-23, UC-24)
+// NHÓM 5: VENDORS & TRANSPORT CONTRACTS
 router.get('/vendors', contractController.getVendors);
 router.get('/vendors/:id', contractController.getVendorById);
 router.post('/vendors', contractController.createVendor);
@@ -70,10 +70,10 @@ router.patch('/vendors/:id/status', contractController.updateVendorStatus);
 router.patch('/vendors/:id/approve', contractController.approveVendor);
 router.get('/contracts', contractController.getContracts);
 
-// NHÓM 6: LOCATIONS READ-ONLY (UC-40)
+// NHÓM 6: LOCATIONS READ-ONLY
 router.get('/locations', locationController.getLocations);
 
-// NHÓM 7: WEBSITE NEWS MANAGEMENT (UC-44)
+// NHÓM 7: WEBSITE NEWS MANAGEMENT
 router.get('/blogs', blogController.getBlogs);
 router.get('/blogs/:id', blogController.getBlogById);
 router.post('/blogs', blogController.createBlog);

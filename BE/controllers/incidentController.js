@@ -3,11 +3,11 @@ const incidentService = require('../services/incidentService');
 
 /**
  * Incident Controller — Nhóm chức năng Quản lý Sự cố & Yêu cầu Bồi thường
- * (UC-14, UC-15, UC-16, UC-25, UC-26 — Screen 14, 17, 19, 20)
+ *
  */
 
 // ==========================================
-// A. DISPATCHER INCIDENT OPERATIONS (UC-14, UC-15, UC-16)
+// A. DISPATCHER INCIDENT OPERATIONS
 // ==========================================
 
 const getAllIncidents = async (req, res) => {
@@ -43,7 +43,7 @@ const updateIncidentStatus = async (req, res) => {
 };
 
 // ==========================================
-// B. MANAGER MAJOR INCIDENTS & COMPENSATION CLAIMS (UC-25, UC-26)
+// B. MANAGER MAJOR INCIDENTS & COMPENSATION CLAIMS
 // ==========================================
 
 const getIncidents = async (req, res) => {
@@ -136,7 +136,7 @@ const getIncidents = async (req, res) => {
         description: i.description,
         photos: i.photos || [],
         fault: i.fault,
-        status: i.status === 'Reported' ? 'Chờ xử lý' : i.status === 'Resolved' ? 'Đã xử lý' : i.status,
+        status: i.status === 'Reported' ? 'Chờ xử lý': i.status === 'Resolved' ? 'Đã xử lý': i.status,
         reported_time: i.reported_time || i.created_at,
         escalated_time: i.escalated_time,
         escalation_reason: i.escalation_reason,
@@ -220,7 +220,7 @@ const resolveIncident = async (req, res) => {
 
     if (incErr) throw incErr;
 
-    // BR-17: Nếu số tiền bồi thường > 0, tự động sinh Yêu cầu bồi thường (Compensation Claim) ở trạng thái PENDING
+    //: Nếu số tiền bồi thường > 0, tự động sinh Yêu cầu bồi thường (Compensation Claim) ở trạng thái PENDING
     let createdClaim = null;
     if (amountNum > 0) {
       const { data: existingClaim } = await supabase
@@ -287,7 +287,7 @@ const resolveIncident = async (req, res) => {
     }
 
     return res.json({
-      message: 'Đã giải quyết sự cố thành công (UC-25).',
+      message: 'Đã giải quyết sự cố thành công.',
       incident: updatedInc,
       claim: createdClaim
     });
@@ -358,10 +358,10 @@ const getClaims = async (req, res) => {
       const order = c.order;
       const incident = c.incident;
       const customerId = order?.customer_id;
-      const contractCap = customerId && contractMap[customerId] ? contractMap[customerId] : 0;
+      const contractCap = customerId && contractMap[customerId] ? contractMap[customerId]: 0;
       const declaredValue = Number(order?.agreed_price || 0) * 10;
 
-      // BR-37: Giới hạn trách nhiệm = min(Contract Cap, Declared Value) hoặc 500M VNĐ
+      //: Giới hạn trách nhiệm = min(Contract Cap, Declared Value) hoặc 500M VNĐ
       let liabilityLimit = 500000000;
       if (contractCap > 0 && declaredValue > 0) {
         liabilityLimit = Math.min(contractCap, declaredValue);
@@ -373,7 +373,7 @@ const getClaims = async (req, res) => {
 
       const isExceedingCap = Number(c.amount || 0) > liabilityLimit;
 
-      const incidentCode = incident?.id ? `INC-${String(incident.id).padStart(3, '0')}` : null;
+      const incidentCode = incident?.id ? `INC-${String(incident.id).padStart(3, '0')}`: null;
 
       let sourceDisplay = 'Sự cố vận chuyển';
       if (c.source === 'CUSTOMER_CLAIM') {
@@ -416,14 +416,14 @@ const getClaims = async (req, res) => {
         incident_id: c.incident_id,
         incident_code: incidentCode,
         incident_type: incident?.type || null,
-        incident_type_display: incident?.type ? (typeDisplayMap[incident.type] || incident.type) : 'Sự cố vận tải',
+        incident_type_display: incident?.type ? (typeDisplayMap[incident.type] || incident.type): 'Sự cố vận tải',
         incident_fault: incident?.fault || 'COMPANY',
         incident_description: incident?.description || '',
         incident_status: incident?.status || null,
         incident_photos: incidentPhotos,
         incident_reported_time: incident?.reported_time || null,
         trip_id: incident?.trip_id || tripObj?.id || null,
-        trip_code: tripObj?.trip_code || (incident?.trip_id ? `TRIP-${incident.trip_id}` : null),
+        trip_code: tripObj?.trip_code || (incident?.trip_id ? `TRIP-${incident.trip_id}`: null),
         truck_plate: truckPlate,
         driver_name: driverName,
         driver_phone: driverPhone,
@@ -466,7 +466,7 @@ const decideClaim = async (req, res) => {
 
     const decisionText = comment || note;
     const isApprove = action === 'APPROVE' || action === 'Approve';
-    const targetStatus = isApprove ? 'APPROVED' : 'REJECTED';
+    const targetStatus = isApprove ? 'APPROVED': 'REJECTED';
 
     const { data: claim, error: findErr } = await supabase
       .from('compensation_claims')
@@ -479,7 +479,7 @@ const decideClaim = async (req, res) => {
     }
 
     if (!isApprove && !decisionText) {
-      return res.status(400).json({ message: 'Bắt buộc nhập lý do/nhận xét khi từ chối bồi thường (MSG02).' });
+      return res.status(400).json({ message: 'Bắt buộc nhập lý do/nhận xét khi từ chối bồi thường.' });
     }
 
     const { data: updatedClaim, error: updateErr } = await supabase
@@ -488,7 +488,7 @@ const decideClaim = async (req, res) => {
         status: targetStatus,
         decided_by: managerId,
         decided_at: new Date().toISOString(),
-        decision_comment: decisionText || (isApprove ? 'Phê duyệt bồi thường hợp lệ.' : 'Từ chối bồi thường.'),
+        decision_comment: decisionText || (isApprove ? 'Phê duyệt bồi thường hợp lệ.': 'Từ chối bồi thường.'),
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
@@ -501,7 +501,7 @@ const decideClaim = async (req, res) => {
       await supabase
         .from('incidents')
         .update({
-          status: isApprove ? 'RESOLVED' : 'CLOSED',
+          status: isApprove ? 'RESOLVED': 'CLOSED',
           updated_at: new Date().toISOString()
         })
         .eq('id', claim.incident_id);
@@ -511,7 +511,7 @@ const decideClaim = async (req, res) => {
       await supabase.from('activity_logs').insert({
         actor_id: managerId,
         actor_type: 'MANAGER',
-        action: isApprove ? 'APPROVE_CLAIM' : 'REJECT_CLAIM',
+        action: isApprove ? 'APPROVE_CLAIM': 'REJECT_CLAIM',
         target_type: 'COMPENSATION_CLAIM',
         target_id: String(id),
         changes: { status: targetStatus, amount: claim.amount },
@@ -523,7 +523,7 @@ const decideClaim = async (req, res) => {
     }
 
     const msg = isApprove
-      ? `Đã phê duyệt yêu cầu bồi thường ${claim.amount?.toLocaleString('vi-VN')} đ (MSG27).`
+      ? `Đã phê duyệt yêu cầu bồi thường ${claim.amount?.toLocaleString('vi-VN')} đ.`
       : 'Đã từ chối yêu cầu bồi thường thành công.';
 
     return res.json({ message: msg, claim: updatedClaim });

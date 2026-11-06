@@ -27,7 +27,7 @@ export default function CancelOrderModal({ open, order, onCancel, onConfirmCance
 function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
   const agreedPrice = order?.agreed_price || 0;
   
-  // 1. Phân loại theo quy định nghiệp vụ BR-18 / MSG23 / MSG24
+  // 1. Phân loại theo quy định nghiệp vụ
   // - Đơn nháp hoặc đang xác nhận chưa xong chứng từ -> MIỄN PHÍ HỦY (0 VNĐ)
   const isFreeCancel = order?.status === 'DRAFT' || order?.status === 'CONFIRMED';
   
@@ -40,10 +40,10 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
   const defaultDriverFee = 500000; // Tiền công điều xe & tài xế đến lấy hàng
 
   const [selectedTier, setSelectedTier] = useState(
-    isFreeCancel ? 'TIER_0' : 'DRIVER_LABOR'
+    isFreeCancel ? 'TIER_0': 'DRIVER_LABOR'
   );
   const [customFee, setCustomFee] = useState(
-    isFreeCancel ? 0 : defaultDriverFee
+    isFreeCancel ? 0: defaultDriverFee
   );
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -75,7 +75,7 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
         id: order.id,
         order_id: order.order_id,
         cancellation_reason: reason.trim(),
-        cancellation_fee: isFreeCancel ? 0 : customFee,
+        cancellation_fee: isFreeCancel ? 0: customFee,
         cancelled_at: new Date().toISOString()
       });
       onCancel();
@@ -132,7 +132,7 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
             description="Xe đã lăn bánh trên đường hoặc hàng hóa đã được bốc lên phương tiện và niêm phong chì. Theo quy định vận tải, không thể hủy đơn khi xe đã xuất phát."
             className="text-xs"
           />
-        ) : (
+        ): (
           <Alert
             type="warning"
             showIcon
@@ -149,13 +149,13 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
               <div>
                 <span className="text-gray-500 block">Giá cước thỏa thuận của đơn:</span>
                 <span className="text-base font-bold text-gray-800 font-mono">
-                  {agreedPrice > 0 ? `${agreedPrice.toLocaleString()} VNĐ` : 'Chưa chốt cước (Đơn nháp)'}
+                  {agreedPrice > 0 ? `${agreedPrice.toLocaleString()} VNĐ`: 'Chưa chốt cước (Đơn nháp)'}
                 </span>
               </div>
               <div>
                 <span className="text-gray-500 block">Trạng thái hiện tại:</span>
-                <Tag color={order.status === 'DRAFT' ? 'default' : order.status === 'CONFIRMED' ? 'blue' : 'cyan'} className="font-semibold text-xs mt-0.5">
-                  {order.status === 'DRAFT' ? 'ĐƠN NHÁP' : order.status === 'CONFIRMED' ? 'CẦN XÁC NHẬN CHỨNG TỪ' : order.status}
+                <Tag color={order.status === 'DRAFT' ? 'default': order.status === 'CONFIRMED' ? 'blue': 'cyan'} className="font-semibold text-xs mt-0.5">
+                  {order.status === 'DRAFT' ? 'ĐƠN NHÁP': order.status === 'CONFIRMED' ? 'CẦN XÁC NHẬN CHỨNG TỪ': order.status}
                 </Tag>
               </div>
             </div>
@@ -169,7 +169,7 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
                     Miễn phí phạt hủy đơn (0 VNĐ)
                   </div>
                   <p className="text-xs text-emerald-700 m-0 mt-1">
-                    Đơn hàng đang ở trạng thái <b>{order.status === 'DRAFT' ? 'Đơn nháp' : 'Đang xác nhận chứng từ'}</b>, chưa phát lệnh điều xe thực tế nên khách hàng được hủy miễn phí hoàn toàn.
+                    Đơn hàng đang ở trạng thái <b>{order.status === 'DRAFT' ? 'Đơn nháp': 'Đang xác nhận chứng từ'}</b>, chưa phát lệnh điều xe thực tế nên khách hàng được hủy miễn phí hoàn toàn.
                   </p>
                 </div>
                 <div className="text-right pl-4">
@@ -177,7 +177,7 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
                   <span className="text-[11px] text-emerald-600 font-medium">Miễn phí 100%</span>
                 </div>
               </div>
-            ) : isAssigned ? (
+            ): isAssigned ? (
               /* Trường hợp 3: Đã xác nhận xếp xe / xe đã đến lấy hàng -> Tính tiền công tài xế / công đoạn */
               <div className="space-y-2">
                 <label className="font-bold text-gray-800 flex items-center gap-1.5">
@@ -191,7 +191,7 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
                   onChange={handleTierChange}
                 >
                   <div 
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${selectedTier === 'DRIVER_LABOR' ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${selectedTier === 'DRIVER_LABOR' ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-300': 'bg-white border-gray-200 hover:bg-gray-50'}`}
                     onClick={() => handleTierChange({ target: { value: 'DRIVER_LABOR' } })}
                   >
                     <Radio value="DRIVER_LABOR" className="w-full">
@@ -208,7 +208,7 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
                   </div>
 
                   <div 
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${selectedTier === 'CUSTOM' ? 'bg-indigo-50/60 border-indigo-300 ring-1 ring-indigo-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${selectedTier === 'CUSTOM' ? 'bg-indigo-50/60 border-indigo-300 ring-1 ring-indigo-300': 'bg-white border-gray-200 hover:bg-gray-50'}`}
                     onClick={() => handleTierChange({ target: { value: 'CUSTOM' } })}
                   >
                     <Radio value="CUSTOM" className="w-full">
@@ -241,7 +241,7 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
                   />
                 </div>
               </div>
-            ) : null}
+            ): null}
 
             {/* Lý do hủy đơn (Bắt buộc) */}
             <div className="space-y-2 pt-1">

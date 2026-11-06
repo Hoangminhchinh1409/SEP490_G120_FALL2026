@@ -1,7 +1,7 @@
 const supabase = require("../config/supabase");
 
 // ==========================================
-// DRIVER SHIFTS (UC-20, Screen 25, BR-08, BR-34, BR-60)
+// DRIVER SHIFTS
 // ==========================================
 
 const getDriverShifts = async (
@@ -111,7 +111,7 @@ const createDriverShift = async ({
     console.error("createDriverShift error:", error);
     throw error;
   }
-  return data && data.length > 0 ? data[0] : null;
+  return data && data.length > 0 ? data[0]: null;
 };
 
 const getShiftsWithDriverInfo = async ({ from = null, to = null, status = null, driverId = null } = {}) => {

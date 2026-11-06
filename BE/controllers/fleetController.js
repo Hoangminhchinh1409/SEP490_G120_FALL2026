@@ -5,11 +5,11 @@ const staffAccountService = require('../services/staffAccountService');
 
 /**
  * Fleet Controller — Nhóm chức năng Quản lý Đội xe, Hồ sơ Tài xế, Lịch Phân ca & Tài khoản Nhân viên Vận hành
- * (UC-17, UC-18, UC-19, UC-20 — Screen 15, 21, 22, 23, 24, 25, 26, 27)
+ *
  */
 
 // ==========================================
-// A. DISPATCHER FLEET & DRIVER OPERATIONS (Screen 15)
+// A. DISPATCHER FLEET & DRIVER OPERATIONS
 // ==========================================
 
 const getFleetTrucks = async (req, res) => {
@@ -28,7 +28,7 @@ const createFleetTruck = async (req, res) => {
     return res.status(201).json({ message: 'Thêm xe thành công', truck: newTruck });
   } catch (err) {
     console.error('createFleetTruck error:', err);
-    const statusCode = err.message === 'Biển số xe là bắt buộc' ? 400 : 500;
+    const statusCode = err.message === 'Biển số xe là bắt buộc' ? 400: 500;
     return res.status(statusCode).json({ message: err.message || 'Không thể thêm phương tiện' });
   }
 };
@@ -76,7 +76,7 @@ const getFleetVendors = async (req, res) => {
 };
 
 // ==========================================
-// B. MANAGER STAFF ACCOUNTS (UC-17 - Screen 26 & Screen 27)
+// B. MANAGER STAFF ACCOUNTS
 // ==========================================
 
 const getStaffAccounts = async (req, res) => {
@@ -163,7 +163,7 @@ const updateAccountStatus = async (req, res) => {
 };
 
 // ==========================================
-// C. MANAGER TRUCKS & DRIVER PROFILES (UC-18, UC-19 - Screen 21, 22, 23, 24)
+// C. MANAGER TRUCKS & DRIVER PROFILES
 // ==========================================
 
 const getVehicles = async (req, res) => {
@@ -209,7 +209,7 @@ const getVehicles = async (req, res) => {
     if (driversErr) throw driversErr;
 
     const formattedTrucks = (trucksResult || []).map((t) => {
-      const isInspectionExpired = t.inspection_expiry ? new Date(t.inspection_expiry) < new Date() : false;
+      const isInspectionExpired = t.inspection_expiry ? new Date(t.inspection_expiry) < new Date(): false;
       return {
         id: t.id,
         plate_number: t.plate_number,
@@ -232,7 +232,7 @@ const getVehicles = async (req, res) => {
     });
 
     const formattedDrivers = (driversResult || []).map((dp) => {
-      const isLicenseExpired = dp.license_expiry ? new Date(dp.license_expiry) < new Date() : false;
+      const isLicenseExpired = dp.license_expiry ? new Date(dp.license_expiry) < new Date(): false;
       return {
         id: dp.id,
         user_id: dp.user_account_id,
@@ -280,7 +280,7 @@ const createTruck = async (req, res) => {
     } = req.body;
 
     if (!plate_number || !plate_number.trim()) {
-      return res.status(400).json({ message: 'Biển số xe là bắt buộc (MSG02).' });
+      return res.status(400).json({ message: 'Biển số xe là bắt buộc.' });
     }
 
     const cleanPlate = plate_number.trim().toUpperCase();
@@ -292,14 +292,14 @@ const createTruck = async (req, res) => {
       .maybeSingle();
 
     if (existingPlate) {
-      return res.status(409).json({ message: `Biển số xe ${cleanPlate} đã tồn tại trong hệ thống (MSG04).` });
+      return res.status(409).json({ message: `Biển số xe ${cleanPlate} đã tồn tại trong hệ thống.` });
     }
 
     let finalStatus = status;
     if (inspection_expiry && new Date(inspection_expiry) < new Date()) {
       if (finalStatus === 'AVAILABLE') {
         return res.status(400).json({
-          message: 'Lỗi BR-24: Xe đã hết hạn đăng kiểm không được đặt trạng thái Sẵn sàng (Available). Vui lòng chọn Bảo dưỡng hoặc Ngưng hoạt động.'
+          message: 'Lỗi: Xe đã hết hạn đăng kiểm không được đặt trạng thái Sẵn sàng (Available). Vui lòng chọn Bảo dưỡng hoặc Ngưng hoạt động.'
         });
       }
     }
@@ -319,8 +319,8 @@ const createTruck = async (req, res) => {
         box_width: bWidth,
         box_height: bHeight,
         required_license_class: required_license_class || 'C',
-        inspection_expiry: inspection_expiry ? new Date(inspection_expiry).toISOString() : null,
-        insurance_expiry: insurance_expiry ? new Date(insurance_expiry).toISOString() : null,
+        inspection_expiry: inspection_expiry ? new Date(inspection_expiry).toISOString(): null,
+        insurance_expiry: insurance_expiry ? new Date(insurance_expiry).toISOString(): null,
         gps_device_id: gps_device_id || null,
         status: finalStatus
       })
@@ -330,7 +330,7 @@ const createTruck = async (req, res) => {
     if (error) throw error;
 
     return res.status(201).json({
-      message: `Đã lưu xe tải ${cleanPlate} thành công (MSG07).`,
+      message: `Đã lưu xe tải ${cleanPlate} thành công.`,
       truck: newTruck
     });
   } catch (error) {
@@ -369,7 +369,7 @@ const updateTruck = async (req, res) => {
         .maybeSingle();
 
       if (dup) {
-        return res.status(409).json({ message: `Biển số xe ${cleanPlate} đã bị trùng lặp (MSG04).` });
+        return res.status(409).json({ message: `Biển số xe ${cleanPlate} đã bị trùng lặp.` });
       }
       updateData.plate_number = cleanPlate;
     }
@@ -385,10 +385,10 @@ const updateTruck = async (req, res) => {
     if (gps_device_id !== undefined) updateData.gps_device_id = gps_device_id;
 
     if (inspection_expiry !== undefined) {
-      updateData.inspection_expiry = inspection_expiry ? new Date(inspection_expiry).toISOString() : null;
+      updateData.inspection_expiry = inspection_expiry ? new Date(inspection_expiry).toISOString(): null;
     }
     if (insurance_expiry !== undefined) {
-      updateData.insurance_expiry = insurance_expiry ? new Date(insurance_expiry).toISOString() : null;
+      updateData.insurance_expiry = insurance_expiry ? new Date(insurance_expiry).toISOString(): null;
     }
 
     const targetInspection = updateData.inspection_expiry !== undefined
@@ -404,7 +404,7 @@ const updateTruck = async (req, res) => {
         }
         if (exp && new Date(exp) < new Date()) {
           return res.status(400).json({
-            message: 'Lỗi BR-24: Không thể chuyển trạng thái sang Sẵn sàng (Available) do xe đã hết hạn đăng kiểm.'
+            message: 'Lỗi: Không thể chuyển trạng thái sang Sẵn sàng (Available) do xe đã hết hạn đăng kiểm.'
           });
         }
       }
@@ -421,7 +421,7 @@ const updateTruck = async (req, res) => {
     if (error) throw error;
 
     return res.json({
-      message: 'Cập nhật thông tin xe tải thành công (MSG07).',
+      message: 'Cập nhật thông tin xe tải thành công.',
       truck: updated
     });
   } catch (error) {
@@ -436,7 +436,7 @@ const updateTruckStatus = async (req, res) => {
     const { status } = req.body;
 
     if (status && status.toUpperCase() === 'ON_TRIP') {
-      return res.status(400).json({ message: 'Không thể chuyển xe sang trạng thái Đang chạy thủ công. Trạng thái này do hệ thống tự động gán khi điều phối chuyến xe (UC-09).' });
+      return res.status(400).json({ message: 'Không thể chuyển xe sang trạng thái Đang chạy thủ công. Trạng thái này do hệ thống tự động gán khi điều phối chuyến xe.' });
     }
 
     if (!status || !['AVAILABLE', 'MAINTENANCE', 'INACTIVE'].includes(status.toUpperCase())) {
@@ -458,7 +458,7 @@ const updateTruckStatus = async (req, res) => {
 
       if (truck.inspection_expiry && new Date(truck.inspection_expiry) < new Date()) {
         return res.status(400).json({
-          message: `Lỗi BR-24: Không thể bật xe ${truck.plate_number} sang Sẵn sàng (Available) do xe đã hết hạn đăng kiểm.`
+          message: `Lỗi: Không thể bật xe ${truck.plate_number} sang Sẵn sàng (Available) do xe đã hết hạn đăng kiểm.`
         });
       }
     }
@@ -508,7 +508,7 @@ const createDriver = async (req, res) => {
     const cleanPhone = (phone || '').trim();
 
     if (!driverName || !cleanPhone) {
-      return res.status(400).json({ message: 'Họ tên và số điện thoại là bắt buộc (MSG02).' });
+      return res.status(400).json({ message: 'Họ tên và số điện thoại là bắt buộc.' });
     }
 
     // 1. Kiểm tra xem đã có user nào theo SĐT hoặc Email chưa
@@ -637,7 +637,7 @@ const createDriver = async (req, res) => {
     }
 
     return res.status(201).json({
-      message: 'Thêm tài xế mới thành công (MSG07).',
+      message: 'Thêm tài xế mới thành công.',
       driver: {
         id: profileResult.id,
         user_account_id: userId,
@@ -667,7 +667,7 @@ const updateDriverProfile = async (req, res) => {
     if (license_number !== undefined) profileUpdates.license_number = license_number;
     if (license_class !== undefined) profileUpdates.license_class = license_class;
     if (license_expiry !== undefined) {
-      profileUpdates.license_expiry = license_expiry ? new Date(license_expiry).toISOString() : null;
+      profileUpdates.license_expiry = license_expiry ? new Date(license_expiry).toISOString(): null;
     }
     if (status !== undefined) profileUpdates.status = status;
 
@@ -693,7 +693,7 @@ const updateDriverProfile = async (req, res) => {
     }
 
     return res.json({
-      message: 'Cập nhật hồ sơ tài xế thành công (MSG07).',
+      message: 'Cập nhật hồ sơ tài xế thành công.',
       profile: updatedProfile
     });
   } catch (error) {
@@ -703,7 +703,7 @@ const updateDriverProfile = async (req, res) => {
 };
 
 // ==========================================
-// D. MANAGER DRIVER SHIFTS (UC-20 - Screen 25)
+// D. MANAGER DRIVER SHIFTS
 // ==========================================
 
 const getShifts = async (req, res) => {
@@ -771,7 +771,7 @@ const approveShift = async (req, res) => {
     const { shift, warning } = await fleetService.approveShift(id, reviewerId);
 
     return res.json({
-      message: 'Đã phê duyệt ca làm việc thành công (MSG80).',
+      message: 'Đã phê duyệt ca làm việc thành công.',
       warning,
       shift
     });
@@ -789,7 +789,7 @@ const rejectShift = async (req, res) => {
     const { shift } = await fleetService.rejectShift(id, reason, reviewerId);
 
     return res.json({
-      message: 'Đã từ chối ca làm việc thành công (MSG80).',
+      message: 'Đã từ chối ca làm việc thành công.',
       shift
     });
   } catch (error) {
@@ -820,14 +820,14 @@ module.exports = {
   updateFleetDriver,
   getFleetVendors,
 
-  // Manager Staff Accounts (UC-17)
+  // Manager Staff Accounts
   getStaffAccounts,
   getStaffAccountDetail,
   createStaffAccount,
   updateStaffAccount,
   updateAccountStatus,
 
-  // Manager Trucks & Driver Profiles (UC-18, UC-19)
+  // Manager Trucks & Driver Profiles
   getVehicles,
   createTruck,
   updateTruck,
@@ -836,7 +836,7 @@ module.exports = {
   createDriver,
   updateDriverProfile,
 
-  // Manager Driver Shifts (UC-20)
+  // Manager Driver Shifts
   getShifts,
   createShift,
   updateShift,

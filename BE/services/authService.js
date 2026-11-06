@@ -23,12 +23,12 @@ const login = async (identifier, password) => {
     }
 
     if (user.status !== "ACTIVE") {
-        const error = new Error("[MSG06] Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
-        error.code = "MSG06";
+        const error = new Error;
+        error.code = "";
         throw error;
     }
 
-    // Kiểm tra Chế độ bảo trì hệ thống (SRS v2 - MSG86)
+    // Kiểm tra Chế độ bảo trì hệ thống
     if (Number(user.role_id) !== 1) {
         const { data: maintenanceSetting } = await supabase
             .from("system_settings")
@@ -177,14 +177,14 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     if (newPassword.length < PASSWORD_MIN_LENGTH) {
         const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
         error.statusCode = 400;
-        error.code = "MSG59";
+        error.code = "";
         throw error;
     }
 
     if (newPassword === currentPassword) {
         const error = new Error("Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.");
         error.statusCode = 400;
-        error.code = "MSG59";
+        error.code = "";
         throw error;
     }
 
@@ -203,7 +203,7 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     if (!isCurrentPasswordValid) {
         const error = new Error("Mật khẩu hiện tại không đúng.");
         error.statusCode = 400;
-        error.code = "MSG58";
+        error.code = "";
         throw error;
     }
 

@@ -39,7 +39,7 @@ export default function SettingsPage() {
           claim_window_days: settingsMap.claim_window_days || 14,
           document_deadline_hours: settingsMap.document_deadline_hours || 24,
           waiting_too_long_minutes: settingsMap.waiting_too_long_minutes || 60,
-          minimum_driver_rest_hours: 11, // Cố định luật định (BR-34)
+          minimum_driver_rest_hours: 11, // Cố định luật định
           speed_limit_kmh: settingsMap.speed_limit_kmh || 80,
           // Lưu trữ
           document_retention_days: settingsMap.document_retention_days || 730,
@@ -92,7 +92,7 @@ export default function SettingsPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Cấu hình Tham số Hệ thống (System Settings)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Quản trị các tham số hoạt động, thời hạn khiếu nại, chế độ bảo trì và các quy chuẩn vận hành theo SRS v2 (UC-36).
+            Quản trị các tham số hoạt động, thời hạn khiếu nại, chế độ bảo trì và các quy chuẩn vận hành theo quy chuẩn hệ thống.
           </p>
         </div>
       </div>
@@ -106,12 +106,12 @@ export default function SettingsPage() {
         onFinish={handleSave}
         className="space-y-6"
       >
-        {/* KHỐI 1: CHẾ ĐỘ BẢO TRÌ HỆ THỐNG (MSG86) */}
+        {/* KHỐI 1: CHẾ ĐỘ BẢO TRÌ HỆ THỐNG */}
         <div className={`rounded-2xl border p-6 transition-all shadow-sm ${
-          maintenanceOn ? 'bg-amber-50/70 border-amber-300' : 'bg-white border-slate-100'
+          maintenanceOn ? 'bg-amber-50/70 border-amber-300': 'bg-white border-slate-100'
         }`}>
           <div className="flex items-start gap-4">
-            <div className={`p-3 rounded-2xl ${maintenanceOn ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+            <div className={`p-3 rounded-2xl ${maintenanceOn ? 'bg-amber-100 text-amber-700': 'bg-slate-100 text-slate-600'}`}>
               <ShieldAlert size={28} />
             </div>
             <div className="flex-1">
@@ -122,7 +122,7 @@ export default function SettingsPage() {
                     {maintenanceOn && <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full font-semibold">ĐANG BẬT</span>}
                   </h3>
                   <p className="text-slate-500 text-sm mt-1">
-                    Khi kích hoạt, chỉ có tài khoản <b>Administrator</b> mới được phép đăng nhập. Các vai trò khác (Manager, Dispatcher, Driver) sẽ bị từ chối đăng nhập với thông báo hệ thống <b>MSG86</b>.
+                    Khi kích hoạt, chỉ có tài khoản <b>Administrator</b> mới được phép đăng nhập. Các vai trò khác (Manager, Dispatcher, Driver) sẽ bị từ chối đăng nhập với thông báo hệ thống đang bảo trì.
                   </p>
                 </div>
 
@@ -130,7 +130,7 @@ export default function SettingsPage() {
                   <Switch 
                     checkedChildren="BẢO TRÌ" 
                     unCheckedChildren="HOẠT ĐỘNG"
-                    className={maintenanceOn ? 'bg-amber-500' : ''}
+                    className={maintenanceOn ? 'bg-amber-500': ''}
                     onChange={(checked) => setMaintenanceOn(checked)}
                   />
                 </Form.Item>
@@ -139,14 +139,14 @@ export default function SettingsPage() {
               {maintenanceOn && (
                 <div className="mt-3.5 p-3 bg-amber-100/70 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium flex items-center gap-2">
                   <AlertTriangle size={16} className="text-amber-700 shrink-0" />
-                  <span>Cảnh báo: Toàn bộ nhân viên không phải Quản trị viên khi đăng nhập sẽ nhìn thấy: <i>"Hệ thống đang bảo trì. Vui lòng quay lại sau."</i> (MSG86)</span>
+                  <span>Cảnh báo: Toàn bộ nhân viên không phải Quản trị viên khi đăng nhập sẽ nhìn thấy: <i>"Hệ thống đang bảo trì. Vui lòng quay lại sau."</i></span>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* KHỐI 2: KHIẾU NẠI & NGHIỆP VỤ VẬN HÀNH (BR-59, UC-47, BR-25, BR-34) */}
+        {/* KHỐI 2: KHIẾU NẠI & NGHIỆP VỤ VẬN HÀNH */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
           <div className="flex items-center gap-2 text-rose-600 font-bold text-base border-b border-slate-100 pb-3">
             <Scale size={20} /> Khiếu nại Bồi thường & Ràng buộc Vận hành (Claims & Operations)
@@ -155,7 +155,7 @@ export default function SettingsPage() {
           <Form.Item 
             name="claim_window_days" 
             label="Thời hạn khiếu nại bồi thường (ngày)" 
-            extra="Số ngày tối đa sau khi đơn giao thành công (Delivered) khách được gửi khiếu nại trên trang tra cứu (UC-47, BR-59). Mặc định: 14 ngày."
+            extra="Số ngày tối đa sau khi đơn giao thành công (Delivered) khách được gửi khiếu nại trên trang tra cứu. Mặc định: 14 ngày."
           >
             <InputNumber min={1} max={90} className="w-36 h-10 rounded-lg" />
           </Form.Item>
@@ -163,7 +163,7 @@ export default function SettingsPage() {
           <Form.Item 
             name="document_deadline_hours" 
             label="Thời hạn bổ sung chứng từ (giờ)" 
-            extra="Thời hạn yêu cầu khách upload giấy tờ sau khi tạo đơn nháp (BR-25). Mặc định: 24 giờ."
+            extra="Thời hạn yêu cầu khách upload giấy tờ sau khi tạo đơn nháp. Mặc định: 24 giờ."
           >
             <InputNumber min={1} max={72} className="w-36 h-10 rounded-lg" />
           </Form.Item>
@@ -171,7 +171,7 @@ export default function SettingsPage() {
           <Form.Item 
             name="waiting_too_long_minutes" 
             label="Giới hạn cảnh báo chờ tại kho (phút)" 
-            extra="Thời gian chờ dỡ hàng tối đa tại kho trước khi hệ thống kích hoạt cảnh báo chờ quá lâu (BR-25)."
+            extra="Thời gian chờ dỡ hàng tối đa tại kho trước khi hệ thống kích hoạt cảnh báo chờ quá lâu."
           >
             <InputNumber min={15} max={240} className="w-36 h-10 rounded-lg" />
           </Form.Item>
@@ -179,7 +179,7 @@ export default function SettingsPage() {
           <Form.Item 
             name="minimum_driver_rest_hours" 
             label="Thời gian nghỉ tối thiểu của tài xế (giờ)" 
-            extra="Quy định pháp lý bắt buộc theo BR-34 (Luật định hiển thị để giám sát, khóa không cho thay đổi)."
+            extra="Quy định pháp lý bắt buộc theo (Luật định hiển thị để giám sát, khóa không cho thay đổi)."
           >
             <InputNumber disabled className="w-36 h-10 rounded-lg bg-slate-100 font-bold" />
           </Form.Item>
@@ -207,7 +207,7 @@ export default function SettingsPage() {
             <Input className="h-10 rounded-lg w-40 font-mono font-bold" />
           </Form.Item>
 
-          <Form.Item name="default_geofence_radius_meters" label="Bán kính hàng rào địa lý kho (mét)" extra="Khoảng cách cho phép để tài xế bấm xác nhận Đến kho (BR-36)">
+          <Form.Item name="default_geofence_radius_meters" label="Bán kính hàng rào địa lý kho (mét)" extra="Khoảng cách cho phép để tài xế bấm xác nhận Đến kho">
             <InputNumber min={50} max={2000} className="w-36 h-10 rounded-lg" />
           </Form.Item>
         </div>
@@ -215,10 +215,10 @@ export default function SettingsPage() {
         {/* KHỐI 4: LƯU TRỮ DỮ LIỆU & BẢO MẬT */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
           <div className="flex items-center gap-2 text-indigo-600 font-bold text-base border-b border-slate-100 pb-3">
-            <Database size={20} /> Lưu trữ Dữ liệu & Tệp tin (Data Retention - BR-22)
+            <Database size={20} /> Lưu trữ Dữ liệu & Tệp tin (Lưu trữ dữ liệu)
           </div>
 
-          <Form.Item name="document_retention_days" label="Thời hạn lưu trữ chứng từ/POD (ngày)" extra="Lưu trữ tối thiểu 2 năm (730 ngày) theo quy định BR-22">
+          <Form.Item name="document_retention_days" label="Thời hạn lưu trữ chứng từ/POD (ngày)" extra="Lưu trữ tối thiểu 2 năm (730 ngày) theo quy định hệ thống">
             <InputNumber min={60} max={1825} className="w-36 h-10 rounded-lg" />
           </Form.Item>
 

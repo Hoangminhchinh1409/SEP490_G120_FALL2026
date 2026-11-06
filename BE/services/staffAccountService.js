@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const supabase = require("../config/supabase");
 const staffAccountModel = require("../models/staffAccountModel");
 
-// Role IDs hợp lệ theo đặc tả BR-28: Chỉ Dispatcher (3) và Driver (4)
+// Role IDs hợp lệ theo quy định hệ thống: Chỉ Dispatcher (3) và Driver (4)
 const ALLOWED_STAFF_ROLE_IDS = [3, 4];
 const ROLE_NAME_TO_ID = {
     DISPATCHER: 3,
@@ -29,7 +29,7 @@ const staffAccountService = {
         const accounts = await staffAccountModel.findStaffAccounts({
             search,
             roleId,
-            status: status && status !== 'ALL' ? status.toUpperCase() : null
+            status: status && status !== 'ALL' ? status.toUpperCase(): null
         });
 
         // Định dạng dữ liệu trả về cho Frontend
@@ -49,11 +49,11 @@ const staffAccountService = {
         }));
     },
 
-    // 2. Lấy chi tiết tài khoản nhân viên (Screen 27)
+    // 2. Lấy chi tiết tài khoản nhân viên
     getStaffAccountById: async (id) => {
         const acc = await staffAccountModel.findStaffAccountById(id);
         if (!acc) {
-            const error = new Error("Không tìm thấy tài khoản nhân viên hoặc bạn không có quyền truy cập (BR-28).");
+            const error = new Error("Không tìm thấy tài khoản nhân viên hoặc bạn không có quyền truy cập.");
             error.statusCode = 404;
             throw error;
         }
@@ -74,7 +74,7 @@ const staffAccountService = {
         };
     },
 
-    // 3. Tạo mới tài khoản nhân viên (Screen 27)
+    // 3. Tạo mới tài khoản nhân viên
     createStaffAccount: async (payload) => {
         const { username, full_name, email, phone, role, password, status = 'ACTIVE' } = payload;
 
@@ -98,7 +98,7 @@ const staffAccountService = {
             throw err;
         }
 
-        // Kiểm tra Role theo quy tắc BR-28
+        // Kiểm tra Role theo quy tắc
         let targetRoleId = null;
         if (typeof role === 'number') {
             targetRoleId = role;
@@ -107,13 +107,13 @@ const staffAccountService = {
         }
 
         if (!targetRoleId || !ALLOWED_STAFF_ROLE_IDS.includes(targetRoleId)) {
-            const err = new Error("Lỗi BR-28: Manager chỉ được phép tạo tài khoản có vai trò là Dispatcher hoặc Driver.");
+            const err = new Error("Lỗi: Manager chỉ được phép tạo tài khoản có vai trò là Dispatcher hoặc Driver.");
             err.statusCode = 403;
             throw err;
         }
 
         // Kiểm tra Status
-        const normalizedStatus = status.toUpperCase() === 'LOCKED' ? 'LOCKED' : 'ACTIVE';
+        const normalizedStatus = status.toUpperCase() === 'LOCKED' ? 'LOCKED': 'ACTIVE';
 
         // Kiểm tra trùng lặp Username & Email
         const dupCheck = await staffAccountModel.checkDuplicate({
@@ -130,7 +130,7 @@ const staffAccountService = {
         const rawPassword = password || "Nexlog@2026";
         const password_hash = await bcrypt.hash(rawPassword, 10);
 
-        // BR-44: Tự động sinh order_form_token duy nhất cho Dispatcher
+        //: Tự động sinh order_form_token duy nhất cho Dispatcher
         const order_form_token = targetRoleId === 3 
             ? `disp_${username.trim().toLowerCase().replace(/[^a-z0-9]/g, '')}_${crypto.randomBytes(6).toString('hex')}`
             : null;
@@ -146,7 +146,7 @@ const staffAccountService = {
             order_form_token
         });
 
-        // BR-28: Nếu tạo tài khoản là Driver (role_id = 4), tự động tạo bản ghi hồ sơ tài xế driver_profiles
+        //: Nếu tạo tài khoản là Driver (role_id = 4), tự động tạo bản ghi hồ sơ tài xế driver_profiles
         if (targetRoleId === 4 && newAccount?.id) {
             try {
                 const licNum = `GPLX-${(phone || '').slice(-6) || Math.floor(100000 + Math.random() * 900000)}`;
@@ -171,11 +171,11 @@ const staffAccountService = {
         };
     },
 
-    // 4. Cập nhật thông tin tài khoản nhân viên (Screen 27)
+    // 4. Cập nhật thông tin tài khoản nhân viên
     updateStaffAccount: async (id, payload) => {
         const existing = await staffAccountModel.findStaffAccountById(id);
         if (!existing) {
-            const err = new Error("Không tìm thấy tài khoản nhân viên hoặc bạn không có quyền cập nhật tài khoản này (BR-28).");
+            const err = new Error("Không tìm thấy tài khoản nhân viên hoặc bạn không có quyền cập nhật tài khoản này.");
             err.statusCode = 404;
             throw err;
         }
@@ -214,7 +214,7 @@ const staffAccountService = {
             else if (typeof role === 'string' && ROLE_NAME_TO_ID[role.toUpperCase()]) targetRoleId = ROLE_NAME_TO_ID[role.toUpperCase()];
 
             if (!targetRoleId || !ALLOWED_STAFF_ROLE_IDS.includes(targetRoleId)) {
-                const err = new Error("Lỗi BR-28: Manager chỉ được phép gán vai trò Dispatcher hoặc Driver.");
+                const err = new Error("Lỗi: Manager chỉ được phép gán vai trò Dispatcher hoặc Driver.");
                 err.statusCode = 403;
                 throw err;
             }
@@ -222,7 +222,7 @@ const staffAccountService = {
         }
 
         if (status !== undefined) {
-            updateData.status = status.toUpperCase() === 'LOCKED' ? 'LOCKED' : 'ACTIVE';
+            updateData.status = status.toUpperCase() === 'LOCKED' ? 'LOCKED': 'ACTIVE';
         }
 
         if (password && password.trim() !== '') {
@@ -236,16 +236,16 @@ const staffAccountService = {
         };
     },
 
-    // 5. Cập nhật trạng thái Khóa / Mở khóa tài khoản (Screen 27 & Screen 26)
+    // 5. Cập nhật trạng thái Khóa / Mở khóa tài khoản
     toggleStaffAccountStatus: async (id, status) => {
         const existing = await staffAccountModel.findStaffAccountById(id);
         if (!existing) {
-            const err = new Error("Không tìm thấy tài khoản nhân viên hoặc bạn không có quyền cập nhật tài khoản này (BR-28).");
+            const err = new Error("Không tìm thấy tài khoản nhân viên hoặc bạn không có quyền cập nhật tài khoản này.");
             err.statusCode = 404;
             throw err;
         }
 
-        const newStatus = status ? status.toUpperCase() : (existing.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE');
+        const newStatus = status ? status.toUpperCase(): (existing.status === 'ACTIVE' ? 'LOCKED': 'ACTIVE');
         if (!['ACTIVE', 'LOCKED'].includes(newStatus)) {
             const err = new Error("Trạng thái không hợp lệ (chỉ chấp nhận ACTIVE hoặc LOCKED).");
             err.statusCode = 400;

@@ -169,7 +169,7 @@ const getActiveTrip = async (driverProfileId) => {
     throw tripErr;
   }
 
-  const activeTrip = trips && trips.length > 0 ? trips[0] : null;
+  const activeTrip = trips && trips.length > 0 ? trips[0]: null;
   if (activeTrip) {
     // Sắp xếp các điểm dừng theo thứ tự di chuyển sequence
     if (activeTrip.stops) {
@@ -179,7 +179,7 @@ const getActiveTrip = async (driverProfileId) => {
     const activeTruckAssign =
       (activeTrip.truck_assignments || []).find((ta) => ta.truck) ||
       activeTrip.truck_assignments?.[0];
-    activeTrip.truck = activeTruckAssign ? activeTruckAssign.truck : null;
+    activeTrip.truck = activeTruckAssign ? activeTruckAssign.truck: null;
   }
 
   return activeTrip;
@@ -335,7 +335,7 @@ const getTripDetail = async (tripId, driverProfileId) => {
     const truckAssign =
       (trip.truck_assignments || []).find((ta) => ta.truck) ||
       trip.truck_assignments?.[0];
-    trip.truck = truckAssign ? truckAssign.truck : null;
+    trip.truck = truckAssign ? truckAssign.truck: null;
   }
 
   return trip || null;
@@ -362,7 +362,7 @@ const updateTripStatus = async (tripId, status, extraFields = {}) => {
     console.error("updateTripStatus error:", error);
     throw error;
   }
-  return data && data.length > 0 ? data[0] : null;
+  return data && data.length > 0 ? data[0]: null;
 };
 
 const getTripStopById = async (stopId, tripId) => {
@@ -420,7 +420,7 @@ const updateTripStop = async (stopId, updateData) => {
     console.error("updateTripStop error:", error);
     throw error;
   }
-  return data && data.length > 0 ? data[0] : null;
+  return data && data.length > 0 ? data[0]: null;
 };
 
 const updateOrdersStatus = async (
@@ -495,7 +495,7 @@ const updateDriverProfileStatus = async (
 };
 
 // ==========================================
-// 5. TRIP EVENTS & DELIVERY EVIDENCE (BR-11, BR-12, BR-27)
+// 5. TRIP EVENTS & DELIVERY EVIDENCE
 // ==========================================
 
 const recordTripEvent = async ({
@@ -533,11 +533,11 @@ const recordTripEvent = async ({
     console.error("recordTripEvent error:", error);
     throw error;
   }
-  return data && data.length > 0 ? data[0] : null;
+  return data && data.length > 0 ? data[0]: null;
 };
 
 // ==========================================
-// 6. INCIDENTS (BF-04 & UC-32)
+// 6. INCIDENTS
 // ==========================================
 
 const createIncident = async ({
@@ -574,11 +574,11 @@ const createIncident = async ({
     console.error("createIncident error:", error);
     throw error;
   }
-  return data && data.length > 0 ? data[0] : null;
+  return data && data.length > 0 ? data[0]: null;
 };
 
 // ==========================================
-// 7. IDEMPOTENCY & AUDIT LOGS (BR-27)
+// 7. IDEMPOTENCY & AUDIT LOGS
 // ==========================================
 
 const checkIdempotency = async (clientActionId) => {
@@ -614,9 +614,9 @@ const logDriverActivity = async ({
         action,
         target_type: targetType,
         target_id:
-          typeof targetId === "number" ? targetId : parseInt(targetId) || 0,
+          typeof targetId === "number" ? targetId: parseInt(targetId) || 0,
         reason,
-        changes: changes ? JSON.stringify(changes) : null,
+        changes: changes ? JSON.stringify(changes): null,
         created_time: new Date().toISOString(),
         client_action_id: clientActionId,
       },
@@ -627,11 +627,11 @@ const logDriverActivity = async ({
 };
 
 // ==========================================
-// 8. DRIVER SHIFTS (UC-20, BR-60) -> Tách sang ./shiftModel.js
+// 8. DRIVER SHIFTS -> Tách sang./shiftModel.js
 // ==========================================
 
 // ==========================================
-// 9. CUSTOMER REFUSAL (BR-57)
+// 9. CUSTOMER REFUSAL
 // ==========================================
 
 const updateOrderRefusal = async (
@@ -668,11 +668,11 @@ const updateOrderRefusal = async (
     console.warn("order_status_history insert warning:", hErr.message);
   }
 
-  return data && data.length > 0 ? data[0] : null;
+  return data && data.length > 0 ? data[0]: null;
 };
 
 // ==========================================
-// 10. EXTRA FEES (BR-30, MSG85)
+// 10. EXTRA FEES
 // ==========================================
 
 const createProposedExtraFee = async ({
@@ -707,15 +707,15 @@ const createProposedExtraFee = async ({
     console.error("createProposedExtraFee error:", error);
     throw error;
   }
-  return data && data.length > 0 ? data[0] : null;
+  return data && data.length > 0 ? data[0]: null;
 };
 
 // ==========================================
-// 11. NOTIFICATIONS (Screen 6.5, MSG80, MSG85, MSG75) -> Tách sang ./notificationModel.js
+// 11. NOTIFICATIONS -> Tách sang./notificationModel.js
 // ==========================================
 
 // ==========================================
-// 12. DRIVING HOURS CALCULATION (BR-34)
+// 12. DRIVING HOURS CALCULATION
 // ==========================================
 
 const getDriverDrivingTimeStats = async (driverProfileId) => {

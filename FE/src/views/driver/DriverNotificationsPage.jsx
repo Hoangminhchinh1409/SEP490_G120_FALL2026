@@ -37,7 +37,7 @@ export default function DriverNotificationsPage() {
     try {
       await driverApi.markNotificationRead(id);
       setNotifications(prev =>
-        prev.map(n => n.id === id ? { ...n, read_time: new Date().toISOString() } : n)
+        prev.map(n => n.id === id ? {...n, read_time: new Date().toISOString() }: n)
       );
     } catch (err) {
       console.error("markNotificationRead error:", err);
@@ -49,7 +49,7 @@ export default function DriverNotificationsPage() {
       setMarkingAll(true);
       await driverApi.markAllNotificationsRead();
       setNotifications(prev =>
-        prev.map(n => ({ ...n, read_time: new Date().toISOString() }))
+        prev.map(n => ({...n, read_time: new Date().toISOString() }))
       );
       message.success("Đã đánh dấu tất cả thông báo là đã đọc!");
     } catch (err) {
@@ -83,7 +83,7 @@ export default function DriverNotificationsPage() {
           <h1 className="text-xl font-black text-white flex items-center gap-2">
             <Bell className="text-blue-500" size={24} /> Thông báo
           </h1>
-          <p className="text-xs text-slate-400">Cập nhật chuyến xe & duyệt ca (Screen 6.5)</p>
+          <p className="text-xs text-slate-400">Cập nhật chuyến xe & duyệt ca</p>
         </div>
         {unreadCount > 0 && (
           <Button
@@ -103,11 +103,11 @@ export default function DriverNotificationsPage() {
         <div className="text-center py-12">
           <Spin size="large" />
         </div>
-      ) : notifications.length === 0 ? (
+      ): notifications.length === 0 ? (
         <div className="bg-slate-800/40 border border-slate-800 rounded-3xl p-8 text-center mt-6">
           <Empty description={<span className="text-slate-400 text-xs">Bạn chưa có thông báo nào</span>} />
         </div>
-      ) : (
+      ): (
         <div className="space-y-3">
           {notifications.map((notif) => {
             const isRead = !!notif.read_time;
@@ -124,7 +124,7 @@ export default function DriverNotificationsPage() {
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div className={`p-2.5 rounded-xl ${isRead ? "bg-slate-700/50" : "bg-blue-600/20"}`}>
+                  <div className={`p-2.5 rounded-xl ${isRead ? "bg-slate-700/50": "bg-blue-600/20"}`}>
                     {getNotificationIcon(notif.target_type)}
                   </div>
                   <div className="flex-1 min-w-0">

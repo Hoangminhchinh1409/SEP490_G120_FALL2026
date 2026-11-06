@@ -106,7 +106,7 @@ const getUserById = async (req, res) => {
         });
     } catch (error) {
         console.error(`[AdminController] getUserById error for id ${req.params.id}:`, error);
-        const status = error.message === "User not found" ? 404 : 500;
+        const status = error.message === "User not found" ? 404: 500;
         return res.status(status).json({
             message: "Failed to fetch user details",
             error: error.message
@@ -128,7 +128,7 @@ const createUser = async (req, res) => {
     } catch (error) {
         console.error("[AdminController] createUser error:", error);
         const isConflict = error.message.includes("already exists");
-        const status = isConflict ? 409 : 400;
+        const status = isConflict ? 409: 400;
         return res.status(status).json({
             message: "Failed to create user",
             error: error.message
@@ -152,7 +152,7 @@ const updateUser = async (req, res) => {
         console.error(`[AdminController] updateUser error for id ${req.params.id}:`, error);
         const isConflict = error.message.includes("already taken");
         const isNotFound = error.message === "User not found";
-        const status = isNotFound ? 404 : isConflict ? 409 : 400;
+        const status = isNotFound ? 404: isConflict ? 409: 400;
         return res.status(status).json({
             message: "Failed to update user",
             error: error.message
@@ -182,7 +182,7 @@ const updateUserStatus = async (req, res) => {
     } catch (error) {
         console.error(`[AdminController] updateUserStatus error for id ${req.params.id}:`, error);
         const isNotFound = error.message === "User not found";
-        const status = isNotFound ? 404 : 400;
+        const status = isNotFound ? 404: 400;
         return res.status(status).json({
             message: "Failed to update user status",
             error: error.message
@@ -258,7 +258,7 @@ const updateSystemSetting = async (req, res) => {
 };
 
 // ==========================================
-// 6. PERMISSIONS MATRIX (UC-34)
+// 6. PERMISSIONS MATRIX
 // ==========================================
 
 const getPermissionsMatrix = async (req, res) => {

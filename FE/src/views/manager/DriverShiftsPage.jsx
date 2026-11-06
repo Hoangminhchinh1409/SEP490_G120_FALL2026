@@ -91,8 +91,8 @@ export default function DriverShiftsPage() {
       const toStr = weekEnd.format("YYYY-MM-DD");
 
       const [shiftsRes, driversRes] = await Promise.all([
-        managerApi.getShifts({ from: fromStr, to: toStr, status: statusFilter !== "ALL" ? statusFilter : undefined }),
-        managerApi.getFleetDrivers ? managerApi.getFleetDrivers() : Promise.resolve([])
+        managerApi.getShifts({ from: fromStr, to: toStr, status: statusFilter !== "ALL" ? statusFilter: undefined }),
+        managerApi.getFleetDrivers ? managerApi.getFleetDrivers(): Promise.resolve([])
       ]);
 
       setShifts(shiftsRes?.shifts || []);
@@ -152,7 +152,7 @@ export default function DriverShiftsPage() {
     shiftForm.resetFields();
     const defaultDate = dateMoment || currentWeekStart;
     shiftForm.setFieldsValue({
-      driver_id: driverId || (drivers.length > 0 ? drivers[0].id : undefined),
+      driver_id: driverId || (drivers.length > 0 ? drivers[0].id: undefined),
       date: defaultDate,
       time_range: [defaultDate.hour(8).minute(0), defaultDate.hour(17).minute(0)],
       note: ""
@@ -199,7 +199,7 @@ export default function DriverShiftsPage() {
         date: dateStr,
         start_time: `${dateStr}T${startTimeStr}+07:00`,
         end_time: `${dateStr}T${endTimeStr}+07:00`,
-        note: values.note ? values.note.trim() : null
+        note: values.note ? values.note.trim(): null
       };
 
       if (editingShift) {
@@ -229,7 +229,7 @@ export default function DriverShiftsPage() {
   const handleApproveShift = async (shift) => {
     try {
       const res = await managerApi.approveShift(shift.id);
-      message.success(res.message || "Đã phê duyệt ca làm việc thành công (MSG80).");
+      message.success(res.message || "Đã phê duyệt ca làm việc thành công.");
       if (res.warning) message.warning(res.warning, 6);
       setDetailModal({ open: false, shift: null });
       loadData();
@@ -257,7 +257,7 @@ export default function DriverShiftsPage() {
     try {
       setSubmittingReject(true);
       const res = await managerApi.rejectShift(rejectModal.shiftId, rejectModal.reason.trim());
-      message.success(res.message || "Đã từ chối ca làm việc thành công (MSG80).");
+      message.success(res.message || "Đã từ chối ca làm việc thành công.");
       setRejectModal({ open: false, shiftId: null, shiftInfo: null, reason: "" });
       setDetailModal({ open: false, shift: null });
       loadData();
@@ -294,7 +294,7 @@ export default function DriverShiftsPage() {
                 Lịch Phân Ca & Phê Duyệt Ca Trực
               </h1>
               <p className="text-xs text-on-surface-variant">
-                Quản lý xếp lịch làm việc tài xế theo tuần, phê duyệt ca đăng ký và kiểm soát giới hạn giờ lái (UC-20 / BR-34 / Screen 25)
+                Quản lý xếp lịch làm việc tài xế theo tuần, phê duyệt ca đăng ký và kiểm soát giới hạn giờ lái
               </p>
             </div>
           </div>
@@ -336,7 +336,7 @@ export default function DriverShiftsPage() {
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping inline-block" />
             )}
           </div>
-          <div className="text-[11px] text-on-surface-variant/80 mt-0.5">Yêu cầu từ tài xế (BR-60)</div>
+          <div className="text-[11px] text-on-surface-variant/80 mt-0.5">Yêu cầu từ tài xế</div>
         </div>
 
         <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-2xs">
@@ -346,8 +346,8 @@ export default function DriverShiftsPage() {
         </div>
 
         <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-2xs">
-          <div className="text-xs font-semibold text-on-surface-variant">Cảnh báo giờ lái (BR-34)</div>
-          <div className={`text-2xl font-black mt-1 ${stats.overLimitCount > 0 ? "text-error" : "text-on-surface"}`}>
+          <div className="text-xs font-semibold text-on-surface-variant">Cảnh báo giờ lái</div>
+          <div className={`text-2xl font-black mt-1 ${stats.overLimitCount > 0 ? "text-error": "text-on-surface"}`}>
             {stats.overLimitCount}
           </div>
           <div className="text-[11px] text-on-surface-variant/80 mt-0.5">&gt; 10 giờ/ngày theo luật</div>
@@ -416,7 +416,7 @@ export default function DriverShiftsPage() {
         </div>
       </div>
 
-      {/* 4. BẢNG 1: MA TRẬN LỊCH PHÂN CA TUẦN (WEEKLY GRID - FIGURE 43/45) */}
+      {/* 4. BẢNG 1: MA TRẬN LỊCH PHÂN CA TUẦN */}
       <div className="bg-surface-container-lowest rounded-3xl shadow-sm p-5 border border-outline-variant/30 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -436,7 +436,7 @@ export default function DriverShiftsPage() {
               <span className="w-3 h-3 rounded bg-amber-500 inline-block" /> ⏳ Chờ duyệt
             </span>
             <span className="flex items-center gap-1 text-red-600">
-              <span className="w-3 h-3 rounded bg-red-400 inline-block" /> ⚠️ &gt;10h (BR-34)
+              <span className="w-3 h-3 rounded bg-red-400 inline-block" /> ⚠️ &gt;10h
             </span>
           </div>
         </div>
@@ -445,11 +445,11 @@ export default function DriverShiftsPage() {
           <div className="py-20 text-center">
             <Spin size="large" />
           </div>
-        ) : filteredDrivers.length === 0 ? (
+        ): filteredDrivers.length === 0 ? (
           <div className="py-12 text-center">
             <Empty description="Không có tài xế nào phù hợp" />
           </div>
-        ) : (
+        ): (
           <div className="overflow-x-auto rounded-2xl border border-surface-container">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -461,7 +461,7 @@ export default function DriverShiftsPage() {
                     <th
                       key={d.dateStr}
                       className={`py-3 px-2 text-center text-xs font-extrabold min-w-[130px] border-l border-surface-container/60 ${
-                        d.isToday ? "bg-primary/10 text-primary" : ""
+                        d.isToday ? "bg-primary/10 text-primary": ""
                       }`}
                     >
                       <div>{d.dayName}</div>
@@ -480,7 +480,7 @@ export default function DriverShiftsPage() {
                       <td className="py-3 px-3 font-bold text-primary sticky left-0 bg-surface-container-lowest z-10 shadow-xs">
                         <div className="flex items-center gap-2">
                           <div className="w-7 h-7 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs shrink-0">
-                            {drv.name ? drv.name.charAt(0) : "T"}
+                            {drv.name ? drv.name.charAt(0): "T"}
                           </div>
                           <div className="overflow-hidden">
                             <div className="truncate text-xs font-extrabold">{drv.name}</div>
@@ -504,7 +504,7 @@ export default function DriverShiftsPage() {
                           <td
                             key={d.dateStr}
                             className={`py-2 px-2 align-top border-l border-surface-container/60 transition-colors ${
-                              d.isToday ? "bg-primary/5" : ""
+                              d.isToday ? "bg-primary/5": ""
                             }`}
                           >
                             <div className="min-h-[64px] flex flex-col justify-between gap-1">
@@ -532,7 +532,7 @@ export default function DriverShiftsPage() {
                                     >
                                       <div className="flex items-center justify-between gap-1 leading-tight">
                                         <span className="truncate">
-                                          {isPending ? "⏳ " : ""}
+                                          {isPending ? "⏳ ": ""}
                                           {dayjs(sh.start_time).format("HH:mm")}–{dayjs(sh.end_time).format("HH:mm")}
                                         </span>
                                         <span className="text-[10px] opacity-80">
@@ -542,7 +542,7 @@ export default function DriverShiftsPage() {
 
                                       {isShiftOver && (
                                         <div className="text-[9px] text-amber-800 font-sans mt-0.5 flex items-center gap-0.5">
-                                          <AlertTriangle size={10} /> &gt;10h BR-34
+                                          <AlertTriangle size={10} /> &gt;10h
                                         </div>
                                       )}
                                     </div>
@@ -571,7 +571,7 @@ export default function DriverShiftsPage() {
           </div>
         )}
 
-        {/* Chú thích chân trang chuẩn Figure 45 */}
+        {/* Chú thích chân trang chuẩn  */}
         <div className="pt-2 text-xs text-on-surface-variant border-t border-surface-container/60">
           <div>
             💡 <strong>Hướng dẫn:</strong> Bấm vào một ô hoặc nút <strong>"+ Thêm ca"</strong> để xếp ca trực mới (ca do Quản lý tạo tự động có hiệu lực). Bấm vào ca đã có để xem chi tiết, chỉnh sửa hoặc xóa ca.
@@ -579,7 +579,7 @@ export default function DriverShiftsPage() {
         </div>
       </div>
 
-      {/* 5. BẢNG 2: DANH SÁCH CA CHỜ PHÊ DUYỆT (FIGURE 43/45 - ④) */}
+      {/* 5. BẢNG 2: DANH SÁCH CA CHỜ PHÊ DUYỆT */}
       <div className="bg-surface-container-lowest rounded-3xl shadow-sm p-5 border border-outline-variant/30 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -591,7 +591,7 @@ export default function DriverShiftsPage() {
             </span>
           </div>
           <p className="text-xs text-on-surface-variant hidden sm:block">
-            Các ca trực do tài xế chủ động gửi đăng ký qua ứng dụng Driver PWA (BR-60)
+            Các ca trực do tài xế chủ động gửi đăng ký qua ứng dụng Driver PWA
           </p>
         </div>
 
@@ -599,7 +599,7 @@ export default function DriverShiftsPage() {
           <div className="py-8 text-center text-on-surface-variant text-xs italic bg-surface-container-low/40 rounded-2xl">
             Không có ca làm việc nào đang chờ duyệt trong tuần này.
           </div>
-        ) : (
+        ): (
           <div className="overflow-x-auto rounded-2xl border border-surface-container">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
@@ -619,24 +619,24 @@ export default function DriverShiftsPage() {
                     <td className="py-3 px-3 font-bold text-primary">
                       <div>{sh.driver_name}</div>
                       <div className="text-[10px] text-on-surface-variant font-mono">
-                        Hạng {sh.license_class || "C"} {sh.driver_phone ? `· ${sh.driver_phone}` : ""}
+                        Hạng {sh.license_class || "C"} {sh.driver_phone ? `· ${sh.driver_phone}`: ""}
                       </div>
                     </td>
                     <td className="py-3 px-3 font-mono font-medium">
-                      {sh.date ? dayjs(sh.date).format("dddd, DD/MM/YYYY") : "N/A"}
+                      {sh.date ? dayjs(sh.date).format("dddd, DD/MM/YYYY"): "N/A"}
                     </td>
                     <td className="py-3 px-3 font-mono font-bold text-primary">
                       {dayjs(sh.start_time).format("HH:mm")} – {dayjs(sh.end_time).format("HH:mm")}
                     </td>
                     <td className="py-3 px-3">
                       <span className={`px-2 py-0.5 rounded-md font-mono font-bold ${
-                        sh.duration_hours > 10 ? "bg-amber-100 text-amber-900 border border-amber-300" : "bg-slate-100 text-slate-700"
+                        sh.duration_hours > 10 ? "bg-amber-100 text-amber-900 border border-amber-300": "bg-slate-100 text-slate-700"
                       }`}>
                         {sh.duration_hours} giờ
                       </span>
                     </td>
                     <td className="py-3 px-3 text-on-surface-variant font-mono text-[11px]">
-                      {sh.created_at ? dayjs(sh.created_at).format("DD/MM/YYYY HH:mm") : "N/A"}
+                      {sh.created_at ? dayjs(sh.created_at).format("DD/MM/YYYY HH:mm"): "N/A"}
                     </td>
                     <td className="py-3 px-3 text-on-surface-variant max-w-[200px] truncate">
                       {sh.note || <span className="text-on-surface-variant/40 italic">—</span>}
@@ -679,7 +679,7 @@ export default function DriverShiftsPage() {
         title={
           <div className="flex items-center gap-2 text-primary font-black text-base">
             <CalendarIcon size={20} className="text-primary" />
-            <span>{editingShift ? "Chỉnh sửa ca làm việc" : "Xếp ca làm việc mới cho tài xế"}</span>
+            <span>{editingShift ? "Chỉnh sửa ca làm việc": "Xếp ca làm việc mới cho tài xế"}</span>
           </div>
         }
         open={isShiftModalOpen}
@@ -778,9 +778,9 @@ export default function DriverShiftsPage() {
             />
           </Form.Item>
 
-          {/* Cảnh báo BR-34 */}
+          {/* Cảnh báo */}
           <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-xl text-amber-900 text-xs">
-            ⚠️ <strong>Quy chuẩn BR-34 / BR-08:</strong> Ca trực do Quản lý tạo sẽ tự động được phê duyệt (`Approved`). Hệ thống sẽ tự động chặn việc tạo 2 ca chồng lấn thời gian của cùng một tài xế. Ca dài quá 10 giờ sẽ kích hoạt cảnh báo an toàn.
+            ⚠️ <strong>Quy chuẩn an toàn:</strong> Ca trực do Quản lý tạo sẽ tự động được phê duyệt (`Approved`). Hệ thống sẽ tự động chặn việc tạo 2 ca chồng lấn thời gian của cùng một tài xế. Ca dài quá 10 giờ sẽ kích hoạt cảnh báo an toàn.
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container">
@@ -793,7 +793,7 @@ export default function DriverShiftsPage() {
               loading={submittingShift}
               className="bg-primary hover:bg-primary/90 font-bold rounded-xl"
             >
-              {editingShift ? "Lưu thay đổi" : "Lưu ca làm việc"}
+              {editingShift ? "Lưu thay đổi": "Lưu ca làm việc"}
             </Button>
           </div>
         </Form>
@@ -956,7 +956,7 @@ export default function DriverShiftsPage() {
             <Input.TextArea
               rows={3}
               value={rejectModal.reason}
-              onChange={(e) => setRejectModal((prev) => ({ ...prev, reason: e.target.value }))}
+              onChange={(e) => setRejectModal((prev) => ({...prev, reason: e.target.value }))}
               placeholder="Nhập lý do từ chối để tài xế được thông báo (ví dụ: Không đủ tài xế dự phòng, lịch trùng ca xe...)"
               className="rounded-xl"
             />

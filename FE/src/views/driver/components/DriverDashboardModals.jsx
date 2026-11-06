@@ -85,7 +85,7 @@ export default function DriverDashboardModals({
         onOk={() => handleAcceptTrip(trip?.id)}
       >
         <p className="text-sm text-slate-600 my-2">
-          Bạn có chắc chắn muốn nhận chuyến xe <b>{trip?.trip_code}</b> không? (MSG17)
+          Bạn có chắc chắn muốn nhận chuyến xe <b>{trip?.trip_code}</b> không?
         </p>
         <p className="text-xs text-slate-400">
           Sau khi xác nhận, chuyến xe sẽ chuyển sang trạng thái Đã nhận (Accepted).
@@ -96,8 +96,8 @@ export default function DriverDashboardModals({
       <Modal 
         open={sealModalOpen} 
         onCancel={() => setSealModalOpen(false)} 
-        title={<span className="font-bold text-slate-800">Lấy hàng & Niêm chì 3 Bước (BR-11)</span>} 
-        okText="Lưu lấy hàng (BR-11)"
+        title={<span className="font-bold text-slate-800">Lấy hàng & Niêm chì 3 Bước</span>} 
+        okText="Lưu lấy hàng"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-blue-600 font-bold" }}
         onOk={handleSubmitPickup}
@@ -198,7 +198,7 @@ export default function DriverDashboardModals({
           </div>
           {tripData?.trip?.truck && (
             <span className="text-[11px] text-slate-400 block">
-              Tải trọng cho phép của xe: <b>{tripData.trip.truck.allowed_payload} kg</b> (BR-33)
+              Tải trọng cho phép của xe: <b>{tripData.trip.truck.allowed_payload} kg</b>
             </span>
           )}
         </div>
@@ -208,8 +208,8 @@ export default function DriverDashboardModals({
       <Modal 
         open={podModalOpen} 
         onCancel={() => setPodModalOpen(false)} 
-        title={<span className="font-bold text-slate-800">Biên bản Giao nhận Hàng POD (BR-12)</span>} 
-        okText="Lưu giao hàng (BR-12)"
+        title={<span className="font-bold text-slate-800">Biên bản Giao nhận Hàng POD</span>} 
+        okText="Lưu giao hàng"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-emerald-600 font-bold" }}
         onOk={handleSubmitDelivery}
@@ -257,7 +257,7 @@ export default function DriverDashboardModals({
                 </div>
               </div>
             </div>
-          ) : (
+          ): (
             <div>
               <label className="font-bold text-slate-700 block mb-1">Ảnh biên bản POD có ký nhận (*)</label>
               <Upload 
@@ -303,7 +303,7 @@ export default function DriverDashboardModals({
               onChange={(e) => setDocsHandedOver(e.target.checked)}
               className="font-bold text-slate-700"
             >
-              Đã bàn giao đủ chứng từ (BR-12)
+              Đã bàn giao đủ chứng từ
             </Checkbox>
           </div>
         </div>
@@ -313,7 +313,7 @@ export default function DriverDashboardModals({
       <Modal
         open={refusalModalOpen}
         onCancel={() => setRefusalModalOpen(false)}
-        title={<span className="font-bold text-red-600 flex items-center gap-1.5"><Ban size={18}/> Khách không nhận hàng (BR-57)</span>}
+        title={<span className="font-bold text-red-600 flex items-center gap-1.5"><Ban size={18}/> Khách không nhận hàng</span>}
         okText="Gửi báo cáo từ chối"
         confirmLoading={actionLoading}
         okButtonProps={{ danger: true, className: "font-bold" }}
@@ -321,7 +321,7 @@ export default function DriverDashboardModals({
       >
         <div className="space-y-3 py-2 text-xs">
           <p className="text-slate-500">
-            Ghi nhận khách từ chối nhận hàng tại điểm giao. Đơn hàng sẽ được chuyển sang <b>Delivered (Exception)</b> và gửi cảnh báo cho Điều phối viên (MSG75).
+            Ghi nhận khách từ chối nhận hàng tại điểm giao. Đơn hàng sẽ được chuyển sang <b>Delivered (Exception)</b> và gửi cảnh báo cho Điều phối viên.
           </p>
 
           <div>
@@ -369,15 +369,15 @@ export default function DriverDashboardModals({
       <Modal
         open={extraFeeModalOpen}
         onCancel={() => setExtraFeeModalOpen(false)}
-        title={<span className="font-bold text-amber-600 flex items-center gap-1.5"><DollarSign size={18}/> Đề xuất Phụ phí (BR-30)</span>}
-        okText="Gửi đề xuất phí (MSG85)"
+        title={<span className="font-bold text-amber-600 flex items-center gap-1.5"><DollarSign size={18}/> Đề xuất Phụ phí</span>}
+        okText="Gửi đề xuất phí"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-amber-600 font-bold" }}
         onOk={handleSubmitExtraFee}
       >
         <div className="space-y-3 py-2 text-xs">
           <p className="text-slate-500">
-            Phụ phí đề xuất sẽ ở trạng thái <b>Proposed</b>. Điều phối viên sẽ nhận được thông báo để xác nhận hoặc từ chối (BR-30).
+            Phụ phí đề xuất sẽ ở trạng thái <b>Proposed</b>. Điều phối viên sẽ nhận được thông báo để xác nhận hoặc từ chối.
           </p>
 
           <div>
@@ -466,7 +466,7 @@ export default function DriverDashboardModals({
           </div>
 
           <p className="text-[11px] text-slate-400 italic">
-            Chứng từ chuyến xe đã được lưu đệm trên thiết bị để bạn có thể xem lại ngay cả khi mất sóng (BR-27).
+            Chứng từ chuyến xe đã được lưu đệm trên thiết bị để bạn có thể xem lại ngay cả khi mất sóng.
           </p>
         </div>
       </Modal>

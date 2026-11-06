@@ -10,17 +10,17 @@ export default function OrdersWorkloadPage() {
   const [dispatchers, setDispatchers] = useState([]);
   const [summary, setSummary] = useState({ total_orders: 0, flagged_count: 0, active_dispatchers: 0 });
 
-  // Bộ chọn điều phối nhanh ở dưới bảng (Khớp Section 3 trong Prototype Figure 39)
+  // Bộ chọn điều phối nhanh ở dưới bảng (Khớp Section 3 trong giao diện chuẩn)
   const [selectedOrderForReassign, setSelectedOrderForReassign] = useState(null);
   const [quickTargetDispatcherId, setQuickTargetDispatcherId] = useState(null);
   const [reassignReason, setReassignReason] = useState('');
   const [reassigning, setReassigning] = useState(false);
 
-  // Tab xem thêm: 'FLAGGED' (Mặc định chuẩn Figure 39) hoặc 'ALL_ORDERS'
+  // Tab xem thêm: 'FLAGGED' hoặc 'ALL_ORDERS'
   const [viewTab, setViewTab] = useState('FLAGGED');
   const [searchText, setSearchText] = useState('');
 
-  // Modal Chi tiết đơn hàng (Screen 09 Read-only)
+  // Modal Chi tiết đơn hàng (Chỉ xem)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [orderDetail, setOrderDetail] = useState(null);
@@ -115,7 +115,7 @@ export default function OrdersWorkloadPage() {
     }
   };
 
-  // Mở modal xem chi tiết đơn hàng (Screen 09 Read-only)
+  // Mở modal xem chi tiết đơn hàng (Chỉ xem)
   const handleOpenDetailModal = async (orderId) => {
     setIsDetailModalOpen(true);
     setDetailLoading(true);
@@ -133,15 +133,15 @@ export default function OrdersWorkloadPage() {
 
   return (
     <div className="flex flex-col w-full space-y-6">
-      {/* Top Header Section Khớp Figure 39 */}
+      {/* Top Header Section Khớp  */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-outline-variant/30">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl lg:text-3xl font-black text-primary tracking-tight">
               Khối lượng đơn
             </h1>
-            <Tag color={flaggedOrders.length > 0 ? "error" : "green"} className="font-bold text-xs">
-              {flaggedOrders.length > 0 ? `${flaggedOrders.length} Đơn bị gắn cờ` : "0 Đơn bị gắn cờ"}
+            <Tag color={flaggedOrders.length > 0 ? "error": "green"} className="font-bold text-xs">
+              {flaggedOrders.length > 0 ? `${flaggedOrders.length} Đơn bị gắn cờ`: "0 Đơn bị gắn cờ"}
             </Tag>
           </div>
           <p className="text-xs text-on-surface-variant mt-1">
@@ -161,7 +161,7 @@ export default function OrdersWorkloadPage() {
         </div>
       </div>
 
-      {/* SECTION 1: TẢI CỦA TỪNG ĐIỀU PHỐI (BẢNG 1 - FIGURE 39) */}
+      {/* SECTION 1: TẢI CỦA TỪNG ĐIỀU PHỐI */}
       <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-6 border border-outline-variant/30 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-extrabold text-primary">
@@ -174,11 +174,11 @@ export default function OrdersWorkloadPage() {
 
         {loading ? (
           <div className="py-8 flex justify-center"><Spin /></div>
-        ) : dispatchers.length === 0 ? (
+        ): dispatchers.length === 0 ? (
           <div className="py-6 text-center text-on-surface-variant text-xs">
             Chưa ghi nhận điều phối viên nào trong hệ thống.
           </div>
-        ) : (
+        ): (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -215,7 +215,7 @@ export default function OrdersWorkloadPage() {
                           <span className="inline-block px-2.5 py-0.5 rounded-full bg-error/10 text-error font-black">
                             {d.flagged_orders}
                           </span>
-                        ) : (
+                        ): (
                           <span className="text-on-surface-variant font-medium">0</span>
                         )}
                       </td>
@@ -224,11 +224,11 @@ export default function OrdersWorkloadPage() {
                           <Tag color="red" className="font-bold text-[10px] m-0">
                             Quá tải / Đọng đơn
                           </Tag>
-                        ) : isLeastLoaded ? (
+                        ): isLeastLoaded ? (
                           <Tag color="green" className="font-bold text-[10px] m-0">
                             Ít đơn (Ưu tiên nhận)
                           </Tag>
-                        ) : (
+                        ): (
                           <Tag color="blue" className="font-medium text-[10px] m-0">
                             Bình thường
                           </Tag>
@@ -243,7 +243,7 @@ export default function OrdersWorkloadPage() {
         )}
       </div>
 
-      {/* SECTION 2: ĐƠN BỊ GẮN CỜ (BẢNG 2 - FIGURE 39) */}
+      {/* SECTION 2: ĐƠN BỊ GẮN CỜ */}
       <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-6 border border-outline-variant/30 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-container pb-3">
           <div>
@@ -279,13 +279,13 @@ export default function OrdersWorkloadPage() {
         {/* Bảng Đơn bị gắn cờ hoặc Tất cả đơn */}
         {loading ? (
           <div className="py-12 flex justify-center"><Spin /></div>
-        ) : (viewTab === 'FLAGGED' ? flaggedOrders : orders).length === 0 ? (
+        ): (viewTab === 'FLAGGED' ? flaggedOrders: orders).length === 0 ? (
           <div className="py-12 text-center text-on-surface-variant bg-surface-container-low/30 rounded-2xl border border-dashed border-surface-container">
             <span className="material-symbols-outlined text-4xl text-emerald-600 mb-1">verified</span>
             <p className="font-bold text-sm text-primary">Không có đơn hàng nào bị gắn cờ</p>
             <p className="text-xs text-on-surface-variant mt-1">Toàn bộ đơn hàng đang vận hành đúng tiến độ cam kết SLA.</p>
           </div>
-        ) : (
+        ): (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -298,7 +298,7 @@ export default function OrdersWorkloadPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-container text-xs">
-                {(viewTab === 'FLAGGED' ? flaggedOrders : orders).map((o) => (
+                {(viewTab === 'FLAGGED' ? flaggedOrders: orders).map((o) => (
                   <tr
                     key={o.id}
                     className={`transition-colors ${
@@ -323,7 +323,7 @@ export default function OrdersWorkloadPage() {
                         <span className="inline-block px-2.5 py-1 rounded-md bg-error/10 text-error font-bold text-[11px]">
                           {o.flag_reason}
                         </span>
-                      ) : (
+                      ): (
                         <span className="text-on-surface-variant text-[11px]">
                           Bình thường ({o.status})
                         </span>
@@ -335,7 +335,7 @@ export default function OrdersWorkloadPage() {
                       {o.time_in_status || `${o.status} ${o.age_hours}h`}
                     </td>
 
-                    {/* Cột 5: Thao tác (Chuyển · Xem đơn khớp Figure 39) */}
+                    {/* Cột 5: Thao tác */}
                     <td className="py-3.5 px-4 text-right">
                       <div className="inline-flex items-center gap-3">
                         <button
@@ -365,7 +365,7 @@ export default function OrdersWorkloadPage() {
           </div>
         )}
 
-        {/* SECTION 3: CHUYỂN CHO ĐIỀU PHỐI (FORM CUỐI TRANG KHỚP CHUẨN FIGURE 39) */}
+        {/* SECTION 3: CHUYỂN CHO ĐIỀU PHỐI */}
         <div className="pt-4 border-t border-surface-container flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <span className="text-xs font-bold text-primary">
@@ -476,7 +476,7 @@ export default function OrdersWorkloadPage() {
         )}
       </Modal>
 
-      {/* Modal Chi tiết đơn hàng (Screen 09 Read-only) */}
+      {/* Modal Chi tiết đơn hàng (Chỉ xem) */}
       <Modal
         title={
           <div className="flex items-center gap-2">
@@ -493,7 +493,7 @@ export default function OrdersWorkloadPage() {
       >
         {detailLoading ? (
           <div className="py-12 flex justify-center"><Spin /></div>
-        ) : orderDetail ? (
+        ): orderDetail ? (
           <div className="space-y-4 pt-2 text-xs">
             <div className="grid grid-cols-2 gap-3 bg-surface-container-low p-4 rounded-xl">
               <div>
@@ -512,7 +512,7 @@ export default function OrdersWorkloadPage() {
               </div>
               <div>
                 <span className="text-on-surface-variant block">Chứng từ:</span>
-                <Tag color={orderDetail.document_status === 'APPROVED' ? 'green' : 'orange'}>
+                <Tag color={orderDetail.document_status === 'APPROVED' ? 'green': 'orange'}>
                   {orderDetail.document_status || 'PENDING'}
                 </Tag>
               </div>
@@ -531,11 +531,11 @@ export default function OrdersWorkloadPage() {
                 Lịch sử & Tuyến điểm:
               </h4>
               <div className="p-3 bg-surface-container-low rounded-xl text-on-surface-variant">
-                Thời gian tạo: {orderDetail.created_at ? new Date(orderDetail.created_at).toLocaleString('vi-VN') : 'N/A'}
+                Thời gian tạo: {orderDetail.created_at ? new Date(orderDetail.created_at).toLocaleString('vi-VN'): 'N/A'}
               </div>
             </div>
           </div>
-        ) : (
+        ): (
           <div className="py-6 text-center text-outline">Không có thông tin chi tiết.</div>
         )}
       </Modal>

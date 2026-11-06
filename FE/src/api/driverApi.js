@@ -1,7 +1,7 @@
 import { fetchWithAuth } from "./apiClient";
 
 // ==========================================
-// 1. OFFLINE STORAGE QUEUE (BR-27)
+// 1. OFFLINE STORAGE QUEUE
 // ==========================================
 
 const OFFLINE_QUEUE_KEY = "nexlog_driver_offline_actions";
@@ -10,7 +10,7 @@ export const getOfflineActions = () => {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return raw ? JSON.parse(raw): [];
   } catch (e) {
     console.error("Failed to read offline actions", e);
     return [];
@@ -22,7 +22,7 @@ export const queueOfflineAction = (action) => {
   try {
     const actions = getOfflineActions();
     if (actions.length >= 50) {
-      throw new Error("Đã đạt giới hạn 50 thao tác ngoại tuyến chưa đồng bộ. (MSG39)");
+      throw new Error("Đã đạt giới hạn 50 thao tác ngoại tuyến chưa đồng bộ.");
     }
     actions.push({
       ...action,
@@ -69,18 +69,18 @@ export const driverApi = {
     return await fetchWithAuth(`/driver/trips/${tripId}`);
   },
 
-  // Nhận chuyến xe (UC-29)
+  // Nhận chuyến xe
   acceptTrip: async (tripId, { clientActionId, phoneTime } = {}) => {
     return await fetchWithAuth(`/driver/trips/${tripId}/accept`, {
       method: "PATCH",
       body: JSON.stringify({
-        clientActionId: clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined),
+        clientActionId: clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined),
         phoneTime: phoneTime || new Date().toISOString()
       })
     });
   },
 
-  // Báo đến điểm dừng (BR-36)
+  // Báo đến điểm dừng
   arriveStop: async (tripId, stopId, { phoneLat, phoneLng, phoneTime, clientActionId } = {}) => {
     return await fetchWithAuth(`/driver/trips/${tripId}/stops/${stopId}/arrive`, {
       method: "POST",
@@ -88,60 +88,60 @@ export const driverApi = {
         phoneLat,
         phoneLng,
         phoneTime: phoneTime || new Date().toISOString(),
-        clientActionId: clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined)
+        clientActionId: clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined)
       })
     });
   },
 
-  // Ghi nhận sự kiện điểm dừng trung gian (Loading started, Left...) (BR-36)
+  // Ghi nhận sự kiện điểm dừng trung gian (Loading started, Left...)
   recordStopEvent: async (tripId, stopId, eventData) => {
     return await fetchWithAuth(`/driver/trips/${tripId}/stops/${stopId}/event`, {
       method: "POST",
       body: JSON.stringify({
         ...eventData,
-        clientActionId: eventData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined),
+        clientActionId: eventData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined),
         phoneTime: eventData.phoneTime || new Date().toISOString()
       })
     });
   },
 
-  // Ghi nhận bốc hàng & niêm chì (BR-11, BR-31, BR-33)
+  // Ghi nhận bốc hàng & niêm chì
   recordPickup: async (tripId, stopId, pickupData) => {
     return await fetchWithAuth(`/driver/trips/${tripId}/stops/${stopId}/pickup`, {
       method: "POST",
       body: JSON.stringify({
         ...pickupData,
-        clientActionId: pickupData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined),
+        clientActionId: pickupData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined),
         phoneTime: pickupData.phoneTime || new Date().toISOString()
       })
     });
   },
 
-  // Ghi nhận giao hàng & POD (BR-12, BR-39, BR-24)
+  // Ghi nhận giao hàng & POD
   recordDelivery: async (tripId, stopId, deliveryData) => {
     return await fetchWithAuth(`/driver/trips/${tripId}/stops/${stopId}/delivery`, {
       method: "POST",
       body: JSON.stringify({
         ...deliveryData,
-        clientActionId: deliveryData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined),
+        clientActionId: deliveryData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined),
         phoneTime: deliveryData.phoneTime || new Date().toISOString()
       })
     });
   },
 
-  // Khách không nhận hàng (BR-57, MSG74, MSG75)
+  // Khách không nhận hàng
   reportCustomerRefusal: async (tripId, stopId, refusalData) => {
     return await fetchWithAuth(`/driver/trips/${tripId}/stops/${stopId}/refuse`, {
       method: "POST",
       body: JSON.stringify({
         ...refusalData,
-        clientActionId: refusalData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined),
+        clientActionId: refusalData.clientActionId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined),
         phoneTime: refusalData.phoneTime || new Date().toISOString()
       })
     });
   },
 
-  // Đề xuất phụ phí phát sinh (BR-30, MSG85)
+  // Đề xuất phụ phí phát sinh
   proposeExtraFee: async (tripId, feeData) => {
     return await fetchWithAuth(`/driver/trips/${tripId}/extra-fees`, {
       method: "POST",
@@ -149,7 +149,7 @@ export const driverApi = {
     });
   },
 
-  // Quản lý ca làm việc (UC-20, BR-60)
+  // Quản lý ca làm việc
   getMyShifts: async ({ from, to } = {}) => {
     let url = "/driver/shifts";
     const params = new URLSearchParams();
@@ -167,7 +167,7 @@ export const driverApi = {
     });
   },
 
-  // Thông báo tài xế (Screen 6.5, MSG80)
+  // Thông báo tài xế
   getDriverNotifications: async () => {
     return await fetchWithAuth("/driver/notifications");
   },
@@ -184,7 +184,7 @@ export const driverApi = {
     });
   },
 
-  // Báo cáo sự cố khẩn cấp (UC-32 & BF-04)
+  // Báo cáo sự cố khẩn cấp
   reportIncident: async (incidentData) => {
     return await fetchWithAuth("/driver/incidents", {
       method: "POST",
@@ -192,7 +192,7 @@ export const driverApi = {
     });
   },
 
-  // Đồng bộ ngoại tuyến (BR-27, MSG39)
+  // Đồng bộ ngoại tuyến
   syncOffline: async (actions) => {
     return await fetchWithAuth("/driver/sync", {
       method: "POST",

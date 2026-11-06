@@ -46,7 +46,7 @@ Tham chiếu chi tiết cấu trúc App Router tại [FE/app](file:///c:/Users/a
 - **Nguyên tắc Agent Next.js:**
   - Giữ nguyên các khối cấu hình agent tự sinh trong `FE/AGENTS.md` để đảm bảo git commit sạch sẽ.
 
-## 3. Project Specification & Business Rules
-Tài liệu đặc tả yêu cầu phần mềm chính thức (SRS) mới nhất của dự án được lưu tại [srs_doc.txt](file:///c:/Users/admin/Desktop/ALS-LTDS/SEP490_G120_FALL2026/srs_doc.txt).
-- **Bám sát Use Cases & Prototype:** Luôn code bám sát 100% theo các Use Case Specifications (UC-01 đến UC-48), Screen Specifications, Prototype UI và các Business Rules (BR-01 đến BR-34+) trong tài liệu này.
-- **Tính chính xác của dữ liệu & Nghiệp vụ:** Khi xây dựng API Backend hay giao diện Frontend, các trường dữ liệu, validation, trạng thái (status enums) và thông báo hệ thống (system messages MSG) phải chuẩn xác theo tài liệu SRS, không tự ý thêm bớt sai lệch so với prototype và use case.
+## 3. Project Requirements
+Tài liệu yêu cầu dự án được lưu tại [srs_doc.txt](file:///c:/Users/admin/Desktop/ALS-LTDS/SEP490_G120_FALL2026/srs_doc.txt).
+- **Bám sát Quy trình & Giao diện:** Luôn code bám sát quy trình nghiệp vụ và giao diện chuẩn của hệ thống.
+- **Tính chính xác của dữ liệu & Nghiệp vụ:** Khi xây dựng API Backend hay giao diện Frontend, các trường dữ liệu, validation, trạng thái và thông báo hệ thống phải chuẩn xác, không tự ý thêm bớt sai lệch so với luồng nghiệp vụ.
