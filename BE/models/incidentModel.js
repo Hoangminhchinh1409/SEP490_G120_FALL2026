@@ -374,6 +374,75 @@ const dispatchReplacementWithTransaction = async ({
       }
     });
 
+    // BUG-ADM-12: Save reason and truck/driver replacement to activity_logs (SRS line 1681, 5317, 7801)
+
+
+    try {
+
+
+      const supabase = require('../config/supabase');
+
+
+      await supabase.from('activity_logs').insert({
+
+
+        actor_id: userId ? Number(userId) : null,
+
+
+        actor_type: 'DISPATCHER',
+
+
+        action: 'REPLACE_TRUCK_DRIVER',
+
+
+        target_type: 'TRIP',
+
+
+        target_id: Number(tripId),
+
+
+        changes: {
+
+
+          incident_id: Number(numIncId),
+
+
+          trip_code: trip?.trip_code,
+
+
+          waybill_version: nextVersion,
+
+
+          waybill_number: newWaybillNo,
+
+
+          new_truck: newTruck?.plate_number || newTruckPlate,
+
+
+          new_driver: newDriver?.users?.full_name || newDriverName
+
+
+        },
+
+
+        reason: reasonText,
+
+
+        created_time: now.toISOString()
+
+
+      });
+
+
+    } catch (logErr) {
+
+
+      console.warn('[IncidentModel] activity_logs replacement error:', logErr.message);
+
+
+    }
+
+
     return {
       ...mapIncident(updatedIncident),
       new_waybill_version: nextVersion,

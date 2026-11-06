@@ -81,6 +81,19 @@ const createActivityLog = async ({
 }) => {
     const numericTargetId = isNaN(Number(targetId)) ? 0 : Number(targetId);
 
+    // BUG-ADM-14: Sanitize IP to ensure single valid address for PostgreSQL inet column
+    let cleanIp = ipAddress;
+    if (cleanIp && typeof cleanIp === "string") {
+        if (cleanIp.includes(",")) {
+            cleanIp = cleanIp.split(",")[0].trim();
+        }
+        if (cleanIp === "::1" || cleanIp === "::ffff:127.0.0.1") {
+            cleanIp = "127.0.0.1";
+        } else if (cleanIp.startsWith("::ffff:")) {
+            cleanIp = cleanIp.replace("::ffff:", "");
+        }
+    }
+
     const { data, error } = await supabase
         .from("activity_logs")
         .insert({
@@ -91,7 +104,7 @@ const createActivityLog = async ({
             target_id: numericTargetId,
             changes: changes ? (typeof changes === "object" ? JSON.stringify(changes) : changes) : null,
             reason,
-            ip_address: ipAddress,
+            ip_address: cleanIp,
             created_time: new Date().toISOString()
         })
         .select()

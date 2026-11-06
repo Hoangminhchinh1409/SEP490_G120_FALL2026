@@ -1,13 +1,5 @@
 const adminService = require("../services/adminService");
-
-// Helper to extract real client IP address (BUG-ADM-14: Support comma-separated X-Forwarded-For)
-const getClientIp = (req) => {
-    const forwarded = req?.headers?.["x-forwarded-for"];
-    if (forwarded && typeof forwarded === "string") {
-        return forwarded.split(",")[0].trim();
-    }
-    return req?.socket?.remoteAddress || req?.ip || "127.0.0.1";
-};
+const { getClientIp } = require("../utils/ipHelper");
 
 // ==========================================
 // 1. DASHBOARD STATS
@@ -45,6 +37,18 @@ const getActivityLogs = async (req, res) => {
             keyword
         } = req.query;
 
+        // BUG-ADM-13: Validate dates early
+        if (startDate && isNaN(Date.parse(startDate))) {
+            return res.status(400).json({
+                message: "Tham số startDate không hợp lệ. Vui lòng nhập ngày hợp lệ (YYYY-MM-DD hoặc ISO)."
+            });
+        }
+        if (endDate && isNaN(Date.parse(endDate))) {
+            return res.status(400).json({
+                message: "Tham số endDate không hợp lệ. Vui lòng nhập ngày hợp lệ (YYYY-MM-DD hoặc ISO)."
+            });
+        }
+
         const result = await adminService.getActivityLogs({
             page,
             limit,
@@ -61,6 +65,11 @@ const getActivityLogs = async (req, res) => {
             ...result
         });
     } catch (error) {
+        if (error.statusCode === 400) {
+            return res.status(400).json({
+                message: error.message
+            });
+        }
         console.error("[AdminController] getActivityLogs error:", error);
         return res.status(500).json({
             message: "Failed to fetch activity logs"

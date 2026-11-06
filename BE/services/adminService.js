@@ -95,14 +95,36 @@ const getActivityLogs = async ({
     const validPage = Math.max(1, parseInt(page, 10) || 1);
     const validLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
+    // BUG-ADM-13: Validate dates and normalize date-only filters
+    if (startDate && isNaN(Date.parse(startDate))) {
+        const err = new Error("startDate must be a valid date or ISO string");
+        err.statusCode = 400;
+        throw err;
+    }
+    if (endDate && isNaN(Date.parse(endDate))) {
+        const err = new Error("endDate must be a valid date or ISO string");
+        err.statusCode = 400;
+        throw err;
+    }
+
+    let normalizedStartDate = startDate;
+    if (startDate && typeof startDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(startDate.trim())) {
+        normalizedStartDate = `${startDate.trim()}T00:00:00.000Z`;
+    }
+
+    let normalizedEndDate = endDate;
+    if (endDate && typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate.trim())) {
+        normalizedEndDate = `${endDate.trim()}T23:59:59.999Z`;
+    }
+
     const result = await adminModel.getActivityLogs({
         page: validPage,
         limit: validLimit,
         actorId,
         action,
         targetType,
-        startDate,
-        endDate,
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate,
         keyword
     });
 
