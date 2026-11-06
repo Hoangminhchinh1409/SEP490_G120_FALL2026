@@ -31,7 +31,6 @@ const {
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,
-  customerSignContract,
   uploadContractFile,
   uploadOrderDocuments,
   issueInvoiceToAccounting
@@ -65,7 +64,6 @@ module.exports = {
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,
-  customerSignContract,
   uploadContractFile,
   uploadOrderDocuments,
   issueInvoiceToAccounting,

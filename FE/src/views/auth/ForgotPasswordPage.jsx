@@ -50,7 +50,7 @@ export default function ForgotPasswordPage() {
       <div className="mb-10">
         <h2 className="text-3xl font-bold text-slate-800 mb-3 tracking-tight">Quên mật khẩu</h2>
         <p className="text-slate-500 text-lg">
-          Nhập email tài khoản để nhận link đặt lại mật khẩu. Link có hiệu lực trong 30 phút và chỉ dùng một lần.
+          Nhập email tài khoản để nhận link đặt lại mật khẩu. Link chỉ dùng một lần và hết hạn theo thời hạn hệ thống cấu hình.
         </p>
       </div>
 

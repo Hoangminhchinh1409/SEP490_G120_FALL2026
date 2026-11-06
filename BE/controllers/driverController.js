@@ -235,6 +235,18 @@ const syncOffline = async (req, res) => {
   }
 };
 
+
+const getSyncLogDetail = async (req, res) => {
+  try {
+    const logId = req.params.id;
+    const log = await driverService.getSyncLogDetail(req.user.id, logId);
+    return res.json({ success: true, log });
+  } catch (error) {
+    console.error("getSyncLogDetail error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getMyProfile,
   getActiveTrip,
@@ -254,6 +266,7 @@ module.exports = {
   markNotificationRead,
   markAllNotificationsRead,
   reportIncident,
-  syncOffline
+  syncOffline,
+  getSyncLogDetail
 };
 

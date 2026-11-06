@@ -1,9 +1,12 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Form, DatePicker, TimePicker, Input, Button, Tag, message, Spin, Empty, Card, Popconfirm } from "antd";
 import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, XCircle, CloudOff, Cloud } from "lucide-react";
 import dayjs from "dayjs";
+import "dayjs/locale/vi";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
+
+dayjs.locale("vi");
 
 export default function ShiftRegistrationPage() {
   const [form] = Form.useForm();
@@ -20,13 +23,13 @@ export default function ShiftRegistrationPage() {
     return false;
   });
 
-  const weekEnd = currentWeekStart.add(6, "day");
+  const weekEnd = useMemo(() => currentWeekStart.add(6, "day"), [currentWeekStart]);
 
   const fetchShifts = useCallback(async () => {
     try {
       setLoading(true);
       const fromStr = currentWeekStart.format("YYYY-MM-DD");
-      const toStr = weekEnd.format("YYYY-MM-DD");
+      const toStr = currentWeekStart.add(6, "day").format("YYYY-MM-DD");
       const res = await driverApi.getMyShifts({ from: fromStr, to: toStr });
       setShifts(res?.shifts || []);
     } catch (err) {
@@ -35,14 +38,14 @@ export default function ShiftRegistrationPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentWeekStart, weekEnd]);
+  }, [currentWeekStart]);
 
   useEffect(() => {
-    fetchShifts();
+    void fetchShifts();
 
     const handleOnline = () => {
       setIsOffline(false);
-      fetchShifts();
+      void fetchShifts();
     };
     const handleOffline = () => setIsOffline(true);
 
@@ -51,8 +54,10 @@ export default function ShiftRegistrationPage() {
       window.addEventListener("offline", handleOffline);
     }
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
+      }
     };
   }, [fetchShifts]);
 
@@ -70,18 +75,32 @@ export default function ShiftRegistrationPage() {
       setSubmitting(true);
 
       const dateStr = values.date.format("YYYY-MM-DD");
-      const startTimeStr = values.timeRange[0].format("HH:mm:ss");
-      const endTimeStr = values.timeRange[1].format("HH:mm:ss");
+
+      // Ghép ngày làm việc với giờ bắt đầu & kết thúc theo đúng múi giờ địa phương (tránh lệch múi giờ UTC+7)
+      let startDateTime = values.date
+        .hour(values.timeRange[0].hour())
+        .minute(values.timeRange[0].minute())
+        .second(0);
+
+      let endDateTime = values.date
+        .hour(values.timeRange[1].hour())
+        .minute(values.timeRange[1].minute())
+        .second(0);
+
+      // Nếu ca làm việc qua đêm (giờ kết thúc nhỏ hơn hoặc bằng giờ bắt đầu), tính sang ngày hôm sau
+      if (endDateTime.isBefore(startDateTime) || endDateTime.isSame(startDateTime)) {
+        endDateTime = endDateTime.add(1, "day");
+      }
 
       const payload = {
         date: dateStr,
-        start_time: `${dateStr}T${startTimeStr}Z`,
-        end_time: `${dateStr}T${endTimeStr}Z`,
-        note: values.note ? values.note.trim(): null
+        start_time: startDateTime.toISOString(),
+        end_time: endDateTime.toISOString(),
+        note: values.note ? values.note.trim() : null
       };
 
       if (isOffline) {
-        queueOfflineAction({
+        await queueOfflineAction({
           type: "REGISTER_SHIFT",
           payload: {
             ...payload,
@@ -89,6 +108,18 @@ export default function ShiftRegistrationPage() {
           }
         });
         message.warning("Mất kết nối mạng. Đăng ký ca đã được lưu ngoại tuyến và sẽ tự động gửi khi có mạng!");
+        
+        // Optimistic update: Thêm ngay ca này vào danh sách hiển thị với trạng thái 'Chờ duyệt'
+        const optimisticShift = {
+          id: `temp_${Date.now()}`,
+          date: dateStr,
+          start_time: startDateTime.toISOString(),
+          end_time: endDateTime.toISOString(),
+          note: values.note ? values.note.trim() : null,
+          status: "Requested",
+          isOfflinePending: true,
+        };
+        setShifts(prev => [optimisticShift, ...prev]);
         form.resetFields();
       } else {
         const res = await driverApi.registerShift(payload);
@@ -179,10 +210,7 @@ export default function ShiftRegistrationPage() {
       </div>
 
       {/* New Shift Form */}
-      <Card
-        className="bg-slate-800/90 border border-slate-700/80 rounded-3xl mb-5 shadow-xl text-slate-100"
-        bodyStyle={{ padding: "16px" }}
-      >
+      <div className="bg-slate-800/90 border border-slate-700/80 rounded-3xl p-4 mb-5 shadow-xl text-slate-100">
         <h2 className="text-sm font-black text-white mb-3 flex items-center gap-2">
           <Plus size={16} className="text-blue-400" /> Đăng ký Ca mới
         </h2>
@@ -203,10 +231,16 @@ export default function ShiftRegistrationPage() {
 
           <Form.Item
             name="timeRange"
-            label={<span className="text-xs font-bold text-slate-300">Khung giờ ca (*)</span>}
+            label={
+              <div className="flex items-center justify-between w-full">
+                <span className="text-xs font-bold text-slate-300">Khung giờ ca (*)</span>
+                <span className="text-[10px] text-blue-400 font-normal">Hỗ trợ ca xuyên đêm qua hôm sau</span>
+              </div>
+            }
             rules={[{ required: true, message: "Vui lòng chọn giờ bắt đầu và kết thúc" }]}
           >
             <TimePicker.RangePicker
+              order={false}
               className="w-full py-2 bg-slate-900 border-slate-700 text-white rounded-xl"
               format="HH:mm"
               minuteStep={15}
@@ -236,7 +270,7 @@ export default function ShiftRegistrationPage() {
             Gửi Đăng Ký Ca
           </Button>
         </Form>
-      </Card>
+      </div>
 
       {/* Registered Shifts List */}
       <div>
@@ -263,6 +297,11 @@ export default function ShiftRegistrationPage() {
               const startT = dayjs(shift.start_time).format("HH:mm");
               const endT = dayjs(shift.end_time).format("HH:mm");
               const dateFormatted = dayjs(shift.date).format("dddd, DD/MM/YYYY");
+              
+              // Kiểm tra xem ca làm có kéo dài sang ngày hôm sau hay không
+              const isOvernight =
+                dayjs(shift.end_time).isAfter(dayjs(shift.start_time), "day") ||
+                dayjs(shift.end_time).diff(dayjs(shift.start_time), "hour") >= 24;
 
               return (
                 <div
@@ -274,11 +313,26 @@ export default function ShiftRegistrationPage() {
                       <span className="text-xs font-bold text-slate-300 block capitalize">
                         {dateFormatted}
                       </span>
-                      <span className="text-sm font-black text-white">
-                        {startT} - {endT}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="text-sm font-black text-white">
+                          {startT} - {endT}
+                        </span>
+                        {isOvernight && (
+                          <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 px-1.5 py-0.2 rounded-md font-bold flex items-center gap-1">
+                            🌙 Hôm sau (+1 ngày)
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-end gap-1">
+                      {getStatusTag(shift.status, shift.rejection_reason)}
+                      {shift.isOfflinePending && (
+                        <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                          Chờ đồng bộ
+                        </span>
+                      )}
+                    </div>
+<div className="flex items-center gap-2">
                       {getStatusTag(shift.status, shift.rejection_reason)}
                       {shift.status === "Requested" && (
                         <Popconfirm
@@ -302,7 +356,7 @@ export default function ShiftRegistrationPage() {
 
                   {shift.note && (
                     <p className="text-xs text-slate-400 bg-slate-900/50 p-2 rounded-lg mt-1 italic">
-                      "{shift.note}"
+                      &ldquo;{shift.note}&rdquo;
                     </p>
                   )}
                 </div>

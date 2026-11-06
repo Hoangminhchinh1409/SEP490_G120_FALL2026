@@ -2,12 +2,18 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const compression = require("compression");
+const helmet = require("helmet");
 require("dotenv").config();
 
+if (!process.env.JWT_SECRET || !process.env.JWT_SECRET.trim()) {
+    console.error("JWT_SECRET is required to start the backend.");
+    process.exit(1);
+}
+
 // Đảm bảo BigInt trả về từ Prisma được serialize chuẩn sang JSON (Number)
-BigInt.prototype.toJSON = function() {
-  const n = Number(this);
-  return Number.isSafeInteger(n) ? n : this.toString();
+BigInt.prototype.toJSON = function () {
+    const n = Number(this);
+    return Number.isSafeInteger(n) ? n : this.toString();
 };
 
 const supabase = require("./config/supabase");
@@ -16,21 +22,22 @@ const apiRoutes = require("./routes");
 
 const app = express();
 const PORT = process.env.PORT || 9999;
+const frontendOrigin = new URL(
+    process.env.FRONTEND_URL || "http://localhost:3000"
+).origin;
 
 app.use(compression());
+app.use(helmet());
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Cho phép các request từ trình duyệt cục bộ (localhost, 127.0.0.1) hoặc không có origin (như curl / Postman)
-        if (!origin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-            callback(null, true);
-        } else {
-            callback(null, true);
-        }
+        callback(null, origin === frontendOrigin);
     },
     credentials: true
 }));
 
+app.use("/api/auth", express.json({ limit: "100kb" }));
+app.use("/api/auth", express.urlencoded({ limit: "100kb", extended: true }));
 app.use(express.json({ limit: "200mb" }));
 app.use(express.urlencoded({ limit: "200mb", extended: true }));
 app.use(cookieParser());

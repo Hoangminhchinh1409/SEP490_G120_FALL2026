@@ -443,16 +443,30 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           setContractFileData(base64Data);
           setContractUploadedAt(res.contract_uploaded_at || new Date().toISOString());
 
+          const nextStatus = res?.order?.status || (isDocsApprovedStage ? 'READY_FOR_PLANNING' : order.status);
           const updatedOrder = {
             ...order,
+            status: nextStatus,
             contract_uploaded: true,
             contract_file: file.name,
             contract_file_data: base64Data,
-            contract_uploaded_at: res.contract_uploaded_at || new Date().toISOString()
+            contract_uploaded_at: res.contract_uploaded_at || new Date().toISOString(),
+            web_workflow: res?.web_workflow || {
+              ...(order.web_workflow || {}),
+              stage: 'CONTRACT_SIGNED',
+              signed_contract: {
+                signed_at: res.contract_uploaded_at || new Date().toISOString(),
+                signer_name: 'Hai bên ký trực tiếp (Bản Scan PDF)',
+                contract_file: file.name
+              }
+            }
           };
 
           onUpdateOrder?.(updatedOrder);
-          message.success(`Đã lưu tệp hợp đồng [${file.name}] thật vào cơ sở dữ liệu!`);
+          message.success(
+            res?.message ||
+              `Đã đính kèm bản scan hợp đồng [${file.name}] vào hồ sơ đơn hàng thành công!`
+          );
         } catch (apiErr) {
           console.error('Upload contract api error:', apiErr);
           message.error(apiErr.message || 'Lỗi khi lưu tệp hợp đồng lên máy chủ');
@@ -647,22 +661,36 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
 
       if (isWebOrder) {
         const res = await orderApi.approveWebOrderDocuments(order.id || order.order_id, approvedDocs);
+        const alreadyHasContract = Boolean(contractUploaded || res?.contract_uploaded);
         
         const updatedOrder = {
           ...order,
+          status: alreadyHasContract ? 'READY_FOR_PLANNING' : order.status,
           documents: approvedDocs,
           web_workflow: res?.web_workflow || {
             ...(order.web_workflow || {}),
-            stage: 'DOCS_APPROVED',
+            stage: alreadyHasContract ? 'CONTRACT_SIGNED' : 'DOCS_APPROVED',
             documents: approvedDocs,
             approved_documents: approvedDocs
           }
         };
 
         onUpdateOrder?.(updatedOrder);
-        message.success('Đã duyệt toàn bộ hồ sơ chứng từ! Hệ thống đã tự động gửi email kèm hợp đồng PDF và link chữ ký số tới khách hàng.');
+        message.success(
+          res?.message ||
+            'Đã duyệt toàn bộ hồ sơ chứng từ! Vui lòng đính kèm bản scan PDF hợp đồng 2 bên đã ký ở tab Hợp đồng vận tải.'
+        );
         setActiveTab('3');
       } else {
+        if (!contractUploaded) {
+          onUpdateOrder?.({
+            ...order,
+            documents: approvedDocs
+          });
+          message.info('Đã duyệt toàn bộ chứng từ! Vui lòng đính kèm bản scan PDF hợp đồng đã ký ở tab Hợp đồng vận tải để chuyển sang Xếp xe.');
+          setActiveTab('3');
+          return;
+        }
         await orderApi.confirmOrder(order.id || order.order_id, currentAgreedPrice);
         const updatedOrder = {
           ...order,
@@ -671,7 +699,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           contract_uploaded: true
         };
         onUpdateOrder?.(updatedOrder);
-        message.success('Đã xác nhận toàn bộ chứng từ! Đơn hàng đã sẵn sàng để xếp xe.');
+        message.success('Đã xác nhận toàn bộ chứng từ & hợp đồng! Đơn hàng đã sẵn sàng để xếp xe.');
       }
     } catch (err) {
       console.error(err);
@@ -888,7 +916,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         ref={contractInputRef} 
         onChange={handleContractFileChange} 
         className="hidden" 
-        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+        accept=".pdf"
       />
 
       <Modal
@@ -926,7 +954,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
                  order.status === 'DRAFT' ? 'ĐƠN NHÁP' : 
                  order.status === 'READY_FOR_PLANNING' ? 'SẴN SÀNG XẾP XE' :
                  hasRejectedDocs || order.web_workflow?.stage === 'DOCS_REJECTED' ? 'CHỜ KHÁCH UPLOAD LẠI CHỨNG TỪ' :
-                 isDocsApprovedStage ? 'ĐÃ DUYỆT CHỨNG TỪ - CHỜ KÝ HỢP ĐỒNG' :
+                 isDocsApprovedStage ? 'ĐÃ DUYỆT CHỨNG TỪ - CHỜ ĐÍNH KÈM HỢP ĐỒNG PDF' :
                  order.status === 'CONFIRMED' ? 'CẦN XÁC NHẬN CHỨNG TỪ' : order.status}
               </Tag>
             </div>
@@ -971,8 +999,25 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
               {hasRejectedDocs
                 ? 'Chờ khách tải lại chứng từ bị từ chối'
                 : order.source === 'HOMEPAGE' 
-                  ? 'Duyệt chứng từ & Gửi hợp đồng ký số' 
-                  : 'Xác nhận chứng từ & Xếp chuyến'}
+                  ? 'Duyệt chứng từ & Chuyển sang đính kèm Hợp đồng PDF' 
+                  : 'Xác nhận chứng từ & Chuyển sang Hợp đồng PDF'}
+            </Button>
+          ),
+          order.status === 'CONFIRMED' && !isNegotiating && isDocsApprovedStage && !contractUploaded && (
+            <Button
+              key="uploadScannedContract"
+              type="primary"
+              loading={uploadingContract}
+              className="bg-indigo-600 hover:bg-indigo-700 font-semibold"
+              onClick={() => {
+                setActiveTab('3');
+                if (contractInputRef.current) {
+                  contractInputRef.current.value = '';
+                  contractInputRef.current.click();
+                }
+              }}
+            >
+              Đính kèm hợp đồng đã scan (PDF)
             </Button>
           ),
           order.status === 'READY_FOR_PLANNING' && (

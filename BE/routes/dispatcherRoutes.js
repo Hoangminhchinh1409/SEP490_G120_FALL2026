@@ -31,6 +31,7 @@ router.get('/customers', contractController.getAllCustomers);
 router.get('/trips', tripController.getAllTrips);
 router.post('/trips', tripController.createTrip);
 router.patch('/trips/:id/status', tripController.updateTripStatus);
+router.get('/trips/:id/replay', tripController.getTripReplay);
 router.get('/routing/road-route', tripController.calculateRoadRoute);
 
 // 5. Incidents

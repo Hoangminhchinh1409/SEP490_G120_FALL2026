@@ -1,5 +1,19 @@
 const aiService = require('../services/aiService');
 
+const handleAiError = (res, operation, err) => {
+  console.error(`AI ${operation} failed:`, {
+    name: err.name,
+    code: err.code || null
+  });
+  const statusCode = err.statusCode === 400 ? 400 : err.statusCode === 503 ? 503 : 502;
+  return res.status(statusCode).json({
+    success: false,
+    message: statusCode === 400
+      ? err.message
+      : 'Dịch vụ AI hiện không khả dụng. Vui lòng thử lại sau.'
+  });
+};
+
 /**
  * AI Controller — Tích hợp Google Gemini AI cho các tính năng thông minh của NEXLOG:
  * 1. Phân tích & gợi ý bộ chứng từ hải quan chuyên ngành
@@ -15,12 +29,7 @@ const analyzeCustomsDocuments = async (req, res) => {
       ...result
     });
   } catch (err) {
-    console.error('AI analyzeCustomsDocuments error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Lỗi kết nối Gemini AI khi phân tích chứng từ',
-      error: err.message
-    });
+    return handleAiError(res, 'analyzeCustomsDocuments', err);
   }
 };
 
@@ -32,12 +41,7 @@ const analyzeVehicleAndQuote = async (req, res) => {
       ...result
     });
   } catch (err) {
-    console.error('AI analyzeVehicleAndQuote error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Lỗi kết nối Gemini AI khi phân tích phương án xe',
-      error: err.message
-    });
+    return handleAiError(res, 'analyzeVehicleAndQuote', err);
   }
 };
 
@@ -49,12 +53,7 @@ const analyzeLoadPlan3D = async (req, res) => {
       ...result
     });
   } catch (err) {
-    console.error('AI analyzeLoadPlan3D error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Lỗi kết nối Gemini AI khi phân tích xếp hàng 3D',
-      error: err.message
-    });
+    return handleAiError(res, 'analyzeLoadPlan3D', err);
   }
 };
 
@@ -66,12 +65,7 @@ const autoScanCustomsDeclaration = async (req, res) => {
       ...result
     });
   } catch (err) {
-    console.error('AI autoScanCustomsDeclaration error:', err.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Lỗi kết nối Gemini AI khi trích xuất tờ khai hải quan',
-      error: err.message
-    });
+    return handleAiError(res, 'autoScanCustomsDeclaration', err);
   }
 };
 
@@ -81,4 +75,3 @@ module.exports = {
   analyzeLoadPlan3D,
   autoScanCustomsDeclaration
 };
-

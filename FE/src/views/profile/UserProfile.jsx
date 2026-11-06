@@ -40,7 +40,8 @@ const PREFERRED_CARRIER = "NEXLOG Express";
 const ERR_INVALID_NEW_PWD = "Mật khẩu mới không hợp lệ.";
 const ERR_WRONG_CURRENT_PWD = "Mật khẩu hiện tại không đúng.";
 const ERR_PWD_POLICY = "Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.";
-const MSG_PWD_CHANGED = "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.";
+const SUCCESS_PWD_CHANGED = "Đã đổi mật khẩu. Các thiết bị khác cần đăng nhập lại.";
+const PASSWORD_MAX_BYTES_MESSAGE = "Mật khẩu mới không được vượt quá 72 byte.";
 
 function getInitials(name) {
   if (!name) return "U";
@@ -71,26 +72,10 @@ function profileFromUser(user) {
 }
 
 async function updateUserProfile(payload) {
-  const requests = [
-    [API_ENDPOINTS.AUTH.UPDATE_PROFILE, "POST"],
-    [API_ENDPOINTS.AUTH.ME, "PATCH"],
-    [API_ENDPOINTS.AUTH.ME, "PUT"],
-  ];
-  let lastError;
-
-  for (const [endpoint, method] of requests) {
-    try {
-      return await fetchWithAuth(endpoint, {
-        method,
-        body: JSON.stringify(payload),
-      });
-    } catch (error) {
-      if (error.status !== 404) throw error;
-      lastError = error;
-    }
-  }
-
-  throw lastError;
+  return fetchWithAuth(API_ENDPOINTS.AUTH.UPDATE_PROFILE, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export default function UserProfile() {
@@ -203,6 +188,10 @@ export default function UserProfile() {
       setPasswordError(ERR_PWD_POLICY);
       return;
     }
+    if (new TextEncoder().encode(passwordForm.newPassword).length > 72) {
+      setPasswordError(PASSWORD_MAX_BYTES_MESSAGE);
+      return;
+    }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       setPasswordError(ERR_INVALID_NEW_PWD);
       return;
@@ -218,7 +207,7 @@ export default function UserProfile() {
         }),
       });
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      message.success(result?.message || MSG_PWD_CHANGED);
+      message.success(result?.message || SUCCESS_PWD_CHANGED);
     } catch (error) {
       const text = error.message || ERR_WRONG_CURRENT_PWD;
       if (text.includes("hiện tại")) setPasswordError(ERR_WRONG_CURRENT_PWD);

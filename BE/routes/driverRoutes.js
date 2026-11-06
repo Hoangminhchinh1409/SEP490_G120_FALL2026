@@ -38,5 +38,6 @@ router.post("/incidents", driverController.reportIncident);
 
 // 6. Đồng bộ hành động ngoại tuyến
 router.post("/sync", driverController.syncOffline);
+router.get("/sync-log/:id", driverController.getSyncLogDetail);
 
 module.exports = router;

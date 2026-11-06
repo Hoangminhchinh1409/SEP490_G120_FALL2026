@@ -206,10 +206,10 @@ export default function OrderDocumentsTab({
 
   const renderWebWorkflowTag = () => {
     if (order.web_workflow?.stage === 'CONTRACT_SIGNED') {
-      return <Tag color="success" className="font-bold text-xs">Khách đã ký hợp đồng điện tử</Tag>;
+      return <Tag color="success" className="font-bold text-xs">Đã đính kèm hợp đồng scan PDF (2 bên đã ký)</Tag>;
     }
     if (isDocsApprovedStage) {
-      return <Tag color="success" className="font-bold text-xs">Đã duyệt chứng từ &amp; Đã gửi hợp đồng ký số</Tag>;
+      return <Tag color="success" className="font-bold text-xs">Đã duyệt chứng từ - Chờ đính kèm hợp đồng scan PDF</Tag>;
     }
     if (hasRejectedDocs || order.web_workflow?.stage === 'DOCS_REJECTED') {
       return <Tag color="error" className="font-bold text-xs">Có chứng từ bị từ chối - Chờ khách upload lại</Tag>;
@@ -251,16 +251,11 @@ export default function OrderDocumentsTab({
               size="small" 
               type="link" 
               onClick={() =>
-                window.open(
-                  isDocsApprovedStage
-                    ? `/customer/contract-sign/${order.tracking_token}`
-                    : `/customer/order-documents/${order.tracking_token}`,
-                  '_blank'
-                )
+                window.open(`/customer/order-documents/${order.tracking_token}`, '_blank')
               }
               className="text-xs font-semibold text-blue-700 hover:text-blue-900 p-0"
             >
-              {isDocsApprovedStage ? 'Mở link ký hợp đồng của khách →' : 'Mở link nộp chứng từ của khách →'}
+              Mở link nộp chứng từ của khách →
             </Button>
           )}
         </div>
@@ -280,7 +275,7 @@ export default function OrderDocumentsTab({
           }
           description={
             <span className="text-xs text-red-800">
-              Hệ thống đã gửi email yêu cầu khách hàng tải lại tệp mới. Bạn không thể bấm &ldquo;Duyệt chứng từ &amp; Gửi hợp đồng ký số&rdquo; cho đến khi khách hàng tải lại tệp hợp lệ và được nhấn <b>Duyệt</b>.
+              Hệ thống đã gửi email yêu cầu khách hàng tải lại tệp mới. Bạn không thể bấm &ldquo;Duyệt chứng từ &amp; Chuyển sang đính kèm Hợp đồng PDF&rdquo; cho đến khi khách hàng tải lại tệp hợp lệ và được nhấn <b>Duyệt</b>.
             </span>
           }
         />
@@ -383,7 +378,7 @@ export default function OrderDocumentsTab({
 
           {isDocsApprovedStage && (
             <Tag color="success" className="py-1.5 px-3 text-xs font-bold rounded-lg flex items-center gap-1.5 m-0">
-              <CheckCircle2 size={14} /> Đã duyệt toàn bộ chứng từ &amp; Đã gửi Hợp đồng cho khách ký số
+              <CheckCircle2 size={14} /> Đã duyệt toàn bộ chứng từ — Đính kèm Hợp đồng scan PDF ở tab Hợp đồng vận tải
             </Tag>
           )}
         </div>

@@ -12,7 +12,9 @@ import {
   FileCheck,
   Send,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  PhoneCall,
+  MessageSquare
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
 import { getRecommendedDocsByCargo } from '../../../src/data/dispatcherPresets';
@@ -91,7 +93,7 @@ export default function OrderDocumentsView() {
           } else if (nextStage === 'DOCS_APPROVED' && prevStage !== 'DOCS_APPROVED') {
             setDocuments(latestDocs);
             setSubmitted(true);
-            message.success('Hồ sơ chứng từ đã được Điều phối viên phê duyệt hoàn tất!');
+            message.success('Hồ sơ chứng từ đã được chấp nhận! Điều phối viên sẽ sớm liên hệ với Quý khách để tiến hành ký kết hợp đồng.');
           }
           return latestData;
         });
@@ -445,24 +447,33 @@ export default function OrderDocumentsView() {
           />
         )}
 
-        {/* Thông báo nếu đã được duyệt toàn bộ chứng từ -> chuyển sang ký hợp đồng */}
+        {/* Thông báo nếu đã được duyệt toàn bộ chứng từ */}
         {isDocsApproved && (
           <Alert
-            title="Toàn bộ hồ sơ chứng từ đã được phê duyệt hợp lệ!"
+            title="Hồ sơ chứng từ đã được chấp nhận hợp lệ!"
             description={
               <div className="space-y-2 text-xs text-slate-700 mt-1">
                 <p className="m-0">
-                  Bộ phận Điều phối NEXLOG đã phê duyệt hồ sơ pháp lý và gửi Hợp đồng điện tử tới email <b>{order?.customer_email}</b> của Quý khách.
+                  Bộ phận Điều phối NEXLOG đã kiểm tra và xác nhận chấp nhận toàn bộ hồ sơ chứng từ, giấy tờ của Quý khách.
                 </p>
-                <div className="pt-1">
-                  <Button
-                    type="primary"
-                    icon={<ArrowRight size={14} />}
-                    onClick={() => router.push(`/customer/contract-sign/${token}`)}
-                    className="bg-emerald-600 hover:bg-emerald-700 font-bold"
+                <p className="m-0 font-semibold text-emerald-700">
+                  ✓ Điều phối viên phụ trách ({order?.dispatcher_name || 'Ban Điều phối NEXLOG'}) sẽ sớm liên lạc trực tiếp với Quý khách để tiến hành ký kết hợp đồng vận chuyển và sắp xếp phương tiện theo đúng lộ trình!
+                </p>
+                <div className="pt-1 flex flex-wrap items-center gap-2">
+                  <a
+                    href={`tel:${(order?.dispatcher_phone || '0988 123 456').replace(/[^0-9]/g, '')}`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all"
                   >
-                    Chuyển sang Ký Hợp Đồng Điện Tử Ngay
-                  </Button>
+                    <PhoneCall size={13} /> Liên hệ Điều phối: {order?.dispatcher_phone || '0988 123 456'}
+                  </a>
+                  <a
+                    href={order?.dispatcher_zalo || `https://zalo.me/${(order?.dispatcher_phone || '0988123456').replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition-all"
+                  >
+                    <MessageSquare size={13} /> Nhắn Zalo Điều phối
+                  </a>
                 </div>
               </div>
             }
@@ -479,10 +490,10 @@ export default function OrderDocumentsView() {
             description={
               <div className="space-y-1 text-xs text-slate-700 mt-1">
                 <p className="m-0">
-                  Điều phối viên đang thẩm định tính hợp lệ của từng loại chứng từ.
+                  Điều phối viên đang thẩm định tính hợp lệ của từng loại chứng từ, giấy tờ.
                 </p>
                 <p className="m-0 text-emerald-700 font-semibold">
-                  Ngay sau khi phê duyệt xong, hệ thống sẽ tự động gửi hợp đồng điện tử PDF kèm đường link chữ ký số tới email <b>{order?.customer_email}</b> của Quý khách!
+                  Ngay sau khi giấy tờ được chấp nhận, Điều phối viên sẽ liên lạc sớm với Quý khách để tiến hành ký hợp đồng vận chuyển!
                 </p>
               </div>
             }
@@ -523,15 +534,9 @@ export default function OrderDocumentsView() {
             </div>
           ) : isDocsApproved ? (
             <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-              <Button
-                type="primary"
-                size="large"
-                icon={<ArrowRight size={16} />}
-                onClick={() => router.push(`/customer/contract-sign/${token}`)}
-                className="bg-emerald-600 hover:bg-emerald-700 font-bold px-8 h-12 rounded-xl"
-              >
-                Tiến hành Ký Chữ Ký Số Hợp Đồng
-              </Button>
+              <Tag color="success" className="py-1.5 px-4 text-xs font-bold rounded-full">
+                Trạng thái: Giấy tờ đã được chấp nhận — Điều phối viên sẽ sớm liên hệ để ký hợp đồng
+              </Tag>
             </div>
           ) : (
             <div className="mt-6 pt-4 border-t border-slate-100 text-center">

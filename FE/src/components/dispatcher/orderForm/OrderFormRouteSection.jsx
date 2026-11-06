@@ -24,6 +24,9 @@ export default function OrderFormRouteSection({
   routeInfo,
   exportPickupSuggestion
 }) {
+  const watchedPickupAddress = Form.useWatch('pickup_address', form);
+  const watchedDeliveryAddress = Form.useWatch('delivery_address', form);
+
   return (
     <>
       <div className="flex items-center justify-between mb-2">
@@ -96,7 +99,7 @@ export default function OrderFormRouteSection({
                   placeholder="Chọn kho lấy hàng..."
                 >
                   <Select.OptGroup label="Kho bãi có sẵn trong hệ thống">
-                    <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài (Mặc định)</Option>
+                    <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài</Option>
                     {dbLocations.filter(loc => !loc.name?.toLowerCase().includes('sân bay nội bài')).map(loc => (
                       <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
                         📍 {loc.name} {loc.province ? `(${loc.province})` : ''}
@@ -104,40 +107,40 @@ export default function OrderFormRouteSection({
                     ))}
                   </Select.OptGroup>
                   <Select.OptGroup label="Kho khác bên ngoài">
-                    <Option value="CUSTOM">➕ Khác (Nhập địa chỉ kho của khách bên ngoài)</Option>
+                    <Option value="CUSTOM">➕ Khác (Nhập địa chỉ ngoài)</Option>
                   </Select.OptGroup>
                 </Select>
 
                 {pickupMode === 'CUSTOM' ? (
-                  <Form.Item name="pickup_address" rules={[{ required: true, message: 'Nhập địa chỉ kho bên ngoài' }]} className="mb-0">
+                  <Form.Item name="pickup_address" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố' }]} className="mb-0">
                     <LocationSearchInput
                       label="Địa chỉ kho bên ngoài của khách"
                       markerLetter="A"
                       markerColor="#2563eb"
-                      placeholder="Gõ tìm địa chỉ kho ngoài..."
-                      value={form.getFieldValue('pickup_address')}
-                      onChange={(val) => { form.setFieldsValue({ pickup_address: val }); if (!val?.trim()) setPickupCoords(null); }}
-                      onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setPickupCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ pickup_address: loc.address }); } else { setPickupCoords(null); if (loc?.address) form.setFieldsValue({ pickup_address: loc.address }); } }}
+                      placeholder="Nhập số nhà, tên đường, KCN, cổng kho..."
+                      value={watchedPickupAddress}
+                      onChange={(val) => { form.setFieldsValue({ pickup_address: val }); setPickupCoords(null); }}
+                      onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setPickupCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ pickup_address: loc.address }); } else { setPickupCoords(null); } }}
                       required
                     />
                   </Form.Item>
                 ) : (
                   <div className="text-xs text-blue-950 font-medium bg-white p-2 rounded border border-blue-100">
-                    {form.getFieldValue('pickup_address') || 'Kho ALS tại Sân Bay Nội Bài'}
+                    {watchedPickupAddress || 'Kho ALS tại Sân Bay Nội Bài'}
                   </div>
                 )}
               </div>
             ) : (
               <div className="space-y-2">
-                <Form.Item name="pickup_address" rules={[{ required: true, message: 'Nhập địa chỉ kho lấy hàng' }]} className="mb-0">
+                <Form.Item name="pickup_address" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố' }]} className="mb-0">
                   <LocationSearchInput
                     label="Địa chỉ kho lấy hàng của khách"
                     markerLetter="A"
                     markerColor="#2563eb"
-                    placeholder="Gõ tìm địa chỉ kho lấy hàng..."
-                    value={form.getFieldValue('pickup_address')}
-                    onChange={(val) => { form.setFieldsValue({ pickup_address: val }); if (!val?.trim()) setPickupCoords(null); }}
-                    onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setPickupCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ pickup_address: loc.address }); } else { setPickupCoords(null); if (loc?.address) form.setFieldsValue({ pickup_address: loc.address }); } }}
+                    placeholder="Nhập số nhà, tên đường, KCN, cổng kho lấy hàng..."
+                    value={watchedPickupAddress}
+                    onChange={(val) => { form.setFieldsValue({ pickup_address: val }); setPickupCoords(null); }}
+                    onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setPickupCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ pickup_address: loc.address }); } else { setPickupCoords(null); } }}
                     required
                   />
                 </Form.Item>
@@ -260,7 +263,7 @@ export default function OrderFormRouteSection({
                   placeholder="Chọn kho giao hàng..."
                 >
                   <Select.OptGroup label="Kho bãi có sẵn trong hệ thống">
-                    <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài (Mặc định)</Option>
+                    <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài</Option>
                     {dbLocations.filter(loc => !loc.name?.toLowerCase().includes('sân bay nội bài')).map(loc => (
                       <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
                         📍 {loc.name} {loc.province ? `(${loc.province})` : ''}
@@ -268,40 +271,40 @@ export default function OrderFormRouteSection({
                     ))}
                   </Select.OptGroup>
                   <Select.OptGroup label="Kho khác bên ngoài">
-                    <Option value="CUSTOM">➕ Khác (Nhập địa chỉ kho của khách bên ngoài)</Option>
+                    <Option value="CUSTOM">➕ Khác (Nhập địa chỉ ngoài)</Option>
                   </Select.OptGroup>
                 </Select>
 
                 {deliveryMode === 'CUSTOM' ? (
-                  <Form.Item name="delivery_address" rules={[{ required: true, message: 'Nhập địa chỉ kho giao hàng bên ngoài' }]} className="mb-0">
+                  <Form.Item name="delivery_address" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố' }]} className="mb-0">
                     <LocationSearchInput
                       label="Địa chỉ kho giao ngoài của khách"
                       markerLetter="B"
                       markerColor="#4f46e5"
-                      placeholder="Gõ tìm địa chỉ kho ngoài..."
-                      value={form.getFieldValue('delivery_address')}
-                      onChange={(val) => { form.setFieldsValue({ delivery_address: val }); if (!val?.trim()) setDeliveryCoords(null); }}
-                      onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setDeliveryCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ delivery_address: loc.address }); } else { setDeliveryCoords(null); if (loc?.address) form.setFieldsValue({ delivery_address: loc.address }); } }}
+                      placeholder="Nhập số nhà, tên đường, KCN, cổng kho..."
+                      value={watchedDeliveryAddress}
+                      onChange={(val) => { form.setFieldsValue({ delivery_address: val }); setDeliveryCoords(null); }}
+                      onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setDeliveryCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ delivery_address: loc.address }); } else { setDeliveryCoords(null); } }}
                       required
                     />
                   </Form.Item>
                 ) : (
                   <div className="text-xs text-indigo-950 font-medium bg-white p-2 rounded border border-indigo-100">
-                    {form.getFieldValue('delivery_address') || 'Kho ALS tại Sân Bay Nội Bài'}
+                    {watchedDeliveryAddress || 'Kho ALS tại Sân Bay Nội Bài'}
                   </div>
                 )}
               </div>
             ) : (
               <div className="space-y-2">
-                <Form.Item name="delivery_address" rules={[{ required: true, message: 'Nhập địa chỉ kho giao hàng' }]} className="mb-0">
+                <Form.Item name="delivery_address" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố' }]} className="mb-0">
                   <LocationSearchInput
                     label="Địa chỉ kho giao hàng của khách"
                     markerLetter="B"
                     markerColor="#4f46e5"
-                    placeholder="Gõ tìm địa chỉ kho giao hàng..."
-                    value={form.getFieldValue('delivery_address')}
-                    onChange={(val) => { form.setFieldsValue({ delivery_address: val }); if (!val?.trim()) setDeliveryCoords(null); }}
-                    onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setDeliveryCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ delivery_address: loc.address }); } else { setDeliveryCoords(null); if (loc?.address) form.setFieldsValue({ delivery_address: loc.address }); } }}
+                    placeholder="Nhập số nhà, tên đường, KCN, cổng kho giao hàng..."
+                    value={watchedDeliveryAddress}
+                    onChange={(val) => { form.setFieldsValue({ delivery_address: val }); setDeliveryCoords(null); }}
+                    onSelectLocation={(loc) => { if (loc?.lat && loc?.lng) { setDeliveryCoords({ lat: loc.lat, lng: loc.lng }); form.setFieldsValue({ delivery_address: loc.address }); } else { setDeliveryCoords(null); } }}
                     required
                   />
                 </Form.Item>

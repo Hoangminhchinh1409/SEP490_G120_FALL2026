@@ -1,8 +1,7 @@
 const supabase = require('../../config/supabase');
 const {
   sendOrderPriceConfirmationEmail,
-  sendDocumentRejectionEmail,
-  sendContractSigningEmail
+  sendDocumentRejectionEmail
 } = require('../../services/emailService');
 const { parseOrderMeta, saveOrderMeta } = require('../../services/orderHelperService');
 
@@ -466,7 +465,7 @@ const rejectOrderDocument = async (req, res) => {
 };
 
 
-// 4.4. ĐIỀU PHỐI VIÊN PHÊ DUYỆT CHỨNG TỪ (ĐỐI VỚI ĐƠN WEB) -> TỰ ĐỘNG GỬI EMAIL KÈM HỢP ĐỒNG & LINK KÝ CHỮ KÝ SỐ
+// 4.4. ĐIỀU PHỐI VIÊN PHÊ DUYỆT CHỨNG TỪ (ĐỐI VỚI ĐƠN WEB) -> CHUYỂN SANG ĐÍNH KÈM HỢP ĐỒNG ĐÃ KÝ (SCAN PDF)
 const approveWebOrderDocuments = async (req, res) => {
   try {
     const { id } = req.params;
@@ -488,7 +487,7 @@ const approveWebOrderDocuments = async (req, res) => {
     const rejectedList = docsToCheck.filter((d) => d.status === 'REJECTED');
     if (rejectedList.length > 0) {
       return res.status(400).json({
-        message: `Không thể duyệt hồ sơ và gửi hợp đồng vì đang có ${rejectedList.length} chứng từ bị TỪ CHỐI (${rejectedList.map((d) => d.name).join(', ')}). Vui lòng chờ khách hàng tải lại chứng từ hợp lệ!`
+        message: `Không thể duyệt hồ sơ vì đang có ${rejectedList.length} chứng từ bị TỪ CHỐI (${rejectedList.map((d) => d.name).join(', ')}). Vui lòng chờ khách hàng tải lại chứng từ hợp lệ!`
       });
     }
 
@@ -498,49 +497,38 @@ const approveWebOrderDocuments = async (req, res) => {
       reject_reason: null
     }));
 
-    meta.web_workflow.stage = 'DOCS_APPROVED';
+    const nowIso = new Date().toISOString();
+    meta.web_workflow.stage = meta.contract_uploaded ? 'CONTRACT_SIGNED' : 'DOCS_APPROVED';
     meta.web_workflow.documents = finalizedDocs;
     meta.web_workflow.approved_documents = finalizedDocs;
-    meta.web_workflow.docs_approved_at = new Date().toISOString();
+    meta.web_workflow.docs_approved_at = nowIso;
     meta.documents = finalizedDocs;
 
     await saveOrderMeta(currentOrder.id, meta);
-    await supabase
-      .from('orders')
-      .update({
-        document_status: 'APPROVED',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', currentOrder.id);
 
-    // Gửi email hợp đồng và link ký số cho khách hàng
-    const targetEmail =
-      meta.customer_email ||
-      currentOrder.customer?.email ||
-      meta.accounting_email ||
-      null;
-    const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
-    const contractSignUrl = `http://localhost:3000/customer/contract-sign/${token}`;
+    const updateFields = {
+      document_status: 'APPROVED',
+      updated_at: nowIso
+    };
 
-    let emailResult = null;
-    if (targetEmail) {
-      emailResult = await sendContractSigningEmail({
-        customerEmail: targetEmail,
-        customerName: currentOrder.customer?.company_name || currentOrder.receiver_name || 'Quý khách',
-        orderCode: currentOrder.order_code,
-        agreedPrice: currentOrder.agreed_price,
-        contractSignUrl
-      });
+    if (meta.contract_uploaded) {
+      updateFields.status = 'READY_FOR_PLANNING';
+      updateFields.ready_for_planning_at = nowIso;
     }
 
+    await supabase
+      .from('orders')
+      .update(updateFields)
+      .eq('id', currentOrder.id);
+
     return res.json({
-      message: 'Đã duyệt toàn bộ hồ sơ chứng từ! Hệ thống đã tự động gửi hợp đồng điện tử và link ký số qua email khách hàng.',
-      stage: 'DOCS_APPROVED',
+      message: meta.contract_uploaded
+        ? 'Đã duyệt toàn bộ hồ sơ chứng từ và có sẵn Hợp đồng PDF đã ký! Đơn hàng chuyển sang Sẵn sàng xếp xe.'
+        : 'Đã duyệt toàn bộ hồ sơ chứng từ! Vui lòng chuyển sang tab Hợp đồng vận tải để đính kèm bản scan PDF hợp đồng 2 bên đã ký.',
+      stage: meta.web_workflow.stage,
       documents: finalizedDocs,
       web_workflow: meta.web_workflow,
-      contractSignUrl,
-      email_sent: emailResult?.success || false,
-      email_preview_url: emailResult?.previewUrl || null
+      contract_uploaded: Boolean(meta.contract_uploaded)
     });
   } catch (err) {
     console.error('approveWebOrderDocuments Error:', err);
@@ -549,75 +537,14 @@ const approveWebOrderDocuments = async (req, res) => {
 };
 
 
-// 4.5. KHÁCH HÀNG KÝ CHỮ KÝ SỐ VÀ LƯU HỢP ĐỒNG ĐÃ KÝ VÀO HỒ SƠ ĐIỀU PHỐI -> CHUYỂN SANG READY_FOR_PLANNING (XẾP XE)
-const customerSignContract = async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { signature_data, signer_name } = req.body;
-
-    if (!signature_data) {
-      return res.status(400).json({ message: 'Vui lòng cung cấp chữ ký điện tử' });
-    }
-
-    const order = await findOrderByIdentifier(token, false);
-    if (!order) {
-      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
-    }
-
-    const meta = parseOrderMeta(order);
-    if (!meta.web_workflow) meta.web_workflow = {};
-    const signedContractFile = `HD-${order.order_code}-SIGNED.pdf`;
-    meta.web_workflow.stage = 'CONTRACT_SIGNED';
-    meta.web_workflow.signed_contract = {
-      signed_at: new Date().toISOString(),
-      signer_name: signer_name || 'Đại diện Khách hàng',
-      signature_data: signature_data,
-      contract_file: signedContractFile
-    };
-    meta.contract_uploaded = true;
-    meta.contract_file = signedContractFile;
-    meta.contract_uploaded_at = new Date().toISOString();
-
-    await saveOrderMeta(order.id, meta);
-
-    // Cập nhật file hợp đồng đã ký và chuyển sang sẵn sàng xếp xe
-    const { data: updatedOrder, error } = await supabase
-      .from('orders')
-      .update({
-        status: 'READY_FOR_PLANNING',
-        document_status: 'APPROVED',
-        signed_order_contract_file: signedContractFile,
-        ready_for_planning_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', order.id)
-      .select();
-
-    if (error) {
-      console.error('customerSignContract Update Error:', error);
-      return res.status(500).json({ message: error.message || 'Lỗi cập nhật hợp đồng' });
-    }
-
-    return res.json({
-      message: 'Ký số hợp đồng thành công! Đơn hàng đã hoàn tất thủ tục và chuyển sang công đoạn Xếp xe.',
-      order: updatedOrder?.[0],
-      stage: 'CONTRACT_SIGNED'
-    });
-  } catch (err) {
-    console.error('customerSignContract Exception:', err);
-    return res.status(500).json({ message: err.message || 'Internal Server Error' });
-  }
-};
-
-
-// 9. ĐIỀU PHỐI VIÊN TẢI TỆP HỢP ĐỒNG ĐÃ KÝ THẬT VÀO HỒ SƠ ĐƠN HÀNG
+// 9. ĐIỀU PHỐI VIÊN TẢI TỆP HỢP ĐỒNG ĐÃ SCAN (PDF) CÓ CHỮ KÝ 2 BÊN VÀO HỒ SƠ ĐƠN HÀNG
 const uploadContractFile = async (req, res) => {
   try {
     const { id } = req.params;
     const { file_name, file_data, file_size } = req.body;
 
     if (!file_name) {
-      return res.status(400).json({ message: 'Vui lòng cung cấp tên tệp hợp đồng' });
+      return res.status(400).json({ message: 'Vui lòng cung cấp tên tệp hợp đồng PDF đã scan' });
     }
 
     const currentOrder = await findOrderByIdentifier(id, false);
@@ -635,14 +562,36 @@ const uploadContractFile = async (req, res) => {
       meta.contract_file_data = file_data;
     }
 
+    if (!meta.web_workflow) meta.web_workflow = {};
+    meta.web_workflow.stage = 'CONTRACT_SIGNED';
+    meta.web_workflow.signed_contract = {
+      signed_at: nowIso,
+      signer_name: 'Hai bên ký trực tiếp (Bản Scan PDF)',
+      contract_file: file_name
+    };
+
     await saveOrderMeta(currentOrder.id, meta);
+
+    // Nếu chứng từ đã được duyệt hoặc đơn đang ở trạng thái CONFIRMED, chuyển sang READY_FOR_PLANNING
+    const shouldMoveToReady =
+      currentOrder.document_status === 'APPROVED' ||
+      meta.web_workflow?.docs_approved_at ||
+      currentOrder.status === 'CONFIRMED';
+
+    const updatePayload = {
+      signed_order_contract_file: file_name,
+      updated_at: nowIso
+    };
+
+    if (shouldMoveToReady && currentOrder.status === 'CONFIRMED') {
+      updatePayload.status = 'READY_FOR_PLANNING';
+      updatePayload.document_status = 'APPROVED';
+      updatePayload.ready_for_planning_at = nowIso;
+    }
 
     const { data: updatedOrders, error: updateError } = await supabase
       .from('orders')
-      .update({
-        signed_order_contract_file: file_name,
-        updated_at: nowIso
-      })
+      .update(updatePayload)
       .eq('id', currentOrder.id)
       .select();
 
@@ -652,10 +601,14 @@ const uploadContractFile = async (req, res) => {
     }
 
     return res.json({
-      message: `Đã lưu tệp hợp đồng [${file_name}] vào hồ sơ đơn hàng thành công!`,
+      message: updatePayload.status === 'READY_FOR_PLANNING'
+        ? `Đã đính kèm bản scan hợp đồng [${file_name}] thành công! Đơn hàng đã đủ điều kiện pháp lý và chuyển sang Sẵn sàng xếp xe.`
+        : `Đã lưu bản scan hợp đồng [${file_name}] vào hồ sơ đơn hàng thành công!`,
       contract_file: file_name,
       contract_uploaded: true,
       contract_uploaded_at: nowIso,
+      stage: 'CONTRACT_SIGNED',
+      web_workflow: meta.web_workflow,
       order: updatedOrders?.[0]
     });
   } catch (err) {
@@ -795,7 +748,6 @@ module.exports = {
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,
-  customerSignContract,
   uploadContractFile,
   uploadOrderDocuments,
   issueInvoiceToAccounting

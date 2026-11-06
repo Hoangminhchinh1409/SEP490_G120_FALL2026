@@ -106,8 +106,41 @@ const hydrateHeavyFields = (orderId, metaObj) => {
 
 // Helper map status từ DB sang FE
 const mapDbStatusToFe = (dbStatus, order, meta = null) => {
-  if (dbStatus === 'CANCELLED' || dbStatus === 'CANCELLED_RETURNING' || (order?.cancelled_at && order?.cancel_reason)) {
+  const upperStatus = (dbStatus || '').toUpperCase().replace(/\s+/g, '_');
+
+  if (
+    upperStatus === 'CANCELLED' ||
+    upperStatus === 'CANCELLED_RETURNING' ||
+    (order?.cancelled_at && order?.cancel_reason)
+  ) {
     return 'CANCELLED';
+  }
+
+  // Ưu tiên các trạng thái sau bước xếp xe (ASSIGNED, IN_TRANSIT, DELIVERED, CLOSED)
+  if (upperStatus === 'CLOSED' || (order?.is_closed && upperStatus === 'DELIVERED')) {
+    return 'CLOSED';
+  }
+  if (upperStatus === 'DELIVERED') {
+    return 'DELIVERED';
+  }
+  if (
+    upperStatus === 'HANDED_OVER_TO_VENDOR' ||
+    upperStatus === 'PICKED_UP' ||
+    upperStatus === 'IN_TRANSIT' ||
+    upperStatus === 'IN_PROGRESS'
+  ) {
+    return 'IN_TRANSIT';
+  }
+  if (
+    upperStatus === 'PLANNED' ||
+    upperStatus === 'ASSIGNED' ||
+    upperStatus === 'ACCEPTED' ||
+    upperStatus === 'DISPATCHED'
+  ) {
+    return 'ASSIGNED';
+  }
+  if (upperStatus === 'READY_FOR_PLANNING') {
+    return 'READY_FOR_PLANNING';
   }
 
   const resolvedMeta = meta || parseOrderMeta(order);
@@ -122,29 +155,13 @@ const mapDbStatusToFe = (dbStatus, order, meta = null) => {
     return 'READY_FOR_PLANNING';
   }
 
-  switch (dbStatus) {
+  switch (upperStatus) {
     case 'WAITING_FOR_DOCUMENTS':
+    case 'PENDING_DOCUMENTS':
       if (order?.source === 'HOMEPAGE' && (!order?.agreed_price || order.agreed_price === 0)) {
         return 'DRAFT';
       }
       return 'CONFIRMED';
-    case 'READY_FOR_PLANNING':
-      return 'READY_FOR_PLANNING';
-    case 'PLANNED':
-    case 'ASSIGNED':
-    case 'ACCEPTED':
-      return 'ASSIGNED';
-    case 'HANDED_OVER_TO_VENDOR':
-    case 'PICKED_UP':
-    case 'IN_TRANSIT':
-      return 'IN_TRANSIT';
-    case 'DELIVERED':
-      return 'DELIVERED';
-    case 'CLOSED':
-      return 'CLOSED';
-    case 'CANCELLED':
-    case 'CANCELLED_RETURNING':
-      return 'CANCELLED';
     default:
       if (resolvedMeta?.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' && order?.agreed_price > 0) {
         return 'DRAFT';

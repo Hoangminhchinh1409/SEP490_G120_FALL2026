@@ -180,7 +180,16 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
   }, [totals.actualWeight, totals.chargeableWeight, cargoItems, watchedValues?.vehicle_type_required]);
 
   // Ước tính giá cước chính xác theo Biểu giá chuẩn ALS
+  const hasBothLocations = Boolean(
+    (pickupCoords || form.getFieldValue('pickup_address')) && 
+    (deliveryCoords || form.getFieldValue('delivery_address')) && 
+    routeInfo.distanceKm > 0
+  );
+
   const estimatedPricing = useMemo(() => {
+    if (!hasBothLocations) {
+      return { baseTransportFee: 0, loadingFee: 0, customsFee: 0, totalRate: 0, isFixedRoute: false };
+    }
     return calculateAlsPricing({
       distanceKm: routeInfo.distanceKm,
       chargeableWeightKg: parseFloat(totals.chargeableWeight) || 0,
@@ -192,6 +201,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
       customsServiceRequired: customsServiceRequired
     });
   }, [
+    hasBothLocations,
     routeInfo.distanceKm,
     totals.chargeableWeight,
     watchedValues?.vehicle_type_required,
@@ -268,6 +278,25 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
         formValues.delivery_address ||
         form.getFieldValue('delivery_address') ||
         (shippingDirection === 'EXPORT' ? 'Nhà Ga Hàng Hóa ALS Nội Bài' : '');
+
+      // Kiểm tra nghiêm ngặt địa chỉ khách nhập: phải có đủ Địa chỉ cụ thể + Phường/Xã + Tỉnh/Thành phố (chuẩn hành chính 2026)
+      if (pickupMode === 'CUSTOM' || shippingDirection === 'EXPORT') {
+        const pickupParts = (resolvedPickupAddr || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (pickupParts.length < 3 || (resolvedPickupAddr || '').trim().length < 10) {
+          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm lấy hàng (A)!');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      if (deliveryMode === 'CUSTOM' || shippingDirection === 'IMPORT') {
+        const deliveryParts = (resolvedDeliveryAddr || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (deliveryParts.length < 3 || (resolvedDeliveryAddr || '').trim().length < 10) {
+          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm nhận hàng (B)!');
+          setSubmitting(false);
+          return;
+        }
+      }
 
       const payload = {
         ...formValues,

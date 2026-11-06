@@ -57,7 +57,7 @@ export default function ReportIncidentPage() {
       };
 
       if (isOffline) {
-        queueOfflineAction({
+        await queueOfflineAction({
           type: "REPORT_INCIDENT",
           payload: {
             ...payload,
@@ -65,12 +65,12 @@ export default function ReportIncidentPage() {
           }
         });
         message.warning("Đang mất kết nối mạng. Sự cố đã được lưu tạm trên máy (Offline First) và sẽ tự động gửi ngay khi có mạng!");
+        form.resetFields();
       } else {
         await driverApi.reportIncident(payload);
         message.success("Đã báo sự cố. Điều phối viên đã được báo!");
+        setTimeout(() => router.push("/driver"), 1500);
       }
-
-      setTimeout(() => router.push("/driver"), 1500);
     } catch (err) {
       if (err.errorFields) return;
       message.error(err.message || "Không thể gửi báo cáo sự cố");
@@ -85,7 +85,7 @@ export default function ReportIncidentPage() {
   };
 
   return (
-    <div className="p-4 max-w-lg mx-auto bg-slate-900 min-h-screen text-slate-100 font-sans">
+    <div className="p-4 max-w-md mx-auto bg-slate-900 min-h-screen text-slate-100 font-sans">
       <div className="mb-6 flex items-center gap-3">
         <Link href="/driver" className="text-slate-400 hover:text-white transition-colors p-2 bg-slate-800 rounded-xl border border-slate-700">
           <ArrowLeft size={20}/>

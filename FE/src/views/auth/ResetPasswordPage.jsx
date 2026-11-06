@@ -11,6 +11,7 @@ import { fetchWithoutAuth } from "../../api/apiClient";
 const ERR_PASSWORD_MISMATCH = "Mật khẩu mới không hợp lệ.";
 const ERR_PASSWORD_POLICY = "Mật khẩu mới phải có ít nhất 8 ký tự và khác mật khẩu cũ.";
 const ERR_TOKEN_EXPIRED = "Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu link mới.";
+const PASSWORD_MAX_BYTES_MESSAGE = "Mật khẩu mới không được vượt quá 72 byte.";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -45,6 +46,10 @@ export default function ResetPasswordPage() {
       setFieldError(ERR_PASSWORD_POLICY);
       return;
     }
+    if (new TextEncoder().encode(form.newPassword).length > 72) {
+      setFieldError(PASSWORD_MAX_BYTES_MESSAGE);
+      return;
+    }
     if (form.newPassword !== form.confirmPassword) {
       setFieldError(ERR_PASSWORD_MISMATCH);
       return;
@@ -62,10 +67,12 @@ export default function ResetPasswordPage() {
       router.replace("/login?reset=1");
     } catch (err) {
       const apiMessage = err.message || "";
-      if (apiMessage.toLowerCase().includes("invalid") || apiMessage.toLowerCase().includes("expired")) {
+      if (apiMessage.startsWith("Mật khẩu mới")) {
+        setFieldError(apiMessage);
+      } else if (apiMessage.includes("Link đã hết hạn")) {
         setError(ERR_TOKEN_EXPIRED);
       } else {
-        setError(ERR_TOKEN_EXPIRED);
+        setError("Không thể đặt lại mật khẩu lúc này. Vui lòng thử lại sau.");
       }
     } finally {
       setSubmitting(false);
@@ -89,7 +96,7 @@ export default function ResetPasswordPage() {
 
       <form className="space-y-6" onSubmit={handleSubmit}>
         {[
-          { key: "newPassword", show: "next", label: "Mật khẩu mới", placeholder: "Tối thiểu 8 ký tự" },
+          { key: "newPassword", show: "next", label: "Mật khẩu mới", placeholder: "8 ký tự trở lên, tối đa 72 byte" },
           { key: "confirmPassword", show: "confirm", label: "Nhập lại mật khẩu mới", placeholder: "Nhập lại mật khẩu mới" },
         ].map((field) => (
           <div key={field.key} className="space-y-2">

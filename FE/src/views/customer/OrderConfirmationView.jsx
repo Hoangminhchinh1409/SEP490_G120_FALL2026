@@ -293,7 +293,7 @@ export default function OrderConfirmationView() {
             title="Quý khách đã đồng ý chốt Phương án xe và Giá cước thành công!"
             description={
               <div className="space-y-2 mt-1 text-xs">
-                <span>Vui lòng chuyển tiếp tới bước <b>Nộp hồ sơ chứng từ</b> để điều phối viên hoàn tất thủ tục cấp hợp đồng.</span>
+                <span>Vui lòng chuyển tiếp tới bước <b>Nộp hồ sơ chứng từ</b> để điều phối viên kiểm duyệt và sắp xếp phương tiện vận chuyển.</span>
                 <div className="pt-2">
                   <Button 
                     type="primary" 
@@ -409,7 +409,7 @@ export default function OrderConfirmationView() {
             <ul className="text-xs text-slate-600 space-y-1 list-disc pl-5 m-0">
               <li>Phương tiện vận tải chuyên dùng đạt chuẩn kiểm định an toàn kỹ thuật.</li>
               <li>Hỗ trợ thủ tục kiểm duyệt chứng từ thông quan nhanh tại ga/kho ALS.</li>
-              <li>Hợp đồng điện tử ký số hợp pháp theo Luật Giao dịch Điện tử.</li>
+              <li>Giám sát lộ trình trực tuyến và bảo hiểm an toàn hàng hóa nguyên seal 100%.</li>
             </ul>
           </div>
 

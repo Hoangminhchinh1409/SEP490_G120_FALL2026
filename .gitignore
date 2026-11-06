@@ -1,6 +1,4 @@
-.agents/
+﻿.agents/
+*.md
 
-# AI Gemini integration files (Private - Không commit lên git)
-BE/services/aiService.js
-FE/src/api/aiApi.js
-
+_rules_backup/

@@ -20,7 +20,8 @@ export default function TripAssignmentStopsList({
   moveStop,
   handleRemoveStop,
   handleAddBreak,
-  routeSummary
+  routeSummary,
+  trafficSummary
 }) {
   return (
     <div className="space-y-2">
@@ -169,11 +170,18 @@ export default function TripAssignmentStopsList({
                 <span className="font-semibold text-gray-900 truncate" title={stop.name}>
                   {stop.name}
                 </span>
-                <span className="text-gray-500 text-[11px] shrink-0">· {stop.action}</span>
+                {stop.action && <span className="text-gray-500 text-[11px] shrink-0">· {stop.action}</span>}
               </div>
               
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-gray-500 font-mono text-[11px]">{stop.eta}</span>
+                {stop.legDistanceKm && (
+                  <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-mono">
+                    +{stop.legDistanceKm}km · {stop.legDriveMins}p
+                  </span>
+                )}
+                <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono font-bold text-[11px]">
+                  {stop.eta}
+                </span>
 
                 {/* Nút di chuyển Lên / Xuống */}
                 {isDraggable && (
@@ -215,17 +223,14 @@ export default function TripAssignmentStopsList({
         })}
       </div>
 
-      <div className="flex items-center justify-between pt-1">
-        <Button
-          size="small"
-          icon={<Plus size={12} />}
-          onClick={handleAddBreak}
-          className="text-xs border-dashed border-gray-400 text-gray-700 hover:text-gray-900 hover:border-gray-600"
-        >
-          + Thêm điểm nghỉ
-        </Button>
-        <span className="text-xs text-gray-500 font-medium">
-          Tổng quãng đường ngắn nhất: <b>{routeSummary.distanceKm} km</b> · <b>chuyến {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</b>
+      <div className="flex items-center justify-end pt-1">
+        <span className="text-xs text-gray-600 font-medium">
+          Tổng quãng đường VietMap: <b>{routeSummary.distanceKm} km</b> · <b>ETA xe chạy {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</b>
+          {trafficSummary?.delayMins > 0 && (
+            <span className="text-amber-700 font-semibold ml-1">
+              (đã tính +{trafficSummary.delayMins}p mật độ giao thông)
+            </span>
+          )}
         </span>
       </div>
     </div>
