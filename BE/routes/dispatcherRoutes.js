@@ -1,7 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const { requireAuth, requireRole } = require('../middlewares/authMiddleware');
 
 const fleetController = require('../controllers/fleetController');
+
+// BUG-ADM-11: Bảo vệ toàn bộ endpoint của Dispatcher với requireAuth & requireRole (chặn khi bật Bảo trì MSG86)
+router.use(requireAuth);
+router.use(requireRole(['DISPATCHER', 3, 'ADMINISTRATOR', 1, 'MANAGER', 2]));
 const locationController = require('../controllers/locationController');
 const contractController = require('../controllers/contractController');
 const tripController = require('../controllers/tripController');

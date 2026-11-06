@@ -453,12 +453,112 @@ const getSystemSettings = async () => {
     return await adminModel.getSystemSettings();
 };
 
-const updateSystemSetting = async (key, value, adminId = null, ipAddress = null) => {
-    if (!key || !key.trim()) {
-        throw new Error("Setting key is required");
+// Valid settings specifications (BUG-ADM-09)
+const VALID_SETTING_SPECS = {
+    order_code_prefix: {
+        validate: (v) => typeof v === "string" && /^[a-zA-Z0-9]{2,10}$/.test(v.trim()),
+        error: "order_code_prefix must be alphanumeric, between 2 and 10 characters"
+    },
+    default_geofence_radius_meters: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 50 && Number(v) <= 5000,
+        error: "default_geofence_radius_meters must be an integer between 50 and 5000"
+    },
+    document_retention_days: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 30 && Number(v) <= 3650,
+        error: "document_retention_days must be an integer between 30 and 3650"
+    },
+    gps_track_retention_days: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 30 && Number(v) <= 365,
+        error: "gps_track_retention_days must be an integer between 30 and 365"
+    },
+    file_size_limit_mb: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 50,
+        error: "file_size_limit_mb must be an integer between 1 and 50"
+    },
+    password_reset_expiry_minutes: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 5 && Number(v) <= 1440,
+        error: "password_reset_expiry_minutes must be an integer between 5 and 1440 (5 mins to 24h)"
+    },
+    document_assistant_enabled: {
+        validate: (v) => String(v) === "true" || String(v) === "false" || typeof v === "boolean",
+        error: "document_assistant_enabled must be a boolean ('true' or 'false')"
+    },
+    company_name: {
+        validate: (v) => typeof v === "string" && v.trim().length >= 1 && v.trim().length <= 100,
+        error: "company_name must be between 1 and 100 characters"
+    },
+    claim_window_days: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 30,
+        error: "claim_window_days must be an integer between 1 and 30 days (default 14 by BR-14)"
+    },
+    document_deadline_hours: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 168,
+        error: "document_deadline_hours must be an integer between 1 and 168 hours"
+    },
+    waiting_too_long_minutes: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 15 && Number(v) <= 360,
+        error: "waiting_too_long_minutes must be an integer between 15 and 360 minutes"
+    },
+    speed_limit_kmh: {
+        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 30 && Number(v) <= 120,
+        error: "speed_limit_kmh must be an integer between 30 and 120 km/h"
+    },
+    maintenance_mode: {
+        validate: (v) => String(v) === "true" || String(v) === "false" || typeof v === "boolean",
+        error: "maintenance_mode must be a boolean ('true' or 'false')"
+    }
+};
+
+const LOCKED_STATUTORY_KEYS = ["minimum_driver_rest_hours"];
+
+const validateSingleSetting = (key, value) => {
+    if (!key || typeof key !== "string" || !key.trim()) {
+        const err = new Error("Setting key is required");
+        err.statusCode = 400;
+        throw err;
+    }
+    const cleanKey = key.trim();
+
+    // BR-34: Statutory lock
+    if (LOCKED_STATUTORY_KEYS.includes(cleanKey)) {
+        const err = new Error(`${cleanKey} is fixed by statutory law (BR-34) and cannot be modified`);
+        err.statusCode = 400;
+        throw err;
     }
 
-    const updated = await adminModel.upsertSystemSetting(key.trim(), value, adminId);
+    const spec = VALID_SETTING_SPECS[cleanKey];
+    if (!spec) {
+        const err = new Error(`Invalid setting key: '${cleanKey}'. Setting is not recognized.`);
+        err.statusCode = 400;
+        throw err;
+    }
+
+    if (value === undefined || value === null || (typeof value === "string" && !value.trim())) {
+        const err = new Error(`Setting value for '${cleanKey}' cannot be empty or null`);
+        err.statusCode = 400;
+        throw err;
+    }
+
+    if (!spec.validate(value)) {
+        const err = new Error(spec.error);
+        err.statusCode = 400;
+        throw err;
+    }
+
+    return { key: cleanKey, value: String(value).trim() };
+};
+
+const updateSystemSetting = async (key, value, adminId = null, ipAddress = null) => {
+    const validated = validateSingleSetting(key, value);
+
+    // Get current setting to check if value actually changed
+    const currentSettings = await adminModel.getSystemSettings();
+    const current = (currentSettings || []).find(s => s.key === validated.key);
+    if (current && String(current.value) === String(validated.value)) {
+        return current; // Unchanged: skip DB write and audit log
+    }
+
+    const updated = await adminModel.upsertSystemSetting(validated.key, validated.value, adminId);
 
     // Auto-audit log
     await adminModel.createActivityLog({
@@ -466,13 +566,71 @@ const updateSystemSetting = async (key, value, adminId = null, ipAddress = null)
         actorType: "USER",
         action: "UPDATE_SETTING",
         targetType: "SYSTEM",
-        targetId: key.trim(),
-        changes: { key: key.trim(), value },
-        reason: "Administrator updated system configuration",
+        targetId: validated.key,
+        changes: { key: validated.key, previousValue: current?.value, newValue: validated.value },
+        reason: `Administrator updated setting '${validated.key}'`,
         ipAddress
     });
 
     return updated;
+};
+
+const updateSystemSettingsBulk = async (settingsObj, adminId = null, ipAddress = null) => {
+    if (!settingsObj || typeof settingsObj !== "object" || Array.isArray(settingsObj)) {
+        const err = new Error("settings must be an object with key-value pairs");
+        err.statusCode = 400;
+        throw err;
+    }
+
+    // 1. Validate all keys & values
+    const entriesToUpdate = [];
+    for (const [k, v] of Object.entries(settingsObj)) {
+        if (LOCKED_STATUTORY_KEYS.includes(k)) {
+            if (Number(v) !== 11) {
+                const err = new Error(`${k} is fixed by statutory law (BR-34) and cannot be modified`);
+                err.statusCode = 400;
+                throw err;
+            }
+            continue; // Skip without updating
+        }
+        const validated = validateSingleSetting(k, v);
+        entriesToUpdate.push(validated);
+    }
+
+    // 2. Compare with current settings in DB to find ONLY genuinely changed keys
+    const currentSettings = await adminModel.getSystemSettings();
+    const currentMap = (currentSettings || []).reduce((acc, cur) => {
+        acc[cur.key] = cur.value;
+        return acc;
+    }, {});
+
+    const changedEntries = entriesToUpdate.filter(entry => String(currentMap[entry.key]) !== String(entry.value));
+
+    if (changedEntries.length === 0) {
+        return { message: "No settings changed", changedCount: 0 };
+    }
+
+    // 3. Perform bulk update in DB (atomic)
+    const updated = await adminModel.upsertSystemSettingsBulk(changedEntries, adminId);
+
+    // 4. Record a SINGLE audit log for the entire bulk update (BUG-ADM-10)
+    const changesObj = {};
+    changedEntries.forEach(e => {
+        changesObj[e.key] = { previous: currentMap[e.key], new: e.value };
+    });
+
+    await adminModel.createActivityLog({
+        actorId: adminId,
+        actorType: "USER",
+        action: "UPDATE_SYSTEM_SETTINGS",
+        targetType: "SYSTEM",
+        targetId: 0,
+        changes: changesObj,
+        reason: `Administrator updated ${changedEntries.length} system setting(s)`,
+        ipAddress
+    });
+
+    return { message: `Updated ${changedEntries.length} setting(s)`, changedCount: changedEntries.length, updated };
 };
 
 // ==========================================
@@ -566,6 +724,7 @@ module.exports = {
     getDashboardStats,
     getSystemSettings,
     updateSystemSetting,
+    updateSystemSettingsBulk,
     getPermissionsMatrix,
     updateRolePermissions
 };

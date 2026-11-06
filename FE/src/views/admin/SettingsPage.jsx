@@ -8,6 +8,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [maintenanceOn, setMaintenanceOn] = useState(false);
+  const [initialSettings, setInitialSettings] = useState({});
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -28,26 +29,23 @@ export default function SettingsPage() {
         const isMaint = settingsMap.maintenance_mode === true || settingsMap.maintenance_mode === 'true';
         setMaintenanceOn(isMaint);
 
-        form.setFieldsValue({
-          // Chế độ bảo trì
+        const initialVals = {
           maintenance_mode: isMaint,
-          // Doanh nghiệp
           company_name: settingsMap.company_name || 'NEXLOG Logistics Corp',
           order_code_prefix: settingsMap.order_code_prefix || 'ALS',
           default_geofence_radius_meters: settingsMap.default_geofence_radius_meters || 200,
-          // Khiếu nại & Vận hành
           claim_window_days: settingsMap.claim_window_days || 14,
           document_deadline_hours: settingsMap.document_deadline_hours || 24,
           waiting_too_long_minutes: settingsMap.waiting_too_long_minutes || 60,
-          minimum_driver_rest_hours: 11, // Cố định luật định (BR-34)
+          minimum_driver_rest_hours: 11,
           speed_limit_kmh: settingsMap.speed_limit_kmh || 80,
-          // Lưu trữ
           document_retention_days: settingsMap.document_retention_days || 730,
           gps_track_retention_days: settingsMap.gps_track_retention_days || 90,
           file_size_limit_mb: settingsMap.file_size_limit_mb || 10,
-          // Bảo mật
           password_reset_expiry_minutes: settingsMap.password_reset_expiry_minutes || 30
-        });
+        };
+        form.setFieldsValue(initialVals);
+        setInitialSettings(initialVals);
       } catch (error) {
         console.error('Lỗi khi tải cấu hình hệ thống:', error);
         message.error('Không thể tải cấu hình hệ thống');
@@ -62,15 +60,27 @@ export default function SettingsPage() {
   const handleSave = async (values) => {
     setLoading(true);
     try {
-      // Lưu từng cấu hình
+      // BUG-ADM-09 & BUG-ADM-10: Chỉ gửi các trường thực sự thay đổi, không gửi BR-34 (minimum_driver_rest_hours)
+      const changedSettings = {};
       for (const [key, val] of Object.entries(values)) {
-        await adminApi.updateSystemSetting({
-          key,
-          value: String(val)
-        });
+        if (key === 'minimum_driver_rest_hours') continue; // BR-34 luật định cố định
+        if (String(val) !== String(initialSettings[key])) {
+          changedSettings[key] = String(val);
+        }
       }
+
+      if (Object.keys(changedSettings).length === 0) {
+        message.info('Không có cấu hình nào thay đổi');
+        setLoading(false);
+        return;
+      }
+
+      // Gửi 1 request duy nhất (atomic, 1 audit log)
+      await adminApi.updateSystemSetting({ settings: changedSettings });
+
       setMaintenanceOn(values.maintenance_mode === true);
-      message.success('Đã lưu toàn bộ cấu hình hệ thống thành công!');
+      setInitialSettings(prev => ({ ...prev, ...changedSettings }));
+      message.success(`Đã lưu ${Object.keys(changedSettings).length} cấu hình thay đổi thành công!`);
     } catch (error) {
       console.error('Lỗi khi lưu cấu hình:', error);
       message.error(error.message || 'Lưu cấu hình thất bại');

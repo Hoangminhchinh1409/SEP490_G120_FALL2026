@@ -42,6 +42,12 @@ async function parseJsonResponse(response) {
     }
 
     if (!response.ok) {
+        // BUG-ADM-11: Nếu hệ thống bật chế độ bảo trì (MSG86) và người dùng không phải Admin, chuyển hướng ra trang đăng nhập
+        if (response.status === 403 && data?.code === "MSG86") {
+            if (typeof window !== "undefined" && !window.location.pathname.startsWith("/admin") && !window.location.pathname.startsWith("/login")) {
+                window.location.href = "/login?maintenance=true";
+            }
+        }
         throw createResponseError(
             data.message || "Something went wrong",
             response.status

@@ -228,9 +228,18 @@ const getSystemSettings = async (req, res) => {
 
 const updateSystemSetting = async (req, res) => {
     try {
-        const { key, value } = req.body;
+        const { key, value, settings } = req.body;
         const adminId = req.user?.id;
         const ipAddress = getClientIp(req);
+
+        // Bulk update mode (BUG-ADM-10: Single request, atomic, 1 audit log)
+        if (settings && typeof settings === "object" && !Array.isArray(settings)) {
+            const result = await adminService.updateSystemSettingsBulk(settings, adminId, ipAddress);
+            return res.status(200).json({
+                message: "Settings updated successfully",
+                ...result
+            });
+        }
 
         if (!key) {
             return res.status(400).json({

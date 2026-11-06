@@ -423,11 +423,32 @@ const upsertSystemSetting = async (key, value, updatedBy = null) => {
         .upsert({
             key,
             value: String(value),
-            updated_by: updatedBy,
+            updated_by: updatedBy ? Number(updatedBy) : null,
             updated_time: new Date().toISOString()
         })
-        .select()
+        .select("key, value, updated_time")
         .single();
+
+    if (error) {
+        throw error;
+    }
+
+    return data;
+};
+
+const upsertSystemSettingsBulk = async (settingsArray, updatedBy = null) => {
+    const now = new Date().toISOString();
+    const rows = settingsArray.map(s => ({
+        key: s.key,
+        value: String(s.value),
+        updated_by: updatedBy ? Number(updatedBy) : null,
+        updated_time: now
+    }));
+
+    const { data, error } = await supabase
+        .from("system_settings")
+        .upsert(rows, { onConflict: "key" })
+        .select("key, value, updated_time");
 
     if (error) {
         throw error;
@@ -532,6 +553,7 @@ module.exports = {
     getDashboardStats,
     getSystemSettings,
     upsertSystemSetting,
+    upsertSystemSettingsBulk,
     getPermissionsMatrix,
     updateRolePermissions
 };

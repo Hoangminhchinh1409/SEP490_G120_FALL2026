@@ -18,23 +18,24 @@ const ROLE_NAMES = {
 };
 
 const getPasswordResetTtlMinutes = async () => {
+    // BUG-ADM-08: Hỗ trợ cả key 'password_reset_expiry_minutes' (từ FE Settings) và 'password_reset_link_lifetime'
     const { data, error } = await supabase
         .from("system_settings")
-        .select("value")
-        .eq("key", "password_reset_link_lifetime")
-        .maybeSingle();
+        .select("key, value")
+        .in("key", ["password_reset_expiry_minutes", "password_reset_link_lifetime"]);
 
     if (error) {
         throw error;
     }
 
-    if (!data) {
+    if (!data || data.length === 0) {
         return DEFAULT_PASSWORD_RESET_TTL_MINUTES;
     }
 
-    const ttlMinutes = Number(data.value);
+    const expirySetting = data.find(d => d.key === "password_reset_expiry_minutes") || data[0];
+    const ttlMinutes = Number(expirySetting.value);
     if (!Number.isSafeInteger(ttlMinutes) || ttlMinutes <= 0) {
-        throw new Error("Invalid password reset link lifetime setting");
+        return DEFAULT_PASSWORD_RESET_TTL_MINUTES;
     }
 
     return ttlMinutes;
