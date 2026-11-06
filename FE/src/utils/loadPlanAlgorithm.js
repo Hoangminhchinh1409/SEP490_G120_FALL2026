@@ -7,6 +7,104 @@ export const DEFAULT_PALETTES = [
   { color: "#fbcfe8", strokeColor: "#db2777", badgeColor: "pink", topColor: "#fce7f3", sideColor: "#f9a8d4" },
 ];
 
+// Bảng màu phân biệt sắc thái theo từng Loại hàng hóa (Cargo Type / Commodity Category)
+export const CARGO_TYPE_COLORS = {
+  GENERAL: { color: "#38bdf8", strokeColor: "#0284c7", topColor: "#bae6fd", sideColor: "#7dd3fc", name: "Hàng tiêu dùng / Bách hóa" },
+  ELECTRONICS: { color: "#818cf8", strokeColor: "#4f46e5", topColor: "#c7d2fe", sideColor: "#a5b4fc", name: "Linh kiện điện tử / PCBA" },
+  CABLE_ROLL: { color: "#f59e0b", strokeColor: "#d97706", topColor: "#fde68a", sideColor: "#fbbf24", name: "Cuộn cáp / Cuộn dây thép" },
+  BULK: { color: "#a8a29e", strokeColor: "#57534e", topColor: "#e7e5e4", sideColor: "#d6d3d1", name: "Hàng rời / Hàng xao" },
+  FRAGILE: { color: "#fb7185", strokeColor: "#e11d48", topColor: "#fecdd3", sideColor: "#fda4af", name: "Hàng dễ vỡ / Kính / Thiết bị đo" },
+  PERISHABLE: { color: "#34d399", strokeColor: "#059669", topColor: "#a7f3d0", sideColor: "#6ee7b7", name: "Hàng bảo quản lạnh / Thực phẩm" },
+  VALUABLE: { color: "#facc15", strokeColor: "#ca8a04", topColor: "#fef08a", sideColor: "#fde047", name: "Hàng giá trị cao / Hàng nhạy cảm" }
+};
+
+/**
+ * Phân tích hình dạng (shapeType) và loại hàng (cargoCategory) dựa trên tên và quy cách đóng gói:
+ * - 'CYLINDER': Hàng cuộn (cuộn cáp quang, cuộn màng bọc, cuộn thép, ống cuộn, lô cuộn...)
+ * - 'BULK_MOUND': Hàng rời, xao xuyến xao hoặc đổ đống
+ * - 'DRUM': Thùng phuy tròn
+ * - 'BOX': Thùng carton, pallet, kiện kiện hình chữ nhật
+ */
+export function detectCargoShapeAndCategory(cargoName = '', packageUnit = '', cargoType = 'GENERAL') {
+  const normName = `${cargoName} ${packageUnit}`.toLowerCase();
+
+  // 1. Nhận diện hàng cuộn tròn (Cylinder)
+  if (
+    normName.includes('cuộn') ||
+    normName.includes('cable') ||
+    normName.includes('cáp') ||
+    normName.includes('lô cuộn') ||
+    normName.includes('coil') ||
+    normName.includes('wire') ||
+    normName.includes('ống') ||
+    normName.includes('drum roll')
+  ) {
+    return {
+      shapeType: 'CYLINDER',
+      cargoCategory: 'CABLE_ROLL',
+      palette: CARGO_TYPE_COLORS.CABLE_ROLL
+    };
+  }
+
+  // 2. Nhận diện thùng phuy tròn (Drum)
+  if (normName.includes('phuy') || normName.includes('thùng phuy') || normName.includes('phi')) {
+    return {
+      shapeType: 'DRUM',
+      cargoCategory: 'BULK',
+      palette: CARGO_TYPE_COLORS.BULK
+    };
+  }
+
+  // 3. Nhận diện hàng rời (Bulk Mound)
+  if (
+    normName.includes('hàng rời') ||
+    normName.includes('bulk') ||
+    normName.includes('xao') ||
+    normName.includes('xá') ||
+    cargoType === 'BULK'
+  ) {
+    return {
+      shapeType: 'BULK_MOUND',
+      cargoCategory: 'BULK',
+      palette: CARGO_TYPE_COLORS.BULK
+    };
+  }
+
+  // 4. Nhận diện linh kiện điện tử / viễn thông (Electronics)
+  if (
+    normName.includes('điện tử') ||
+    normName.includes('pcba') ||
+    normName.includes('bo mạch') ||
+    normName.includes('viễn thông') ||
+    normName.includes('chip') ||
+    normName.includes('board') ||
+    normName.includes('linh kiện')
+  ) {
+    return {
+      shapeType: 'BOX',
+      cargoCategory: 'ELECTRONICS',
+      palette: CARGO_TYPE_COLORS.ELECTRONICS
+    };
+  }
+
+  // 5. Hàng dễ vỡ (Fragile)
+  if (normName.includes('kính') || normName.includes('dễ vỡ') || normName.includes('gốm') || cargoType === 'FRAGILE') {
+    return {
+      shapeType: 'BOX',
+      cargoCategory: 'FRAGILE',
+      palette: CARGO_TYPE_COLORS.FRAGILE
+    };
+  }
+
+  // Mặc định: Thùng / Pallet hình hộp tiêu chuẩn (BOX)
+  const defaultPalette = CARGO_TYPE_COLORS[cargoType] || CARGO_TYPE_COLORS.GENERAL;
+  return {
+    shapeType: 'BOX',
+    cargoCategory: cargoType || 'GENERAL',
+    palette: defaultPalette
+  };
+}
+
 // Kích thước chuẩn mặc định thùng xe tải (cm)
 export const DEFAULT_TRUCK_SPEC = {
   length_cm: 500, // 5.0m
@@ -392,6 +490,7 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
         assignedStop.weight = Math.round(assignedStop.weight + unitWeightKg);
 
         const codeSuffix = boxesToCreate > 1 ? `#${String(k + 1).padStart(2, "0")}` : "";
+        const shapeMeta = detectCargoShapeAndCategory(cargoItem.cargo_name, cargoItem.package_unit, cargoItem.cargo_type);
 
         dimensionalItems.push({
           id: `${orderCode}-${itemIdx + 1}-${k + 1}`,
@@ -407,6 +506,9 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
           customer: customerName,
           cargoName: cargoItem.cargo_name,
           cargoType: cargoItem.cargo_type,
+          shapeType: shapeMeta.shapeType,
+          cargoCategory: shapeMeta.cargoCategory,
+          palette: shapeMeta.palette,
           length_cm: unitL,
           width_cm: unitW,
           height_cm: unitH,

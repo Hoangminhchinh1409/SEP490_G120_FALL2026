@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Modal, Button, Tooltip, Tag, Alert, message } from 'antd';
 import {
   Eye,
@@ -23,6 +23,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
 
   const [aiLoadPlanLoading, setAiLoadPlanLoading] = useState(false);
   const [aiLoadPlanAdvice, setAiLoadPlanAdvice] = useState(null);
+  const resetThreeViewRef = useRef(null);
 
   const truckSpec = useMemo(() => {
     const is35T = trip?.plate?.includes('995.72') || trip?.plate?.includes('996.88') || trip?.truck_model?.includes('3.5');
@@ -258,6 +259,9 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
                 {blocksData.map((b) => {
                   const isSel = selectedBlock?.id === b.id;
+                  const itemColor = b.palette?.color || b.palette?.sideColor || '#86efac';
+                  const shapeIcon = b.shapeType === 'CYLINDER' ? '🌀' : b.shapeType === 'DRUM' ? '🛢️' : b.shapeType === 'BULK_MOUND' ? '⛰️' : '📦';
+
                   return (
                     <div
                       key={b.id}
@@ -267,9 +271,11 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                           ? 'bg-indigo-50 border-indigo-500 font-bold text-indigo-950'
                           : 'bg-gray-50/70 border-gray-200 hover:border-gray-400 text-gray-700'
                       }`}
+                      style={{ borderLeft: `4px solid ${itemColor}` }}
                     >
-                      <span className="truncate">
-                        #{String(b.packageIndex).padStart(2, '0')} · {b.packageUnit} · Tầng {b.tierLevel}
+                      <span className="truncate flex items-center gap-1.5">
+                        <span className="text-[12px]">{shapeIcon}</span>
+                        <span>#{String(b.packageIndex).padStart(2, '0')} · {b.packageUnit || b.cargoName} · Tầng {b.tierLevel}</span>
                       </span>
                       <span className="font-mono text-[10px] text-gray-600 shrink-0 ml-1">
                         {b.dx}×{b.dy}×{b.dz}cm · {b.weight}
@@ -303,8 +309,11 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                   <Tooltip title="Đặt lại góc xoay 3D mặc định">
                     <button
                       type="button"
-                      onClick={() => setCameraAngle({ yaw: -22, pitch: 26 })}
-                      className="px-2.5 py-1.5 text-xs border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center gap-1"
+                      onClick={() => {
+                        setCameraAngle({ yaw: -22, pitch: 26 });
+                        if (resetThreeViewRef.current) resetThreeViewRef.current();
+                      }}
+                      className="px-2.5 py-1.5 text-xs border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center gap-1 cursor-pointer"
                     >
                       <RotateCcw size={12} /> Góc chuẩn
                     </button>
@@ -364,6 +373,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                   dragStart={dragStart}
                   setDragStart={setDragStart}
                   setCameraAngle={setCameraAngle}
+                  onResetViewRef={resetThreeViewRef}
                 />
               </div>
 
