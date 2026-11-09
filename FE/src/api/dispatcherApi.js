@@ -131,6 +131,16 @@ export const dispatcherApi = {
     }
   },
 
+  getOrderDocumentsBundle: async () => {
+    try {
+      const data = await fetchWithoutAuth('/contracts/documents-bundle');
+      return data.documents_bundle || [];
+    } catch (error) {
+      console.error('dispatcherApi.getOrderDocumentsBundle error:', error);
+      throw error;
+    }
+  },
+
   createContract: async (contractData) => {
     try {
       const data = await fetchWithoutAuth('/contracts', {

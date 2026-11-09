@@ -24,6 +24,7 @@ router.delete('/locations/:id', locationController.deleteLocation);
 
 // 3. Contracts & Customers
 router.get('/contracts', contractController.getAllContracts);
+router.get('/contracts/documents-bundle', contractController.getOrderDocumentsBundle);
 router.post('/contracts', contractController.createContract);
 router.get('/customers', contractController.getAllCustomers);
 

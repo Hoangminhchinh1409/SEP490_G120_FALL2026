@@ -21,7 +21,6 @@ import { orderApi } from '../../api/orderApi';
 // Subcomponents đã được tách module
 import OrderOverviewTab from './orderDetails/OrderOverviewTab';
 import OrderDocumentsTab from './orderDetails/OrderDocumentsTab';
-import OrderContractTab from './orderDetails/OrderContractTab';
 import OrderFinancialTab from './orderDetails/OrderFinancialTab';
 import OrderDriverChatTab from './orderDetails/OrderDriverChatTab';
 import { RejectDocModal } from './orderDetails/RejectDocModal';
@@ -59,9 +58,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   // Xác định tab mặc định dựa trên trạng thái đơn hàng
   const defaultTab = order.targetTab || (
     (order.status === 'DRAFT' || isNegotiating) ? '1' :
-    order.web_workflow?.stage === 'DOCS_APPROVED' ? '3' :
-    order.status === 'CONFIRMED' ? '2' :
-    order.status === 'READY_FOR_PLANNING' ? '1' : '1'
+    order.status === 'CONFIRMED' ? '2' : '1'
   );
 
   const [activeTab, setActiveTab] = useState(defaultTab);
@@ -661,15 +658,14 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
 
       if (isWebOrder) {
         const res = await orderApi.approveWebOrderDocuments(order.id || order.order_id, approvedDocs);
-        const alreadyHasContract = Boolean(contractUploaded || res?.contract_uploaded);
         
         const updatedOrder = {
           ...order,
-          status: alreadyHasContract ? 'READY_FOR_PLANNING' : order.status,
+          status: 'READY_FOR_PLANNING',
           documents: approvedDocs,
           web_workflow: res?.web_workflow || {
             ...(order.web_workflow || {}),
-            stage: alreadyHasContract ? 'CONTRACT_SIGNED' : 'DOCS_APPROVED',
+            stage: 'DOCS_APPROVED',
             documents: approvedDocs,
             approved_documents: approvedDocs
           }
@@ -677,29 +673,17 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
 
         onUpdateOrder?.(updatedOrder);
         message.success(
-          res?.message ||
-            'Đã duyệt toàn bộ hồ sơ chứng từ! Vui lòng đính kèm bản scan PDF hợp đồng 2 bên đã ký ở tab Hợp đồng vận tải.'
+          res?.message || 'Đã duyệt toàn bộ hồ sơ chứng từ! Đơn hàng đã sẵn sàng để xếp xe.'
         );
-        setActiveTab('3');
       } else {
-        if (!contractUploaded) {
-          onUpdateOrder?.({
-            ...order,
-            documents: approvedDocs
-          });
-          message.info('Đã duyệt toàn bộ chứng từ! Vui lòng đính kèm bản scan PDF hợp đồng đã ký ở tab Hợp đồng vận tải để chuyển sang Xếp xe.');
-          setActiveTab('3');
-          return;
-        }
         await orderApi.confirmOrder(order.id || order.order_id, currentAgreedPrice);
         const updatedOrder = {
           ...order,
           status: 'READY_FOR_PLANNING',
-          documents: approvedDocs,
-          contract_uploaded: true
+          documents: approvedDocs
         };
         onUpdateOrder?.(updatedOrder);
-        message.success('Đã xác nhận toàn bộ chứng từ & hợp đồng! Đơn hàng đã sẵn sàng để xếp xe.');
+        message.success('Đã xác nhận toàn bộ chứng từ! Đơn hàng đã sẵn sàng để xếp xe.');
       }
     } catch (err) {
       console.error(err);
@@ -839,26 +823,6 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
 
     tabItems.push({
       key: '3',
-      label: <span className="font-semibold text-xs">Hợp đồng vận tải</span>,
-      children: (
-        <OrderContractTab
-          order={order}
-          isWebOrder={isWebOrder}
-          contractUploaded={contractUploaded}
-          contractFile={contractFile}
-          contractFileData={contractFileData}
-          contractUploadedAt={contractUploadedAt}
-          uploadingContract={uploadingContract}
-          contractInputRef={contractInputRef}
-          currentAgreedPrice={currentAgreedPrice}
-          pickupAddress={pickupAddress}
-          deliveryAddress={deliveryAddress}
-        />
-      )
-    });
-
-    tabItems.push({
-      key: '4',
       label: <span className="font-semibold text-xs">Tài chính &amp; Phụ phí</span>,
       children: (
         <OrderFinancialTab

@@ -13,21 +13,102 @@ const customerService = require('../services/customerService');
 const getAllContracts = async (req, res) => {
   try {
     const formattedContracts = await customerService.getAllContracts();
-    return res.json({ contracts: formattedContracts });
+    return res.json({ contracts: formattedContracts, is_read_only: true });
   } catch (err) {
     console.error('getAllContracts error:', err);
     return res.status(500).json({ message: 'Lỗi tải danh sách hợp đồng', error: err.message });
   }
 };
 
-const createContract = async (req, res) => {
+const getOrderDocumentsBundle = async (req, res) => {
   try {
-    const newContract = await customerService.createContract(req.body);
-    return res.status(201).json({ message: 'Tạo hợp đồng thành công', contract: newContract });
+    const prisma = require('../config/prisma');
+    const { loadOrderMeta } = require('../services/orderHelperService');
+
+    const orders = await prisma.orders.findMany({
+      orderBy: { id: 'desc' },
+      include: {
+        customers: { select: { id: true, company_name: true, tax_code: true, phone: true } },
+        locations_orders_pickup_location_idTolocations: true,
+        locations_orders_delivery_location_idTolocations: true,
+        trip_stops: {
+          include: {
+            trips: {
+              include: {
+                waybills: true,
+                trip_drivers: {
+                  include: {
+                    driver_profiles: {
+                      include: { users: true }
+                    }
+                  }
+                },
+                trip_trucks: {
+                  include: { trucks: true }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const list = [];
+    for (const o of orders) {
+      const meta = await loadOrderMeta(o.id);
+      const pickupLoc = o.locations_orders_pickup_location_idTolocations?.name || 'Điểm lấy hàng ALS';
+      const deliveryLoc = o.locations_orders_delivery_location_idTolocations?.name || 'Điểm giao hàng';
+      
+      let trip = null;
+      if (o.trip_stops && o.trip_stops.length > 0) {
+        trip = o.trip_stops[0].trips;
+      }
+
+      const driverName = trip?.trip_drivers?.[0]?.driver_profiles?.users?.full_name || 'Đang phân công';
+      const driverPhone = trip?.trip_drivers?.[0]?.driver_profiles?.users?.phone_number || '';
+      const truckPlate = trip?.trip_trucks?.[0]?.trucks?.plate_number || 'Đang phân công';
+      const waybill = trip?.waybills?.[0];
+
+      const customerDocs = meta.web_workflow?.documents || [];
+      const hasContract = meta.contract_uploaded || !!meta.contract_file || !!meta.web_workflow?.signed_contract;
+      const contractFileName = meta.contract_file || meta.web_workflow?.signed_contract?.contract_file || (hasContract ? `HD-${o.order_code}-SIGNED.pdf` : null);
+
+      list.push({
+        order_id: o.id.toString(),
+        order_code: o.order_code,
+        status: o.status,
+        customer_name: o.customers?.company_name || 'Khách hàng',
+        tax_code: o.customers?.tax_code || '---',
+        customer_phone: o.customers?.phone || '---',
+        pickup_location: pickupLoc,
+        delivery_location: deliveryLoc,
+        created_at: o.created_at,
+        has_contract: hasContract,
+        contract_file: contractFileName,
+        contract_file_data: meta.contract_file_data || meta.web_workflow?.signed_contract?.signature_data || null,
+        contract_uploaded_at: meta.contract_uploaded_at || meta.web_workflow?.signed_contract?.signed_at || null,
+        customer_docs_count: customerDocs.length,
+        customer_docs: customerDocs,
+        trip_code: trip?.trip_code || null,
+        trip_status: trip?.status || null,
+        truck_plate: truckPlate,
+        driver_name: driverName,
+        driver_phone: driverPhone,
+        waybill_number: waybill?.waybill_number || (trip ? `WB-2026-${trip.trip_code || trip.id}` : null),
+        has_waybill: !!trip,
+        driver_handover_ready: !!trip
+      });
+    }
+
+    return res.json({ documents_bundle: list, is_read_only: true });
   } catch (err) {
-    console.error('createContract error:', err);
-    return res.status(500).json({ message: 'Internal Server Error' });
+    console.error('getOrderDocumentsBundle error:', err);
+    return res.status(500).json({ message: 'Lỗi tải bộ chứng từ và giấy tờ vận tải', error: err.message });
   }
+};
+
+const createContract = async (req, res) => {
+  return res.status(403).json({ message: 'Điều phối viên không được phép tạo hoặc sửa hợp đồng vận tải (Chế độ chỉ xem)' });
 };
 
 const getAllCustomers = async (req, res) => {
@@ -330,6 +411,7 @@ const getContracts = async (req, res) => {
 module.exports = {
   // Dispatcher Contracts & Customers
   getAllContracts,
+  getOrderDocumentsBundle,
   createContract,
   getAllCustomers,
 

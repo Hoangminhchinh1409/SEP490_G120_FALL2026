@@ -180,7 +180,7 @@ export function TripWaybillModal({ selectedTripWaybill, onClose, onPrintWaybill 
         printWin.focus();
         printWin.print();
       }
-    } catch (e) {
+    } catch {
       // ignore popup block
     }
     onPrintWaybill?.();
@@ -317,15 +317,24 @@ export function Trip3DModal({ selectedTrip3D, onClose }) {
 }
 
 export function TripReplayModal({ selectedTripReplay, onClose }) {
+  if (!selectedTripReplay) return null;
+  return (
+    <TripReplayModalContent
+      key={selectedTripReplay.raw_id || selectedTripReplay.id}
+      selectedTripReplay={selectedTripReplay}
+      onClose={onClose}
+    />
+  );
+}
+
+const DEFAULT_RECORDED_TIME = '2026-11-09T08:00:00.000Z';
+
+function TripReplayModalContent({ selectedTripReplay, onClose }) {
   const [replayData, setReplayData] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
 
   useEffect(() => {
-    if (!selectedTripReplay) return;
-    setIsPlaying(false);
-    setStepIndex(0);
-
     let active = true;
     const tripId = selectedTripReplay.raw_id || selectedTripReplay.id;
     dispatcherApi.getTripReplay(tripId)
@@ -344,15 +353,18 @@ export function TripReplayModal({ selectedTripReplay, onClose }) {
     return () => { active = false; };
   }, [selectedTripReplay]);
 
-  const gpsTrack = replayData?.gps_track?.length > 0
-    ? replayData.gps_track
-    : Array.from({ length: 11 }, (_, idx) => ({
-        id: idx + 1,
-        latitude: Number((21.2187 - idx * 0.0085).toFixed(6)),
-        longitude: Number((105.8042 + idx * 0.0155).toFixed(6)),
-        speed_kmh: idx === 0 || idx === 10 ? 0 : 52,
-        recorded_time: new Date(Date.now() - (10 - idx) * 6 * 60000).toISOString()
-      }));
+  const gpsTrack = useMemo(() => {
+    if (replayData?.gps_track?.length > 0) {
+      return replayData.gps_track;
+    }
+    return Array.from({ length: 11 }, (_, idx) => ({
+      id: idx + 1,
+      latitude: Number((21.2187 - idx * 0.0085).toFixed(6)),
+      longitude: Number((105.8042 + idx * 0.0155).toFixed(6)),
+      speed_kmh: idx === 0 || idx === 10 ? 0 : 52,
+      recorded_time: DEFAULT_RECORDED_TIME
+    }));
+  }, [replayData]);
 
   useEffect(() => {
     if (!isPlaying) return;

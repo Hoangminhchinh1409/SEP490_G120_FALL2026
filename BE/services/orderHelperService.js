@@ -203,29 +203,55 @@ const getOrCreateLocation = async ({
     if (
       cleanAddrLower.includes('nhà ga hàng hóa als nội bài') ||
       cleanAddrLower.includes('ga hàng hóa als') ||
-      cleanAddrLower.includes('kho hàng không kéo dài als') ||
       cleanAddrLower.includes('als nội bài') ||
       cleanAddrLower.includes('cảng hkqt nội bài')
     ) {
       const { data: alsNb } = await supabase.from('locations').select('id').eq('id', 1).limit(1);
       if (alsNb && alsNb.length > 0) return alsNb[0].id;
     }
-    if (cleanAddrLower.includes('als bắc ninh') || (cleanAddrLower.includes('yên phong') && cleanAddrLower.includes('als'))) {
-      const { data: alsBn } = await supabase.from('locations').select('id').eq('id', 2).limit(1);
+    if (cleanAddrLower.includes('als bắc ninh') || cleanAddrLower.includes('alsb') || (cleanAddrLower.includes('yên phong') && cleanAddrLower.includes('als'))) {
+      const { data: alsBn } = await supabase.from('locations').select('id').ilike('name', '%Bắc Ninh (ALSB)%').limit(1);
       if (alsBn && alsBn.length > 0) return alsBn[0].id;
     }
-    if (cleanAddrLower.includes('als thái nguyên') || (cleanAddrLower.includes('yên bình') && cleanAddrLower.includes('als'))) {
-      const { data: alsTn } = await supabase.from('locations').select('id').eq('id', 3).limit(1);
+    if (cleanAddrLower.includes('als thái nguyên') || cleanAddrLower.includes('alst') || (cleanAddrLower.includes('yên bình') && cleanAddrLower.includes('als'))) {
+      const { data: alsTn } = await supabase.from('locations').select('id').ilike('name', '%Thái Nguyên (ALST)%').limit(1);
       if (alsTn && alsTn.length > 0) return alsTn[0].id;
     }
-    if (cleanAddrLower.includes('als hải phòng') || (cleanAddrLower.includes('nam cầu kiền') && cleanAddrLower.includes('als'))) {
-      const { data: alsHp } = await supabase.from('locations').select('id').eq('id', 4).limit(1);
+    if (cleanAddrLower.includes('als hải phòng') || cleanAddrLower.includes('alsh') || (cleanAddrLower.includes('nam cầu kiền') && cleanAddrLower.includes('als'))) {
+      const { data: alsHp } = await supabase.from('locations').select('id').ilike('name', '%Hải Phòng (ALSH)%').limit(1);
       if (alsHp && alsHp.length > 0) return alsHp[0].id;
     }
+    if (cleanAddrLower.includes('hữu nghị') && (cleanAddrLower.includes('lạng sơn') || cleanAddrLower.includes('cửa khẩu'))) {
+      const { data: alsHn } = await supabase.from('locations').select('id').ilike('name', '%Hữu Nghị%').limit(1);
+      if (alsHn && alsHn.length > 0) return alsHn[0].id;
+    }
+    if (cleanAddrLower.includes('lào cai') || cleanAddrLower.includes('kim thành')) {
+      const { data: alsLc } = await supabase.from('locations').select('id').ilike('name', '%Kim Thành%').limit(1);
+      if (alsLc && alsLc.length > 0) return alsLc[0].id;
+    }
+    if (cleanAddrLower.includes('mỹ đình') && cleanAddrLower.includes('icd')) {
+      const { data: alsMd } = await supabase.from('locations').select('id').ilike('name', '%Mỹ Đình%').limit(1);
+      if (alsMd && alsMd.length > 0) return alsMd[0].id;
+    }
 
-    // 2. Kiểm tra xem địa chỉ này đã tồn tại trong database chưa
+    // 2. Tự động bóc tách Tỉnh/Thành từ địa chỉ nếu có
+    let detectedProvince = 'Hà Nội';
+    if (cleanAddrLower.includes('bắc ninh')) detectedProvince = 'Bắc Ninh';
+    else if (cleanAddrLower.includes('hải phòng')) detectedProvince = 'Hải Phòng';
+    else if (cleanAddrLower.includes('thái nguyên')) detectedProvince = 'Thái Nguyên';
+    else if (cleanAddrLower.includes('hưng yên')) detectedProvince = 'Hưng Yên';
+    else if (cleanAddrLower.includes('hà nam')) detectedProvince = 'Hà Nam';
+    else if (cleanAddrLower.includes('hải dương')) detectedProvince = 'Hải Dương';
+    else if (cleanAddrLower.includes('vĩnh phúc')) detectedProvince = 'Vĩnh Phúc';
+    else if (cleanAddrLower.includes('phú thọ')) detectedProvince = 'Phú Thọ';
+    else if (cleanAddrLower.includes('lạng sơn')) detectedProvince = 'Lạng Sơn';
+    else if (cleanAddrLower.includes('lào cai')) detectedProvince = 'Lào Cai';
+    else if (cleanAddrLower.includes('quảng ninh')) detectedProvince = 'Quảng Ninh';
+    else if (cleanAddrLower.includes('bắc giang')) detectedProvince = 'Bắc Giang';
+
+    // 3. Kiểm tra xem địa chỉ này đã tồn tại trong database chưa (với cùng khách hàng hoặc chung)
     if (cleanAddr) {
-      let query = supabase.from('locations').select('id, name, customer_id, latitude, longitude').eq('address', cleanAddr);
+      let query = supabase.from('locations').select('id, name, customer_id, latitude, longitude, province').eq('address', cleanAddr);
       if (customerId) {
         query = query.or(`customer_id.eq.${customerId},customer_id.is.null`);
       }
@@ -233,10 +259,18 @@ const getOrCreateLocation = async ({
 
       if (existing && existing.length > 0) {
         const matchedLoc = existing[0];
+        const updateFields = {};
         if (lat && lng && (!matchedLoc.latitude || !matchedLoc.longitude)) {
+          updateFields.latitude = parseFloat(lat);
+          updateFields.longitude = parseFloat(lng);
+        }
+        if (detectedProvince && matchedLoc.province !== detectedProvince) {
+          updateFields.province = detectedProvince;
+        }
+        if (Object.keys(updateFields).length > 0) {
           await supabase
             .from('locations')
-            .update({ latitude: parseFloat(lat), longitude: parseFloat(lng) })
+            .update(updateFields)
             .eq('id', matchedLoc.id);
         }
         return matchedLoc.id;
@@ -258,7 +292,7 @@ const getOrCreateLocation = async ({
         type: customerId ? 'Customer Site' : 'Warehouse',
         customer_id: customerId || null,
         address: cleanAddr || 'Hà Nội',
-        province: 'Hà Nội',
+        province: detectedProvince,
         latitude: lat ? parseFloat(lat) : 21.0285,
         longitude: lng ? parseFloat(lng) : 105.8542,
         contact_name: contactName || null,

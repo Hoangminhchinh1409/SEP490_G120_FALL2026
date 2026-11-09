@@ -11,7 +11,6 @@ const DispatcherLayout = ({ children }) => {
     { href: '/dispatcher/orders', icon: FileText, name: 'Quản lý Đơn hàng' },
     { href: '/dispatcher/trips', icon: Route, name: 'Kế hoạch & Chuyến xe' },
     { href: '/dispatcher/locations', icon: MapPin, name: 'Điểm giao nhận' },
-    { href: '/dispatcher/contracts', icon: ScrollText, name: 'Hợp đồng vận tải' },
     { href: '/dispatcher/fleet', icon: Truck, name: 'Đội xe & Tài xế' },
     { href: '/dispatcher/tracking', icon: Compass, name: 'Bản đồ Theo dõi' },
   ];
