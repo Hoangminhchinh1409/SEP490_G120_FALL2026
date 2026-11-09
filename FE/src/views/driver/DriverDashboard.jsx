@@ -30,6 +30,8 @@ import {
   Ban,
 } from "lucide-react";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
+import { useAuth } from "../../providers/AuthProvider";
+import { getPendingCount } from "../../utils/offlineQueue";
 import OfflineSyncStatus from "./components/OfflineSyncStatus";
 import DriverDashboardModals from "./components/DriverDashboardModals";
 import {
@@ -1506,6 +1508,76 @@ export default function DriverDashboard() {
         docsModalOpen={docsModalOpen}
         setDocsModalOpen={setDocsModalOpen}
       />
+      {/* Modal Xác nhận Đăng xuất cho Tài xế */}
+      <Modal
+        open={logoutModalOpen}
+        onCancel={() => !loggingOut && setLogoutModalOpen(false)}
+        footer={null}
+        centered
+        closable={false}
+        styles={{
+          content: {
+            backgroundColor: "#0f172a",
+            border: "1px solid #334155",
+            borderRadius: "1.5rem",
+            padding: "1.5rem",
+            color: "#f8fafc"
+          }
+        }}
+      >
+        <div className="text-center">
+          <div className="w-14 h-14 bg-red-500/15 border border-red-500/30 text-red-400 rounded-2xl flex items-center justify-center mx-auto mb-3.5 shadow-lg shadow-red-500/10">
+            <LogOut size={26} />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1.5">Xác nhận đăng xuất</h3>
+          <p className="text-slate-300 text-xs leading-relaxed mb-4">
+            Bạn có chắc chắn muốn đăng xuất khỏi phiên làm việc tài xế{" "}
+            {profile?.user?.full_name ? (
+              <span className="font-semibold text-blue-400">{profile.user.full_name}</span>
+            ) : null}
+            ?
+          </p>
+
+          {pendingOfflineCount > 0 && (
+            <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-left text-xs text-amber-200">
+              <p className="font-bold mb-1 flex items-center gap-1.5 text-amber-300">
+                <AlertTriangle size={14} /> Chú ý: Chưa đồng bộ hết dữ liệu
+              </p>
+              <p className="text-[11px] leading-relaxed text-amber-200/90">
+                Bạn đang có <b>{pendingOfflineCount} thao tác ngoại tuyến</b> chưa gửi lên máy chủ. Bạn nên bấm <b>"Đồng bộ ngay"</b> trước khi đăng xuất để tránh mất hoặc chậm trễ cập nhật chuyến xe.
+              </p>
+            </div>
+          )}
+
+          <div className="flex gap-2.5 mt-5">
+            <button
+              type="button"
+              disabled={loggingOut}
+              onClick={() => setLogoutModalOpen(false)}
+              className="flex-1 py-2.5 px-4 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-all disabled:opacity-50"
+            >
+              Ở lại
+            </button>
+            <button
+              type="button"
+              disabled={loggingOut}
+              onClick={async () => {
+                try {
+                  setLoggingOut(true);
+                  await logout();
+                } catch (err) {
+                  console.error("Logout error:", err);
+                  setLoggingOut(false);
+                  setLogoutModalOpen(false);
+                }
+              }}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs transition-all shadow-lg shadow-red-600/30 flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {loggingOut ? "Đang xử lý..." : "Đăng xuất"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
