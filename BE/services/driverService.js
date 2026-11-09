@@ -22,26 +22,31 @@ const getMyProfile = async (userId) => {
 
 const getActiveTrip = async (userId) => {
   const profile = await getMyProfile(userId);
-  const trip = await driverModel.getActiveTrip(profile.id);
+  const tripResult = await driverModel.getActiveTrip(profile.id);
 
-  if (!trip) {
+  const trip = tripResult?.activeTrip || (tripResult?.id ? tripResult : null);
+  const upcomingTrips = tripResult?.upcomingTrips || (trip ? [trip] : []);
+
+  if (!trip && (!upcomingTrips || upcomingTrips.length === 0)) {
     return {
       hasActiveTrip: false,
       message: "Hiện tại bạn chưa có chuyến xe nào được phân công.",
       trip: null,
+      upcomingTrips: [],
       drivingHours: profile.drivingHours
     };
   }
 
   // Xác định điểm dừng kế tiếp cần thực hiện (điểm dừng chưa hoàn thành 'Done')
   let currentStop = null;
-  if (trip.stops && trip.stops.length > 0) {
+  if (trip && trip.stops && trip.stops.length > 0) {
     currentStop = trip.stops.find(s => s.status !== "Done") || trip.stops[trip.stops.length - 1];
   }
 
   return {
-    hasActiveTrip: true,
+    hasActiveTrip: Boolean(trip),
     trip,
+    upcomingTrips,
     currentStop,
     drivingHours: profile.drivingHours
   };

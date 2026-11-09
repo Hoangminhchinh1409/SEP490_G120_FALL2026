@@ -9,7 +9,6 @@ import {
   InputNumber,
   message,
   Spin,
-  Progress,
   Checkbox,
   Select,
 } from "antd";
@@ -28,6 +27,8 @@ import {
   FileText,
   DollarSign,
   Ban,
+  LogOut,
+  Calendar,
 } from "lucide-react";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
 import { useAuth } from "../../providers/AuthProvider";
@@ -40,6 +41,10 @@ import {
 } from "../../utils/offlineQueue";
 
 export default function DriverDashboard() {
+  const { logout } = useAuth();
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
   const [isOffline, setIsOffline] = useState(() => {
     if (typeof window !== "undefined" && typeof navigator !== "undefined") {
       return !navigator.onLine;
@@ -49,6 +54,7 @@ export default function DriverDashboard() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [tripData, setTripData] = useState(null);
+  const [selectedTripId, setSelectedTripId] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Modals
@@ -102,6 +108,29 @@ export default function DriverDashboard() {
   const [feePhotoUrl, setFeePhotoUrl] = useState(
     "https://cdn.nexlog.vn/fee-receipt.jpg",
   );
+
+
+  const formatTripDateTime = (dateStr) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    return d.toLocaleString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+  };
+
+  const formatDuration = (minutes) => {
+    if (!minutes && minutes !== 0) return null;
+    const h = Math.floor(minutes / 60);
+    const m = Math.round(minutes % 60);
+    if (h > 0 && m > 0) return `${h}h ${m}p`;
+    if (h > 0) return `${h}h`;
+    return `${m}p`;
+  };
 
   const restDeadlineText = useMemo(() => {
     const d = new Date();
@@ -808,8 +837,9 @@ export default function DriverDashboard() {
     );
   }
 
-  const trip = tripData?.trip;
-  const currentStop = tripData?.currentStop;
+  const upcomingTrips = tripData?.upcomingTrips || (tripData?.trip ? [tripData.trip] : []);
+  const trip = (selectedTripId ? upcomingTrips.find((t) => t.id === selectedTripId) : null) || tripData?.trip || null;
+  const currentStop = (trip?.stops && trip.stops.find((s) => s.status !== "Done")) || tripData?.currentStop;
   const stops = trip?.stops || [];
   const truck = trip?.truck;
   const drivingHours = tripData?.drivingHours || profile?.drivingHours;
@@ -865,13 +895,30 @@ export default function DriverDashboard() {
                 </span>
               )}
             </div>
-            <button
-              onClick={fetchDashboardData}
-              className="w-10 h-10 shrink-0 bg-white/15 hover:bg-white/25 active:scale-95 backdrop-blur-md rounded-2xl border border-white/25 flex items-center justify-center shadow-md transition-all text-white"
-              title="Làm mới"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={fetchDashboardData}
+                className="w-9 h-9 bg-white/15 hover:bg-white/25 active:scale-95 backdrop-blur-md rounded-2xl border border-white/25 flex items-center justify-center shadow-md transition-all text-white"
+                title="Làm mới dữ liệu"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const count = await getPendingCount();
+                    setPendingOfflineCount(count);
+                  } catch {
+                    setPendingOfflineCount(0);
+                  }
+                  setLogoutModalOpen(true);
+                }}
+                className="w-9 h-9 bg-red-500/20 hover:bg-red-500/35 active:scale-95 backdrop-blur-md rounded-2xl border border-red-400/30 flex items-center justify-center shadow-md transition-all text-red-100 hover:text-white"
+                title="Đăng xuất"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -892,82 +939,49 @@ export default function DriverDashboard() {
           </div>
         )}
 
-        {/* WIDGET: Giờ lái an toàn còn lại (Screen 6.1 (4), BR-34) */}
+        {/* WIDGET: Giờ lái an toàn còn lại (Screen 6.1 (4), BR-34) - Chỉ giữ giới hạn 4h liên tục */}
         {drivingHours && (
           <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 mb-3 shadow-xl">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <Clock size={13} className="text-blue-400" /> Giờ lái còn lại
-                (BR-34)
+                <Clock size={13} className="text-blue-400" /> Giờ lái liên tục còn lại (BR-34)
               </span>
-              <span className="text-[9px] text-slate-400">Luật ATGT</span>
+              <span className="text-[9px] text-slate-400 bg-slate-900/60 px-2 py-0.5 rounded-md border border-slate-700/60">
+                Luật ATGT • Tối đa 4h
+              </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 text-center">
-              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
-                <span className="text-[9px] text-slate-400 block font-medium truncate">
-                  Liên tục (max 4h)
+            <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Thời gian lái liên tục cho phép:
                 </span>
                 <span
-                  className={`text-sm font-black ${drivingHours.continuous_hours_left < 1 ? "text-amber-400" : "text-emerald-400"}`}
+                  className={`text-base font-black ${
+                    drivingHours.continuous_hours_left < 1 ? "text-amber-400" : "text-emerald-400"
+                  }`}
                 >
                   {drivingHours.continuous_hours_left}h
+                  <span className="text-xs text-slate-400 font-normal ml-1">/ 4h</span>
                 </span>
-                <Progress
-                  percent={Math.min(
-                    100,
-                    Math.round(
-                      ((4 - drivingHours.continuous_hours_left) / 4) * 100,
-                    ),
-                  )}
-                  size="small"
-                  showInfo={false}
-                  strokeColor={
-                    drivingHours.continuous_hours_left < 1
-                      ? "#f59e0b"
-                      : "#3b82f6"
-                  }
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden my-2 border border-slate-700/80">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    drivingHours.continuous_hours_left < 1 ? "bg-amber-400" : "bg-emerald-500"
+                  }`}
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.max(0, Math.round(((4 - drivingHours.continuous_hours_left) / 4) * 100))
+                    )}%`
+                  }}
                 />
               </div>
-
-              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
-                <span className="text-[9px] text-slate-400 block font-medium truncate">
-                  Hôm nay (max 10h)
-                </span>
-                <span className="text-sm font-black text-blue-400">
-                  {drivingHours.daily_hours_left}h
-                </span>
-                <Progress
-                  percent={Math.min(
-                    100,
-                    Math.round(
-                      ((10 - drivingHours.daily_hours_left) / 10) * 100,
-                    ),
-                  )}
-                  size="small"
-                  showInfo={false}
-                  strokeColor="#3b82f6"
-                />
-              </div>
-
-              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
-                <span className="text-[9px] text-slate-400 block font-medium truncate">
-                  Tuần này (max 48h)
-                </span>
-                <span className="text-sm font-black text-indigo-400">
-                  {drivingHours.weekly_hours_left}h
-                </span>
-                <Progress
-                  percent={Math.min(
-                    100,
-                    Math.round(
-                      ((48 - drivingHours.weekly_hours_left) / 48) * 100,
-                    ),
-                  )}
-                  size="small"
-                  showInfo={false}
-                  strokeColor="#6366f1"
-                />
+              <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
+                <span>Đã chạy: {Math.max(0, 4 - drivingHours.continuous_hours_left).toFixed(1)}h</span>
+                <span>Còn lại: {drivingHours.continuous_hours_left}h (nghỉ tối thiểu 15 phút)</span>
               </div>
             </div>
           </div>
@@ -994,6 +1008,59 @@ export default function DriverDashboard() {
           </div>
         ) : (
           <>
+            {/* BỘ CHỌN CHUYẾN XE SẮP TỚI CHO TÀI XẾ */}
+            {upcomingTrips && upcomingTrips.length > 1 && (
+              <div className="mb-3 bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-2.5 shadow-xl">
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                    <Truck size={13} className="text-blue-400" />
+                    Chuyến xe sắp tới ({upcomingTrips.length} chuyến)
+                  </span>
+                  <span className="text-[9px] text-blue-300 bg-blue-500/10 border border-blue-400/20 px-2 py-0.5 rounded-full font-semibold">
+                    Chạm để xem chi tiết
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {upcomingTrips.map((t, idx) => {
+                    const isSelected = t.id === trip?.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSelectedTripId(t.id)}
+                        className={`p-2 rounded-xl text-left transition-all border ${
+                          isSelected
+                            ? "bg-blue-600/30 border-blue-400 shadow-md shadow-blue-500/20 ring-1 ring-blue-400"
+                            : "bg-slate-900/60 border-slate-700/60 hover:border-slate-600 text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className={`text-[10px] font-bold ${isSelected ? "text-white" : "text-slate-400"}`}>
+                            #{idx + 1}
+                          </span>
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              t.status === "In Progress"
+                                ? "bg-amber-400 animate-pulse"
+                                : t.status === "Accepted"
+                                ? "bg-emerald-400"
+                                : "bg-blue-400"
+                            }`}
+                          />
+                        </div>
+                        <p className={`text-[11px] font-extrabold truncate ${isSelected ? "text-blue-200" : "text-slate-200"}`}>
+                          {t.trip_code}
+                        </p>
+                        <p className="text-[9px] text-slate-400 truncate mt-0.5">
+                          {t.planned_start ? new Date(t.planned_start).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "Chờ xếp"}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Trip Info Header */}
             <div className="mb-2.5 flex items-center justify-between gap-2 flex-wrap">
               <h2 className="text-sm font-bold text-white tracking-wide">
@@ -1045,7 +1112,29 @@ export default function DriverDashboard() {
                       </span>
                     </div>
                   )}
-                </div>
+
+                  {/* THÔNG TIN NGÀY GIỜ VÀ HÀNH TRÌNH CHUYẾN XE */}
+                  {(trip.planned_start || trip.created_at) && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-blue-100 font-medium mt-2 pt-2 border-t border-white/10">
+                      <span className="flex items-center gap-1.5 text-[11px] text-blue-100 bg-white/10 px-2 py-0.5 rounded-md">
+                        <Calendar size={12} className="text-blue-300 shrink-0" />
+                        <span>Khởi hành: <b className="text-white">{formatTripDateTime(trip.planned_start || trip.created_at)}</b></span>
+                      </span>
+                      {trip.planned_duration && (
+                        <span className="flex items-center gap-1 text-[11px] text-blue-200/90">
+                          <Clock size={12} className="text-blue-300 shrink-0" />
+                          <span>Dự kiến: {formatDuration(trip.planned_duration)}</span>
+                        </span>
+                      )}
+                      {trip.planned_distance && (
+                        <span className="flex items-center gap-1 text-[11px] text-blue-200/90">
+                          <Navigation2 size={12} className="text-blue-300 shrink-0" />
+                          <span>{trip.planned_distance} km</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  </div>
                 <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-xl text-white font-semibold text-[11px] shrink-0">
                   <Package size={12} />
                   <span>{stops.length} Điểm dừng</span>

@@ -55,21 +55,8 @@ const login = async (req, res) => {
             console.warn('[AuthController] Login activity log warning:', logErr.message);
         }
 
-
-            // BUG-ADM-12: Record login in activity_logs
-            adminModel.createActivityLog({
-                actorId: result.user.id,
-                actorType: result.user.role_name || (result.user.role_id === 1 ? 'ADMINISTRATOR' : result.user.role_id === 2 ? 'MANAGER' : result.user.role_id === 3 ? 'DISPATCHER' : 'DRIVER'),
-                action: 'LOGIN',
-                targetType: 'AUTH',
-                targetId: result.user.id,
-                changes: { username: result.user.username, role_id: result.user.role_id },
-                reason: 'Đăng nhập hệ thống thành công',
-                ipAddress: getClientIp(req)
-            }).catch(err => console.warn('[AuthController] Login activity log warning:', err.message));
-
-    
-                message: "Login successful",
+        return res.status(200).json({
+            message: "Login successful",
             user: result.user
         });
 
@@ -119,7 +106,7 @@ const getMe = async (req, res) => {
     try {
         const user = await authService.getCurrentUser(req.user.id);
 
-
+        return res.status(200).json({
             user
         });
 
@@ -135,7 +122,7 @@ const updateProfile = async (req, res) => {
     try {
         const user = await authService.updateProfile(req.user.id, req.body || {});
 
-
+        return res.status(200).json({
             message: "Cập nhật hồ sơ thành công",
             user
         });
@@ -170,7 +157,7 @@ const changePassword = async (req, res) => {
             maxAge: 24 * 60 * 60 * 1000
         });
 
-
+        return res.status(200).json({
             message: result.message,
             code: result.code
         });
@@ -217,7 +204,7 @@ const forgotPassword = async (req, res) => {
             code: error.code || null
         });
 
-
+        return res.status(200).json({
             message: "Nếu email có trong hệ thống, link đặt lại mật khẩu đã được gửi.",
             code: "MSG70"
         });

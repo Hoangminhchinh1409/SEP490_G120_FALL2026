@@ -161,28 +161,37 @@ const getActiveTrip = async (driverProfileId) => {
     )
     .in("id", tripIds)
     .in("status", ["Assigned", "Dispatched", "Accepted", "In Progress"])
-    .order("id", { ascending: false })
-    .limit(1);
+    .order("planned_start", { ascending: true });
 
   if (tripErr) {
     console.error("getActiveTrip tripErr:", tripErr);
     throw tripErr;
   }
 
-  const activeTrip = trips && trips.length > 0 ? trips[0] : null;
-  if (activeTrip) {
-    // Sắp xếp các điểm dừng theo thứ tự di chuyển sequence
-    if (activeTrip.stops) {
-      activeTrip.stops.sort((a, b) => a.sequence - b.sequence);
-    }
-    // Trích xuất xe đang gán hoạt động
-    const activeTruckAssign =
-      (activeTrip.truck_assignments || []).find((ta) => ta.truck) ||
-      activeTrip.truck_assignments?.[0];
-    activeTrip.truck = activeTruckAssign ? activeTruckAssign.truck : null;
+  if (!trips || trips.length === 0) {
+    return null;
   }
 
-  return activeTrip;
+  // Format tất cả các chuyến (sắp xếp stops, trích xuất truck)
+  for (const t of trips) {
+    if (t.stops) {
+      t.stops.sort((a, b) => a.sequence - b.sequence);
+    }
+    const activeTruckAssign =
+      (t.truck_assignments || []).find((ta) => ta.truck) ||
+      t.truck_assignments?.[0];
+    t.truck = activeTruckAssign ? activeTruckAssign.truck : null;
+  }
+
+  // Ưu tiên chuyến In Progress hoặc Accepted, sau đó đến chuyến có lịch sớm nhất
+  const activeTrip =
+    trips.find((t) => t.status === "In Progress" || t.status === "Accepted") ||
+    trips[0];
+
+  return {
+    activeTrip,
+    upcomingTrips: trips
+  };
 };
 
 const getTripHistory = async (driverProfileId, { page = 1, limit = 10 }) => {
