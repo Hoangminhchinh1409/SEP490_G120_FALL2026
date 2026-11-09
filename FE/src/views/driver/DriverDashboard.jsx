@@ -9,7 +9,6 @@ import {
   InputNumber,
   message,
   Spin,
-  Progress,
   Checkbox,
   Select,
 } from "antd";
@@ -28,8 +27,12 @@ import {
   FileText,
   DollarSign,
   Ban,
+  LogOut,
+  Calendar,
 } from "lucide-react";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
+import { useAuth } from "../../providers/AuthProvider";
+import { getPendingCount } from "../../utils/offlineQueue";
 import OfflineSyncStatus from "./components/OfflineSyncStatus";
 import DriverDashboardModals from "./components/DriverDashboardModals";
 import {
@@ -38,6 +41,10 @@ import {
 } from "../../utils/offlineQueue";
 
 export default function DriverDashboard() {
+  const { logout } = useAuth();
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
   const [isOffline, setIsOffline] = useState(() => {
     if (typeof window !== "undefined" && typeof navigator !== "undefined") {
       return !navigator.onLine;
@@ -47,6 +54,7 @@ export default function DriverDashboard() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [tripData, setTripData] = useState(null);
+  const [selectedTripId, setSelectedTripId] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Modals
@@ -58,7 +66,7 @@ export default function DriverDashboard() {
   const [docsModalOpen, setDocsModalOpen] = useState(false);
   const [activeStopTarget, setActiveStopTarget] = useState(null);
 
-  // Form Inputs for Pickup
+  // Form Inputs for Pickup (BR-11, BR-33)
   const [cargoPhotoUrl, setCargoPhotoUrl] = useState(
     "https://cdn.nexlog.vn/cargo-check-sample.jpg",
   );
@@ -72,7 +80,7 @@ export default function DriverDashboard() {
   const [loadedPackages, setLoadedPackages] = useState(50);
   const [loadedWeight, setLoadedWeight] = useState(500);
 
-  // Form Inputs for POD & Delivery 
+  // Form Inputs for POD & Delivery (BR-12)
   const [podPhotoUrl, setPodPhotoUrl] = useState(
     "https://cdn.nexlog.vn/pod-sample.jpg",
   );
@@ -86,20 +94,43 @@ export default function DriverDashboard() {
   const [docsHandedOver, setDocsHandedOver] = useState(true);
   const [deliveredPackages, setDeliveredPackages] = useState(50);
 
-  // Form Inputs for Customer Refusal
+  // Form Inputs for Customer Refusal (BR-57)
   const [refusalReason, setRefusalReason] = useState("");
   const [refusalCargoPhoto, setRefusalCargoPhoto] = useState(
     "https://cdn.nexlog.vn/refusal-sample.jpg",
   );
   const [refusalNote, setRefusalNote] = useState("");
 
-  // Form Inputs for Extra Fee
+  // Form Inputs for Extra Fee (BR-30)
   const [feeType, setFeeType] = useState("Bốc xếp thêm");
   const [feeAmount, setFeeAmount] = useState(200000);
   const [feeReason, setFeeReason] = useState("");
   const [feePhotoUrl, setFeePhotoUrl] = useState(
     "https://cdn.nexlog.vn/fee-receipt.jpg",
   );
+
+
+  const formatTripDateTime = (dateStr) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    return d.toLocaleString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+  };
+
+  const formatDuration = (minutes) => {
+    if (!minutes && minutes !== 0) return null;
+    const h = Math.floor(minutes / 60);
+    const m = Math.round(minutes % 60);
+    if (h > 0 && m > 0) return `${h}h ${m}p`;
+    if (h > 0) return `${h}h`;
+    return `${m}p`;
+  };
 
   const restDeadlineText = useMemo(() => {
     const d = new Date();
@@ -149,7 +180,7 @@ export default function DriverDashboard() {
     }
   }, [isOffline]);
 
-  // 2. Lắng nghe trạng thái Online / Offline & Tự động đồng bộ
+  // 2. Lắng nghe trạng thái Online / Offline & Tự động đồng bộ (BR-27)
   useEffect(() => {
     const initTimer = setTimeout(() => {
       void fetchDashboardData();
@@ -158,7 +189,7 @@ export default function DriverDashboard() {
     const handleOnline = async () => {
       setIsOffline(false);
       message.success(
-        "Đã kết nối lại Internet. Đang đồng bộ dữ liệu ngoại tuyến ...",
+        "Đã kết nối lại Internet. Đang đồng bộ dữ liệu ngoại tuyến (BR-27)...",
       );
       try {
         const syncRes = await driverApi.syncPendingQueue();
@@ -209,7 +240,7 @@ export default function DriverDashboard() {
     });
   };
 
-  // 3. Workflow Action: Nhận Chuyến Xe
+  // 3. Workflow Action: Nhận Chuyến Xe (MSG17, BR-09)
   const handleAcceptTrip = async (tripId) => {
     try {
       setActionLoading(true);
@@ -250,7 +281,7 @@ export default function DriverDashboard() {
     }
   };
 
-  // 4. Workflow Action: Báo Đến Điểm Dừng
+  // 4. Workflow Action: Báo Đến Điểm Dừng (BR-36)
   const handleArriveStop = async (tripId, stopId) => {
     try {
       setActionLoading(true);
@@ -304,7 +335,7 @@ export default function DriverDashboard() {
         });
         if (res.isOutsideRadius) {
           message.warning(
-            "Đã ghi nhận đến nơi. Cảnh báo: Tọa độ ngoài bán kính cho phép !",
+            "Đã ghi nhận đến nơi. Cảnh báo: Tọa độ ngoài bán kính cho phép (MSG50)!",
           );
         } else {
           message.success("Đã ghi nhận đến điểm dừng!");
@@ -364,7 +395,7 @@ export default function DriverDashboard() {
 
         if (res.suggestedWaitingFee && res.suggestedWaitingFee > 0) {
           message.warning(
-            `Thời gian chờ ${res.waitingMinutes}p vượt hạn mức (${res.freeWaitingMinutes}p). Gợi ý phụ phí chờ: ${res.suggestedWaitingFee.toLocaleString("vi-VN")} đ `,
+            `Thời gian chờ ${res.waitingMinutes}p vượt hạn mức (${res.freeWaitingMinutes}p). Gợi ý phụ phí chờ: ${res.suggestedWaitingFee.toLocaleString("vi-VN")} đ (BR-30)`,
           );
           setFeeType("Bốc xếp thêm");
           setFeeAmount(res.suggestedWaitingFee);
@@ -443,18 +474,18 @@ export default function DriverDashboard() {
     }
   };
 
-  // 5. Workflow Action: Bốc Hàng & Niêm Chì 3 Bước
+  // 5. Workflow Action: Bốc Hàng & Niêm Chì 3 Bước (BR-11, BR-33, MSG45)
   const handleSubmitPickup = async () => {
     if (!activeStopTarget || !tripData?.trip?.id) return;
     if (!sealNumber.trim()) {
       message.error(
-        "Hãy chụp rõ số chì và biển số xe, rồi nhập số chì ",
+        "Hãy chụp rõ số chì và biển số xe, rồi nhập số chì (MSG18)",
       );
       return;
     }
     if (!loadedPackages || !loadedWeight) {
       message.error(
-        "Vui lòng nhập số kiện và khối lượng hàng bốc thực tế ",
+        "Vui lòng nhập số kiện và khối lượng hàng bốc thực tế (MSG02)",
       );
       return;
     }
@@ -462,7 +493,7 @@ export default function DriverDashboard() {
     const truckPayload = tripData.trip.truck?.allowed_payload || 5000;
     if (parseFloat(loadedWeight) > truckPayload) {
       message.error(
-        `Tổng khối lượng ${loadedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe. `,
+        `Tổng khối lượng ${loadedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe. (MSG45)`,
       );
       return;
     }
@@ -522,7 +553,7 @@ export default function DriverDashboard() {
         await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, {
           eventType: "Loading Done",
         });
-        message.success("Ghi nhận lấy hàng và niêm chì thành công!");
+        message.success("Ghi nhận lấy hàng và niêm chì thành công! (BR-11)");
         await fetchDashboardData();
       }
       setSealModalOpen(false);
@@ -533,7 +564,7 @@ export default function DriverDashboard() {
     }
   };
 
-  // 6. Workflow Action: Giao Hàng & POD
+  // 6. Workflow Action: Giao Hàng & POD (BR-12, BR-19, BR-24)
   const handleSubmitDelivery = async () => {
     if (!activeStopTarget || !tripData?.trip?.id) return;
     const isExport = activeStopTarget.order?.order_type === "Export";
@@ -541,19 +572,19 @@ export default function DriverDashboard() {
     if (isExport) {
       if (!cutSealPhotoUrl || !unloadedCargoPhotoUrl) {
         message.error(
-          "Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng ",
+          "Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng (BR-12)",
         );
         return;
       }
     } else {
       if (!podPhotoUrl || !podPhotoUrl.trim()) {
-        message.error("Hãy chụp biên bản giao nhận đã ký ");
+        message.error("Hãy chụp biên bản giao nhận đã ký (MSG20)");
         return;
       }
     }
 
     if (!docsHandedOver) {
-      message.error("Vui lòng xác nhận đã bàn giao đủ chứng từ ");
+      message.error("Vui lòng xác nhận đã bàn giao đủ chứng từ (BR-12)");
       return;
     }
 
@@ -619,7 +650,7 @@ export default function DriverDashboard() {
           message.success(
             "Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe (BR-24)!",
           );
-          // Cập nhật ngay trạng thái chuyến xe sang Completed
+          // Cập nhật ngay trạng thái chuyến xe sang Completed (BR-24)
           setTripData((prev) => {
             if (!prev || !prev.trip) return prev;
             const updatedStops = (prev.trip.stops || []).map((s) =>
@@ -658,15 +689,15 @@ export default function DriverDashboard() {
     }
   };
 
-  // 7. Workflow Action: Khách không nhận hàng
+  // 7. Workflow Action: Khách không nhận hàng (BR-57, MSG74, MSG75)
   const handleSubmitRefusal = async () => {
     if (!activeStopTarget || !tripData?.trip?.id) return;
     if (!refusalReason.trim()) {
-      message.error("Vui lòng nhập lý do khách từ chối nhận hàng ");
+      message.error("Vui lòng nhập lý do khách từ chối nhận hàng (MSG02)");
       return;
     }
     if (!refusalCargoPhoto.trim()) {
-      message.error("Vui lòng chụp ảnh hàng hóa bị từ chối ");
+      message.error("Vui lòng chụp ảnh hàng hóa bị từ chối (MSG02)");
       return;
     }
 
@@ -699,7 +730,7 @@ export default function DriverDashboard() {
           payload,
         );
         message.success(
-          res.message || "Đã ghi nhận khách không nhận hàng. ",
+          res.message || "Đã ghi nhận khách không nhận hàng. (MSG74)",
         );
         // Cập nhật trạng thái điểm dừng sang Done
         setTripData((prev) => {
@@ -725,7 +756,7 @@ export default function DriverDashboard() {
     }
   };
 
-  // 8. Workflow Action: Đề xuất phụ phí
+  // 8. Workflow Action: Đề xuất phụ phí (BR-30, MSG85)
   const handleSubmitExtraFee = async () => {
     if (!tripData?.trip?.id) return;
     if (!feeAmount || feeAmount <= 0) {
@@ -765,7 +796,7 @@ export default function DriverDashboard() {
       } else {
         const res = await driverApi.proposeExtraFee(tripData.trip.id, payload);
         message.success(
-          res.message || "Đã gửi đề xuất phụ phí cho Điều phối viên!",
+          res.message || "Đã gửi đề xuất phụ phí cho Điều phối viên! (MSG85)",
         );
       }
       setExtraFeeModalOpen(false);
@@ -806,8 +837,9 @@ export default function DriverDashboard() {
     );
   }
 
-  const trip = tripData?.trip;
-  const currentStop = tripData?.currentStop;
+  const upcomingTrips = tripData?.upcomingTrips || (tripData?.trip ? [tripData.trip] : []);
+  const trip = (selectedTripId ? upcomingTrips.find((t) => t.id === selectedTripId) : null) || tripData?.trip || null;
+  const currentStop = (trip?.stops && trip.stops.find((s) => s.status !== "Done")) || tripData?.currentStop;
   const stops = trip?.stops || [];
   const truck = trip?.truck;
   const drivingHours = tripData?.drivingHours || profile?.drivingHours;
@@ -830,7 +862,7 @@ export default function DriverDashboard() {
       >
         {isOffline ? (
           <>
-            <CloudOff size={13} /> LƯU TẠM (OFFLINE FIRST)
+            <CloudOff size={13} /> LƯU TẠM (OFFLINE FIRST - BR-27)
           </>
         ) : (
           <>
@@ -863,26 +895,43 @@ export default function DriverDashboard() {
                 </span>
               )}
             </div>
-            <button
-              onClick={fetchDashboardData}
-              className="w-10 h-10 shrink-0 bg-white/15 hover:bg-white/25 active:scale-95 backdrop-blur-md rounded-2xl border border-white/25 flex items-center justify-center shadow-md transition-all text-white"
-              title="Làm mới"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={fetchDashboardData}
+                className="w-9 h-9 bg-white/15 hover:bg-white/25 active:scale-95 backdrop-blur-md rounded-2xl border border-white/25 flex items-center justify-center shadow-md transition-all text-white"
+                title="Làm mới dữ liệu"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const count = await getPendingCount();
+                    setPendingOfflineCount(count);
+                  } catch {
+                    setPendingOfflineCount(0);
+                  }
+                  setLogoutModalOpen(true);
+                }}
+                className="w-9 h-9 bg-red-500/20 hover:bg-red-500/35 active:scale-95 backdrop-blur-md rounded-2xl border border-red-400/30 flex items-center justify-center shadow-md transition-all text-red-100 hover:text-white"
+                title="Đăng xuất"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* OFFLINE SYNC STATUS & MANUAL SYNC BUTTON */}
+        {/* OFFLINE SYNC STATUS & MANUAL SYNC BUTTON (BR-27, BR-37, MSG39) */}
         <OfflineSyncStatus onSyncCompleted={fetchDashboardData} />
 
-        {/* CẢNH BÁO GIỚI HẠN GIỜ LÁI XE TỨC THỜI */}
+        {/* CẢNH BÁO GIỚI HẠN GIỜ LÁI XE TỨC THỜI (BR-34, MSG65) */}
         {drivingHours && Number(drivingHours.continuous_hours_left) <= 0.5 && (
           <div className="mb-3 p-3 bg-amber-500/20 border border-amber-500/50 rounded-2xl flex items-center gap-2.5 text-amber-200 shadow-lg">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
             <div className="text-[11px] leading-tight">
               <span className="font-bold block text-amber-300">
-                CẢNH BÁO GIỚI HẠN GIỜ LÁI XE 
+                CẢNH BÁO GIỚI HẠN GIỜ LÁI XE (MSG65)
               </span>
               Tài xế sắp vượt giới hạn lái xe (4 giờ). Cần nghỉ ngơi trước{" "}
               {restDeadlineText}.
@@ -890,82 +939,49 @@ export default function DriverDashboard() {
           </div>
         )}
 
-        {/* WIDGET: Giờ lái an toàn còn lại */}
+        {/* WIDGET: Giờ lái an toàn còn lại (Screen 6.1 (4), BR-34) - Chỉ giữ giới hạn 4h liên tục */}
         {drivingHours && (
           <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 mb-3 shadow-xl">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <Clock size={13} className="text-blue-400" /> Giờ lái còn lại
-                (Tối đa 10h/ngày)
+                <Clock size={13} className="text-blue-400" /> Giờ lái liên tục còn lại (BR-34)
               </span>
-              <span className="text-[9px] text-slate-400">Luật ATGT</span>
+              <span className="text-[9px] text-slate-400 bg-slate-900/60 px-2 py-0.5 rounded-md border border-slate-700/60">
+                Luật ATGT • Tối đa 4h
+              </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 text-center">
-              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
-                <span className="text-[9px] text-slate-400 block font-medium truncate">
-                  Liên tục (max 4h)
+            <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Thời gian lái liên tục cho phép:
                 </span>
                 <span
-                  className={`text-sm font-black ${drivingHours.continuous_hours_left < 1 ? "text-amber-400" : "text-emerald-400"}`}
+                  className={`text-base font-black ${
+                    drivingHours.continuous_hours_left < 1 ? "text-amber-400" : "text-emerald-400"
+                  }`}
                 >
                   {drivingHours.continuous_hours_left}h
+                  <span className="text-xs text-slate-400 font-normal ml-1">/ 4h</span>
                 </span>
-                <Progress
-                  percent={Math.min(
-                    100,
-                    Math.round(
-                      ((4 - drivingHours.continuous_hours_left) / 4) * 100,
-                    ),
-                  )}
-                  size="small"
-                  showInfo={false}
-                  strokeColor={
-                    drivingHours.continuous_hours_left < 1
-                      ? "#f59e0b"
-                      : "#3b82f6"
-                  }
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden my-2 border border-slate-700/80">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    drivingHours.continuous_hours_left < 1 ? "bg-amber-400" : "bg-emerald-500"
+                  }`}
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.max(0, Math.round(((4 - drivingHours.continuous_hours_left) / 4) * 100))
+                    )}%`
+                  }}
                 />
               </div>
-
-              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
-                <span className="text-[9px] text-slate-400 block font-medium truncate">
-                  Hôm nay (max 10h)
-                </span>
-                <span className="text-sm font-black text-blue-400">
-                  {drivingHours.daily_hours_left}h
-                </span>
-                <Progress
-                  percent={Math.min(
-                    100,
-                    Math.round(
-                      ((10 - drivingHours.daily_hours_left) / 10) * 100,
-                    ),
-                  )}
-                  size="small"
-                  showInfo={false}
-                  strokeColor="#3b82f6"
-                />
-              </div>
-
-              <div className="bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
-                <span className="text-[9px] text-slate-400 block font-medium truncate">
-                  Tuần này (max 48h)
-                </span>
-                <span className="text-sm font-black text-indigo-400">
-                  {drivingHours.weekly_hours_left}h
-                </span>
-                <Progress
-                  percent={Math.min(
-                    100,
-                    Math.round(
-                      ((48 - drivingHours.weekly_hours_left) / 48) * 100,
-                    ),
-                  )}
-                  size="small"
-                  showInfo={false}
-                  strokeColor="#6366f1"
-                />
+              <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
+                <span>Đã chạy: {Math.max(0, 4 - drivingHours.continuous_hours_left).toFixed(1)}h</span>
+                <span>Còn lại: {drivingHours.continuous_hours_left}h (nghỉ tối thiểu 15 phút)</span>
               </div>
             </div>
           </div>
@@ -992,6 +1008,59 @@ export default function DriverDashboard() {
           </div>
         ) : (
           <>
+            {/* BỘ CHỌN CHUYẾN XE SẮP TỚI CHO TÀI XẾ */}
+            {upcomingTrips && upcomingTrips.length > 1 && (
+              <div className="mb-3 bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-2.5 shadow-xl">
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                    <Truck size={13} className="text-blue-400" />
+                    Chuyến xe sắp tới ({upcomingTrips.length} chuyến)
+                  </span>
+                  <span className="text-[9px] text-blue-300 bg-blue-500/10 border border-blue-400/20 px-2 py-0.5 rounded-full font-semibold">
+                    Chạm để xem chi tiết
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {upcomingTrips.map((t, idx) => {
+                    const isSelected = t.id === trip?.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSelectedTripId(t.id)}
+                        className={`p-2 rounded-xl text-left transition-all border ${
+                          isSelected
+                            ? "bg-blue-600/30 border-blue-400 shadow-md shadow-blue-500/20 ring-1 ring-blue-400"
+                            : "bg-slate-900/60 border-slate-700/60 hover:border-slate-600 text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className={`text-[10px] font-bold ${isSelected ? "text-white" : "text-slate-400"}`}>
+                            #{idx + 1}
+                          </span>
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              t.status === "In Progress"
+                                ? "bg-amber-400 animate-pulse"
+                                : t.status === "Accepted"
+                                ? "bg-emerald-400"
+                                : "bg-blue-400"
+                            }`}
+                          />
+                        </div>
+                        <p className={`text-[11px] font-extrabold truncate ${isSelected ? "text-blue-200" : "text-slate-200"}`}>
+                          {t.trip_code}
+                        </p>
+                        <p className="text-[9px] text-slate-400 truncate mt-0.5">
+                          {t.planned_start ? new Date(t.planned_start).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "Chờ xếp"}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Trip Info Header */}
             <div className="mb-2.5 flex items-center justify-between gap-2 flex-wrap">
               <h2 className="text-sm font-bold text-white tracking-wide">
@@ -1043,7 +1112,29 @@ export default function DriverDashboard() {
                       </span>
                     </div>
                   )}
-                </div>
+
+                  {/* THÔNG TIN NGÀY GIỜ VÀ HÀNH TRÌNH CHUYẾN XE */}
+                  {(trip.planned_start || trip.created_at) && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-blue-100 font-medium mt-2 pt-2 border-t border-white/10">
+                      <span className="flex items-center gap-1.5 text-[11px] text-blue-100 bg-white/10 px-2 py-0.5 rounded-md">
+                        <Calendar size={12} className="text-blue-300 shrink-0" />
+                        <span>Khởi hành: <b className="text-white">{formatTripDateTime(trip.planned_start || trip.created_at)}</b></span>
+                      </span>
+                      {trip.planned_duration && (
+                        <span className="flex items-center gap-1 text-[11px] text-blue-200/90">
+                          <Clock size={12} className="text-blue-300 shrink-0" />
+                          <span>Dự kiến: {formatDuration(trip.planned_duration)}</span>
+                        </span>
+                      )}
+                      {trip.planned_distance && (
+                        <span className="flex items-center gap-1 text-[11px] text-blue-200/90">
+                          <Navigation2 size={12} className="text-blue-300 shrink-0" />
+                          <span>{trip.planned_distance} km</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  </div>
                 <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-xl text-white font-semibold text-[11px] shrink-0">
                   <Package size={12} />
                   <span>{stops.length} Điểm dừng</span>
@@ -1133,12 +1224,12 @@ export default function DriverDashboard() {
                     }}
                     className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30 transition-colors shrink-0"
                   >
-                    <DollarSign size={12} /> Đề xuất phí
+                    <DollarSign size={12} /> Đề xuất phí (BR-30)
                   </button>
                 )}
               </div>
 
-              {/* Case 1: Trip is Assigned -> Need to Accept */}
+              {/* Case 1: Trip is Assigned -> Need to Accept (MSG17, BR-09) */}
               {trip.status === "Assigned" && (
                 <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-center">
                   <p className="text-xs text-blue-200 font-semibold mb-3">
@@ -1152,7 +1243,7 @@ export default function DriverDashboard() {
                     onClick={() => setAcceptModalOpen(true)}
                     className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 border-none font-black rounded-xl h-12 shadow-lg shadow-blue-600/30"
                   >
-                    NHẬN CHUYẾN XE
+                    NHẬN CHUYẾN XE (MSG17)
                   </Button>
                 </div>
               )}
@@ -1194,7 +1285,7 @@ export default function DriverDashboard() {
                       </button>
                     </div>
 
-                    {/* 4-Step Progress Stepper */}
+                    {/* 4-Step Progress Stepper (BR-36, Workflow Spec Giai đoạn 3) */}
                     <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-700/80 mb-2">
                       <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
                         <span>
@@ -1312,7 +1403,7 @@ export default function DriverDashboard() {
                       </Button>
                     )}
 
-                    {/* Step 2: If Arrived -> Bắt đầu bốc / dỡ (Bắt đầu bốc/dỡ) */}
+                    {/* Step 2: If Arrived -> Bắt đầu bốc / dỡ (Loading Started - BR-30) */}
                     {currentStop.status === "Arrived" && (
                       <Button
                         type="primary"
@@ -1328,13 +1419,13 @@ export default function DriverDashboard() {
                             <Clock size={15} /> BƯỚC 2: BẮT ĐẦU BỐC / DỠ
                           </span>
                           <span className="text-[10px] font-normal opacity-85">
-                            (Bắt đầu bốc/dỡ)
+                            (Loading Started - BR-30)
                           </span>
                         </div>
                       </Button>
                     )}
 
-                    {/* Step 3: If Loading Started & Pickup -> Bốc hàng & Niêm chì Modal */}
+                    {/* Step 3: If Loading Started & Pickup -> Bốc hàng & Niêm chì Modal (BR-11) */}
                     {currentStop.status === "Loading Started" &&
                       currentStop.stop_type === "Pickup" && (
                         <Button
@@ -1351,13 +1442,13 @@ export default function DriverDashboard() {
                               <Camera size={15} /> BƯỚC 3: BỐC HÀNG & ẢNH CHÌ
                             </span>
                             <span className="text-[10px] font-normal opacity-85">
-                              (Bốc hàng & Niêm chì)
+                              (Record Cargo Pickup - BR-11)
                             </span>
                           </div>
                         </Button>
                       )}
 
-                    {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal / Từ chối */}
+                    {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal / Từ chối (BR-12, BR-57) */}
                     {currentStop.status === "Loading Started" &&
                       currentStop.stop_type === "Drop-off" && (
                         <div className="grid grid-cols-5 gap-1.5">
@@ -1373,7 +1464,7 @@ export default function DriverDashboard() {
                             <span className="text-[11px] font-black flex items-center gap-1">
                               <Camera size={13} /> GIAO HÀNG & POD
                             </span>
-                            <span className="text-[9px] opacity-85"></span>
+                            <span className="text-[9px] opacity-85">(BR-12)</span>
                           </Button>
 
                           <Button
@@ -1388,7 +1479,7 @@ export default function DriverDashboard() {
                             <span className="text-[11px] font-bold flex items-center gap-1">
                               <Ban size={12} /> TỪ CHỐI
                             </span>
-                            
+                            <span className="text-[9px] opacity-80">(BR-57)</span>
                           </Button>
                         </div>
                       )}
@@ -1424,7 +1515,7 @@ export default function DriverDashboard() {
                   </p>
                   <p className="text-xs text-slate-400 mt-1">
                     Xe và hồ sơ tài xế đã được giải phóng về trạng thái sẵn sàng
-                    .
+                    (BR-24).
                   </p>
                   <Button
                     type="primary"
@@ -1506,6 +1597,76 @@ export default function DriverDashboard() {
         docsModalOpen={docsModalOpen}
         setDocsModalOpen={setDocsModalOpen}
       />
+      {/* Modal Xác nhận Đăng xuất cho Tài xế */}
+      <Modal
+        open={logoutModalOpen}
+        onCancel={() => !loggingOut && setLogoutModalOpen(false)}
+        footer={null}
+        centered
+        closable={false}
+        styles={{
+          content: {
+            backgroundColor: "#0f172a",
+            border: "1px solid #334155",
+            borderRadius: "1.5rem",
+            padding: "1.5rem",
+            color: "#f8fafc"
+          }
+        }}
+      >
+        <div className="text-center">
+          <div className="w-14 h-14 bg-red-500/15 border border-red-500/30 text-red-400 rounded-2xl flex items-center justify-center mx-auto mb-3.5 shadow-lg shadow-red-500/10">
+            <LogOut size={26} />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1.5">Xác nhận đăng xuất</h3>
+          <p className="text-slate-300 text-xs leading-relaxed mb-4">
+            Bạn có chắc chắn muốn đăng xuất khỏi phiên làm việc tài xế{" "}
+            {profile?.user?.full_name ? (
+              <span className="font-semibold text-blue-400">{profile.user.full_name}</span>
+            ) : null}
+            ?
+          </p>
+
+          {pendingOfflineCount > 0 && (
+            <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-left text-xs text-amber-200">
+              <p className="font-bold mb-1 flex items-center gap-1.5 text-amber-300">
+                <AlertTriangle size={14} /> Chú ý: Chưa đồng bộ hết dữ liệu
+              </p>
+              <p className="text-[11px] leading-relaxed text-amber-200/90">
+                Bạn đang có <b>{pendingOfflineCount} thao tác ngoại tuyến</b> chưa gửi lên máy chủ. Bạn nên bấm <b>"Đồng bộ ngay"</b> trước khi đăng xuất để tránh mất hoặc chậm trễ cập nhật chuyến xe.
+              </p>
+            </div>
+          )}
+
+          <div className="flex gap-2.5 mt-5">
+            <button
+              type="button"
+              disabled={loggingOut}
+              onClick={() => setLogoutModalOpen(false)}
+              className="flex-1 py-2.5 px-4 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-all disabled:opacity-50"
+            >
+              Ở lại
+            </button>
+            <button
+              type="button"
+              disabled={loggingOut}
+              onClick={async () => {
+                try {
+                  setLoggingOut(true);
+                  await logout();
+                } catch (err) {
+                  console.error("Logout error:", err);
+                  setLoggingOut(false);
+                  setLogoutModalOpen(false);
+                }
+              }}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs transition-all shadow-lg shadow-red-600/30 flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {loggingOut ? "Đang xử lý..." : "Đăng xuất"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

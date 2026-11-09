@@ -147,13 +147,13 @@ export const adminApi = {
     }
   },
 
-  updateSystemSetting: async ({ key, value }) => {
+  updateSystemSetting: async (payload) => {
     try {
       const data = await fetchWithAuth('/admin/settings', {
         method: 'PUT',
-        body: JSON.stringify({ key, value })
+        body: JSON.stringify(payload)
       });
-      return data.setting;
+      return data.setting || data;
     } catch (error) {
       console.error('adminApi.updateSystemSetting Error:', error);
       throw error;

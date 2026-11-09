@@ -1,9 +1,5 @@
 const adminService = require("../services/adminService");
-
-// Helper to extract client IP address
-const getClientIp = (req) => {
-    return req.headers["x-forwarded-for"] || req.socket?.remoteAddress || req.ip || "127.0.0.1";
-};
+const { getClientIp } = require("../utils/ipHelper");
 
 // ==========================================
 // 1. DASHBOARD STATS
@@ -19,8 +15,7 @@ const getDashboardStats = async (req, res) => {
     } catch (error) {
         console.error("[AdminController] getDashboardStats error:", error);
         return res.status(500).json({
-            message: "Failed to fetch dashboard stats",
-            error: error.message
+            message: "Failed to fetch dashboard stats"
         });
     }
 };
@@ -42,6 +37,18 @@ const getActivityLogs = async (req, res) => {
             keyword
         } = req.query;
 
+        // BUG-ADM-13: Validate dates early
+        if (startDate && isNaN(Date.parse(startDate))) {
+            return res.status(400).json({
+                message: "Tham số startDate không hợp lệ. Vui lòng nhập ngày hợp lệ (YYYY-MM-DD hoặc ISO)."
+            });
+        }
+        if (endDate && isNaN(Date.parse(endDate))) {
+            return res.status(400).json({
+                message: "Tham số endDate không hợp lệ. Vui lòng nhập ngày hợp lệ (YYYY-MM-DD hoặc ISO)."
+            });
+        }
+
         const result = await adminService.getActivityLogs({
             page,
             limit,
@@ -58,10 +65,14 @@ const getActivityLogs = async (req, res) => {
             ...result
         });
     } catch (error) {
+        if (error.statusCode === 400) {
+            return res.status(400).json({
+                message: error.message
+            });
+        }
         console.error("[AdminController] getActivityLogs error:", error);
         return res.status(500).json({
-            message: "Failed to fetch activity logs",
-            error: error.message
+            message: "Failed to fetch activity logs"
         });
     }
 };
@@ -89,8 +100,7 @@ const getUsers = async (req, res) => {
     } catch (error) {
         console.error("[AdminController] getUsers error:", error);
         return res.status(500).json({
-            message: "Failed to fetch users",
-            error: error.message
+            message: "Failed to fetch users"
         });
     }
 };
@@ -106,10 +116,10 @@ const getUserById = async (req, res) => {
         });
     } catch (error) {
         console.error(`[AdminController] getUserById error for id ${req.params.id}:`, error);
-        const status = error.message === "User not found" ? 404: 500;
+        const isNotFound = error.statusCode === 404 || error.message === "User not found";
+        const status = isNotFound ? 404 : 500;
         return res.status(status).json({
-            message: "Failed to fetch user details",
-            error: error.message
+            message: isNotFound ? "User not found" : "Failed to fetch user details"
         });
     }
 };
@@ -127,12 +137,11 @@ const createUser = async (req, res) => {
         });
     } catch (error) {
         console.error("[AdminController] createUser error:", error);
-        const isConflict = error.message.includes("already exists");
-        const status = isConflict ? 409: 400;
-        return res.status(status).json({
-            message: "Failed to create user",
-            error: error.message
-        });
+        const isConflict = error.statusCode === 409 || error.message?.includes("already exists");
+        const isClientError = error.statusCode && error.statusCode >= 400 && error.statusCode < 500;
+        const status = isConflict ? 409 : isClientError ? error.statusCode : 500;
+        const message = isClientError ? error.message : "Failed to create user";
+        return res.status(status).json({ message });
     }
 };
 
@@ -150,13 +159,12 @@ const updateUser = async (req, res) => {
         });
     } catch (error) {
         console.error(`[AdminController] updateUser error for id ${req.params.id}:`, error);
-        const isConflict = error.message.includes("already taken");
-        const isNotFound = error.message === "User not found";
-        const status = isNotFound ? 404: isConflict ? 409: 400;
-        return res.status(status).json({
-            message: "Failed to update user",
-            error: error.message
-        });
+        const isNotFound = error.statusCode === 404 || error.message === "User not found";
+        const isConflict = error.statusCode === 409 || error.message?.includes("already exists") || error.message?.includes("already taken");
+        const isClientError = error.statusCode && error.statusCode >= 400 && error.statusCode < 500;
+        const status = isNotFound ? 404 : isConflict ? 409 : isClientError ? error.statusCode : 500;
+        const message = isNotFound ? "User not found" : isClientError ? error.message : "Failed to update user";
+        return res.status(status).json({ message });
     }
 };
 
@@ -181,12 +189,11 @@ const updateUserStatus = async (req, res) => {
         });
     } catch (error) {
         console.error(`[AdminController] updateUserStatus error for id ${req.params.id}:`, error);
-        const isNotFound = error.message === "User not found";
-        const status = isNotFound ? 404: 400;
-        return res.status(status).json({
-            message: "Failed to update user status",
-            error: error.message
-        });
+        const isNotFound = error.statusCode === 404 || error.message === "User not found";
+        const isClientError = error.statusCode && error.statusCode >= 400 && error.statusCode < 500;
+        const status = isNotFound ? 404 : isClientError ? error.statusCode : 500;
+        const message = isNotFound ? "User not found" : isClientError ? error.message : "Failed to update user status";
+        return res.status(status).json({ message });
     }
 };
 
@@ -204,8 +211,7 @@ const getRoles = async (req, res) => {
     } catch (error) {
         console.error("[AdminController] getRoles error:", error);
         return res.status(500).json({
-            message: "Failed to fetch roles",
-            error: error.message
+            message: "Failed to fetch roles"
         });
     }
 };
@@ -224,17 +230,25 @@ const getSystemSettings = async (req, res) => {
     } catch (error) {
         console.error("[AdminController] getSystemSettings error:", error);
         return res.status(500).json({
-            message: "Failed to fetch system settings",
-            error: error.message
+            message: "Failed to fetch system settings"
         });
     }
 };
 
 const updateSystemSetting = async (req, res) => {
     try {
-        const { key, value } = req.body;
+        const { key, value, settings } = req.body;
         const adminId = req.user?.id;
         const ipAddress = getClientIp(req);
+
+        // Bulk update mode (BUG-ADM-10: Single request, atomic, 1 audit log)
+        if (settings && typeof settings === "object" && !Array.isArray(settings)) {
+            const result = await adminService.updateSystemSettingsBulk(settings, adminId, ipAddress);
+            return res.status(200).json({
+                message: "Settings updated successfully",
+                ...result
+            });
+        }
 
         if (!key) {
             return res.status(400).json({
@@ -250,15 +264,15 @@ const updateSystemSetting = async (req, res) => {
         });
     } catch (error) {
         console.error("[AdminController] updateSystemSetting error:", error);
-        return res.status(400).json({
-            message: "Failed to update system setting",
-            error: error.message
-        });
+        const isClientError = error.statusCode && error.statusCode >= 400 && error.statusCode < 500;
+        const status = isClientError ? error.statusCode : 500;
+        const message = isClientError ? error.message : "Failed to update system setting";
+        return res.status(status).json({ message });
     }
 };
 
 // ==========================================
-// 6. PERMISSIONS MATRIX
+// 6. PERMISSIONS MATRIX (UC-34)
 // ==========================================
 
 const getPermissionsMatrix = async (req, res) => {
@@ -271,8 +285,7 @@ const getPermissionsMatrix = async (req, res) => {
     } catch (error) {
         console.error("[AdminController] getPermissionsMatrix error:", error);
         return res.status(500).json({
-            message: "Failed to fetch permissions matrix",
-            error: error.message
+            message: "Failed to fetch permissions matrix"
         });
     }
 };
@@ -280,13 +293,19 @@ const getPermissionsMatrix = async (req, res) => {
 const updateRolePermissions = async (req, res) => {
     try {
         const { roleId } = req.params;
-        const { permissionIds = [] } = req.body;
+        const { permissionIds } = req.body;
         const adminId = req.user?.id;
         const ipAddress = getClientIp(req);
 
         if (!roleId) {
             return res.status(400).json({
                 message: "Role ID is required"
+            });
+        }
+
+        if (permissionIds === undefined || permissionIds === null) {
+            return res.status(400).json({
+                message: "permissionIds is required and must be an array"
             });
         }
 
@@ -298,10 +317,10 @@ const updateRolePermissions = async (req, res) => {
         });
     } catch (error) {
         console.error(`[AdminController] updateRolePermissions error for roleId ${req.params.roleId}:`, error);
-        return res.status(400).json({
-            message: "Failed to update role permissions",
-            error: error.message
-        });
+        const isClientError = error.statusCode && error.statusCode >= 400 && error.statusCode < 500;
+        const status = isClientError ? error.statusCode : 500;
+        const message = isClientError ? error.message : "Failed to update role permissions";
+        return res.status(status).json({ message });
     }
 };
 

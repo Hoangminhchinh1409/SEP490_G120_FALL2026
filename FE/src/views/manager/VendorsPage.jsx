@@ -2,6 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Input, message, Spin, Tag } from 'antd';
 import { managerApi } from '../../api/managerApi';
+import { useAuth } from '../../providers/AuthProvider';
+import ReadOnlyBanner from '../../components/common/ReadOnlyBanner';
+import AccessDenied from '../../components/common/AccessDenied';
 
 export default function VendorsPage() {
   const [loading, setLoading] = useState(true);

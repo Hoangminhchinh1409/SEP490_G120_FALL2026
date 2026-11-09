@@ -8,6 +8,8 @@ import CancelOrderModal from '../../components/dispatcher/CancelOrderModal';
 import DocumentAssistantDrawer from '../../components/dispatcher/DocumentAssistantDrawer';
 import { orderApi } from '../../api/orderApi';
 import { useAuth } from '../../providers/AuthProvider';
+import ReadOnlyBanner from '../../components/common/ReadOnlyBanner';
+import AccessDenied from '../../components/common/AccessDenied';
 
 const { RangePicker } = DatePicker;
 
@@ -37,7 +39,9 @@ const statusLabels = {
 
 const OrderManagement = () => {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isReadOnly, hasPermission } = useAuth();
+  const readOnly = isReadOnly('ORDER_MANAGE');
+  const allowed = !user || Number(user.role_id) === 1 || Number(user.role_id) === 3 || hasPermission('ORDER_MANAGE');
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState('');

@@ -1,5 +1,11 @@
 const supabase = require("../config/supabase");
 
+// Helper to sanitize input strings for PostgREST query parameters (prevent filter injection)
+const sanitizePostgrestParam = (str) => {
+    if (!str || typeof str !== "string") return "";
+    return str.replace(/[,()"\\]/g, " ").replace(/\s+/g, " ").trim();
+};
+
 // ==========================================
 // 1. ACTIVITY LOGS (Append-Only)
 // ==========================================
@@ -42,9 +48,11 @@ const getActivityLogs = async ({
         query = query.lte("created_time", endDate);
     }
 
-    if (keyword && keyword.trim()) {
-        const kw = keyword.trim();
-        query = query.or(`action.ilike.%${kw}%,target_type.ilike.%${kw}%,reason.ilike.%${kw}%`);
+    if (keyword && typeof keyword === "string") {
+        const cleanKw = sanitizePostgrestParam(keyword);
+        if (cleanKw) {
+            query = query.or(`action.ilike.%${cleanKw}%,target_type.ilike.%${cleanKw}%,reason.ilike.%${cleanKw}%`);
+        }
     }
 
     const { data, count, error } = await query.range(from, to);
@@ -73,6 +81,19 @@ const createActivityLog = async ({
 }) => {
     const numericTargetId = isNaN(Number(targetId)) ? 0: Number(targetId);
 
+    // BUG-ADM-14: Sanitize IP to ensure single valid address for PostgreSQL inet column
+    let cleanIp = ipAddress;
+    if (cleanIp && typeof cleanIp === "string") {
+        if (cleanIp.includes(",")) {
+            cleanIp = cleanIp.split(",")[0].trim();
+        }
+        if (cleanIp === "::1" || cleanIp === "::ffff:127.0.0.1") {
+            cleanIp = "127.0.0.1";
+        } else if (cleanIp.startsWith("::ffff:")) {
+            cleanIp = cleanIp.replace("::ffff:", "");
+        }
+    }
+
     const { data, error } = await supabase
         .from("activity_logs")
         .insert({
@@ -83,7 +104,7 @@ const createActivityLog = async ({
             target_id: numericTargetId,
             changes: changes ? (typeof changes === "object" ? JSON.stringify(changes): changes): null,
             reason,
-            ip_address: ipAddress,
+            ip_address: cleanIp,
             created_time: new Date().toISOString()
         })
         .select()
@@ -123,9 +144,11 @@ const getUsers = async ({
         query = query.eq("status", status);
     }
 
-    if (keyword && keyword.trim()) {
-        const kw = keyword.trim();
-        query = query.or(`username.ilike.%${kw}%,full_name.ilike.%${kw}%,email.ilike.%${kw}%,phone.ilike.%${kw}%`);
+    if (keyword && typeof keyword === "string") {
+        const cleanKw = sanitizePostgrestParam(keyword);
+        if (cleanKw) {
+            query = query.or(`username.ilike.%${cleanKw}%,full_name.ilike.%${cleanKw}%,email.ilike.%${cleanKw}%,phone.ilike.%${cleanKw}%`);
+        }
     }
 
     const { data, count, error } = await query.range(from, to);
@@ -143,11 +166,16 @@ const getUsers = async ({
 };
 
 const getUserById = async (id) => {
+    const numId = Number(id);
+    if (!Number.isSafeInteger(numId) || numId <= 0) {
+        return null;
+    }
+
     const { data, error } = await supabase
         .from("users")
         .select("id, username, full_name, email, phone, zalo_link, role_id, status, last_login_at, created_at, updated_at, role:roles(id, name)")
-        .eq("id", id)
-        .single();
+        .eq("id", numId)
+        .maybeSingle();
 
     if (error) {
         throw error;
@@ -157,13 +185,36 @@ const getUserById = async (id) => {
 };
 
 const findUserByUsernameOrEmail = async (username, email, excludeId = null) => {
+    const conditions = [];
+
+    if (username && typeof username === "string" && username.trim()) {
+        const cleanUsername = sanitizePostgrestParam(username.trim());
+        if (cleanUsername) {
+            conditions.push(`username.ilike.${cleanUsername}`);
+        }
+    }
+
+    if (email && typeof email === "string" && email.trim()) {
+        const cleanEmail = sanitizePostgrestParam(email.trim());
+        if (cleanEmail) {
+            conditions.push(`email.ilike.${cleanEmail}`);
+        }
+    }
+
+    if (conditions.length === 0) {
+        return null;
+    }
+
     let query = supabase
         .from("users")
         .select("id, username, email")
-        .or(`username.eq.${username},email.eq.${email}`);
+        .or(conditions.join(","));
 
     if (excludeId) {
-        query = query.neq("id", excludeId);
+        const numExcludeId = Number(excludeId);
+        if (!isNaN(numExcludeId)) {
+            query = query.neq("id", numExcludeId);
+        }
     }
 
     const { data, error } = await query;
@@ -211,6 +262,11 @@ const createUser = async ({
 };
 
 const updateUser = async (id, updateFields) => {
+    const numId = Number(id);
+    if (!Number.isSafeInteger(numId) || numId <= 0) {
+        return null;
+    }
+
     const fieldsToUpdate = {
         ...updateFields,
         updated_at: new Date().toISOString()
@@ -219,9 +275,9 @@ const updateUser = async (id, updateFields) => {
     const { data, error } = await supabase
         .from("users")
         .update(fieldsToUpdate)
-        .eq("id", id)
+        .eq("id", numId)
         .select("id, username, full_name, email, phone, zalo_link, role_id, status, last_login_at, created_at, updated_at, role:roles(id, name)")
-        .single();
+        .maybeSingle();
 
     if (error) {
         throw error;
@@ -231,21 +287,49 @@ const updateUser = async (id, updateFields) => {
 };
 
 const updateUserStatus = async (id, status) => {
+    const numId = Number(id);
+    if (!Number.isSafeInteger(numId) || numId <= 0) {
+        return null;
+    }
+
     const { data, error } = await supabase
         .from("users")
         .update({
             status,
             updated_at: new Date().toISOString()
         })
-        .eq("id", id)
+        .eq("id", numId)
         .select("id, username, full_name, email, role_id, status, updated_at")
-        .single();
+        .maybeSingle();
 
     if (error) {
         throw error;
     }
 
     return data;
+};
+
+const countActiveAdmins = async (excludeId = null) => {
+    let query = supabase
+        .from("users")
+        .select("id", { count: "exact", head: true })
+        .eq("role_id", 1)
+        .eq("status", "ACTIVE");
+
+    if (excludeId) {
+        const numExcludeId = Number(excludeId);
+        if (!isNaN(numExcludeId)) {
+            query = query.neq("id", numExcludeId);
+        }
+    }
+
+    const { count, error } = await query;
+
+    if (error) {
+        throw error;
+    }
+
+    return count || 0;
 };
 
 // ==========================================
@@ -352,11 +436,32 @@ const upsertSystemSetting = async (key, value, updatedBy = null) => {
         .upsert({
             key,
             value: String(value),
-            updated_by: updatedBy,
+            updated_by: updatedBy ? Number(updatedBy) : null,
             updated_time: new Date().toISOString()
         })
-        .select()
+        .select("key, value, updated_time")
         .single();
+
+    if (error) {
+        throw error;
+    }
+
+    return data;
+};
+
+const upsertSystemSettingsBulk = async (settingsArray, updatedBy = null) => {
+    const now = new Date().toISOString();
+    const rows = settingsArray.map(s => ({
+        key: s.key,
+        value: String(s.value),
+        updated_by: updatedBy ? Number(updatedBy) : null,
+        updated_time: now
+    }));
+
+    const { data, error } = await supabase
+        .from("system_settings")
+        .upsert(rows, { onConflict: "key" })
+        .select("key, value, updated_time");
 
     if (error) {
         throw error;
@@ -387,8 +492,27 @@ const getPermissionsMatrix = async () => {
     };
 };
 
+const getExistingPermissionIds = async (ids = []) => {
+    if (!ids || ids.length === 0) return [];
+    const { data, error } = await supabase
+        .from("permissions")
+        .select("id")
+        .in("id", ids);
+
+    if (error) throw error;
+    return (data || []).map(r => r.id);
+};
+
 const updateRolePermissions = async (roleId, permissionIds = []) => {
     const numRoleId = Number(roleId);
+
+    // Lưu lại quyền cũ để hỗ trợ rollback nếu có lỗi bất ngờ khi insert
+    const { data: oldPerms, error: fetchErr } = await supabase
+        .from("role_permissions")
+        .select("permission_id")
+        .eq("role_id", numRoleId);
+
+    if (fetchErr) throw fetchErr;
 
     // Xóa toàn bộ quyền cũ của vai trò này
     const { error: delError } = await supabase
@@ -409,13 +533,27 @@ const updateRolePermissions = async (roleId, permissionIds = []) => {
             .from("role_permissions")
             .insert(rowsToInsert);
 
-        if (insError) throw insError;
+        if (insError) {
+            // Rollback khôi phục quyền cũ để đảm bảo tính atomic
+            if (oldPerms && oldPerms.length > 0) {
+                await supabase
+                    .from("role_permissions")
+                    .insert(oldPerms.map(r => ({
+                        role_id: numRoleId,
+                        permission_id: r.permission_id
+                    })));
+            }
+            throw insError;
+        }
     }
 
     return { roleId: numRoleId, permissionIds };
 };
 
 module.exports = {
+    getExistingPermissionIds,
+    sanitizePostgrestParam,
+    countActiveAdmins,
     getActivityLogs,
     createActivityLog,
     getUsers,
@@ -428,6 +566,7 @@ module.exports = {
     getDashboardStats,
     getSystemSettings,
     upsertSystemSetting,
+    upsertSystemSettingsBulk,
     getPermissionsMatrix,
     updateRolePermissions
 };

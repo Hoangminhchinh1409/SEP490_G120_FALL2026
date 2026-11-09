@@ -1,23 +1,23 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Table, Tag, Checkbox, Button, message, Card, Tooltip, Popconfirm } from 'antd';
-import { Shield, Save, RotateCcw, CheckCircle, Info } from 'lucide-react';
+import { Table, Tag, Checkbox, Button, message, Card, Tooltip } from 'antd';
+import { Shield, Save, RotateCcw, CheckCircle, Info, Eye, Lock } from 'lucide-react';
 import { adminApi } from '../../api/adminApi';
 
 const PERMISSION_METADATA = {
-  USER_ACCOUNT_MANAGE: { module: 'Tài khoản (Users)', name: 'Quản lý Tài khoản người dùng' },
-  ROLES_PERMISSIONS_MANAGE: { module: 'Hệ thống (System)', name: 'Cấu hình Phân quyền & Vai trò' },
-  ACTIVITY_LOG_VIEW: { module: 'Hệ thống (System)', name: 'Xem Nhật ký Hoạt động (Activity Logs)' },
-  SYSTEM_SETTINGS_MANAGE: { module: 'Hệ thống (System)', name: 'Cấu hình Tham số Hệ thống (Settings)' },
-  ORDER_MANAGE: { module: 'Đơn hàng (Orders)', name: 'Tạo, sửa và tiếp nhận Đơn hàng' },
-  ORDER_ASSIGN: { module: 'Đơn hàng (Orders)', name: 'Điều phối & Lập Kế hoạch Chuyến xe' },
-  TRIP_MONITOR: { module: 'Vận hành (Trips)', name: 'Giám sát Hành trình Chuyến xe (GPS/Trip)' },
-  FLEET_MANAGE: { module: 'Đội xe (Fleet)', name: 'Quản lý Thông tin Xe & Hồ sơ Tài xế' },
-  DRIVER_SHIFT_MANAGE: { module: 'Đội xe (Fleet)', name: 'Quản lý & Phê duyệt Ca trực Tài xế' },
-  VENDOR_MANAGE: { module: 'Đối tác (Vendors)', name: 'Quản lý & Phê duyệt Nhà xe Đối tác (API-07)' },
-  CONTRACT_MANAGE: { module: 'Hợp đồng (Contracts)', name: 'Quản lý Hợp đồng Vận chuyển Khách/Vendor' },
-  INCIDENT_MANAGE: { module: 'Sự cố & Khiếu nại', name: 'Xử lý Sự cố & Duyệt Bồi thường' },
-  NEWS_MANAGE: { module: 'Truyền thông (News)', name: 'Viết & Xuất bản Tin tức Website' },
+  USER_ACCOUNT_MANAGE: { module: 'Tài khoản (Users)', name: 'Quản lý Tài khoản người dùng', defaultOwner: 1 },
+  ROLES_PERMISSIONS_MANAGE: { module: 'Hệ thống (System)', name: 'Cấu hình Phân quyền & Vai trò', defaultOwner: 1 },
+  ACTIVITY_LOG_VIEW: { module: 'Hệ thống (System)', name: 'Xem Nhật ký Hoạt động (Activity Logs)', defaultOwner: 1 },
+  SYSTEM_SETTINGS_MANAGE: { module: 'Hệ thống (System)', name: 'Cấu hình Tham số Hệ thống (Settings)', defaultOwner: 1 },
+  ORDER_MANAGE: { module: 'Đơn hàng (Orders)', name: 'Tạo, sửa và tiếp nhận Đơn hàng', defaultOwner: 3 },
+  ORDER_ASSIGN: { module: 'Đơn hàng (Orders)', name: 'Điều phối & Lập Kế hoạch Chuyến xe', defaultOwner: 3 },
+  TRIP_MONITOR: { module: 'Vận hành (Trips)', name: 'Giám sát Hành trình Chuyến xe (GPS/Trip)', defaultOwner: 3 },
+  CONTRACT_MANAGE: { module: 'Hợp đồng (Contracts)', name: 'Quản lý Hợp đồng Vận chuyển Khách/Vendor', defaultOwner: 3 },
+  FLEET_MANAGE: { module: 'Đội xe (Fleet)', name: 'Quản lý Thông tin Xe & Hồ sơ Tài xế', defaultOwner: 2 },
+  DRIVER_SHIFT_MANAGE: { module: 'Đội xe (Fleet)', name: 'Quản lý & Phê duyệt Ca trực Tài xế (UC-20)', defaultOwner: 2 },
+  VENDOR_MANAGE: { module: 'Đối tác (Vendors)', name: 'Quản lý & Phê duyệt Nhà xe Đối tác (API-07)', defaultOwner: 2 },
+  INCIDENT_MANAGE: { module: 'Sự cố & Khiếu nại', name: 'Xử lý Sự cố & Duyệt Bồi thường (UC-47)', defaultOwner: 2 },
+  NEWS_MANAGE: { module: 'Truyền thông (News)', name: 'Viết & Xuất bản Tin tức Website', defaultOwner: 2 },
 };
 
 const ROLE_COLORS = {
@@ -34,6 +34,7 @@ export default function RolesPage() {
   const [permissions, setPermissions] = useState([]);
   // roleMap: { [roleId]: Set of permissionIds }
   const [roleMap, setRoleMap] = useState({});
+  const [initialRoleMap, setInitialRoleMap] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
 
   const fetchMatrix = async () => {
@@ -48,17 +49,30 @@ export default function RolesPage() {
       setPermissions(pList);
 
       const mapping = {};
+      const initialMapping = {};
       rList.forEach(r => {
         mapping[r.id] = new Set();
+        initialMapping[r.id] = new Set();
       });
 
       rpList.forEach(rp => {
         if (mapping[rp.role_id]) {
           mapping[rp.role_id].add(rp.permission_id);
+          initialMapping[rp.role_id].add(rp.permission_id);
+        }
+      });
+
+      // Tự động đảm bảo các quyền chủ quản mặc định luôn có mặt trong Set của role đó
+      pList.forEach(p => {
+        const meta = PERMISSION_METADATA[p.key];
+        if (meta && meta.defaultOwner && mapping[meta.defaultOwner]) {
+          mapping[meta.defaultOwner].add(p.id);
+          initialMapping[meta.defaultOwner].add(p.id);
         }
       });
 
       setRoleMap(mapping);
+      setInitialRoleMap(initialMapping);
       setHasChanges(false);
     } catch (error) {
       console.error('Lỗi khi tải ma trận phân quyền:', error);
@@ -73,6 +87,15 @@ export default function RolesPage() {
   }, []);
 
   const handleToggle = (roleId, permissionId) => {
+    const p = permissions.find(item => item.id === permissionId);
+    const meta = p ? PERMISSION_METADATA[p.key] : null;
+
+    // Không cho phép khóa quyền mặc định của vai trò chủ quản hoặc Admin
+    if (Number(roleId) === 1 || (meta && Number(roleId) === meta.defaultOwner)) {
+      message.warning('Đây là quyền chủ quản mặc định của vai trò, không thể khóa.');
+      return;
+    }
+
     setRoleMap(prev => {
       const currentSet = new Set(prev[roleId] || []);
       if (currentSet.has(permissionId)) {
@@ -91,12 +114,36 @@ export default function RolesPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Cập nhật từng role đã thay đổi
-      for (const role of roles) {
+      // Chỉ tìm các role thực sự có thay đổi và bỏ qua role 1 (Administrator)
+      const changedRoles = roles.filter(role => {
+        if (Number(role.id) === 1) return false;
+        const currentSet = roleMap[role.id] || new Set();
+        const initialSet = initialRoleMap[role.id] || new Set();
+        if (currentSet.size !== initialSet.size) return true;
+        for (const id of currentSet) {
+          if (!initialSet.has(id)) return true;
+        }
+        return false;
+      });
+
+      if (changedRoles.length === 0) {
+        message.info('Không có thay đổi nào cần lưu');
+        setHasChanges(false);
+        return;
+      }
+
+      for (const role of changedRoles) {
         const permIds = Array.from(roleMap[role.id] || []);
         await adminApi.updateRolePermissions(role.id, permIds);
       }
-      message.success('Đã lưu toàn bộ thay đổi ma trận phân quyền thành công!');
+
+      message.success(`Đã lưu thay đổi phân quyền cho ${changedRoles.length} vai trò thành công!`);
+
+      const updatedInitial = {};
+      roles.forEach(r => {
+        updatedInitial[r.id] = new Set(roleMap[r.id] || []);
+      });
+      setInitialRoleMap(updatedInitial);
       setHasChanges(false);
     } catch (error) {
       console.error('Lỗi khi lưu phân quyền:', error);
@@ -111,11 +158,11 @@ export default function RolesPage() {
       title: 'Nhóm chức năng',
       dataIndex: 'module',
       key: 'module',
-      width: 180,
+      width: 170,
       render: (text) => <span className="font-semibold text-slate-700">{text}</span>
     },
     {
-      title: 'Quyền hạn (Permission Description)',
+      title: 'Quyền hạn (Chức năng hệ thống)',
       dataIndex: 'name',
       key: 'name',
       render: (text, record) => (
@@ -136,19 +183,57 @@ export default function RolesPage() {
       dataIndex: `role_${r.id}`,
       key: `role_${r.id}`,
       align: 'center',
-      width: 140,
+      width: 190,
       render: (_, record) => {
+        const meta = PERMISSION_METADATA[record.key] || {};
+        const isDefaultOwner = Number(r.id) === 1 || Number(r.id) === meta.defaultOwner;
+
+        // 1. Chức năng mặc định của Role (hoặc Administrator) -> Bất biến: Toàn quyền (Admin không thể khóa)
+        if (isDefaultOwner) {
+          return (
+            <div className="flex flex-col items-center justify-center gap-0.5 py-1">
+              <Tag
+                color="green"
+                className="font-bold text-[11px] px-2.5 py-0.5 rounded-full border-emerald-500/40 text-emerald-700 bg-emerald-50 m-0 flex items-center gap-1 shadow-xs"
+              >
+                <CheckCircle size={11} className="text-emerald-600" />
+                <span>Toàn quyền (Mặc định)</span>
+              </Tag>
+              <span className="text-[9px] text-slate-400 font-medium">Cố định - Không thể khóa</span>
+            </div>
+          );
+        }
+
+        // 2. Chức năng của Role khác (Truy cập chéo) -> Chỉ xem (Read-only) nếu được Admin cấp
         const isChecked = roleMap[r.id]?.has(record.id) || false;
-        // Administrator luôn giữ toàn quyền hệ thống để đảm bảo an toàn vận hành
-        const isAdmin = Number(r.id) === 1;
 
         return (
-          <Tooltip title={isAdmin ? 'Administrator mặc định có đầy đủ quyền hạn': `Bật/Tắt quyền cho ${r.name}`}>
-            <Checkbox
-              checked={isChecked}
-              disabled={isAdmin}
-              onChange={() => handleToggle(r.id, record.id)}
-            />
+          <Tooltip
+            title={
+              isChecked
+                ? `Được cấp quyền xem chéo: ${r.name} có thể vào xem dữ liệu ở chế độ CHỈ XEM (Read-only), không được chỉnh sửa.`
+                : `Bị chặn: ${r.name} không được phép truy cập chức năng này.`
+            }
+          >
+            <div className="flex flex-col items-center justify-center gap-1 cursor-pointer py-1">
+              <Checkbox
+                checked={isChecked}
+                onChange={() => handleToggle(r.id, record.id)}
+              />
+              {isChecked ? (
+                <Tag
+                  color="blue"
+                  className="font-semibold text-[10px] px-2 py-0.5 rounded text-blue-700 bg-blue-50 border-blue-200 m-0 flex items-center gap-1 shadow-xs"
+                >
+                  <Eye size={10} className="text-blue-600" />
+                  <span>Chỉ xem (Read-only)</span>
+                </Tag>
+              ) : (
+                <span className="text-[10px] text-slate-400 font-medium">
+                  Bị chặn
+                </span>
+              )}
+            </div>
           </Tooltip>
         );
       }
@@ -158,7 +243,7 @@ export default function RolesPage() {
   const dataSource = permissions.map(p => {
     const meta = PERMISSION_METADATA[p.key] || { module: 'Chức năng khác', name: p.key };
     return {
-      key: p.id,
+      key: p.key,
       id: p.id,
       module: meta.module,
       name: meta.name
@@ -177,7 +262,7 @@ export default function RolesPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Ma Trận Phân Quyền Vai Trò (Roles & Permissions)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Thiết lập quyền truy cập cho từng chức năng theo bảng ma trận phân quyền hệ thống.
+            Thiết lập quyền truy cập chức năng theo nguyên tắc: Quyền chủ quản mặc định (Full) & Quyền truy cập chéo (Chỉ xem - Read-Only).
           </p>
         </div>
 
@@ -198,7 +283,7 @@ export default function RolesPage() {
             loading={saving}
             disabled={!hasChanges}
             className={`h-10 px-5 rounded-xl font-semibold shadow-sm ${
-              hasChanges ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20': ''
+              hasChanges ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20' : ''
             }`}
           >
             Lưu thay đổi phân quyền
@@ -207,7 +292,29 @@ export default function RolesPage() {
       </div>
 
       {/* Main Table */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden p-6">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden p-6 space-y-4">
+        {/* Banner Hướng Dẫn Nguyên Tắc Phân Quyền Mới */}
+        <div className="p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-100 rounded-xl text-xs text-slate-700 leading-relaxed space-y-1">
+          <div className="flex items-center gap-2 font-bold text-blue-900 text-sm">
+            <Info size={16} className="text-blue-600" />
+            <span>Quy tắc Phân quyền Vai trò Doanh nghiệp (Enterprise RBAC):</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 pt-1 border-t border-blue-200/50">
+            <div className="flex items-start gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1 shrink-0"></span>
+              <span>
+                <b>Toàn quyền (Mặc định):</b> Vai trò chủ quản luôn sở hữu toàn bộ quyền hạn trên các trang thuộc cổng làm việc chính của mình. Administrator không thể khóa các quyền này.
+              </span>
+            </div>
+            <div className="flex items-start gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-500 mt-1 shrink-0"></span>
+              <span>
+                <b>Quyền chéo (Chỉ xem - Read-only):</b> Khi Admin cho phép một vai trò truy cập vào trang của vai trò khác, vai trò đó chỉ được phép xem dữ liệu. Mọi thao tác chỉnh sửa/duyệt/tạo mới sẽ tự động bị khóa để chống xung đột nghiệp vụ.
+              </span>
+            </div>
+          </div>
+        </div>
+
         <Table
           columns={columns}
           dataSource={dataSource}
@@ -217,11 +324,9 @@ export default function RolesPage() {
           rowClassName="hover:bg-slate-50/60 transition-colors"
         />
 
-        <div className="mt-4 p-3.5 bg-blue-50/70 border border-blue-100 rounded-xl flex items-start gap-2.5 text-xs text-blue-700">
-          <Info size={16} className="mt-0.5 shrink-0 text-blue-600" />
-          <span>
-            <b>Lưu ý kỹ thuật:</b> Thay đổi ma trận phân quyền sẽ có hiệu lực ngay lập tức khi người dùng thuộc vai trò tương ứng thực hiện phiên làm việc tiếp theo. Vai trò <b>ADMINISTRATOR</b> được cố định toàn quyền kiểm soát hệ thống.
-          </span>
+        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-500">
+          <span>Hệ thống phân quyền thời gian thực: Thay đổi được áp dụng ngay cho các phiên làm việc tiếp theo của người dùng.</span>
+          <span className="font-semibold text-slate-700">Phiên bản: RBAC v2.0</span>
         </div>
       </div>
     </div>

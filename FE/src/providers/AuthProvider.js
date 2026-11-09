@@ -163,6 +163,25 @@ export const AuthProvider = ({ children }) => {
         return allowedRoles.includes(user.role_id);
     };
 
+    // Kiểm tra quyền theo Ma trận phân quyền (RBAC)
+    const hasPermission = (permissionKey) => {
+        if (!user) return false;
+        if (Number(user.role_id) === 1) return true; // Administrator luôn có full quyền
+        return Array.isArray(user.permissions) && user.permissions.includes(permissionKey);
+    };
+
+    const isReadOnly = (permissionKey) => {
+        if (!user) return true;
+        if (Number(user.role_id) === 1) return false;
+        return user.permissions_detail?.[permissionKey] === 'READ_ONLY';
+    };
+
+    const getPermissionLevel = (permissionKey) => {
+        if (!user) return 'NONE';
+        if (Number(user.role_id) === 1) return 'FULL';
+        return user.permissions_detail?.[permissionKey] || 'NONE';
+    };
+
     return (
         <AuthContext.Provider
             value={{
@@ -171,6 +190,9 @@ export const AuthProvider = ({ children }) => {
                 logout,
                 loading,
                 hasRole,
+                hasPermission,
+                isReadOnly,
+                getPermissionLevel,
                 refreshUser,
                 setUser,
             }}

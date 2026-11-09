@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Table, Input, DatePicker, Select, Tag, Button, Tooltip, message } from 'antd';
 import { Search, RotateCcw, FileText, Shield, User, Globe } from 'lucide-react';
 import { adminApi } from '../../api/adminApi';
@@ -8,7 +8,9 @@ const { RangePicker } = DatePicker;
 
 export default function LogsPage() {
   const [logs, setLogs] = useState([]);
+  const [usersList, setUsersList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 15,
@@ -16,6 +18,7 @@ export default function LogsPage() {
   });
 
   const [filters, setFilters] = useState({
+    actorId: 'ALL',
     action: 'ALL',
     targetType: 'ALL',
     startDate: null,
@@ -23,15 +26,37 @@ export default function LogsPage() {
     keyword: ''
   });
 
+  // Load danh sách người dùng để lọc (BUG-ADM-12 / SRS Section 10)
+  useEffect(() => {
+    let ignore = false;
+    const fetchUsers = async () => {
+      try {
+        const res = await adminApi.getUsers({ limit: 100 });
+        if (!ignore && res?.users) {
+          setUsersList(res.users);
+        }
+      } catch (err) {
+        console.warn('Lỗi khi tải danh sách người dùng cho bộ lọc:', err);
+      }
+    };
+    fetchUsers();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  // Tải nhật ký hoạt động
   useEffect(() => {
     let ignore = false;
     const loadLogs = async () => {
       try {
+        setLoading(true);
         const res = await adminApi.getActivityLogs({
           page: pagination.current,
           limit: pagination.pageSize,
-          action: filters.action !== 'ALL' ? filters.action: null,
-          targetType: filters.targetType !== 'ALL' ? filters.targetType: null,
+          actorId: filters.actorId !== 'ALL' ? filters.actorId : null,
+          action: filters.action !== 'ALL' ? filters.action : null,
+          targetType: filters.targetType !== 'ALL' ? filters.targetType : null,
           startDate: filters.startDate,
           endDate: filters.endDate,
           keyword: filters.keyword
@@ -62,7 +87,7 @@ export default function LogsPage() {
     return () => {
       ignore = true;
     };
-  }, [filters, pagination.current, pagination.pageSize]);
+  }, [filters, pagination.current, pagination.pageSize, refreshTrigger]);
 
   const handleTableChange = (newPagination) => {
     setLoading(true);
@@ -89,20 +114,29 @@ export default function LogsPage() {
     }
   };
 
+  const handleUserChange = (value) => {
+    setFilters(prev => ({ ...prev, actorId: value }));
+  };
+
   const handleActionChange = (value) => {
-    setFilters(prev => ({...prev, action: value }));
+    setFilters(prev => ({ ...prev, action: value }));
   };
 
   const handleTargetTypeChange = (value) => {
-    setFilters(prev => ({...prev, targetType: value }));
+    setFilters(prev => ({ ...prev, targetType: value }));
   };
 
   const handleSearch = (value) => {
-    setFilters(prev => ({...prev, keyword: value }));
+    setFilters(prev => ({ ...prev, keyword: value }));
+  };
+
+  const handleRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
   };
 
   const handleResetFilters = () => {
     setFilters({
+      actorId: 'ALL',
       action: 'ALL',
       targetType: 'ALL',
       startDate: null,
@@ -125,10 +159,22 @@ export default function LogsPage() {
         return <Tag color="red" className="font-semibold">{action}</Tag>;
       case 'UPDATE_USER':
       case 'UPDATE_SETTING':
+      case 'UPDATE_SYSTEM_SETTINGS':
       case 'REASSIGN_ORDER':
         return <Tag color="blue" className="font-semibold">{action}</Tag>;
+      case 'REPLACE_TRUCK_DRIVER':
+        return <Tag color="magenta" className="font-semibold">{action}</Tag>;
+      case 'LOGIN':
+        return <Tag color="cyan" className="font-semibold">{action}</Tag>;
+      case 'LOGOUT':
+        return <Tag color="default" className="font-semibold">{action}</Tag>;
       case 'INCIDENT_REPORT':
         return <Tag color="orange" className="font-semibold">{action}</Tag>;
+      case 'RESOLVE_INCIDENT':
+      case 'APPROVE_CLAIM':
+        return <Tag color="purple" className="font-semibold">{action}</Tag>;
+      case 'REJECT_CLAIM':
+        return <Tag color="volcano" className="font-semibold">{action}</Tag>;
       case 'SYSTEM_INIT':
         return <Tag color="purple" className="font-semibold">{action}</Tag>;
       default:
@@ -169,7 +215,7 @@ export default function LogsPage() {
       width: 180,
       render: (_, record) => {
         if (record.actor) {
-          const roleName = record.actor.role_id === 1 ? 'Admin': record.actor.role_id === 2 ? 'Manager': record.actor.role_id === 3 ? 'Dispatcher': 'Driver';
+          const roleName = record.actor.role_id === 1 ? 'Admin' : record.actor.role_id === 2 ? 'Manager' : record.actor.role_id === 3 ? 'Dispatcher' : 'Driver';
           return (
             <div>
               <div className="font-medium text-slate-800 text-sm flex items-center gap-1.5">
@@ -218,7 +264,7 @@ export default function LogsPage() {
         let parsedChanges = null;
         if (record.changes) {
           try {
-            parsedChanges = typeof record.changes === 'string' ? JSON.parse(record.changes): record.changes;
+            parsedChanges = typeof record.changes === 'string' ? JSON.parse(record.changes) : record.changes;
           } catch {
             parsedChanges = record.changes;
           }
@@ -266,12 +312,12 @@ export default function LogsPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Nhật ký Hoạt động (Activity Logs)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Ghi nhận vết thao tác toàn hệ thống theo thời gian thực (Dữ liệu chỉ thêm mới <b>Append-only</b> theo chuẩn an toàn hệ thống).
+            Ghi nhận vết thao tác toàn hệ thống theo thời gian thực (Dữ liệu chỉ thêm mới <b>Append-only</b> theo chuẩn bảo mật BR-28/BR-47).
           </p>
         </div>
         <Button
           icon={<RotateCcw size={15} />}
-          onClick={() => fetchLogs(pagination.current, pagination.pageSize)}
+          onClick={handleRefresh}
           loading={loading}
           className="flex items-center gap-1.5 font-medium rounded-xl h-10 px-4 bg-slate-50 hover:bg-slate-100 border-slate-200"
         >
@@ -287,6 +333,28 @@ export default function LogsPage() {
           onChange={handleDateChange}
         />
 
+        {/* User filter (BUG-ADM-12) */}
+        <Select
+          defaultValue="ALL"
+          value={filters.actorId}
+          style={{ width: 220 }}
+          className="h-10"
+          onChange={handleUserChange}
+          showSearch
+          optionFilterProp="label"
+          placeholder="Lọc theo người dùng"
+          options={[
+            { value: 'ALL', label: 'Tất cả người dùng' },
+            ...usersList.map(u => {
+              const roleLabel = u.role_id === 1 ? 'Admin' : u.role_id === 2 ? 'Manager' : u.role_id === 3 ? 'Dispatcher' : 'Driver';
+              return {
+                value: String(u.id),
+                label: `${u.full_name || u.username} (@${u.username} • ${roleLabel})`
+              };
+            })
+          ]}
+        />
+
         <Select
           defaultValue="ALL"
           value={filters.action}
@@ -295,14 +363,22 @@ export default function LogsPage() {
           onChange={handleActionChange}
           options={[
             { value: 'ALL', label: 'Tất cả hành động' },
+            { value: 'LOGIN', label: 'Đăng nhập (LOGIN)' },
+            { value: 'LOGOUT', label: 'Đăng xuất (LOGOUT)' },
+            { value: 'REPLACE_TRUCK_DRIVER', label: 'Đổi xe / tài xế' },
+            { value: 'CREATE_ORDER', label: 'Tạo đơn hàng' },
+            { value: 'CANCEL_ORDER', label: 'Hủy đơn hàng' },
             { value: 'CREATE_USER', label: 'Tạo tài khoản' },
             { value: 'UPDATE_USER', label: 'Sửa tài khoản' },
             { value: 'LOCK_USER', label: 'Khóa tài khoản' },
             { value: 'ACTIVATE_USER', label: 'Mở khóa tài khoản' },
-            { value: 'CREATE_ORDER', label: 'Tạo đơn hàng' },
             { value: 'REASSIGN_ORDER', label: 'Chuyển giao đơn' },
             { value: 'INCIDENT_REPORT', label: 'Báo sự cố' },
+            { value: 'RESOLVE_INCIDENT', label: 'Xử lý sự cố' },
+            { value: 'APPROVE_CLAIM', label: 'Duyệt bồi thường' },
+            { value: 'REJECT_CLAIM', label: 'Từ chối bồi thường' },
             { value: 'UPDATE_SETTING', label: 'Cập nhật cấu hình' },
+            { value: 'UPDATE_SYSTEM_SETTINGS', label: 'Cập nhật cấu hình (Bulk)' },
             { value: 'SYSTEM_INIT', label: 'Khởi tạo hệ thống' }
           ]}
         />
@@ -315,9 +391,12 @@ export default function LogsPage() {
           onChange={handleTargetTypeChange}
           options={[
             { value: 'ALL', label: 'Mọi đối tượng' },
+            { value: 'AUTH', label: 'Xác thực (AUTH)' },
             { value: 'USER', label: 'Người dùng (USER)' },
             { value: 'ORDER', label: 'Đơn hàng (ORDER)' },
             { value: 'TRIP', label: 'Chuyến xe (TRIP)' },
+            { value: 'INCIDENT', label: 'Sự cố (INCIDENT)' },
+            { value: 'COMPENSATION_CLAIM', label: 'Bồi thường (CLAIM)' },
             { value: 'SYSTEM', label: 'Hệ thống (SYSTEM)' }
           ]}
         />
@@ -332,7 +411,7 @@ export default function LogsPage() {
           />
         </div>
 
-        {(filters.action !== 'ALL' || filters.targetType !== 'ALL' || filters.startDate || filters.keyword) && (
+        {(filters.actorId !== 'ALL' || filters.action !== 'ALL' || filters.targetType !== 'ALL' || filters.startDate || filters.keyword) && (
           <Button type="link" onClick={handleResetFilters} className="text-slate-500 hover:text-slate-800 text-xs font-semibold">
             Xóa bộ lọc
           </Button>

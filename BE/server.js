@@ -21,6 +21,7 @@ const prisma = require("./config/prisma");
 const apiRoutes = require("./routes");
 
 const app = express();
+app.set("trust proxy", true);
 const PORT = process.env.PORT || 9999;
 const frontendOrigin = new URL(
     process.env.FRONTEND_URL || "http://localhost:3000"

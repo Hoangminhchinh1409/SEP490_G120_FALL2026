@@ -1,4 +1,4 @@
-const prisma = require('../config/prisma');
+const supabase = require('../config/supabase');
 
 const toPlainNumber = (val) => (val !== null && val !== undefined ? Number(val) : null);
 
@@ -13,60 +13,73 @@ const mapNotification = (n) => {
 };
 
 const getDriverNotifications = async (userAccountId) => {
-  const accountId = BigInt(userAccountId);
-  const rows = await prisma.notifications.findMany({
-    where: { user_account_id: accountId },
-    orderBy: { id: 'desc' },
-    take: 50
-  });
-  return rows.map(mapNotification);
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('user_account_id', userAccountId)
+    .order('id', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error('getDriverNotifications error:', error);
+    throw error;
+  }
+  return (data || []).map(mapNotification);
 };
 
 const markNotificationAsRead = async (notificationId, userAccountId) => {
-  const notifId = BigInt(notificationId);
-  const accountId = BigInt(userAccountId);
-  const updated = await prisma.notifications.updateMany({
-    where: {
-      id: notifId,
-      user_account_id: accountId
-    },
-    data: {
-      read_time: new Date()
-    }
-  });
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ read_time: new Date().toISOString() })
+    .eq('id', notificationId)
+    .eq('user_account_id', userAccountId)
+    .select()
+    .single();
 
-  if (updated.count === 0) return null;
-  const current = await prisma.notifications.findUnique({
-    where: { id: notifId }
-  });
-  return mapNotification(current);
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    console.error('markNotificationAsRead error:', error);
+    throw error;
+  }
+  return mapNotification(data);
 };
 
 const markAllNotificationsAsRead = async (userAccountId) => {
-  const accountId = BigInt(userAccountId);
-  const updated = await prisma.notifications.updateMany({
-    where: {
-      user_account_id: accountId,
-      read_time: null
-    },
-    data: {
-      read_time: new Date()
-    }
-  });
-  return updated.count;
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ read_time: new Date().toISOString() })
+    .eq('user_account_id', userAccountId)
+    .is('read_time', null)
+    .select('id');
+
+  if (error) {
+    console.error('markAllNotificationsAsRead error:', error);
+    throw error;
+  }
+  return data ? data.length : 0;
 };
 
 const createNotification = async (notificationData) => {
-  const data = {
-    ...notificationData,
-    user_account_id: BigInt(notificationData.user_account_id),
-    target_id: notificationData.target_id ? BigInt(notificationData.target_id) : null
+  const payload = {
+    user_account_id: notificationData.user_account_id,
+    target_type: notificationData.target_type || null,
+    target_id: notificationData.target_id || null,
+    message: notificationData.message,
+    created_time: notificationData.created_time || new Date().toISOString(),
+    read_time: null
   };
-  delete data.id;
-  const created = await prisma.notifications.create({
-    data
-  });
-  return mapNotification(created);
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('createNotification error:', error);
+    throw error;
+  }
+  return mapNotification(data);
 };
 
 module.exports = {

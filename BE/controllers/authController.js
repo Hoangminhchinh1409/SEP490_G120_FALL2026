@@ -1,4 +1,6 @@
 const authService = require("../services/authService");
+const adminModel = require("../models/adminModel");
+const { getClientIp } = require("../utils/ipHelper");
 const crypto = require("crypto");
 
 const login = async (req, res) => {
@@ -35,6 +37,23 @@ const login = async (req, res) => {
                 : "lax",
             maxAge: 24 * 60 * 60 * 1000
         });
+
+        // BUG-ADM-12: Record login activity in activity_logs
+        try {
+            const clientIp = getClientIp(req);
+            await adminModel.createActivityLog({
+                actorId: result.user.id,
+                actorType: result.user.role_name || (result.user.role_id === 1 ? 'ADMINISTRATOR' : result.user.role_id === 2 ? 'MANAGER' : result.user.role_id === 3 ? 'DISPATCHER' : 'DRIVER'),
+                action: 'LOGIN',
+                targetType: 'AUTH',
+                targetId: result.user.id,
+                changes: { username: result.user.username, role_id: result.user.role_id },
+                reason: 'Đăng nhập hệ thống thành công',
+                ipAddress: clientIp
+            });
+        } catch (logErr) {
+            console.warn('[AuthController] Login activity log warning:', logErr.message);
+        }
 
         return res.status(200).json({
             message: "Login successful",
@@ -216,6 +235,24 @@ const resetPassword = async (req, res) => {
 };
 
 const logout = async (req, res) => {
+    // BUG-ADM-12: Record logout activity in activity_logs
+    try {
+        if (req.user?.id) {
+            const clientIp = getClientIp(req);
+            await adminModel.createActivityLog({
+                actorId: req.user.id,
+                actorType: req.user.role_name || 'USER',
+                action: 'LOGOUT',
+                targetType: 'AUTH',
+                targetId: req.user.id,
+                changes: null,
+                reason: 'Đăng xuất khỏi hệ thống',
+                ipAddress: clientIp
+            });
+        }
+    } catch (logErr) {
+        console.warn('[AuthController] Logout activity log warning:', logErr.message);
+    }
     res.clearCookie("token", {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

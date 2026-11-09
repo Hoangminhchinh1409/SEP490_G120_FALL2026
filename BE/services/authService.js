@@ -18,23 +18,24 @@ const ROLE_NAMES = {
 };
 
 const getPasswordResetTtlMinutes = async () => {
+    // BUG-ADM-08: Hỗ trợ cả key 'password_reset_expiry_minutes' (từ FE Settings) và 'password_reset_link_lifetime'
     const { data, error } = await supabase
         .from("system_settings")
-        .select("value")
-        .eq("key", "password_reset_link_lifetime")
-        .maybeSingle();
+        .select("key, value")
+        .in("key", ["password_reset_expiry_minutes", "password_reset_link_lifetime"]);
 
     if (error) {
         throw error;
     }
 
-    if (!data) {
+    if (!data || data.length === 0) {
         return DEFAULT_PASSWORD_RESET_TTL_MINUTES;
     }
 
-    const ttlMinutes = Number(data.value);
+    const expirySetting = data.find(d => d.key === "password_reset_expiry_minutes") || data[0];
+    const ttlMinutes = Number(expirySetting.value);
     if (!Number.isSafeInteger(ttlMinutes) || ttlMinutes <= 0) {
-        throw new Error("Invalid password reset link lifetime setting");
+        return DEFAULT_PASSWORD_RESET_TTL_MINUTES;
     }
 
     return ttlMinutes;
@@ -125,6 +126,50 @@ const login = async (identifier, password) => {
     };
 };
 
+const ROLE_DEFAULT_OWNER_KEYS = {
+    1: ['USER_ACCOUNT_MANAGE', 'ROLES_PERMISSIONS_MANAGE', 'ACTIVITY_LOG_VIEW', 'SYSTEM_SETTINGS_MANAGE'],
+    2: ['FLEET_MANAGE', 'DRIVER_SHIFT_MANAGE', 'VENDOR_MANAGE', 'INCIDENT_MANAGE', 'NEWS_MANAGE'],
+    3: ['ORDER_MANAGE', 'ORDER_ASSIGN', 'TRIP_MONITOR', 'CONTRACT_MANAGE'],
+    4: []
+};
+
+const getRolePermissions = async (roleId) => {
+    const numRoleId = Number(roleId);
+    if (numRoleId === 1) {
+        const { data: allPerms } = await supabase.from('permissions').select('key');
+        const detail = {};
+        const keys = (allPerms || []).map(p => {
+            detail[p.key] = 'FULL';
+            return p.key;
+        });
+        return { permissions: keys, permissions_detail: detail };
+    }
+
+    const [allPermsRes, rolePermsRes] = await Promise.all([
+        supabase.from('permissions').select('id, key'),
+        supabase.from('role_permissions').select('permission_id').eq('role_id', numRoleId)
+    ]);
+
+    const allPerms = allPermsRes.data || [];
+    const grantedIds = new Set((rolePermsRes.data || []).map(rp => rp.permission_id));
+    const ownerKeys = new Set(ROLE_DEFAULT_OWNER_KEYS[numRoleId] || []);
+
+    const detail = {};
+    const keys = [];
+
+    allPerms.forEach(p => {
+        if (ownerKeys.has(p.key)) {
+            detail[p.key] = 'FULL';
+            keys.push(p.key);
+        } else if (grantedIds.has(p.id)) {
+            detail[p.key] = 'READ_ONLY';
+            keys.push(p.key);
+        }
+    });
+
+    return { permissions: keys, permissions_detail: detail };
+};
+
 const getCurrentUser = async (userId) => {
     const user = await userModel.findUserById(userId);
 
@@ -136,6 +181,8 @@ const getCurrentUser = async (userId) => {
         ? await driverModel.getDriverProfileByUserId(user.id)
         : null;
 
+    const { permissions, permissions_detail } = await getRolePermissions(user.role_id);
+
     return {
         id: user.id,
         username: user.username,
@@ -145,6 +192,8 @@ const getCurrentUser = async (userId) => {
         zalo_link: user.zalo_link,
         role_id: user.role_id,
         role_name: ROLE_NAMES[Number(user.role_id)] || null,
+        permissions: permissions || [],
+        permissions_detail: permissions_detail || {},
         created_at: user.created_at,
         updated_at: user.updated_at,
         last_login_at: user.last_login_at,
