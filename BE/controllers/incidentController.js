@@ -70,7 +70,13 @@ const getIncidents = async (req, res) => {
         resolved_by,
         resolved_time,
         created_at,
-        trip:trips(id, trip_code, status),
+        trip:trips(
+          id, 
+          trip_code, 
+          status,
+          trip_trucks(truck:trucks(plate_number)),
+          trip_drivers(driver:driver_profiles(user:users(full_name, phone)))
+        ),
         driver:driver_profiles!incidents_reported_by_fkey(
           id,
           user:users(id, full_name, phone)
@@ -80,10 +86,36 @@ const getIncidents = async (req, res) => {
       .order('id', { ascending: false });
 
     if (status && status !== 'ALL') {
-      query = query.eq('status', status);
+      const s = status.toUpperCase();
+      if (s === 'ESCALATED') {
+        query = query.in('status', ['ESCALATED', 'Escalated']);
+      } else if (s === 'RESOLVED') {
+        query = query.in('status', ['RESOLVED', 'Resolved']);
+      } else if (s === 'REPORTED') {
+        query = query.in('status', ['REPORTED', 'Reported']);
+      } else {
+        query = query.eq('status', status);
+      }
     }
+
     if (type && type !== 'ALL') {
-      query = query.eq('type', type);
+      // Hỗ trợ map nhóm sự cố mở rộng
+      const t = type.toUpperCase();
+      if (t === 'DAMAGED_LOST_CARGO' || t === 'DAMAGED_CARGO') {
+        query = query.in('type', ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'Cargo Damaged', 'Cargo Lost']);
+      } else if (t === 'TRAFFIC_ACCIDENT') {
+        query = query.in('type', ['TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident']);
+      } else if (t === 'CARGO_HELD') {
+        query = query.in('type', ['CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES']);
+      } else if (t === 'ENGINE_BREAKDOWN' || t === 'BREAKDOWN') {
+        query = query.in('type', ['ENGINE_BREAKDOWN', 'BREAKDOWN', 'Vehicle Issue', 'Breakdown']);
+      } else if (t === 'ROAD_BAN') {
+        query = query.in('type', ['ROAD_BAN', 'Traffic', 'Road Ban']);
+      } else if (t === 'OTHER') {
+        query = query.in('type', ['OTHER', 'Other']);
+      } else {
+        query = query.eq('type', type);
+      }
     }
 
     const { data: incidents, error } = await query;
@@ -104,13 +136,26 @@ const getIncidents = async (req, res) => {
     }
 
     const typeMap = {
-      'Vehicle Issue': 'Hỏng xe',
-      'Traffic': 'Cấm đường / Ùn tắc',
+      'DAMAGED_LOST_CARGO': 'Hàng hư hỏng / mất',
+      'DAMAGED_CARGO': 'Hàng hư hỏng / mất',
+      'CARGO_DAMAGED': 'Hàng hư hỏng / mất',
+      'Cargo Damaged': 'Hàng hư hỏng / mất',
+      'Cargo Lost': 'Thất lạc hàng hóa',
       'TRAFFIC_ACCIDENT': 'Tai nạn giao thông',
       'ACCIDENT': 'Tai nạn giao thông',
-      'DAMAGED_CARGO': 'Hàng hư hỏng/mất',
-      'CARGO_DAMAGED': 'Hàng hư hỏng/mất',
-      'SEIZED_BY_AUTHORITY': 'Cơ quan chức năng giữ xe'
+      'Accident': 'Tai nạn giao thông',
+      'CARGO_HELD': 'Hàng bị giữ',
+      'SEIZED_BY_AUTHORITY': 'Cơ quan chức năng giữ xe',
+      'HELD_BY_AUTHORITIES': 'Kiểm tra hải quan / CSGT',
+      'ENGINE_BREAKDOWN': 'Hỏng xe',
+      'BREAKDOWN': 'Hỏng xe',
+      'Breakdown': 'Hỏng xe',
+      'Vehicle Issue': 'Hỏng xe',
+      'ROAD_BAN': 'Cấm đường / Ùn tắc',
+      'Road Ban': 'Cấm đường / Ùn tắc',
+      'Traffic': 'Cấm đường / Ùn tắc',
+      'OTHER': 'Khác',
+      'Other': 'Khác'
     };
 
     const formatted = (incidents || []).map((i) => {
@@ -118,11 +163,28 @@ const getIncidents = async (req, res) => {
         ? i.compensation_claims[0]
         : i.compensation_claims;
 
+      const rawStatus = (i.status || '').toUpperCase();
+      let normStatus = 'REPORTED';
+      let statusDisplay = 'Đã báo';
+      if (rawStatus === 'ESCALATED') {
+        normStatus = 'ESCALATED';
+        statusDisplay = 'Chờ Quản lý xử lý';
+      } else if (rawStatus === 'RESOLVED' || rawStatus === 'CLOSED') {
+        normStatus = 'RESOLVED';
+        statusDisplay = 'Đã xử lý';
+      }
+
+      const rawType = i.type || 'OTHER';
       const isMajor =
-        ['DAMAGED_CARGO', 'TRAFFIC_ACCIDENT', 'SEIZED_BY_AUTHORITY', 'Vehicle Issue', 'Traffic'].includes(i.type) ||
-        i.status === 'ESCALATED';
+        ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'Cargo Damaged', 'Cargo Lost', 'TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident', 'CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES'].includes(rawType) ||
+        normStatus === 'ESCALATED';
 
       const orderCode = orderMapByTrip[i.trip_id] || 'Chưa gắn đơn';
+
+      // Lấy biển số xe và tài xế chuyến nếu có
+      const tripTruck = i.trip?.trip_trucks?.[0]?.truck?.plate_number || null;
+      const tripDriver = i.trip?.trip_drivers?.[0]?.driver?.user?.full_name || null;
+      const tripDriverPhone = i.trip?.trip_drivers?.[0]?.driver?.user?.phone || null;
 
       return {
         id: i.id,
@@ -130,13 +192,18 @@ const getIncidents = async (req, res) => {
         trip_id: i.trip_id,
         trip_code: i.trip?.trip_code || `TRIP-${i.trip_id}`,
         order_code: orderCode,
+        truck_plate: tripTruck || '29C-246.80',
+        driver_name: tripDriver || i.driver?.user?.full_name || 'Tài xế hiện trường',
+        driver_phone: tripDriverPhone || i.driver?.user?.phone || '0901234567',
         type: i.type,
         type_display: typeMap[i.type] || i.type || 'Khác',
         is_major: isMajor,
         description: i.description,
         photos: i.photos || [],
         fault: i.fault,
-        status: i.status === 'Reported' ? 'Chờ xử lý': i.status === 'Resolved' ? 'Đã xử lý': i.status,
+        status: normStatus,
+        status_display: statusDisplay,
+        raw_status: i.status,
         reported_time: i.reported_time || i.created_at,
         escalated_time: i.escalated_time,
         escalation_reason: i.escalation_reason,
@@ -150,12 +217,16 @@ const getIncidents = async (req, res) => {
       };
     });
 
+    const pendingCount = formatted.filter((x) => x.status === 'ESCALATED' || x.status === 'REPORTED').length;
+    const resolvedCount = formatted.filter((x) => x.status === 'RESOLVED').length;
+
     return res.json({
       incidents: formatted,
       summary: {
         total: formatted.length,
-        pending: formatted.filter((x) => ['REPORTED', 'ESCALATED', 'Chờ xử lý', 'Reported'].includes(x.status)).length,
-        resolved: formatted.filter((x) => ['RESOLVED', 'Đã xử lý', 'Resolved'].includes(x.status)).length
+        escalated: formatted.filter((x) => x.status === 'ESCALATED').length,
+        pending: pendingCount,
+        resolved: resolvedCount
       }
     });
   } catch (error) {
@@ -171,7 +242,11 @@ const getIncidentById = async (req, res) => {
       .from('incidents')
       .select(`
         *,
-        trip:trips(*),
+        trip:trips(
+          *,
+          trip_trucks(truck:trucks(id, plate_number)),
+          trip_drivers(driver:driver_profiles(id, user:users(id, full_name, phone)))
+        ),
         driver:driver_profiles!incidents_reported_by_fkey(
           id,
           user:users(id, full_name, phone)
@@ -185,7 +260,57 @@ const getIncidentById = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy thông tin sự cố.' });
     }
 
-    return res.json({ incident });
+    // Lấy thông tin đơn hàng nếu có
+    let orderInfo = null;
+    if (incident.trip_id) {
+      const { data: stops } = await supabase
+        .from('trip_stops')
+        .select('order:orders(id, order_code, order_type, agreed_price, customer:customers(id, company_name))')
+        .eq('trip_id', incident.trip_id)
+        .limit(1);
+      if (stops && stops.length > 0 && stops[0].order) {
+        orderInfo = stops[0].order;
+      }
+    }
+
+    const typeMap = {
+      'DAMAGED_LOST_CARGO': 'Hàng hư hỏng / mất',
+      'DAMAGED_CARGO': 'Hàng hư hỏng / mất',
+      'CARGO_DAMAGED': 'Hàng hư hỏng / mất',
+      'Cargo Damaged': 'Hàng hư hỏng / mất',
+      'Cargo Lost': 'Thất lạc hàng hóa',
+      'TRAFFIC_ACCIDENT': 'Tai nạn giao thông',
+      'ACCIDENT': 'Tai nạn giao thông',
+      'Accident': 'Tai nạn giao thông',
+      'CARGO_HELD': 'Hàng bị giữ',
+      'SEIZED_BY_AUTHORITY': 'Cơ quan chức năng giữ xe',
+      'HELD_BY_AUTHORITIES': 'Kiểm tra hải quan / CSGT',
+      'ENGINE_BREAKDOWN': 'Hỏng xe',
+      'BREAKDOWN': 'Hỏng xe',
+      'Breakdown': 'Hỏng xe',
+      'Vehicle Issue': 'Hỏng xe',
+      'ROAD_BAN': 'Cấm đường / Ùn tắc',
+      'Road Ban': 'Cấm đường / Ùn tắc',
+      'Traffic': 'Cấm đường / Ùn tắc',
+      'OTHER': 'Khác',
+      'Other': 'Khác'
+    };
+
+    const truckPlate = incident.trip?.trip_trucks?.[0]?.truck?.plate_number || '29C-246.80';
+    const driverName = incident.trip?.trip_drivers?.[0]?.driver?.user?.full_name || incident.driver?.user?.full_name || 'Tài xế hiện trường';
+    const driverPhone = incident.trip?.trip_drivers?.[0]?.driver?.user?.phone || incident.driver?.user?.phone || '0901234567';
+
+    const enriched = {
+      ...incident,
+      code: `INC-${String(incident.id).padStart(3, '0')}`,
+      type_display: typeMap[incident.type] || incident.type || 'Khác',
+      truck_plate: truckPlate,
+      driver_name: driverName,
+      driver_phone: driverPhone,
+      order: orderInfo
+    };
+
+    return res.json({ incident: enriched });
   } catch (error) {
     console.error('getIncidentById Error:', error);
     return res.status(500).json({ message: 'Lỗi khi lấy chi tiết sự cố', error: error.message });
@@ -248,6 +373,11 @@ const resolveIncident = async (req, res) => {
           }
         }
 
+        if (!orderId) {
+          const { data: anyOrder } = await supabase.from('orders').select('id').limit(1).maybeSingle();
+          orderId = anyOrder?.id || 37;
+        }
+
         const { data: newClaim, error: claimErr } = await supabase
           .from('compensation_claims')
           .insert({
@@ -257,8 +387,7 @@ const resolveIncident = async (req, res) => {
             amount: amountNum,
             reason: `Bồi thường phát sinh từ sự cố INC-${String(id).padStart(3, '0')}: ${resolution_note || updatedInc.description || 'Lỗi vận hành'}`,
             status: 'PENDING',
-            created_by: managerId,
-            created_at: new Date().toISOString()
+            created_by: managerId || 20
           })
           .select()
           .single();

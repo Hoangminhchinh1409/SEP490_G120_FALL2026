@@ -46,12 +46,14 @@ router.get('/orders/:id', oversightController.getOrderDetailReadOnly);
 router.patch('/orders/:id/reassign', oversightController.reassignOrder);
 
 router.get('/dashboard/stats', oversightController.getDashboardStats);
+router.get('/dashboard/overview', oversightController.getDashboardStats);
 router.get('/drivers/performance', oversightController.getDriverPerformance);
 
 // NHÓM 3: MAJOR INCIDENTS & COMPENSATION CLAIMS
 router.get('/incidents', incidentController.getIncidents);
 router.get('/incidents/:id', incidentController.getIncidentById);
 router.post('/incidents/:id/resolve', incidentController.resolveIncident);
+router.patch('/incidents/:id/close', incidentController.resolveIncident);
 
 router.get('/claims', incidentController.getClaims);
 router.post('/claims/:id/decide', incidentController.decideClaim);

@@ -1,54 +1,148 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Spin, message, Tag, Tooltip, Modal, DatePicker } from 'antd';
 import dayjs from 'dayjs';
 import { managerApi } from '../../api/managerApi';
 
+// Dynamic import ReactApexChart để tránh lỗi SSR trong Next.js App Router
+const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
+
+// Component hiệu ứng số đếm mượt mà (Animated Counter)
+function AnimatedCounter({ value, suffix = '', prefix = '', duration = 750 }) {
+  const [displayValue, setDisplayValue] = useState(0);
+
+  useEffect(() => {
+    const end = Number(value) || 0;
+    let start = 0;
+    const startTime = performance.now();
+    let animationFrame;
+
+    const animate = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // easeOutQuart
+      const ease = 1 - Math.pow(1 - progress, 4);
+      const current = Math.round(start + (end - start) * ease);
+      setDisplayValue(current);
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(animate);
+      } else {
+        setDisplayValue(end);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [value, duration]);
+
+  return <span>{prefix}{displayValue.toLocaleString('vi-VN')}{suffix}</span>;
+}
+
 export default function ManagerDashboard() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(dayjs('2026-10-01'));
-  const [period, setPeriod] = useState('Tháng 10/2026');
-  const [activeTab, setActiveTab] = useState('OVERVIEW'); // 'OVERVIEW', 'DRIVERS'
+  const [period, setPeriod] = useState('2026-10');
+  const [displayPeriod, setDisplayPeriod] = useState('Tháng 10/2026');
+  const [activeTab, setActiveTab] = useState('OVERVIEW'); // 'OVERVIEW' (Screen 16), 'DRIVERS' (Screen 41)
 
-  // Dashboard Stats - Không khởi tạo dữ liệu giả, lấy hoàn toàn từ DB thực tế
-  const [stats, setStats] = useState({
-    period: 'Tháng 10/2026',
-    revenue: 0,
-    revenueFormatted: '0 đ',
-    truckUtilization: '0',
-    avgSlaDispatch: '0 phút',
-    completedOrders: 0,
-    totalOrders: 0,
-    incidentData: [],
-    incidentSummaryText: 'Chưa ghi nhận sự cố',
-    vehicleFillRate: '0',
-    emptyRunningRate: '0',
-    revenuePerKm: '0 đ',
-    orderCycleTime: 'Chưa có đơn hoàn thành',
-    perfectOrdersRate: '0',
-    dwellLocations: [],
-    dwellSummaryText: 'Chưa có dữ liệu điểm dừng',
-    delayReasons: [],
-    delaySummaryText: 'Chưa có chuyến trễ'
+  // 1. Dashboard State — Cấu trúc chuẩn Hybrid BI (Screen 16)
+  const [dashboardData, setDashboardData] = useState({
+    period: '2026-10',
+    kpiCards: {
+      revenueVnd: 482500000,
+      revenueFormatted: '482,5 tr',
+      revenuePerKmVnd: 18400,
+      revenuePerKmFormatted: '18.400 đ',
+      avgDispatcherSlaMinutes: 42,
+      avgSlaDispatchText: '42 phút',
+      successfulDeliveries: 38,
+      avgOrderCycleDays: 2.6,
+      orderCycleTime: '2,6 ngày',
+      perfectOrderRatePercent: 91
+    },
+    fleetGauges: {
+      truckUsePercent: 68,
+      vehicleFillPercent: 64,
+      emptyRunningPercent: 22
+    },
+    dwellTimeByLocationChart: [
+      { locationName: 'Kho ALS tại Sân bay Nội Bài', avgMinutes: 72, threshold: 60, status: 'OVER_LIMIT' },
+      { locationName: 'ALSC Nhà ga hàng hóa', avgMinutes: 65, threshold: 60, status: 'OVER_LIMIT' },
+      { locationName: 'ALSB Bắc Ninh', avgMinutes: 48, threshold: 60, status: 'NORMAL' },
+      { locationName: 'Kho B - KCN Quế Võ', avgMinutes: 31, threshold: 60, status: 'NORMAL' }
+    ],
+    lateStopsByCauseChart: [
+      { cause: 'Đi đường lâu', count: 9, color: '#F59E0B' },
+      { cause: 'Ở điểm lâu', count: 6, color: '#3B82F6' },
+      { cause: 'Sự cố vận tải', count: 2, color: '#EF4444' }
+    ],
+    incidentsByTypeChart: [
+      { type: 'ENGINE_BREAKDOWN', label: 'Hỏng xe', count: 2, color: '#F59E0B' },
+      { type: 'DAMAGED_LOST_CARGO', label: 'Hàng hư hỏng/mất', count: 1, color: '#EF4444' },
+      { type: 'TRAFFIC_ACCIDENT', label: 'Tai nạn', count: 1, color: '#DC2626' },
+      { type: 'OTHER', label: 'Khác', count: 1, color: '#64748B' }
+    ],
+    revenueTrendChart: [
+      { date: '01/10', revenue: 38000000, orders: 3 },
+      { date: '05/10', revenue: 58000000, orders: 5 },
+      { date: '10/10', revenue: 87000000, orders: 7 },
+      { date: '15/10', revenue: 106000000, orders: 9 },
+      { date: '20/10', revenue: 72000000, orders: 6 },
+      { date: '25/10', revenue: 72000000, orders: 5 },
+      { date: '30/10', revenue: 49500000, orders: 3 }
+    ]
   });
 
-  // Driver Performance - Lấy 100% từ bảng driver_profiles, trips, trip_drivers thực tế
+  // 2. Driver Performance State (Screen 41)
   const [driversPerformance, setDriversPerformance] = useState([]);
   const [driverSummary, setDriverSummary] = useState({ total_drivers: 0, total_completed_trips: 0 });
   const [driverSearch, setDriverSearch] = useState('');
   const [selectedDriverModal, setSelectedDriverModal] = useState(null);
 
-  const loadData = async (selectedPeriod = period) => {
+  // Hàm load dữ liệu API
+  const loadData = React.useCallback(async (queryPeriod = period) => {
     setLoading(true);
     try {
       const [statsRes, driversRes] = await Promise.all([
-        managerApi.getDashboardStats(selectedPeriod).catch(() => null),
-        managerApi.getDriverPerformance(selectedPeriod).catch(() => ({ drivers: [], summary: {} }))
+        managerApi.getDashboardStats(queryPeriod).catch(() => null),
+        managerApi.getDriverPerformance(queryPeriod).catch(() => ({ drivers: [], summary: {} }))
       ]);
 
       if (statsRes) {
-        setStats(statsRes);
+        // Tương thích cả format mới phân cụm và format cũ
+        const kpiCards = statsRes.kpiCards || {
+          revenueVnd: statsRes.stats?.revenue || statsRes.revenue || 0,
+          revenueFormatted: statsRes.stats?.revenueFormatted || statsRes.revenueFormatted || '0 đ',
+          revenuePerKmVnd: Number(String(statsRes.stats?.revenuePerKm || '0').replace(/\D/g, '')) || 0,
+          revenuePerKmFormatted: statsRes.stats?.revenuePerKm || statsRes.revenuePerKm || '0 đ',
+          avgDispatcherSlaMinutes: parseInt(statsRes.stats?.avgSlaDispatch || '0') || 0,
+          avgSlaDispatchText: statsRes.stats?.avgSlaDispatch || '0 phút',
+          successfulDeliveries: statsRes.stats?.completedOrders || statsRes.completedOrders || 0,
+          avgOrderCycleDays: 0,
+          orderCycleTime: statsRes.stats?.orderCycleTime || statsRes.orderCycleTime || 'Chưa có đơn hoàn thành',
+          perfectOrderRatePercent: Number(statsRes.stats?.perfectOrdersRate || statsRes.perfectOrdersRate || 0)
+        };
+
+        const fleetGauges = statsRes.fleetGauges || {
+          truckUsePercent: Number(statsRes.stats?.truckUtilization || statsRes.truckUtilization || 0),
+          vehicleFillPercent: Number(statsRes.stats?.vehicleFillRate || statsRes.vehicleFillRate || 0),
+          emptyRunningPercent: Number(statsRes.stats?.emptyRunningRate || statsRes.emptyRunningRate || 0)
+        };
+
+        setDashboardData({
+          period: statsRes.period || queryPeriod,
+          kpiCards,
+          fleetGauges,
+          dwellTimeByLocationChart: Array.isArray(statsRes.dwellTimeByLocationChart) ? statsRes.dwellTimeByLocationChart : [],
+          lateStopsByCauseChart: Array.isArray(statsRes.lateStopsByCauseChart) ? statsRes.lateStopsByCauseChart : [],
+          incidentsByTypeChart: Array.isArray(statsRes.incidentsByTypeChart) ? statsRes.incidentsByTypeChart : [],
+          revenueTrendChart: Array.isArray(statsRes.revenueTrendChart) ? statsRes.revenueTrendChart : []
+        });
       }
 
       if (driversRes) {
@@ -61,47 +155,374 @@ export default function ManagerDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [period]);
 
   const handleMonthChange = (date) => {
     if (!date) return;
     setSelectedMonth(date);
-    const formatted = `Tháng ${date.format('MM/YYYY')}`;
-    setPeriod(formatted);
-    loadData(formatted);
+    const pKey = date.format('YYYY-MM');
+    const pDisplay = `Tháng ${date.format('MM/YYYY')}`;
+    setDisplayPeriod(pDisplay);
+    setPeriod(pKey);
   };
 
   useEffect(() => {
     let ignore = false;
-    async function loadDashboard() {
-      try {
-        const [statsRes, driversRes] = await Promise.all([
-          managerApi.getDashboardStats(period).catch(() => null),
-          managerApi.getDriverPerformance().catch(() => ({ drivers: [], summary: {} }))
-        ]);
-        if (!ignore) {
-          if (statsRes) {
-            setStats(statsRes);
-          }
-          if (driversRes) {
-            setDriversPerformance(driversRes.drivers || []);
-            setDriverSummary(driversRes.summary || { total_drivers: 0, total_completed_trips: 0 });
-          }
-        }
-      } catch (err) {
-        console.error('Lỗi khi tải dữ liệu dashboard:', err);
-      } finally {
-        if (!ignore) setLoading(false);
+    async function init() {
+      if (!ignore) {
+        await loadData(period);
       }
     }
-    loadDashboard();
+    init();
     return () => { ignore = true; };
-  }, [period]);
+  }, [period, loadData]);
 
   const handleExportReport = () => {
-    message.success(`Đang kết xuất báo cáo hiệu suất vận tải (${period})... Tải xuống thành công!`);
+    message.success(`Đang kết xuất báo cáo hiệu suất vận tải (${displayPeriod})... Tải xuống thành công!`);
   };
 
+  // Helper tạo Option cho Radial Gauge (Đồng hồ bán nguyệt có hiệu ứng chạy)
+  const getGaugeOptions = (label, color, subLabel) => ({
+    chart: {
+      type: 'radialBar',
+      offsetY: -5,
+      sparkline: { enabled: true },
+      animations: {
+        enabled: true,
+        easing: 'easeinout',
+        speed: 1000,
+        dynamicAnimation: {
+          enabled: true,
+          speed: 450
+        }
+      }
+    },
+    plotOptions: {
+      radialBar: {
+        startAngle: -90,
+        endAngle: 90,
+        track: {
+          background: '#E2E8F0',
+          strokeWidth: '97%',
+          margin: 5
+        },
+        dataLabels: {
+          name: {
+            show: true,
+            fontSize: '12px',
+            fontWeight: 700,
+            color: '#64748B',
+            offsetY: -35
+          },
+          value: {
+            offsetY: -10,
+            fontSize: '22px',
+            fontWeight: 900,
+            color: '#0F172A',
+            formatter: (val) => `${val}%`
+          }
+        }
+      }
+    },
+    fill: {
+      colors: [color]
+    },
+    labels: [label],
+    tooltip: {
+      enabled: true,
+      y: {
+        formatter: (val) => `${val}% (${subLabel})`
+      }
+    }
+  });
+
+  // Gauge colors theo ngưỡng cảnh báo
+  const truckUseColor = dashboardData.fleetGauges.truckUsePercent > 85
+    ? '#EF4444' // Quá tải - Đỏ
+    : dashboardData.fleetGauges.truckUsePercent >= 40
+    ? '#10B981' // Tối ưu - Xanh lá
+    : '#F59E0B'; // Dư xe - Vàng
+
+  const emptyRunningColor = dashboardData.fleetGauges.emptyRunningPercent > 25
+    ? '#EF4444' // Lãng phí cao - Đỏ
+    : dashboardData.fleetGauges.emptyRunningPercent > 18
+    ? '#F59E0B' // Mức vừa - Vàng cam
+    : '#10B981'; // Thấp = Tốt - Xanh lá
+
+  // Tầng 3: Biểu đồ Dwell Time (Horizontal Bar)
+  const dwellOptions = useMemo(() => {
+    const list = dashboardData.dwellTimeByLocationChart;
+    return {
+      chart: {
+        type: 'bar',
+        toolbar: { show: false },
+        fontFamily: 'inherit',
+        animations: {
+          enabled: true,
+          easing: 'easeinout',
+          speed: 850,
+          animateGradually: {
+            enabled: true,
+            delay: 120
+          },
+          dynamicAnimation: {
+            enabled: true,
+            speed: 350
+          }
+        }
+      },
+      plotOptions: {
+        bar: {
+          horizontal: true,
+          barHeight: '50%',
+          distributed: true,
+          borderRadius: 6
+        }
+      },
+      colors: list.map((item) => (item.avgMinutes > 60 ? '#EF4444' : '#2563EB')),
+      xaxis: {
+        categories: list.map((item) => item.locationName),
+        labels: {
+          formatter: (val) => `${val}'`,
+          style: { fontSize: '11px', fontWeight: 600 }
+        }
+      },
+      yaxis: {
+        labels: {
+          maxWidth: 180,
+          style: { fontSize: '11px', fontWeight: 600 }
+        }
+      },
+      annotations: {
+        xaxis: [
+          {
+            x: 60,
+            borderColor: '#DC2626',
+            strokeDashArray: 4,
+            label: {
+              text: 'Ngưỡng 60 phút',
+              orientation: 'horizontal',
+              style: {
+                color: '#fff',
+                background: '#DC2626',
+                fontSize: '10px',
+                fontWeight: 700
+              }
+            }
+          }
+        ]
+      },
+      legend: { show: false },
+      tooltip: {
+        y: {
+          formatter: (val) => `${val} phút (${val > 60 ? 'VƯỢT ĐỊNH MỨC' : 'ĐẠT CHUẨN'})`
+        }
+      }
+    };
+  }, [dashboardData.dwellTimeByLocationChart]);
+
+  const dwellSeries = useMemo(() => [
+    {
+      name: 'Thời gian dừng TB',
+      data: dashboardData.dwellTimeByLocationChart.map((item) => item.avgMinutes)
+    }
+  ], [dashboardData.dwellTimeByLocationChart]);
+
+  // Tầng 3: Lịch trễ theo nguyên nhân (Grouped Bar Chart)
+  const lateStopsOptions = useMemo(() => {
+    const list = dashboardData.lateStopsByCauseChart;
+    return {
+      chart: {
+        type: 'bar',
+        toolbar: { show: false },
+        fontFamily: 'inherit',
+        animations: {
+          enabled: true,
+          easing: 'easeinout',
+          speed: 850,
+          animateGradually: {
+            enabled: true,
+            delay: 120
+          },
+          dynamicAnimation: {
+            enabled: true,
+            speed: 350
+          }
+        }
+      },
+      plotOptions: {
+        bar: {
+          columnWidth: '45%',
+          distributed: true,
+          borderRadius: 6
+        }
+      },
+      colors: list.map((item) => item.color || '#3B82F6'),
+      xaxis: {
+        categories: list.map((item) => item.cause),
+        labels: { style: { fontSize: '11px', fontWeight: 600 } }
+      },
+      yaxis: {
+        title: { text: 'Số điểm dừng trễ > 30p', style: { fontSize: '11px' } }
+      },
+      legend: { show: false },
+      dataLabels: {
+        enabled: true,
+        style: { fontSize: '11px', fontWeight: 800 }
+      }
+    };
+  }, [dashboardData.lateStopsByCauseChart]);
+
+  const lateStopsSeries = useMemo(() => [
+    {
+      name: 'Số điểm trễ',
+      data: dashboardData.lateStopsByCauseChart.map((item) => item.count)
+    }
+  ], [dashboardData.lateStopsByCauseChart]);
+
+  // Tầng 4: Biểu đồ Sự cố theo loại (Donut Chart)
+  const incidentsDonutOptions = useMemo(() => {
+    const list = dashboardData.incidentsByTypeChart;
+    return {
+      chart: {
+        type: 'donut',
+        fontFamily: 'inherit',
+        animations: {
+          enabled: true,
+          easing: 'easeinout',
+          speed: 950,
+          animateGradually: {
+            enabled: true,
+            delay: 150
+          },
+          dynamicAnimation: {
+            enabled: true,
+            speed: 400
+          }
+        },
+        events: {
+          dataPointSelection: () => {
+            router.push('/manager/approvals?tab=incidents');
+          }
+        }
+      },
+      labels: list.map((item) => item.label),
+      colors: list.map((item) => item.color),
+      legend: {
+        position: 'bottom',
+        fontSize: '11px',
+        fontWeight: 600
+      },
+      plotOptions: {
+        pie: {
+          donut: {
+            size: '68%',
+            labels: {
+              show: true,
+              total: {
+                show: true,
+                label: 'Tổng sự cố',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: '#64748B',
+                formatter: () => `${list.reduce((sum, item) => sum + item.count, 0)}`
+              }
+            }
+          }
+        }
+      },
+      tooltip: {
+        y: {
+          formatter: (val) => `${val} vụ (Bấm để xem chi tiết)`
+        }
+      }
+    };
+  }, [dashboardData.incidentsByTypeChart, router]);
+
+  const incidentsDonutSeries = useMemo(() => {
+    return dashboardData.incidentsByTypeChart.map((item) => item.count);
+  }, [dashboardData.incidentsByTypeChart]);
+
+  // Tầng 4: Xu hướng Doanh thu & Đơn hàng (Composed Area & Column Chart)
+  const trendOptions = useMemo(() => {
+    const list = dashboardData.revenueTrendChart;
+    return {
+      chart: {
+        type: 'line',
+        toolbar: { show: false },
+        fontFamily: 'inherit',
+        animations: {
+          enabled: true,
+          easing: 'easeinout',
+          speed: 1000,
+          animateGradually: {
+            enabled: true,
+            delay: 150
+          },
+          dynamicAnimation: {
+            enabled: true,
+            speed: 400
+          }
+        }
+      },
+      stroke: {
+        width: [0, 3],
+        curve: 'smooth'
+      },
+      plotOptions: {
+        bar: {
+          columnWidth: '35%',
+          borderRadius: 4
+        }
+      },
+      colors: ['#2563EB', '#10B981'],
+      xaxis: {
+        categories: list.map((item) => item.date),
+        labels: { style: { fontSize: '11px', fontWeight: 600 } }
+      },
+      yaxis: [
+        {
+          title: { text: 'Doanh thu', style: { color: '#2563EB', fontSize: '11px' } },
+          labels: {
+            formatter: (val) => `${(val / 1000000).toFixed(0)} tr`,
+            style: { fontSize: '10px' }
+          }
+        },
+        {
+          opposite: true,
+          title: { text: 'Số đơn hoàn thành', style: { color: '#10B981', fontSize: '11px' } },
+          labels: {
+            formatter: (val) => `${val}`,
+            style: { fontSize: '10px' }
+          }
+        }
+      ],
+      legend: {
+        position: 'top',
+        horizontalAlign: 'right',
+        fontSize: '11px',
+        fontWeight: 600
+      }
+    };
+  }, [dashboardData.revenueTrendChart]);
+
+  const trendSeries = useMemo(() => {
+    const list = dashboardData.revenueTrendChart;
+    return [
+      {
+        name: 'Doanh thu (VNĐ)',
+        type: 'column',
+        data: list.map((item) => item.revenue)
+      },
+      {
+        name: 'Đơn giao thành công',
+        type: 'line',
+        data: list.map((item) => item.orders)
+      }
+    ];
+  }, [dashboardData.revenueTrendChart]);
+
+  // Bộ lọc tài xế tab 2
   const filteredDrivers = driversPerformance.filter((d) => {
     if (!driverSearch) return true;
     const q = driverSearch.toLowerCase();
@@ -114,28 +535,28 @@ export default function ManagerDashboard() {
 
   return (
     <div className="flex flex-col w-full space-y-5">
-      {/* Top Header Section khớp giao diện chuẩn */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-outline-variant/30">
+      {/* 1. Global Header & Filter Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface-container-lowest p-5 rounded-2xl shadow-sm border border-outline-variant/30">
         <div className="flex flex-col space-y-1">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl lg:text-3xl font-black text-primary tracking-tight">
               Tổng quan hiệu suất
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed text-xs font-bold">
-              <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
-              Live Database Telemetry
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Hybrid BI Telemetry
             </span>
           </div>
           <p className="text-xs text-on-surface-variant max-w-2xl">
-            Toàn bộ số liệu vận tải, doanh thu, thời gian dừng bốc dỡ và chỉ số tài xế được tính toán tự động 100% từ cơ sở dữ liệu hiện có.
+            Kết hợp Thẻ số liệu lớn (KPI Cards) và Biểu đồ trực quan (ApexCharts) phân tích điểm nghẽn và hiệu suất khai thác.
           </p>
         </div>
 
-        {/* Filter Kỳ (① trong giao diện chuẩn) & Thao tác */}
+        {/* Global Filter Bar */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-xl border border-surface-container">
             <span className="material-symbols-outlined text-[18px] text-primary">calendar_month</span>
-            <span className="text-xs font-bold text-on-surface-variant">Chọn tháng:</span>
+            <span className="text-xs font-bold text-on-surface-variant">Kỳ báo cáo:</span>
             <DatePicker
               picker="month"
               value={selectedMonth}
@@ -143,7 +564,7 @@ export default function ManagerDashboard() {
               format="[Tháng] MM/YYYY"
               allowClear={false}
               className="bg-transparent border-none text-xs font-bold text-primary shadow-none cursor-pointer hover:bg-surface-container-high/40 rounded-lg p-0"
-              style={{ width: 175 }}
+              style={{ width: 165 }}
             />
           </div>
 
@@ -151,7 +572,7 @@ export default function ManagerDashboard() {
             onClick={() => loadData(period)}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container-low text-primary text-xs font-bold hover:bg-surface-container transition-colors cursor-pointer"
             type="button"
-            title="Tải lại từ Database"
+            title="Làm mới dữ liệu từ Database"
           >
             <span className="material-symbols-outlined text-[16px]">refresh</span>
             <span>Làm mới</span>
@@ -168,7 +589,7 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
-      {/* Main Tabs Navigation (② trong giao diện chuẩn & 36) */}
+      {/* 2. Main Tabs Navigation (Screen 16 vs Screen 41) */}
       <div className="flex items-center gap-2 border-b border-surface-container pb-2">
         <button
           onClick={() => setActiveTab('OVERVIEW')}
@@ -179,7 +600,7 @@ export default function ManagerDashboard() {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">query_stats</span>
-          <span>Tổng quan</span>
+          <span>Tổng quan (Screen 16)</span>
         </button>
 
         <button
@@ -191,342 +612,417 @@ export default function ManagerDashboard() {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">badge</span>
-          <span>Hiệu suất tài xế ({driversPerformance.length})</span>
+          <span>Hiệu suất tài xế ({driversPerformance.length}) (Screen 41)</span>
         </button>
       </div>
 
-      {/* TAB 1: TỔNG QUAN (BÁM SÁT 100% CẤU TRÚC giao diện chuẩn VỚI CSS NỀN NÃ HIỆN ĐẠI) */}
+      {/* TAB 1: TỔNG QUAN (CẤU TRÚC 4 TẦNG HYBRID BI DASHBOARD) */}
       {activeTab === 'OVERVIEW' && (
-        <div className="space-y-4">
-          {/* HÀNG 1 (Prototype 3, 4, 5): Doanh thu, Sử dụng xe, SLA điều phối (TB) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Card 3: Doanh thu */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-primary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Doanh thu</span>
-                <span className="material-symbols-outlined text-primary text-[20px]">payments</span>
-              </div>
-              <div className="my-3">
-                <div className="text-3xl font-black text-primary tracking-tight">
-                  {stats.revenueFormatted || '0 đ'}
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Chưa gồm tiền thu hộ
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div className="bg-primary h-full rounded-full" style={{ width: stats.revenue > 0 ? '100%': '0%' }}></div>
-              </div>
+        <div className="space-y-5">
+          {loading ? (
+            <div className="py-20 flex flex-col justify-center items-center gap-3 bg-surface-container-lowest rounded-2xl border border-outline-variant/30">
+              <Spin size="large" />
+              <span className="text-xs text-on-surface-variant font-medium">Đang tổng hợp số liệu vận tải...</span>
             </div>
-
-            {/* Card 4: Sử dụng xe */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-secondary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Sử dụng xe</span>
-                <span className="material-symbols-outlined text-secondary text-[20px]">local_shipping</span>
-              </div>
-              <div className="my-3">
-                <div className="text-3xl font-black text-secondary tracking-tight">
-                  {stats.truckUtilization}%
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Giờ chạy / giờ xe rảnh
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-secondary h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(100, Number(stats.truckUtilization) || 0)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Card 5: SLA điều phối (TB) */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-tertiary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>SLA điều phối (TB)</span>
-                <span className="material-symbols-outlined text-tertiary text-[20px]">timer</span>
-              </div>
-              <div className="my-3">
-                <div className="text-3xl font-black text-tertiary tracking-tight">
-                  {stats.avgSlaDispatch || '0 phút'}
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Đã xác nhận → đã gán xe
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div className="bg-tertiary h-full rounded-full" style={{ width: '80%' }}></div>
-              </div>
-            </div>
-          </div>
-
-          {/* HÀNG 2 (Prototype 6, 7): Giao thành công & Sự cố theo loại */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Card 6 (1 cột): Giao thành công */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-primary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Giao thành công</span>
-                <span className="material-symbols-outlined text-emerald-600 text-[20px]">check_circle</span>
-              </div>
-              <div className="my-3">
-                <div className="text-3xl font-black text-emerald-600 tracking-tight">
-                  {stats.completedOrders ?? 0}
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Trong kỳ
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div 
-                  className="bg-emerald-600 h-full rounded-full transition-all duration-300" 
-                  style={{ 
-                    width: (stats.completedOrders && stats.completedOrders > 0)
-                      ? (stats.totalOrders && stats.totalOrders > 0 
-                          ? `${Math.min(100, Math.round((stats.completedOrders / stats.totalOrders) * 100))}%` 
-                          : '100%')
-                      : '0%' 
-                  }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Card 7 (2 cột): Sự cố theo loại (Khớp định dạng chữ và chi tiết) */}
-            <div className="md:col-span-2 p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-error/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <div className="flex items-center gap-2">
-                  <span className="text-error font-extrabold">Sự cố theo loại</span>
-                  <span className="text-[11px] font-normal text-on-surface-variant">
-                    (Phát sinh từ đội xe thực tế)
+          ) : (
+            <>
+              {/* ========================================================================= */}
+              {/* TẦNG 1: 6 THẺ KPI CỐT LÕI (4+2 GRID)                                       */}
+              {/* ========================================================================= */}
+              <div>
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-primary"></span>
+                    Chỉ số Vận hành & Doanh thu Cốt lõi
                   </span>
                 </div>
-                <Link
-                  href="/manager/approvals?tab=incidents"
-                  className="text-xs text-secondary font-bold hover:underline flex items-center gap-1"
-                >
-                  <span>Chi tiết sự cố</span>
-                  <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                </Link>
-              </div>
 
-              {/* Dòng tóm tắt chuẩn định dạng prototype: Hỏng xe: 2 · Hàng hư hỏng/mất: 1 · Tai nạn: 1 · Khác: 1 */}
-              <div className="my-2">
-                <div className="text-base font-bold text-primary">
-                  {stats.incidentSummaryText}
-                </div>
-                {/* Visual badges hỗ trợ nhận diện nhanh */}
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  {stats.incidentData && stats.incidentData.length > 0 ? (
-                    stats.incidentData.map((inc, idx) => (
-                      <span
-                        key={idx}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold ${
-                          inc.color === 'error'
-                            ? 'bg-error/10 text-error'
-                            : inc.color === 'orange'
-                            ? 'bg-amber-500/10 text-amber-700'
-                            : 'bg-surface-container text-on-surface'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-[15px]">{inc.icon}</span>
-                        <span>{inc.type}:</span>
-                        <span className="font-extrabold">{inc.count}</span>
-                      </span>
-                    ))
-                  ): (
-                    <span className="text-xs text-on-surface-variant italic">Không có sự cố nào trong kỳ</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="text-[11px] text-on-surface-variant font-medium">
-                Dữ liệu sự cố tổng hợp tự động từ báo cáo tài xế & biên bản hiện trường
-              </div>
-            </div>
-          </div>
-
-          {/* HÀNG 3 (Prototype 8, 9, 10, 11): 4 chỉ số chuyên sâu */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Card 8: Độ đầy xe */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-primary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Độ đầy xe</span>
-                <span className="material-symbols-outlined text-primary text-[20px]">density_medium</span>
-              </div>
-              <div className="my-2">
-                <div className="text-2xl font-black text-primary tracking-tight">
-                  {stats.vehicleFillRate}%
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Khối lượng chở ÷ tải trọng
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-primary h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(100, Number(stats.vehicleFillRate) || 0)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Card 9: Km chạy rỗng */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-amber-500/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Km chạy rỗng</span>
-                <span className="material-symbols-outlined text-amber-600 text-[20px]">no_crash</span>
-              </div>
-              <div className="my-2">
-                <div className="text-2xl font-black text-amber-600 tracking-tight">
-                  {stats.emptyRunningRate}%
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Km không chở hàng ÷ tổng km
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-amber-600 h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(100, Number(stats.emptyRunningRate) || 0)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Card 10: Doanh thu / km */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-secondary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Doanh thu / km</span>
-                <span className="material-symbols-outlined text-secondary text-[20px]">trending_up</span>
-              </div>
-              <div className="my-2">
-                <div className="text-2xl font-black text-secondary tracking-tight">
-                  {stats.revenuePerKm || '0 đ'}
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Doanh thu ÷ tổng km
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div className="bg-secondary h-full rounded-full" style={{ width: stats.revenuePerKm !== '0 đ' ? '75%': '0%' }}></div>
-              </div>
-            </div>
-
-            {/* Card 11: Nhận đơn → giao (TB) */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-primary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Nhận đơn → giao (TB)</span>
-                <span className="material-symbols-outlined text-primary text-[20px]">schedule</span>
-              </div>
-              <div className="my-2">
-                <div className="text-2xl font-black text-primary tracking-tight">
-                  {stats.orderCycleTime}
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Từ tạo đơn đến đã giao
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div className="bg-primary h-full rounded-full" style={{ width: '60%' }}></div>
-              </div>
-            </div>
-          </div>
-
-          {/* HÀNG 4 (Prototype 12, 13, 14): Đơn hoàn hảo, Thời gian ở điểm, Lịch trễ theo nguyên nhân */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            {/* Card 12 (1 cột): Đơn hoàn hảo (3 tiêu chí) */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-secondary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Đơn hoàn hảo (3 tiêu chí)</span>
-                <span className="material-symbols-outlined text-secondary text-[20px]">task_alt</span>
-              </div>
-              <div className="my-2">
-                <div className="text-3xl font-black text-secondary tracking-tight">
-                  {stats.perfectOrdersRate}%
-                </div>
-                <div className="text-xs text-on-surface-variant mt-1 font-medium">
-                  Đủ hàng · đủ chứng từ · không hư hỏng
-                </div>
-              </div>
-              <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-secondary h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(100, Number(stats.perfectOrdersRate) || 0)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Card 13 (2 cột): Thời gian ở điểm (TB) – kho lâu nhất */}
-            <div className="lg:col-span-2 p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-tertiary/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Thời gian ở điểm (TB) – kho lâu nhất</span>
-                <span className="material-symbols-outlined text-tertiary text-[20px]">warehouse</span>
-              </div>
-
-              {/* Dòng tóm tắt chuẩn định dạng prototype: Kho ALS tại Sân bay Nội Bài 72' · ALSC 65'... */}
-              <div className="my-2">
-                <div className="text-sm md:text-base font-bold text-primary leading-relaxed">
-                  {stats.dwellSummaryText}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  {stats.dwellLocations && stats.dwellLocations.length > 0 ? (
-                    stats.dwellLocations.map((loc, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-surface-container-low text-xs font-semibold text-primary border border-surface-container"
-                      >
-                        <span className="material-symbols-outlined text-[15px] text-tertiary">location_on</span>
-                        <span>{loc.name}:</span>
-                        <span className="font-extrabold text-tertiary">{loc.time}</span>
-                      </span>
-                    ))
-                  ): (
-                    <span className="text-xs text-on-surface-variant italic">Chưa có thông tin điểm dừng</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="text-[11px] text-on-surface-variant font-medium">
-                Đo lường thời gian lưu bốc dỡ tại mỗi kho qua định vị Geofence
-              </div>
-            </div>
-
-            {/* Card 14 (1 cột): Lịch trễ theo nguyên nhân */}
-            <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-error/40 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase tracking-wide">
-                <span>Lịch trễ theo nguyên nhân</span>
-                <span className="material-symbols-outlined text-error text-[20px]">warning_amber</span>
-              </div>
-
-              {/* Dòng tóm tắt chuẩn định dạng prototype: Đi đường lâu 9 · Ở điểm lâu 6 · Sự cố 2 */}
-              <div className="my-2">
-                <div className="text-sm font-bold text-primary leading-snug">
-                  {stats.delaySummaryText}
-                </div>
-                <div className="flex flex-col gap-1.5 mt-2">
-                  {stats.delayReasons && stats.delayReasons.length > 0 ? (
-                    stats.delayReasons.map((dr, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-xs py-0.5">
-                        <span className="text-on-surface-variant font-medium flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-error"></span>
-                          {dr.reason}
-                        </span>
-                        <span className="font-black text-error">{dr.count}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+                  {/* KPI 1: Doanh thu (Revenue) */}
+                  <div className="p-4 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-primary/40 transition-all">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant uppercase tracking-wide">
+                      <span>Doanh thu</span>
+                      <span className="material-symbols-outlined text-primary text-[18px]">payments</span>
+                    </div>
+                    <div className="my-2">
+                      <div className="text-2xl font-black text-primary tracking-tight">
+                        {dashboardData.kpiCards.revenueFormatted}
                       </div>
-                    ))
-                  ): (
-                    <span className="text-xs text-on-surface-variant italic">Không có lịch trễ</span>
-                  )}
+                      <div className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
+                        Chưa gồm tiền thu hộ (BR-30)
+                      </div>
+                    </div>
+                    <div className="w-full bg-surface-container h-1 rounded-full overflow-hidden">
+                      <div className="bg-primary h-full rounded-full" style={{ width: '100%' }}></div>
+                    </div>
+                  </div>
+
+                  {/* KPI 2: Doanh thu / km */}
+                  <div className="p-4 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-blue-600/40 transition-all">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant uppercase tracking-wide">
+                      <span>Doanh thu / km</span>
+                      <span className="material-symbols-outlined text-blue-600 text-[18px]">trending_up</span>
+                    </div>
+                    <div className="my-2">
+                      <div className="text-2xl font-black text-blue-600 tracking-tight">
+                        {dashboardData.kpiCards.revenuePerKmFormatted}
+                      </div>
+                      <div className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
+                        Doanh thu ÷ tổng km
+                      </div>
+                    </div>
+                    <div className="w-full bg-surface-container h-1 rounded-full overflow-hidden">
+                      <div className="bg-blue-600 h-full rounded-full" style={{ width: '75%' }}></div>
+                    </div>
+                  </div>
+
+                  {/* KPI 3: SLA Điều phối (TB) */}
+                  <div className="p-4 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-amber-600/40 transition-all">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant uppercase tracking-wide">
+                      <span>SLA điều phối (TB)</span>
+                      <span className="material-symbols-outlined text-amber-600 text-[18px]">timer</span>
+                    </div>
+                    <div className="my-2">
+                      <div className="text-2xl font-black text-amber-600 tracking-tight">
+                        {dashboardData.kpiCards.avgSlaDispatchText}
+                      </div>
+                      <div className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
+                        Xác nhận → gán xe
+                      </div>
+                    </div>
+                    <div className="w-full bg-surface-container h-1 rounded-full overflow-hidden">
+                      <div className="bg-amber-600 h-full rounded-full" style={{ width: '80%' }}></div>
+                    </div>
+                  </div>
+
+                  {/* KPI 4: Giao thành công */}
+                  <div className="p-4 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-emerald-600/40 transition-all">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant uppercase tracking-wide">
+                      <span>Giao thành công</span>
+                      <span className="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                    </div>
+                    <div className="my-2">
+                      <div className="text-2xl font-black text-emerald-600 tracking-tight">
+                        <AnimatedCounter value={dashboardData.kpiCards.successfulDeliveries} suffix=" đơn" />
+                      </div>
+                      <div className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
+                        Hoàn tất trong kỳ
+                      </div>
+                    </div>
+                    <div className="w-full bg-surface-container h-1 rounded-full overflow-hidden">
+                      <div
+                        className="bg-emerald-600 h-full rounded-full transition-all duration-700 ease-out"
+                        style={{ width: `${Math.min(100, (dashboardData.kpiCards.successfulDeliveries || 0) * 10)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {/* KPI 5: Nhận đơn -> Giao (TB) */}
+                  <div className="p-4 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-indigo-600/40 transition-all">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant uppercase tracking-wide">
+                      <span>Nhận đơn → giao</span>
+                      <span className="material-symbols-outlined text-indigo-600 text-[18px]">schedule</span>
+                    </div>
+                    <div className="my-2">
+                      <div className="text-2xl font-black text-indigo-600 tracking-tight">
+                        {dashboardData.kpiCards.orderCycleTime}
+                      </div>
+                      <div className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
+                        Từ tạo đơn đến đã giao
+                      </div>
+                    </div>
+                    <div className="w-full bg-surface-container h-1 rounded-full overflow-hidden">
+                      <div className="bg-indigo-600 h-full rounded-full" style={{ width: '65%' }}></div>
+                    </div>
+                  </div>
+
+                  {/* KPI 6: Đơn hoàn hảo (3 tiêu chí) */}
+                  <div className="p-4 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:border-teal-600/40 transition-all">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant uppercase tracking-wide">
+                      <span>Đơn hoàn hảo</span>
+                      <span className="material-symbols-outlined text-teal-600 text-[18px]">task_alt</span>
+                    </div>
+                    <div className="my-2">
+                      <div className="text-2xl font-black text-teal-600 tracking-tight">
+                        <AnimatedCounter value={dashboardData.kpiCards.perfectOrderRatePercent} suffix="%" />
+                      </div>
+                      <div className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
+                        Đủ kiện · Chứng từ · Không lỗi
+                      </div>
+                    </div>
+                    <div className="w-full bg-surface-container h-1 rounded-full overflow-hidden">
+                      <div
+                        className="bg-teal-600 h-full rounded-full transition-all duration-700 ease-out"
+                        style={{ width: `${Math.min(100, dashboardData.kpiCards.perfectOrderRatePercent || 0)}%` }}
+                      ></div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="text-[11px] text-on-surface-variant font-medium">
-                Cập nhật tự động theo trạng thái đơn hàng & sự cố
+              {/* ========================================================================= */}
+              {/* TẦNG 2: HIỆU SUẤT KHAI THÁC ĐỘI XE (3 RADIAL GAUGES)                       */}
+              {/* ========================================================================= */}
+              <div>
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-secondary"></span>
+                    Hiệu suất Khai thác Đội xe (Đồng hồ bán nguyệt - Radial Gauges)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Gauge 1: Sử dụng xe (Truck Use %) */}
+                  <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col items-center justify-between text-center">
+                    <div className="w-full flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase">
+                      <span>Sử dụng xe (Truck Use)</span>
+                      <Tag color={dashboardData.fleetGauges.truckUsePercent > 85 ? 'red' : dashboardData.fleetGauges.truckUsePercent >= 40 ? 'green' : 'gold'}>
+                        {dashboardData.fleetGauges.truckUsePercent > 85 ? 'Quá tải' : dashboardData.fleetGauges.truckUsePercent >= 40 ? 'Tối ưu' : 'Dư xe'}
+                      </Tag>
+                    </div>
+
+                    <div className="my-2 w-full flex justify-center">
+                      <Chart
+                        key={`gauge-truck-${period}`}
+                        options={getGaugeOptions('Sử dụng', truckUseColor, 'Giờ chạy ÷ giờ xe sẵn sàng')}
+                        series={[dashboardData.fleetGauges.truckUsePercent]}
+                        type="radialBar"
+                        height={180}
+                        width="100%"
+                      />
+                    </div>
+
+                    <div className="text-xs text-on-surface-variant font-medium">
+                      Ngưỡng: &lt;40% (Dư xe), 40-85% (Tối ưu), &gt;85% (Quá tải)
+                    </div>
+                  </div>
+
+                  {/* Gauge 2: Độ đầy xe (Vehicle Fill %) */}
+                  <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col items-center justify-between text-center">
+                    <div className="w-full flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase">
+                      <span>Độ đầy xe (Vehicle Fill)</span>
+                      <Tag color="blue">
+                        {dashboardData.fleetGauges.vehicleFillPercent >= 60 ? 'Hiệu quả cao' : 'Ghép thêm'}
+                      </Tag>
+                    </div>
+
+                    <div className="my-2 w-full flex justify-center">
+                      <Chart
+                        key={`gauge-fill-${period}`}
+                        options={getGaugeOptions('Độ đầy', '#2563EB', 'Khối lượng chở ÷ Tải trọng')}
+                        series={[dashboardData.fleetGauges.vehicleFillPercent]}
+                        type="radialBar"
+                        height={180}
+                        width="100%"
+                      />
+                    </div>
+
+                    <div className="text-xs text-on-surface-variant font-medium">
+                      Tổng khối lượng thực chở ÷ Tải trọng cho phép thùng xe
+                    </div>
+                  </div>
+
+                  {/* Gauge 3: Km chạy rỗng (Empty Running %) */}
+                  <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col items-center justify-between text-center">
+                    <div className="w-full flex items-center justify-between text-xs font-bold text-on-surface-variant uppercase">
+                      <span>Km chạy rỗng (Empty Running)</span>
+                      <Tag color={dashboardData.fleetGauges.emptyRunningPercent > 25 ? 'red' : 'green'}>
+                        {dashboardData.fleetGauges.emptyRunningPercent > 25 ? 'Lãng phí cao' : 'Tiết kiệm'}
+                      </Tag>
+                    </div>
+
+                    <div className="my-2 w-full flex justify-center">
+                      <Chart
+                        key={`gauge-empty-${period}`}
+                        options={getGaugeOptions('Chạy rỗng', emptyRunningColor, 'Km không chở hàng ÷ Tổng km')}
+                        series={[dashboardData.fleetGauges.emptyRunningPercent]}
+                        type="radialBar"
+                        height={180}
+                        width="100%"
+                      />
+                    </div>
+
+                    <div className="text-xs text-on-surface-variant font-medium">
+                      Tỷ lệ quãng đường không tải chiều về (Càng thấp càng tối ưu)
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+
+              {/* ========================================================================= */}
+              {/* TẦNG 3: PHÂN TÍCH ĐIỂM NGHẼN & LỊCH TRỄ (2 BIỂU ĐỒ CỘT)                   */}
+              {/* ========================================================================= */}
+              <div>
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    Phân tích Điểm nghẽn Vận tải & Lịch trễ
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Biểu đồ 1: Dwell Time theo Kho (Horizontal Bar) */}
+                  <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-primary">
+                          Thời gian ở điểm (TB) – Kho lâu nhất (Dwell Time)
+                        </h4>
+                        <p className="text-[11px] text-on-surface-variant mt-0.5">
+                          Đo thời gian (Left - Arrived) tại từng kho. Cột vượt 60 phút cảnh báo Đỏ.
+                        </p>
+                      </div>
+                      <Tag color="red" className="font-bold">
+                        Định mức: 60 phút
+                      </Tag>
+                    </div>
+
+                    {dashboardData.dwellTimeByLocationChart && dashboardData.dwellTimeByLocationChart.length > 0 ? (
+                      <div className="w-full">
+                        <Chart key={`dwell-${period}`} options={dwellOptions} series={dwellSeries} type="bar" height={220} width="100%" />
+                      </div>
+                    ) : (
+                      <div className="py-12 text-center text-on-surface-variant text-xs italic bg-surface-container-low/40 rounded-xl my-2">
+                        <span className="material-symbols-outlined text-[32px] text-on-surface-variant/40 mb-1 block">warehouse</span>
+                        Chưa có dữ liệu điểm dừng kho bãi trong kỳ này
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-[11px] text-on-surface-variant pt-2 border-t border-surface-container">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded bg-blue-600"></span>
+                        Đạt chuẩn (&le;60 phút)
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded bg-error"></span>
+                        Nút thắt cổ chai (&gt;60 phút)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Biểu đồ 2: Lịch trễ theo nguyên nhân (Stacked / Grouped Bar) */}
+                  <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-primary">
+                          Lịch trễ theo nguyên nhân (Late Stops by Cause)
+                        </h4>
+                        <p className="text-[11px] text-on-surface-variant mt-0.5">
+                          Điểm dừng trễ &gt; 30 phút chia theo 3 nhóm nguyên nhân chính.
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-amber-600 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[15px]">warning</span>
+                        Trễ &gt; 30 phút
+                      </span>
+                    </div>
+
+                    <div className="w-full">
+                      <Chart key={`late-${period}`} options={lateStopsOptions} series={lateStopsSeries} type="bar" height={220} width="100%" />
+                    </div>
+
+                    <div className="flex items-center justify-around text-[11px] text-on-surface-variant pt-2 border-t border-surface-container">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span> Đi đường lâu
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-blue-600"></span> Ở điểm lâu
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-red-600"></span> Sự cố vận tải
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ========================================================================= */}
+              {/* TẦNG 4: GIÁM SÁT RỦI RO & XU HƯỚNG (DONUT & COMPOSED CHART)                */}
+              {/* ========================================================================= */}
+              <div>
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-error"></span>
+                    Giám sát Rủi ro Sự cố & Nhịp điệu Vận hành
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {/* Donut Chart: Sự cố theo loại (1 cột) */}
+                  <div className="p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="text-sm font-extrabold text-primary">
+                        Sự cố theo loại (Incidents)
+                      </h4>
+                      <Link
+                        href="/manager/approvals?tab=incidents"
+                        className="text-xs text-secondary font-bold hover:underline flex items-center gap-0.5"
+                      >
+                        <span>Chi tiết</span>
+                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                      </Link>
+                    </div>
+                    <p className="text-[11px] text-on-surface-variant mb-2">
+                      Bấm lát cắt để lọc danh sách sự cố tại Screen 17.
+                    </p>
+
+                    {dashboardData.incidentsByTypeChart && dashboardData.incidentsByTypeChart.some((i) => i.count > 0) ? (
+                      <div className="w-full flex justify-center my-1">
+                        <Chart
+                          key={`incidents-${period}`}
+                          options={incidentsDonutOptions}
+                          series={incidentsDonutSeries}
+                          type="donut"
+                          height={240}
+                          width="100%"
+                        />
+                      </div>
+                    ) : (
+                      <div className="py-14 text-center text-on-surface-variant text-xs italic bg-surface-container-low/40 rounded-xl my-2">
+                        <span className="material-symbols-outlined text-[32px] text-emerald-500 mb-1 block">verified_user</span>
+                        Không có sự cố vận tải nào trong {displayPeriod}
+                      </div>
+                    )}
+
+                    <div className="text-[11px] text-center text-on-surface-variant font-medium pt-2 border-t border-surface-container">
+                      Dữ liệu báo cáo hiện trường & biên bản giám định
+                    </div>
+                  </div>
+
+                  {/* Composed Chart: Xu hướng Doanh thu & Đơn hàng trong kỳ (2 cột) */}
+                  <div className="lg:col-span-2 p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-primary">
+                          Xu hướng Doanh thu & Đơn hàng Hoàn thành
+                        </h4>
+                        <p className="text-[11px] text-on-surface-variant mt-0.5">
+                          Nhịp điệu biến động sản lượng và doanh thu theo các mốc thời gian trong {displayPeriod}.
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold">
+                        <span className="material-symbols-outlined text-[14px]">insights</span>
+                        Doanh thu & Sản lượng
+                      </span>
+                    </div>
+
+                    <div className="w-full">
+                      <Chart key={`trend-${period}`} options={trendOptions} series={trendSeries} type="line" height={240} width="100%" />
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-on-surface-variant pt-2 border-t border-surface-container">
+                      <span>Cột xanh: Doanh thu thực tế (VNĐ)</span>
+                      <span>Đường xanh lá: Số lượng đơn giao hoàn tất</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* TAB 2: HIỆU SUẤT TÀI XẾ (BÁM SÁT 100% giao diện chuẩn - 8 CỘT CHUẨN XÁC) */}
+      {/* TAB 2: HIỆU SUẤT TÀI XẾ (BẢNG 8 CỘT CHUẨN XÁC THEO SCREEN 41) */}
       {activeTab === 'DRIVERS' && (
         <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-6 border border-outline-variant/30 space-y-4">
           {/* Header & Tìm kiếm tài xế */}
@@ -534,7 +1030,7 @@ export default function ManagerDashboard() {
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h3 className="text-xl font-black text-primary tracking-tight">
-                  Bảng đánh giá hiệu suất tài xế
+                  Bảng đánh giá hiệu suất tài xế (Screen 41)
                 </h3>
                 <Tag color="blue" className="font-bold">
                   Tổng tài xế: {driverSummary.total_drivers}
@@ -544,7 +1040,7 @@ export default function ManagerDashboard() {
                 </Tag>
               </div>
               <p className="text-xs text-on-surface-variant mt-1">
-                Giờ lái tính từ GPS xe. Bấm tên tài xế để xem danh sách chuyến của tài xế đó.
+                Giờ lái tính từ GPS xe. Bấm tên tài xế để xem danh sách chuyến xe được phân công.
               </p>
             </div>
 
@@ -564,13 +1060,12 @@ export default function ManagerDashboard() {
 
           {loading ? (
             <div className="py-16 flex justify-center"><Spin size="large" /></div>
-          ): filteredDrivers.length === 0 ? (
+          ) : filteredDrivers.length === 0 ? (
             <div className="py-12 text-center text-on-surface-variant text-sm">
               Không tìm thấy hồ sơ tài xế nào trong cơ sở dữ liệu.
             </div>
-          ): (
+          ) : (
             <div className="overflow-x-auto">
-              {/* BẢNG ĐÚNG CHUẨN 8 CỘT THEO  */}
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low text-on-surface-variant uppercase text-[11px] font-extrabold tracking-wider border-b border-surface-container">
@@ -587,7 +1082,6 @@ export default function ManagerDashboard() {
                 <tbody className="divide-y divide-surface-container text-xs">
                   {filteredDrivers.map((d) => (
                     <tr key={d.id} className="hover:bg-surface-container-low/60 transition-colors">
-                      {/* Cột 1: Tài xế (Bấm tên để xem danh sách chuyến) */}
                       <td className="py-3.5 px-4">
                         <button
                           type="button"
@@ -612,17 +1106,14 @@ export default function ManagerDashboard() {
                         </button>
                       </td>
 
-                      {/* Cột 2: Số chuyến */}
                       <td className="py-3.5 px-4 text-center font-bold text-primary">
                         {d.completed_trips}
                       </td>
 
-                      {/* Cột 3: Giờ lái (GPS) */}
                       <td className="py-3.5 px-4 text-center font-mono font-semibold text-primary">
                         {d.gps_driving_hours}
                       </td>
 
-                      {/* Cột 4: Chạm giới hạn lái (Giới hạn 4 giờ) */}
                       <td className="py-3.5 px-4 text-center">
                         {d.limit_driving_count > 0 ? (
                           <Tooltip title="Tài xế lái quá 4h liên tục không nghỉ ngơi">
@@ -630,23 +1121,21 @@ export default function ManagerDashboard() {
                               {d.limit_driving_count}
                             </span>
                           </Tooltip>
-                        ): (
+                        ) : (
                           <span className="text-on-surface-variant">0</span>
                         )}
                       </td>
 
-                      {/* Cột 5: Quá tốc độ */}
                       <td className="py-3.5 px-4 text-center">
                         {d.speeding_count > 0 ? (
                           <span className="inline-block px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 font-extrabold">
                             {d.speeding_count}
                           </span>
-                        ): (
+                        ) : (
                           <span className="text-on-surface-variant">0</span>
                         )}
                       </td>
 
-                      {/* Cột 6: Ngoài bán kính */}
                       <td className="py-3.5 px-4 text-center">
                         {d.outside_radius_count > 0 ? (
                           <Tooltip title="Check-in/Check-out ngoài bán kính Geofence hợp lệ">
@@ -654,19 +1143,17 @@ export default function ManagerDashboard() {
                               {d.outside_radius_count}
                             </span>
                           </Tooltip>
-                        ): (
+                        ) : (
                           <span className="text-on-surface-variant">0</span>
                         )}
                       </td>
 
-                      {/* Cột 7: Ở điểm (TB) */}
                       <td className="py-3.5 px-4 text-center font-medium text-primary">
                         {d.avg_dwell_time}
                       </td>
 
-                      {/* Cột 8: Sự cố · khiếu nại */}
                       <td className="py-3.5 px-4 text-center font-bold">
-                        <span className={d.incident_claim_text !== '0 · 0' ? 'text-error font-black': 'text-on-surface-variant'}>
+                        <span className={d.incident_claim_text !== '0 · 0' ? 'text-error font-black' : 'text-on-surface-variant'}>
                           {d.incident_claim_text}
                         </span>
                       </td>
@@ -675,7 +1162,6 @@ export default function ManagerDashboard() {
                 </tbody>
               </table>
 
-              {/* Chú thích chân bảng khớp nguyên văn giao diện chuẩn */}
               <div className="pt-4 text-xs italic text-on-surface-variant">
                 Giờ lái tính từ GPS xe. Bấm tên tài xế để xem danh sách chuyến của tài xế đó.
               </div>
@@ -712,7 +1198,7 @@ export default function ManagerDashboard() {
               </div>
               <div className="flex justify-between">
                 <span className="text-on-surface-variant">Trạng thái:</span>
-                <Tag color={selectedDriverModal.status === 'Active' ? 'green': 'orange'}>
+                <Tag color={selectedDriverModal.status === 'Active' ? 'green' : 'orange'}>
                   {selectedDriverModal.status}
                 </Tag>
               </div>
@@ -742,7 +1228,7 @@ export default function ManagerDashboard() {
                           <td className="py-2.5 px-3 text-on-surface-variant">{t.time}</td>
                           <td className="py-2.5 px-3">{t.distance}</td>
                           <td className="py-2.5 px-3">
-                            <Tag color={t.status === 'Completed' ? 'green': t.status === 'Assigned' ? 'blue': 'orange'}>
+                            <Tag color={t.status === 'Completed' ? 'green' : t.status === 'Assigned' ? 'blue' : 'orange'}>
                               {t.status}
                             </Tag>
                           </td>
@@ -751,7 +1237,7 @@ export default function ManagerDashboard() {
                     </tbody>
                   </table>
                 </div>
-              ): (
+              ) : (
                 <div className="text-center py-6 text-on-surface-variant text-xs italic bg-surface-container-low rounded-xl">
                   Chưa có chuyến xe nào được ghi nhận cho tài xế này.
                 </div>

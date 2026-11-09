@@ -1,11 +1,11 @@
 import { fetchWithAuth } from './apiClient';
 
 export const managerApi = {
-  // 1. Thống kê Dashboard
-  getDashboardStats: async (period = 'Tháng 10/2026') => {
+  // 1. Thống kê Dashboard (Screen 16: Hybrid BI Overview)
+  getDashboardStats: async (period = '2026-10') => {
     try {
-      const data = await fetchWithAuth(`/manager/dashboard/stats?period=${encodeURIComponent(period)}`);
-      return data.stats;
+      const data = await fetchWithAuth(`/manager/dashboard/overview?period=${encodeURIComponent(period)}`);
+      return data;
     } catch (error) {
       console.error('managerApi.getDashboardStats Error:', error);
       throw error;
@@ -216,6 +216,20 @@ export const managerApi = {
     } catch (error) {
       console.error('managerApi.resolveIncident Error:', error);
       throw error;
+    }
+  },
+
+  closeIncident: async (id, payload) => {
+    try {
+      // Gọi endpoint chuẩn PATCH close hoặc POST resolve
+      const data = await fetchWithAuth(`/manager/incidents/${id}/close`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      // Fallback nếu server chỉ nhận POST resolve
+      return managerApi.resolveIncident(id, payload);
     }
   },
 
