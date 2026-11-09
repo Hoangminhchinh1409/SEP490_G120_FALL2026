@@ -4,9 +4,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import { CloudOff, Cloud, RefreshCw } from "lucide-react";
 import { getPendingCount, clearOfflineQueue, getPendingActions } from "../../../utils/offlineQueue";
 import { driverApi } from "../../../api/driverApi";
-import { message } from "antd";
+import { App } from "antd";
 
 export default function OfflineSyncStatus({ onSyncCompleted }) {
+  const { message } = App.useApp();
   const [isOnline, setIsOnline] = useState(() => (typeof window !== "undefined" ? navigator.onLine : true));
   const [pendingCount, setPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);

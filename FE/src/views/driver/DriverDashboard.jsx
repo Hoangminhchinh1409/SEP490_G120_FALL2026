@@ -7,7 +7,7 @@ import {
   Upload,
   Input,
   InputNumber,
-  message,
+  App,
   Spin,
   Checkbox,
   Select,
@@ -31,6 +31,8 @@ import {
   Calendar,
 } from "lucide-react";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
+import Link from "next/link";
+import dayjs from "dayjs";
 import { useAuth } from "../../providers/AuthProvider";
 import { getPendingCount } from "../../utils/offlineQueue";
 import OfflineSyncStatus from "./components/OfflineSyncStatus";
@@ -40,7 +42,74 @@ import {
   getCachedTripDocuments,
 } from "../../utils/offlineQueue";
 
+// Helper nhận diện điểm lấy hàng (Pickup) hay điểm giao hàng (Drop-off) chuẩn nghiệp vụ ALS
+const isPickupStop = (stop) => {
+  if (!stop) return false;
+  const raw = String(stop.stop_type || stop.type || "").trim().toUpperCase();
+  if (raw === "PICKUP" || raw === "LẤY HÀNG" || raw === "LAY HANG") return true;
+  if (
+    raw === "DROPOFF" ||
+    raw === "DROP-OFF" ||
+    raw === "DROP_OFF" ||
+    raw === "DELIVERY" ||
+    raw === "GIAO HÀNG" ||
+    raw === "GIAO HANG" ||
+    raw === "REST" ||
+    raw === "TRANSIT"
+  ) {
+    return false;
+  }
+  // Quy chuẩn nghiệp vụ vận tải ALS: Điểm dừng sequence 1 luôn là điểm lấy hàng (Pickup)
+  return stop.sequence === 1;
+};
+
+const isDropoffStop = (stop) => {
+  if (!stop) return false;
+  return !isPickupStop(stop);
+};
+
+// Chuẩn hóa nhãn trạng thái điểm dừng sang tiếng Việt
+const formatStopStatus = (status, stopType = "Pickup") => {
+  switch (status) {
+    case "Pending":
+      return "Chờ xử lý";
+    case "Arrived":
+      return "Đã đến nơi";
+    case "Loading Started":
+      return stopType === "Pickup" ? "Đang bốc hàng" : "Đang dỡ hàng";
+    case "Loading Done":
+      return stopType === "Pickup" ? "Đã bốc xong" : "Đã dỡ xong";
+    case "Done":
+      return "Hoàn thành";
+    case "Skipped":
+      return "Bỏ qua";
+    case "Cancelled":
+      return "Đã hủy";
+    default:
+      return status || "Chờ xử lý";
+  }
+};
+
+// Chuẩn hóa nhãn trạng thái chuyến xe sang tiếng Việt
+const formatTripStatus = (status) => {
+  switch (status) {
+    case "Assigned":
+      return "Chờ nhận";
+    case "Accepted":
+      return "Đã nhận";
+    case "In Progress":
+      return "Đang chạy";
+    case "Completed":
+      return "Hoàn thành";
+    case "Cancelled":
+      return "Đã hủy";
+    default:
+      return status || "Không xác định";
+  }
+};
+
 export default function DriverDashboard() {
+  const { message } = App.useApp();
   const { logout } = useAuth();
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -55,6 +124,16 @@ export default function DriverDashboard() {
   const [profile, setProfile] = useState(null);
   const [tripData, setTripData] = useState(null);
   const [selectedTripId, setSelectedTripId] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const paramId = params.get("tripId");
+      if (paramId) {
+        setSelectedTripId(Number(paramId));
+      }
+    }
+  }, []);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Modals
@@ -1008,21 +1087,41 @@ export default function DriverDashboard() {
           </div>
         ) : (
           <>
-            {/* BỘ CHỌN CHUYẾN XE SẮP TỚI CHO TÀI XẾ */}
-            {upcomingTrips && upcomingTrips.length > 1 && (
+            {/* BỘ CHỌN CHUYẾN XE HÔM NAY CHO TÀI XẾ */}
+            {upcomingTrips && upcomingTrips.length > 0 && (
               <div className="mb-3 bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-2.5 shadow-xl">
                 <div className="flex items-center justify-between mb-2 px-1">
-                  <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
-                    <Truck size={13} className="text-blue-400" />
-                    Chuyến xe sắp tới ({upcomingTrips.length} chuyến)
-                  </span>
-                  <span className="text-[9px] text-blue-300 bg-blue-500/10 border border-blue-400/20 px-2 py-0.5 rounded-full font-semibold">
-                    Chạm để xem chi tiết
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-extrabold text-slate-200 flex items-center gap-1.5">
+                      <Calendar size={13} className="text-blue-400" />
+                      Chuyến xe hôm nay
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2 py-0.5 rounded-md flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      {dayjs().format("DD/MM/YYYY")}
+                    </span>
+                  </div>
+                  <Link
+                    href="/driver/trips"
+                    className="text-[10px] text-slate-400 hover:text-blue-300 font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <span>Sổ chuyến ({upcomingTrips.length})</span>
+                    <span>→</span>
+                  </Link>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5">
                   {upcomingTrips.map((t, idx) => {
                     const isSelected = t.id === trip?.id;
+                    const tripDate = t.planned_start ? dayjs(t.planned_start) : null;
+                    const isToday = tripDate ? tripDate.isSame(dayjs(), "day") : false;
+                    const isTomorrow = tripDate ? tripDate.isSame(dayjs().add(1, "day"), "day") : false;
+                    const timeStr = tripDate ? tripDate.format("HH:mm") : "Chờ xếp";
+                    const dateBadge = isToday
+                      ? "Hôm nay"
+                      : isTomorrow
+                      ? "Ngày mai"
+                      : tripDate ? tripDate.format("DD/MM") : "";
+
                     return (
                       <button
                         key={t.id}
@@ -1051,9 +1150,16 @@ export default function DriverDashboard() {
                         <p className={`text-[11px] font-extrabold truncate ${isSelected ? "text-blue-200" : "text-slate-200"}`}>
                           {t.trip_code}
                         </p>
-                        <p className="text-[9px] text-slate-400 truncate mt-0.5">
-                          {t.planned_start ? new Date(t.planned_start).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "Chờ xếp"}
-                        </p>
+                        <div className="flex items-center justify-between mt-1 text-[9px]">
+                          <span className="font-mono text-slate-300 font-semibold">{timeStr}</span>
+                          <span className={`px-1 py-0.2 rounded font-medium ${
+                            isToday
+                              ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20"
+                              : "bg-slate-800 text-slate-400"
+                          }`}>
+                            {dateBadge}
+                          </span>
+                        </div>
                       </button>
                     );
                   })}
@@ -1087,7 +1193,7 @@ export default function DriverDashboard() {
                         : "bg-blue-400 animate-pulse"
                     }`}
                   ></div>
-                  {trip.status.toUpperCase()}
+                  {formatTripStatus(trip.status).toUpperCase()}
                 </div>
               </div>
             </div>
@@ -1148,7 +1254,7 @@ export default function DriverDashboard() {
                 {stops.map((stop) => {
                   const isDone = stop.status === "Done";
                   const isArrived = stop.status === "Arrived";
-                  const isPickup = stop.stop_type === "Pickup";
+                  const isPickup = isPickupStop(stop);
 
                   return (
                     <div key={stop.id} className="flex gap-3 relative z-10">
@@ -1171,18 +1277,19 @@ export default function DriverDashboard() {
                               ? "LẤY HÀNG (PICKUP)"
                               : "GIAO HÀNG (DROP-OFF)"}
                           </p>
-                          <Tag
-                            color={
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                               isDone
-                                ? "success"
+                                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                                 : isArrived
-                                  ? "warning"
-                                  : "default"
-                            }
-                            className="text-[10px] font-bold m-0 py-0 px-1.5"
+                                ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                : stop.status === "Loading Started" || stop.status === "Loading Done"
+                                ? "bg-blue-500/15 text-blue-300 border-blue-500/30"
+                                : "bg-slate-800 text-slate-300 border-slate-700"
+                            }`}
                           >
-                            {stop.status}
-                          </Tag>
+                            {formatStopStatus(stop.status, isPickup ? "Pickup" : "Drop-off")}
+                          </span>
                         </div>
                         <p className="font-semibold text-white leading-tight text-xs mt-0.5">
                           {stop.location?.name ||
@@ -1293,7 +1400,7 @@ export default function DriverDashboard() {
                           bước)
                         </span>
                         <span className="text-blue-300 font-mono">
-                          {currentStop.status}
+                          {formatStopStatus(currentStop.status, isPickupStop(currentStop) ? "Pickup" : "Drop-off")}
                         </span>
                       </div>
                       <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
@@ -1357,7 +1464,7 @@ export default function DriverDashboard() {
                               : "3"}
                           </span>
                           <span>
-                            {currentStop.stop_type === "Pickup"
+                            {isPickupStop(currentStop)
                               ? "Bốc/Chì"
                               : "Dỡ/POD"}
                           </span>
@@ -1427,7 +1534,7 @@ export default function DriverDashboard() {
 
                     {/* Step 3: If Loading Started & Pickup -> Bốc hàng & Niêm chì Modal (BR-11) */}
                     {currentStop.status === "Loading Started" &&
-                      currentStop.stop_type === "Pickup" && (
+                      isPickupStop(currentStop) && (
                         <Button
                           type="primary"
                           size="large"
@@ -1450,7 +1557,7 @@ export default function DriverDashboard() {
 
                     {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal / Từ chối (BR-12, BR-57) */}
                     {currentStop.status === "Loading Started" &&
-                      currentStop.stop_type === "Drop-off" && (
+                      isDropoffStop(currentStop) && (
                         <div className="grid grid-cols-5 gap-1.5">
                           <Button
                             type="primary"

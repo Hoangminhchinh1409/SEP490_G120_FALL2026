@@ -2,6 +2,31 @@ const crypto = require("crypto");
 const driverModel = require("../models/driverModel");
 const supabase = require("../config/supabase");
 
+// Helper chuẩn hóa điểm lấy hàng (Pickup) hay điểm giao hàng (Drop-off)
+const isPickupStop = (stop) => {
+  if (!stop) return false;
+  const raw = String(stop.stop_type || stop.type || "").trim().toUpperCase();
+  if (raw === "PICKUP" || raw === "LẤY HÀNG" || raw === "LAY HANG") return true;
+  if (
+    raw === "DROPOFF" ||
+    raw === "DROP-OFF" ||
+    raw === "DROP_OFF" ||
+    raw === "DELIVERY" ||
+    raw === "GIAO HÀNG" ||
+    raw === "GIAO HANG" ||
+    raw === "REST" ||
+    raw === "TRANSIT"
+  ) {
+    return false;
+  }
+  return stop.sequence === 1;
+};
+
+const isDropoffStop = (stop) => {
+  if (!stop) return false;
+  return !isPickupStop(stop);
+};
+
 // ==========================================
 // 1. PROFILE & OVERVIEW
 // ==========================================
@@ -197,7 +222,7 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
   }
 
   // Nếu là điểm giao hàng (Drop-off): Chuyển đơn hàng sang In Transit
-  if (stop.stop_type === "Drop-off" && stop.order_id) {
+  if (isDropoffStop(stop) && stop.order_id) {
     await driverModel.updateOrdersStatus(
       [stop.order_id],
       "In Transit",
@@ -294,7 +319,7 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
   }
 
   const stop = await driverModel.getTripStopById(stopId, tripId);
-  if (!stop || stop.stop_type !== "Pickup") {
+  if (!stop || !isPickupStop(stop)) {
     const error = new Error("Điểm dừng không hợp lệ hoặc không phải điểm lấy hàng (Pickup)");
     error.statusCode = 400;
     throw error;
@@ -387,7 +412,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
   }
 
   const stop = await driverModel.getTripStopById(stopId, tripId);
-  if (!stop || stop.stop_type !== "Drop-off") {
+  if (!stop || !isDropoffStop(stop)) {
     const error = new Error("Điểm dừng không hợp lệ hoặc không phải điểm giao hàng (Drop-off)");
     error.statusCode = 400;
     throw error;
@@ -643,7 +668,7 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
     await driverModel.updateTripStop(stopId, { status: "Done" });
 
     // Nếu điểm dừng là lấy hàng và có đơn hàng, chuyển trạng thái đơn sang In Transit
-    if (stop.stop_type === "Pickup" && stop.order_id) {
+    if (isPickupStop(stop) && stop.order_id) {
       await driverModel.updateOrdersStatus(
         [stop.order_id],
         "In Transit",

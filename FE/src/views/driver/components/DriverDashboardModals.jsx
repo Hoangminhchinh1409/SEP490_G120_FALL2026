@@ -2,6 +2,22 @@ import React from 'react';
 import { Modal, Upload, Input, InputNumber, Checkbox, Select, Button } from 'antd';
 import { Camera, Ban, DollarSign, FileText } from 'lucide-react';
 
+const darkModalStyles = {
+  content: {
+    backgroundColor: '#0f172a',
+    border: '1px solid #334155',
+    borderRadius: '1.5rem',
+    color: '#f8fafc',
+    padding: '1.25rem'
+  },
+  header: {
+    backgroundColor: 'transparent',
+    borderBottom: '1px solid #1e293b',
+    paddingBottom: '0.75rem',
+    marginBottom: '0.75rem'
+  }
+};
+
 export default function DriverDashboardModals({
   trip,
   tripData,
@@ -75,16 +91,18 @@ export default function DriverDashboardModals({
     <>
       {/* MODAL 0: XÁC NHẬN NHẬN CHUYẾN */}
       <Modal
+        centered
         open={acceptModalOpen}
         onCancel={() => setAcceptModalOpen(false)}
-        title={<span className="font-bold text-slate-800">Xác nhận nhận chuyến xe</span>}
+        title={<span className="font-bold text-white">Xác nhận nhận chuyến xe</span>}
+        styles={darkModalStyles}
         okText="Tôi đồng ý nhận chuyến"
         cancelText="Đóng"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-blue-600 font-bold" }}
         onOk={() => handleAcceptTrip(trip?.id)}
       >
-        <p className="text-sm text-slate-600 my-2">
+        <p className="text-sm text-slate-300 my-2">
           Bạn có chắc chắn muốn nhận chuyến xe <b>{trip?.trip_code}</b> không?
         </p>
         <p className="text-xs text-slate-400">
@@ -93,10 +111,12 @@ export default function DriverDashboardModals({
       </Modal>
 
       {/* MODAL 1: BỐC HÀNG & NIÊM CHÌ 3 BƯỚC */}
-      <Modal 
+      <Modal
+        centered 
         open={sealModalOpen} 
         onCancel={() => setSealModalOpen(false)} 
-        title={<span className="font-bold text-slate-800">Lấy hàng & Niêm chì 3 Bước</span>} 
+        title={<span className="font-bold text-white">Lấy hàng & Niêm chì 3 Bước</span>}
+        styles={darkModalStyles} 
         okText="Lưu lấy hàng"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-blue-600 font-bold" }}
@@ -109,7 +129,7 @@ export default function DriverDashboardModals({
 
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="font-bold text-slate-700 block mb-1">1. Hàng trước bốc (*)</label>
+              <label className="font-bold text-slate-200 block mb-1">1. Hàng trước bốc (*)</label>
               <Upload 
                 listType="picture-card" 
                 maxCount={1} 
@@ -128,7 +148,7 @@ export default function DriverDashboardModals({
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 block mb-1">2. Hàng trên xe (*)</label>
+              <label className="font-bold text-slate-200 block mb-1">2. Hàng trên xe (*)</label>
               <Upload 
                 listType="picture-card" 
                 maxCount={1} 
@@ -147,7 +167,7 @@ export default function DriverDashboardModals({
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 block mb-1">3. Chì & Biển số (*)</label>
+              <label className="font-bold text-slate-200 block mb-1">3. Chì & Biển số (*)</label>
               <Upload 
                 listType="picture-card" 
                 maxCount={1} 
@@ -167,7 +187,7 @@ export default function DriverDashboardModals({
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Số chì niêm phong (*)</label>
+            <label className="font-bold text-slate-200 block mb-1">Số chì niêm phong (*)</label>
             <Input 
               value={sealNumber} 
               onChange={(e) => setSealNumber(e.target.value)} 
@@ -178,7 +198,7 @@ export default function DriverDashboardModals({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Số kiện bốc (*)</label>
+              <label className="font-bold text-slate-200 block mb-1">Số kiện bốc (*)</label>
               <InputNumber 
                 min={1} 
                 value={loadedPackages} 
@@ -187,7 +207,7 @@ export default function DriverDashboardModals({
               />
             </div>
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Khối lượng (kg) (*)</label>
+              <label className="font-bold text-slate-200 block mb-1">Khối lượng (kg) (*)</label>
               <InputNumber 
                 min={1} 
                 value={loadedWeight} 
@@ -205,10 +225,12 @@ export default function DriverDashboardModals({
       </Modal>
 
       {/* MODAL 2: GIAO HÀNG & BIÊN BẢN POD */}
-      <Modal 
+      <Modal
+        centered 
         open={podModalOpen} 
         onCancel={() => setPodModalOpen(false)} 
-        title={<span className="font-bold text-slate-800">Biên bản Giao nhận Hàng POD</span>} 
+        title={<span className="font-bold text-white">Biên bản Giao nhận Hàng POD</span>}
+        styles={darkModalStyles} 
         okText="Lưu giao hàng"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-emerald-600 font-bold" }}
@@ -220,7 +242,7 @@ export default function DriverDashboardModals({
               <p className="text-blue-600 font-bold mb-2">Đơn hàng Xuất Khẩu: Chụp ảnh cắt chì & ảnh dỡ hàng</p>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Ảnh cắt chì (*)</label>
+                  <label className="font-bold text-slate-200 block mb-1">Ảnh cắt chì (*)</label>
                   <Upload 
                     listType="picture-card" 
                     maxCount={1} 
@@ -238,7 +260,7 @@ export default function DriverDashboardModals({
                   </Upload>
                 </div>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Ảnh dỡ hàng (*)</label>
+                  <label className="font-bold text-slate-200 block mb-1">Ảnh dỡ hàng (*)</label>
                   <Upload 
                     listType="picture-card" 
                     maxCount={1} 
@@ -259,7 +281,7 @@ export default function DriverDashboardModals({
             </div>
           ): (
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Ảnh biên bản POD có ký nhận (*)</label>
+              <label className="font-bold text-slate-200 block mb-1">Ảnh biên bản POD có ký nhận (*)</label>
               <Upload 
                 listType="picture-card" 
                 maxCount={1} 
@@ -276,7 +298,7 @@ export default function DriverDashboardModals({
                 </div>
               </Upload>
               <div>
-                <label className="font-bold text-slate-700 block mb-1 mt-2">Họ tên người nhận hàng (*)</label>
+                <label className="font-bold text-slate-200 block mb-1 mt-2">Họ tên người nhận hàng (*)</label>
                 <Input 
                   value={receiverName} 
                   onChange={(e) => setReceiverName(e.target.value)} 
@@ -288,7 +310,7 @@ export default function DriverDashboardModals({
           )}
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Số kiện đã giao thực tế</label>
+            <label className="font-bold text-slate-200 block mb-1">Số kiện đã giao thực tế</label>
             <InputNumber 
               min={1} 
               value={deliveredPackages} 
@@ -301,7 +323,7 @@ export default function DriverDashboardModals({
             <Checkbox 
               checked={docsHandedOver} 
               onChange={(e) => setDocsHandedOver(e.target.checked)}
-              className="font-bold text-slate-700"
+              className="font-bold text-slate-200"
             >
               Đã bàn giao đủ chứng từ
             </Checkbox>
@@ -311,9 +333,11 @@ export default function DriverDashboardModals({
 
       {/* MODAL 3: KHÁCH KHÔNG NHẬN HÀNG */}
       <Modal
+        centered
         open={refusalModalOpen}
         onCancel={() => setRefusalModalOpen(false)}
-        title={<span className="font-bold text-red-600 flex items-center gap-1.5"><Ban size={18}/> Khách không nhận hàng</span>}
+        title={<span className="font-bold text-red-400 flex items-center gap-1.5"><Ban size={18}/> Khách không nhận hàng</span>}
+        styles={darkModalStyles}
         okText="Gửi báo cáo từ chối"
         confirmLoading={actionLoading}
         okButtonProps={{ danger: true, className: "font-bold" }}
@@ -325,7 +349,7 @@ export default function DriverDashboardModals({
           </p>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Lý do từ chối (*) (Bắt buộc)</label>
+            <label className="font-bold text-slate-200 block mb-1">Lý do từ chối (*) (Bắt buộc)</label>
             <Input 
               value={refusalReason} 
               onChange={(e) => setRefusalReason(e.target.value)} 
@@ -335,7 +359,7 @@ export default function DriverDashboardModals({
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Ảnh hiện trường hàng hóa (*) (Bắt buộc)</label>
+            <label className="font-bold text-slate-200 block mb-1">Ảnh hiện trường hàng hóa (*) (Bắt buộc)</label>
             <Upload 
               listType="picture-card" 
               maxCount={1} 
@@ -354,7 +378,7 @@ export default function DriverDashboardModals({
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Ghi chú bổ sung (Tùy chọn)</label>
+            <label className="font-bold text-slate-200 block mb-1">Ghi chú bổ sung (Tùy chọn)</label>
             <Input.TextArea 
               rows={2}
               value={refusalNote} 
@@ -367,9 +391,11 @@ export default function DriverDashboardModals({
 
       {/* MODAL 4: ĐỀ XUẤT PHỤ PHÍ */}
       <Modal
+        centered
         open={extraFeeModalOpen}
         onCancel={() => setExtraFeeModalOpen(false)}
-        title={<span className="font-bold text-amber-600 flex items-center gap-1.5"><DollarSign size={18}/> Đề xuất Phụ phí</span>}
+        title={<span className="font-bold text-amber-400 flex items-center gap-1.5"><DollarSign size={18}/> Đề xuất Phụ phí</span>}
+        styles={darkModalStyles}
         okText="Gửi đề xuất phí"
         confirmLoading={actionLoading}
         okButtonProps={{ className: "bg-amber-600 font-bold" }}
@@ -381,7 +407,7 @@ export default function DriverDashboardModals({
           </p>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Loại phụ phí (*) (Bắt buộc)</label>
+            <label className="font-bold text-slate-200 block mb-1">Loại phụ phí (*) (Bắt buộc)</label>
             <Select 
               value={feeType} 
               onChange={setFeeType} 
@@ -394,7 +420,7 @@ export default function DriverDashboardModals({
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Số tiền đề xuất (VND) (*)</label>
+            <label className="font-bold text-slate-200 block mb-1">Số tiền đề xuất (VND) (*)</label>
             <InputNumber 
               min={1000} 
               step={10000} 
@@ -406,7 +432,7 @@ export default function DriverDashboardModals({
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Lý do phát sinh (*) (Bắt buộc)</label>
+            <label className="font-bold text-slate-200 block mb-1">Lý do phát sinh (*) (Bắt buộc)</label>
             <Input 
               value={feeReason} 
               onChange={(e) => setFeeReason(e.target.value)} 
@@ -416,7 +442,7 @@ export default function DriverDashboardModals({
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Ảnh chứng từ / Biên lai (*) (Bắt buộc)</label>
+            <label className="font-bold text-slate-200 block mb-1">Ảnh chứng từ / Biên lai (*) (Bắt buộc)</label>
             <Upload 
               listType="picture-card" 
               maxCount={1} 
@@ -438,9 +464,11 @@ export default function DriverDashboardModals({
 
       {/* MODAL 5: CHỨNG TỪ CHUYẾN XE */}
       <Modal
+        centered
         open={docsModalOpen}
         onCancel={() => setDocsModalOpen(false)}
-        title={<span className="font-bold text-slate-800 flex items-center gap-1.5"><FileText size={18}/> Chứng từ chuyến xe</span>}
+        title={<span className="font-bold text-white flex items-center gap-1.5"><FileText size={18} className="text-blue-400"/> Chứng từ chuyến xe</span>}
+        styles={darkModalStyles}
         footer={[
           <Button key="close" type="primary" onClick={() => setDocsModalOpen(false)}>
             Đóng
@@ -448,18 +476,18 @@ export default function DriverDashboardModals({
         ]}
       >
         <div className="py-2 text-xs space-y-3">
-          <div className="bg-slate-100 p-3 rounded-xl border border-slate-200">
-            <span className="font-bold text-slate-800 block mb-1">1. Giấy vận tải điện tử (Waybill)</span>
-            <p className="text-slate-600">Mã chuyến: <b>{trip?.trip_code}</b></p>
-            <p className="text-slate-600">Xe phụ trách: <b>{truck?.plate_number}</b> ({truck?.model})</p>
-            <p className="text-slate-600">Lộ trình: {stops.length} điểm dừng</p>
+          <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/80">
+            <span className="font-bold text-white block mb-1">1. Giấy vận tải điện tử (Waybill)</span>
+            <p className="text-slate-300">Mã chuyến: <b>{trip?.trip_code}</b></p>
+            <p className="text-slate-300">Xe phụ trách: <b>{truck?.plate_number}</b> ({truck?.model})</p>
+            <p className="text-slate-300">Lộ trình: {stops.length} điểm dừng</p>
           </div>
 
-          <div className="bg-slate-100 p-3 rounded-xl border border-slate-200">
-            <span className="font-bold text-slate-800 block mb-1">2. Chứng từ khách hàng đính kèm</span>
+          <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/80">
+            <span className="font-bold text-white block mb-1">2. Chứng từ khách hàng đính kèm</span>
             {stops.map((s) => (
-              <div key={s.id} className="py-1 border-b border-slate-200 last:border-0">
-                <span className="font-semibold text-slate-700">Điểm #{s.sequence} - Đơn {s.order?.order_code || 'N/A'}:</span>
+              <div key={s.id} className="py-1 border-b border-slate-700/80 last:border-0">
+                <span className="font-semibold text-slate-200">Điểm #{s.sequence} - Đơn {s.order?.order_code || 'N/A'}:</span>
                 <p className="text-slate-500 text-[11px]">Người nhận: {s.order?.receiver_name || 'Khách hàng'} • ĐT: {s.order?.receiver_phone || 'N/A'}</p>
               </div>
             ))}

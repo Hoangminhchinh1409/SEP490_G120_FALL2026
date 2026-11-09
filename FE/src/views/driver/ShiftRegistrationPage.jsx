@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Form, DatePicker, TimePicker, Input, Button, Tag, message, Spin, Empty, Card, Popconfirm } from "antd";
+import { Form, DatePicker, TimePicker, Input, Button, Tag, App, Spin, Empty, Card, Popconfirm } from "antd";
 import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, XCircle, CloudOff, Cloud } from "lucide-react";
 import dayjs from "dayjs";
 import "dayjs/locale/vi";
@@ -9,6 +9,7 @@ import { driverApi, queueOfflineAction } from "../../api/driverApi";
 dayjs.locale("vi");
 
 export default function ShiftRegistrationPage() {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);

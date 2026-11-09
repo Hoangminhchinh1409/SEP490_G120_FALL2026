@@ -176,6 +176,14 @@ const getActiveTrip = async (driverProfileId) => {
   for (const t of trips) {
     if (t.stops) {
       t.stops.sort((a, b) => a.sequence - b.sequence);
+      t.stops.forEach((s) => {
+        const raw = String(s.stop_type || s.type || "").trim().toUpperCase();
+        if (raw === "PICKUP" || raw === "LẤY HÀNG" || (s.sequence === 1 && !raw.includes("DROP") && !raw.includes("DELIVER"))) {
+          s.stop_type = "Pickup";
+        } else {
+          s.stop_type = "Drop-off";
+        }
+      });
     }
     const activeTruckAssign =
       (t.truck_assignments || []).find((ta) => ta.truck) ||
@@ -340,6 +348,14 @@ const getTripDetail = async (tripId, driverProfileId) => {
   if (trip) {
     if (trip.stops) {
       trip.stops.sort((a, b) => a.sequence - b.sequence);
+      trip.stops.forEach((s) => {
+        const raw = String(s.stop_type || s.type || "").trim().toUpperCase();
+        if (raw === "PICKUP" || raw === "LẤY HÀNG" || (s.sequence === 1 && !raw.includes("DROP") && !raw.includes("DELIVER"))) {
+          s.stop_type = "Pickup";
+        } else {
+          s.stop_type = "Drop-off";
+        }
+      });
     }
     const truckAssign =
       (trip.truck_assignments || []).find((ta) => ta.truck) ||

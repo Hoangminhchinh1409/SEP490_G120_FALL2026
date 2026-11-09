@@ -1,12 +1,13 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { Form, Input, Button, Upload, Select, message, Alert } from "antd";
+import { Form, Input, Button, Upload, Select, Alert, App } from "antd";
 import { Camera, AlertTriangle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
 
 export default function ReportIncidentPage() {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [isOffline, setIsOffline] = useState(() => {
     if (typeof window !== "undefined" && typeof navigator !== "undefined") {

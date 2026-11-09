@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
-import { Button, message, Spin, Empty, Modal } from "antd";
+import { Button, App, Spin, Empty, Modal } from "antd";
 import {
   Bell,
   CheckCheck,
@@ -22,6 +22,7 @@ dayjs.extend(relativeTime);
 dayjs.locale("vi");
 
 export default function DriverNotificationsPage() {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [markingAll, setMarkingAll] = useState(false);
