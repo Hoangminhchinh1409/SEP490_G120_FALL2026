@@ -105,13 +105,15 @@ const requireAuth = async (req, res, next) => {
     }
 };
 
-const requireRole = (roles) => {
-    return (req, res, next) => {
+const requireRole = (roles, permissionKey = null) => {
+    return async (req, res, next) => {
         if (!req.user) {
             return res.status(403).json({ message: "Forbidden: No user in request" });
         }
         
         const userRoleId = Number(req.user.role_id);
+        if (userRoleId === 1) return next(); // Administrator luôn có toàn quyền
+
         const roleMap = {
             1: "ADMINISTRATOR",
             2: "MANAGER",
@@ -131,8 +133,38 @@ const requireRole = (roles) => {
         if (hasPermission) {
             return next();
         }
+
+        // Kiểm tra quyền xem chéo (Read-Only) đối với phương thức đọc (GET / HEAD)
+        if (permissionKey && (req.method === 'GET' || req.method === 'HEAD')) {
+            try {
+                const { data: perm } = await supabase
+                    .from('permissions')
+                    .select('id')
+                    .eq('key', permissionKey)
+                    .maybeSingle();
+
+                if (perm) {
+                    const { data: rolePerm } = await supabase
+                        .from('role_permissions')
+                        .select('permission_id')
+                        .eq('role_id', userRoleId)
+                        .eq('permission_id', perm.id)
+                        .maybeSingle();
+
+                    if (rolePerm) {
+                        req.isReadOnly = true;
+                        return next();
+                    }
+                }
+            } catch (permErr) {
+                console.warn('Cross-role permission check error:', permErr.message);
+            }
+        }
         
-        return res.status(403).json({ message: "Forbidden: You do not have permission to access this resource" });
+        return res.status(403).json({
+            message: "Forbidden: You do not have permission to access this resource",
+            code: "MSG30"
+        });
     };
 };
 

@@ -7,19 +7,31 @@ import { useAuth } from '../providers/AuthProvider';
 export default function ManagerLayout({ children }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  const navItems = [
+  const allNavItems = [
     { href: '/manager', icon: 'insights', name: 'Tổng quan' },
     { href: '/manager/orders', icon: 'package_2', name: 'Khối lượng đơn' },
-    { href: '/manager/approvals', icon: 'fact_check', name: 'Sự cố & Bồi thường' },
-    { href: '/manager/fleet', icon: 'local_shipping', name: 'Đội xe' },
-    { href: '/manager/shifts', icon: 'calendar_month', name: 'Lịch ca trực' },
-    { href: '/manager/vendors', icon: 'handshake', name: 'Nhà xe & Hợp đồng' },
-    { href: '/manager/blogs', icon: 'newspaper', name: 'Tin tức' },
+    { href: '/manager/approvals', icon: 'fact_check', name: 'Sự cố & Bồi thường', permission: 'INCIDENT_MANAGE' },
+    { href: '/manager/fleet', icon: 'local_shipping', name: 'Đội xe', permission: 'FLEET_MANAGE' },
+    { href: '/manager/shifts', icon: 'calendar_month', name: 'Lịch ca trực', permission: 'DRIVER_SHIFT_MANAGE' },
+    { href: '/manager/vendors', icon: 'handshake', name: 'Nhà xe & Hợp đồng', permission: 'VENDOR_MANAGE' },
+    { href: '/manager/blogs', icon: 'newspaper', name: 'Tin tức', permission: 'NEWS_MANAGE' },
     { href: '/manager/accounts', icon: 'manage_accounts', name: 'Tài khoản nhân viên' },
+    // Menu xem chéo được cấp quyền bởi Admin (Chỉ xem - Read-only)
+    { href: '/dispatcher/orders', icon: 'assignment', name: 'Đơn hàng ĐP (Chỉ xem)', permission: 'ORDER_MANAGE', isCrossRole: true },
+    { href: '/dispatcher/trips', icon: 'alt_route', name: 'Chuyến xe ĐP (Chỉ xem)', permission: 'TRIP_MONITOR', isCrossRole: true },
   ];
+
+  const navItems = allNavItems.filter(item => {
+    if (!item.permission) return true;
+    if (item.isCrossRole) {
+      return hasPermission && hasPermission(item.permission);
+    }
+    if (Number(user?.role_id) === 1 || Number(user?.role_id) === 2) return true;
+    return hasPermission ? hasPermission(item.permission) : true;
+  });
 
   const isActive = (href) => {
     if (href === '/manager') return pathname === '/manager';

@@ -717,6 +717,19 @@ const updateRolePermissions = async (roleId, permissionIds, adminId = null, ipAd
         }
     }
 
+    // Đảm bảo quyền chủ quản mặc định của từng vai trò KHÔNG BAO GIỜ bị xóa (Bất biến)
+    const ROLE_DEFAULT_OWNER_IDS = {
+        2: [8, 9, 10, 12, 13], // Manager: Fleet, Shifts, Vendors, Incidents, News
+        3: [5, 6, 7, 11]        // Dispatcher: Orders, Assign, Trip Monitor, Contracts
+    };
+
+    const defaultOwnerIds = ROLE_DEFAULT_OWNER_IDS[numRoleId] || [];
+    for (const defId of defaultOwnerIds) {
+        if (!cleanPermIds.includes(defId)) {
+            cleanPermIds.push(defId);
+        }
+    }
+
     const result = await adminModel.updateRolePermissions(numRoleId, cleanPermIds);
 
     // Auto-audit log (UC-35)
