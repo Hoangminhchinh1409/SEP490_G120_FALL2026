@@ -80,9 +80,12 @@ export default function OrderFormCargoSection({
                     value={item.cargo_type}
                     onChange={val => updateCargoItem(item.id, 'cargo_type', val)}
                   >
-                    <Option value="GENERAL">📦 Hàng bách hóa / Kiện rời</Option>
-                    <Option value="PALLET">🪵 Hàng đóng Pallet</Option>
-                    <Option value="BULK">🚛 Hàng xao / Hàng rời (nguyên xe)</Option>
+                    <Option value="GENERAL">📦 Hàng bách hóa / Kiện thông thường</Option>
+                    <Option value="PALLET">🪵 Hàng đóng Pallet tiêu chuẩn</Option>
+                    <Option value="BULK">🚛 Hàng rời / Hàng xao (nguyên xe)</Option>
+                    <Option value="FRAGILE">🍶 Hàng điện tử dễ vỡ / Thiết bị đo</Option>
+                    <Option value="VALUABLE">🔒 Hàng giá trị cao (Niêm chì)</Option>
+                    <Option value="PERISHABLE">❄️ Hàng thực phẩm / Bảo quản lạnh</Option>
                   </Select>
                 </div>
 

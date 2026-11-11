@@ -3,7 +3,13 @@ import { Modal, Form, Input, Checkbox, Button, message, Result } from 'antd';
 import { Send, User, ShieldCheck } from 'lucide-react';
 import { orderApi } from '../../api/orderApi';
 import { dispatcherApi } from '../../api/dispatcherApi';
-import { calculateRouteEstimate, calculateAlsPricing, calculateExportPickupSuggestion, analyzeVehicleRecommendation } from '../../data/dispatcherPresets';
+import { 
+  calculateRouteEstimate, 
+  calculateAlsPricing, 
+  calculateExportPickupSuggestion, 
+  analyzeVehicleRecommendation,
+  getVehicleSpecByKey 
+} from '../../data/dispatcherPresets';
 import { ConsultationRouteSection } from './consultation/ConsultationRouteSection';
 import { ConsultationReceiverSection, ConsultationCargoSection } from './consultation/ConsultationSections';
 
@@ -34,6 +40,14 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
         const locs = await dispatcherApi.getLocations();
         if (active && Array.isArray(locs)) {
           setDbLocations(locs);
+          const firstAls = locs.find(l => l.is_als_hub || l.raw_id === 1 || l.id === 1);
+          if (firstAls) {
+            setSelectedPickupPreset(firstAls.raw_id || firstAls.id);
+            form.setFieldsValue({
+              pickup_address: firstAls.address || firstAls.name
+            });
+            setPickupCoords({ lat: firstAls.lat || 21.2187, lng: firstAls.lng || 105.8042 });
+          }
         }
       } catch (err) {
         console.error('Không tải được danh sách điểm giao nhận:', err);
@@ -43,7 +57,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
       fetchLocations();
     }
     return () => { active = false; };
-  }, [open]);
+  }, [open, form]);
 
   // Danh sách nhiều loại hàng hóa (Multiple Cargo Items)
   const [cargoItems, setCargoItems] = useState([
@@ -66,64 +80,54 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
   const handleDirectionChange = (val) => {
     setShippingDirection(val);
     form.setFieldsValue({ shipping_direction: val });
+    const defaultAls = dbLocations.find(l => l.is_als_hub || l.raw_id === 1 || l.id === 1) || {
+      name: 'Kho ALS Cảng HKQT Nội Bài',
+      address: 'Sân bay Quốc tế Nội Bài, Sóc Sơn, Hà Nội',
+      lat: 21.2187,
+      lng: 105.8042,
+      raw_id: 1
+    };
+
     if (val === 'IMPORT') {
       setPickupMode('PRESET');
-      setSelectedPickupPreset('ALS_NOI_BAI');
+      setSelectedPickupPreset(defaultAls.raw_id || defaultAls.id);
       form.setFieldsValue({
-        pickup_address: 'Kho ALS tại Sân Bay Nội Bài',
+        pickup_address: defaultAls.address || defaultAls.name,
         delivery_address: ''
       });
-      setPickupCoords({ lat: 21.2187, lng: 105.8042 });
+      setPickupCoords({ lat: defaultAls.lat || 21.2187, lng: defaultAls.lng || 105.8042 });
       setDeliveryCoords(null);
       setDeliveryMode('CUSTOM');
     } else {
       setDeliveryMode('PRESET');
-      setSelectedDeliveryPreset('ALS_NOI_BAI');
+      setSelectedDeliveryPreset(defaultAls.raw_id || defaultAls.id);
       form.setFieldsValue({
         pickup_address: '',
-        delivery_address: 'Kho ALS tại Sân Bay Nội Bài'
+        delivery_address: defaultAls.address || defaultAls.name
       });
       setPickupCoords(null);
-      setDeliveryCoords({ lat: 21.2187, lng: 105.8042 });
+      setDeliveryCoords({ lat: defaultAls.lat || 21.2187, lng: defaultAls.lng || 105.8042 });
       setPickupMode('CUSTOM');
     }
   };
 
   const handleSelectPickupPreset = (val) => {
     setSelectedPickupPreset(val);
-    if (val === 'CUSTOM') {
-      setPickupMode('CUSTOM');
-      form.setFieldsValue({ pickup_address: '' });
-      setPickupCoords(null);
-      return;
-    }
     setPickupMode('PRESET');
     const matched = dbLocations.find(l => (l.raw_id || l.id) === val);
     if (matched) {
       form.setFieldsValue({ pickup_address: matched.address || matched.name });
       setPickupCoords({ lat: matched.lat || 21.2187, lng: matched.lng || 105.8042 });
-    } else {
-      form.setFieldsValue({ pickup_address: 'Kho ALS tại Sân Bay Nội Bài' });
-      setPickupCoords({ lat: 21.2187, lng: 105.8042 });
     }
   };
 
   const handleSelectDeliveryPreset = (val) => {
     setSelectedDeliveryPreset(val);
-    if (val === 'CUSTOM') {
-      setDeliveryMode('CUSTOM');
-      form.setFieldsValue({ delivery_address: '' });
-      setDeliveryCoords(null);
-      return;
-    }
     setDeliveryMode('PRESET');
     const matched = dbLocations.find(l => (l.raw_id || l.id) === val);
     if (matched) {
       form.setFieldsValue({ delivery_address: matched.address || matched.name });
       setDeliveryCoords({ lat: matched.lat || 21.2187, lng: matched.lng || 105.8042 });
-    } else {
-      form.setFieldsValue({ delivery_address: 'Kho ALS tại Sân Bay Nội Bài' });
-      setDeliveryCoords({ lat: 21.2187, lng: 105.8042 });
     }
   };
 
@@ -135,7 +139,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
     return { distanceKm: 0, durationMins: 0 };
   }, [pickupCoords, deliveryCoords]);
 
-  // Tính tổng trọng lượng thực & trọng lượng tính cước
+  // Tính tổng trọng lượng thực & trọng lượng tính cước theo chuẩn IATA / Vận tải đường bộ
   const totals = useMemo(() => {
     let totalActual = 0;
     let totalChargeable = 0;
@@ -143,20 +147,21 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
     cargoItems.forEach(item => {
       const unitW = Number(item.weight) || 0;
-      const count = Number(item.package_count) || 1;
+      const count = Math.max(1, parseInt(item.package_count, 10) || 1);
       const totalItemWeight = unitW * count;
       totalActual += totalItemWeight;
       totalCount += count;
 
       if (item.cargo_type === 'BULK') {
+        // Hàng rời tính theo trọng lượng thực
         totalChargeable += totalItemWeight;
       } else {
         const l = Number(item.length_cm) || 0;
         const wid = Number(item.width_cm) || 0;
         const h = Number(item.height_cm) || 0;
-        const unitVol = (l * wid * h) / 5000;
-        const totalItemVolWeight = unitVol * count;
-        totalChargeable += Math.max(totalItemWeight, totalItemVolWeight);
+        // Quy đổi thể tích chuẩn IATA / Vận tải đường bộ hàng không: 1 m3 = 200 kg <=> (D x R x C cm) / 5000
+        const itemVolWeight = ((l * wid * h) / 5000) * count;
+        totalChargeable += Math.max(totalItemWeight, itemVolWeight);
       }
     });
 
@@ -266,6 +271,27 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
           message.error(`Vui lòng nhập trọng lượng hợp lệ cho mặt hàng #${i + 1}`);
           return;
         }
+      }
+
+      // Validate tải trọng xe: Trọng lượng hàng không được vượt quá tải trọng tối đa của loại xe đã chọn
+      const selectedVehicleKey = formValues.vehicle_type_required || 'TRUCK_2.5T';
+      const vehicleSpec = getVehicleSpecByKey(selectedVehicleKey);
+      const effectiveWeight = Math.max(parseFloat(totals.actualWeight) || 0, parseFloat(totals.chargeableWeight) || 0);
+
+      if (vehicleSpec && effectiveWeight > vehicleSpec.maxPayloadKg) {
+        const recommendedName = vehicleRecommendation?.recommendedSpec?.label || 'loại xe có tải trọng lớn hơn';
+        message.error(
+          `Lô hàng (${effectiveWeight.toLocaleString('vi-VN')} kg) vượt quá tải trọng tối đa của ${vehicleSpec.label} (${vehicleSpec.maxPayloadKg.toLocaleString('vi-VN')} kg). Vui lòng chọn ${recommendedName} phù hợp hơn!`
+        );
+        return;
+      }
+
+      // Validate kích thước lòng thùng & thể tích: Không cho phép chọn loại xe quá nhỏ không thể xếp vừa toàn bộ kiện hàng
+      if (vehicleRecommendation && vehicleRecommendation.status === 'UNDER_CAPACITY') {
+        message.error(
+          `Loại xe đã chọn (${vehicleRecommendation.customerSpec.label}) không đủ không gian chứa toàn bộ các kiện hàng. Vui lòng chọn ${vehicleRecommendation.recommendedSpec.label} để đảm bảo xếp đủ hàng!`
+        );
+        return;
       }
 
       setSubmitting(true);

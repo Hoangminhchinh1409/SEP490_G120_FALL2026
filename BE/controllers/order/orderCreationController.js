@@ -3,6 +3,30 @@ const { getClientIp } = require('../../utils/ipHelper');
 const supabase = require('../../config/supabase');
 const { generateTrackingToken, getOrCreateLocation, saveOrderMeta, getNextDispatcherForWebOrder } = require('../../services/orderHelperService');
 
+// Bảng thông số tải trọng xe chuẩn ALS
+const VEHICLE_MAX_PAYLOAD = {
+  'TRUCK_1.25T': 1250,
+  'TRUCK_2.5T': 2500,
+  'TRUCK_3.5T': 3500,
+  'TRUCK_5T': 5000,
+  'CONTAINER_20': 12000,
+  'CONTAINER_40': 25000
+};
+
+const getVehicleMaxPayload = (vKey) => {
+  if (!vKey) return 2500;
+  const normalized = String(vKey).toUpperCase().trim();
+  if (VEHICLE_MAX_PAYLOAD[normalized]) return VEHICLE_MAX_PAYLOAD[normalized];
+  if (VEHICLE_MAX_PAYLOAD[`TRUCK_${normalized}`]) return VEHICLE_MAX_PAYLOAD[`TRUCK_${normalized}`];
+  if (normalized.includes('1.25')) return 1250;
+  if (normalized.includes('2.5')) return 2500;
+  if (normalized.includes('3.5')) return 3500;
+  if (normalized.includes('5')) return 5000;
+  if (normalized.includes('20')) return 12000;
+  if (normalized.includes('40')) return 25000;
+  return 2500;
+};
+
 // 2. KHÁCH HÀNG GỬI YÊU CẦU TƯ VẤN TỪ HOMEPAGE
 const createConsultationOrder = async (req, res) => {
   try {
@@ -142,9 +166,18 @@ const createConsultationOrder = async (req, res) => {
       l = isBulk ? 1 : Math.max(1, parseFloat(length_cm) || 120);
       w = isBulk ? 1 : Math.max(1, parseFloat(width_cm) || 100);
       h = isBulk ? 1 : Math.max(1, parseFloat(height_cm) || 150);
-      actualWeight = actualWeight || 1000;
+      actualWeight = actualWeight || 0;
       const volWeight = isBulk ? 0 : ((l * w * h) / 5000);
       chargeableWeight = isBulk ? actualWeight : Math.max(actualWeight, volWeight);
+    }
+
+    // Validate quá tải trọng Backend cho đơn tư vấn
+    const effectiveWeightConsultation = Math.max(actualWeight, chargeableWeight);
+    const maxPayloadConsultation = getVehicleMaxPayload(vehicle_type_required);
+    if (effectiveWeightConsultation > maxPayloadConsultation) {
+      return res.status(400).json({
+        message: `Lô hàng nặng ${effectiveWeightConsultation.toLocaleString('vi-VN')} kg vượt quá tải trọng tối đa của loại xe ${vehicle_type_required || 'đã chọn'} (${maxPayloadConsultation.toLocaleString('vi-VN')} kg). Vui lòng chọn xe có tải trọng lớn hơn!`
+      });
     }
 
     const randomCode = `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -380,8 +413,17 @@ const createDirectOrder = async (req, res) => {
     const l = isBulk ? 1 : Math.max(1, parseFloat(length_cm) || 120);
     const w = isBulk ? 1 : Math.max(1, parseFloat(width_cm) || 100);
     const h = isBulk ? 1 : Math.max(1, parseFloat(height_cm) || 150);
-    const actualWeight = parseFloat(weight_kg) || 1000;
+    const actualWeight = parseFloat(weight_kg) || 0;
     const finalChargeable = isBulk ? actualWeight : (parseFloat(chargeable_weight) || actualWeight);
+
+    // Validate quá tải trọng Backend
+    const effectiveWeight = Math.max(actualWeight, finalChargeable);
+    const maxPayload = getVehicleMaxPayload(vehicle_type_required);
+    if (effectiveWeight > maxPayload) {
+      return res.status(400).json({
+        message: `Lô hàng nặng ${effectiveWeight.toLocaleString('vi-VN')} kg vượt quá tải trọng tối đa của loại xe ${vehicle_type_required || 'đã chọn'} (${maxPayload.toLocaleString('vi-VN')} kg). Vui lòng chọn xe có tải trọng lớn hơn!`
+      });
+    }
 
     const directMeta = {
       shipping_direction: req.body.shipping_direction || 'IMPORT',

@@ -54,15 +54,23 @@ export function ConsultationReceiverSection({
         {parseFloat(totals.actualWeight) > 0 && (
           <div className={`mt-2.5 p-2.5 rounded-lg border text-xs flex flex-wrap items-center justify-between gap-2 ${
             vehicleRecommendation.status === 'UNDER_CAPACITY'
-              ? 'bg-amber-50 border-amber-300 text-amber-900'
+              ? 'bg-red-50 border-red-300 text-red-950 shadow-xs'
               : 'bg-white border-emerald-200 text-emerald-900'
           }`}>
-            <div>
-              <span className="font-bold">💡 Gợi ý xếp xe theo hàng hóa: </span>
-              <b className="text-indigo-700">{vehicleRecommendation.recommendedSpec.label}</b>{' '}
-              <span className="text-gray-500">({vehicleRecommendation.recommendedSpec.boxDimText}, tải tối đa {vehicleRecommendation.recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg)</span>
+            <div className="flex-1 min-w-[240px]">
+              <div className="flex items-center gap-1.5 font-bold">
+                {vehicleRecommendation.status === 'UNDER_CAPACITY' ? (
+                  <span className="text-red-600 flex items-center gap-1">❌ CẢNH BÁO VƯỢT TẢI TRỌNG XE:</span>
+                ) : (
+                  <span>💡 Gợi ý xếp xe theo hàng hóa:</span>
+                )}
+                <b className="text-indigo-700">{vehicleRecommendation.recommendedSpec.label}</b>
+              </div>
+              <div className="text-[11px] text-gray-600 mt-0.5">
+                Quy cách thùng: {vehicleRecommendation.recommendedSpec.boxDimText} • Tải tối đa: <b>{vehicleRecommendation.recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg</b>
+              </div>
               {vehicleRecommendation.status === 'UNDER_CAPACITY' && (
-                <div className="text-[11px] text-amber-800 mt-0.5">
+                <div className="text-[11px] text-red-700 font-semibold mt-1 bg-red-100/60 p-1.5 rounded">
                   ⚠️ {vehicleRecommendation.reason}
                 </div>
               )}
@@ -71,11 +79,11 @@ export function ConsultationReceiverSection({
               <Button
                 size="small"
                 type="primary"
-                ghost
-                className="text-[11px] font-semibold border-indigo-500 text-indigo-700"
+                danger={vehicleRecommendation.status === 'UNDER_CAPACITY'}
+                className="text-xs font-semibold h-8"
                 onClick={() => form.setFieldsValue({ vehicle_type_required: vehicleRecommendation.recommendedVehicleKey })}
               >
-                Chọn {vehicleRecommendation.recommendedSpec.shortLabel}
+                Đổi sang {vehicleRecommendation.recommendedSpec.shortLabel}
               </Button>
             )}
           </div>
@@ -161,12 +169,12 @@ export function ConsultationCargoSection({
                     className="text-xs w-full"
                     allowClear
                   >
-                    <Option value="GENERAL">Hàng bách hóa thông thường</Option>
-                    <Option value="PALLET">Hàng Pallet (Đo kích thước)</Option>
-                    <Option value="BULK">Hàng rời (Tính theo tải trọng)</Option>
-                    <Option value="FRAGILE">Hàng điện tử dễ vỡ</Option>
-                    <Option value="VALUABLE">Hàng giá trị cao (Niêm chì)</Option>
-                    <Option value="OTHER">Khác</Option>
+                    <Option value="GENERAL">📦 Hàng bách hóa / Kiện thông thường</Option>
+                    <Option value="PALLET">🪵 Hàng đóng Pallet tiêu chuẩn</Option>
+                    <Option value="BULK">🚛 Hàng rời / Hàng xao (nguyên xe)</Option>
+                    <Option value="FRAGILE">🍶 Hàng điện tử dễ vỡ / Thiết bị đo</Option>
+                    <Option value="VALUABLE">🔒 Hàng giá trị cao (Niêm chì)</Option>
+                    <Option value="PERISHABLE">❄️ Hàng thực phẩm / Bảo quản lạnh</Option>
                   </Select>
                 </div>
 

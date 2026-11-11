@@ -96,18 +96,14 @@ export default function OrderFormRouteSection({
                   className="w-full text-xs"
                   value={selectedPickupPreset}
                   onChange={handleSelectPickupPreset}
-                  placeholder="Chọn kho lấy hàng..."
+                  placeholder="Chọn kho ALS lấy hàng..."
                 >
-                  <Select.OptGroup label="Kho bãi có sẵn trong hệ thống">
-                    <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài</Option>
-                    {dbLocations.filter(loc => !loc.name?.toLowerCase().includes('sân bay nội bài')).map(loc => (
+                  <Select.OptGroup label="Hệ thống Kho &amp; Ga hàng không kéo dài ALS">
+                    {dbLocations.filter(loc => loc.is_als_hub || loc.name?.toUpperCase().includes('ALS') || !loc.customer_id).map(loc => (
                       <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
-                        📍 {loc.name} {loc.province ? `(${loc.province})` : ''}
+                        🏢 {loc.name} {loc.province ? `(${loc.province})` : ''}
                       </Option>
                     ))}
-                  </Select.OptGroup>
-                  <Select.OptGroup label="Kho khác bên ngoài">
-                    <Option value="CUSTOM">➕ Khác (Nhập địa chỉ ngoài)</Option>
                   </Select.OptGroup>
                 </Select>
 
@@ -260,18 +256,14 @@ export default function OrderFormRouteSection({
                   className="w-full text-xs"
                   value={selectedDeliveryPreset}
                   onChange={handleSelectDeliveryPreset}
-                  placeholder="Chọn kho giao hàng..."
+                  placeholder="Chọn kho ALS giao hàng..."
                 >
-                  <Select.OptGroup label="Kho bãi có sẵn trong hệ thống">
-                    <Option value="ALS_NOI_BAI">🏢 Kho ALS tại Sân Bay Nội Bài</Option>
-                    {dbLocations.filter(loc => !loc.name?.toLowerCase().includes('sân bay nội bài')).map(loc => (
+                  <Select.OptGroup label="Hệ thống Kho &amp; Ga hàng không kéo dài ALS">
+                    {dbLocations.filter(loc => loc.is_als_hub || loc.name?.toUpperCase().includes('ALS') || !loc.customer_id).map(loc => (
                       <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
-                        📍 {loc.name} {loc.province ? `(${loc.province})` : ''}
+                        🏢 {loc.name} {loc.province ? `(${loc.province})` : ''}
                       </Option>
                     ))}
-                  </Select.OptGroup>
-                  <Select.OptGroup label="Kho khác bên ngoài">
-                    <Option value="CUSTOM">➕ Khác (Nhập địa chỉ ngoài)</Option>
                   </Select.OptGroup>
                 </Select>
 

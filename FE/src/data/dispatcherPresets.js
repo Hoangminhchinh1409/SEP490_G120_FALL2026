@@ -1,3 +1,5 @@
+import { calculate3DLoadPlan } from '../utils/loadPlanAlgorithm.js';
+
 // Các hàm tính toán cước và phân loại chứng từ vận tải
 export const calculateRouteEstimate = (pLat, pLng, dLat, dLng) => {
   if (!pLat || !pLng || !dLat || !dLng) {
@@ -592,14 +594,41 @@ export const analyzeVehicleRecommendation = ({
 
   totalVolM3 = Number(totalVolM3.toFixed(2));
 
-  // Tìm xe nhỏ nhất trong đội xe chứa vừa cả tải trọng, kích thước bao và thể tích
+  // Tìm xe nhỏ nhất trong đội xe chứa vừa cả tải trọng, kích thước bao, thể tích và mô phỏng xếp 3D (không bị tràn)
+  const simulatedOrders = [{
+    items: (Array.isArray(items) && items.length > 0) ? items : [{
+      cargo_name: 'Hàng hóa',
+      package_count: Math.max(1, parseInt(package_count, 10) || 1),
+      package_unit: 'Kiện',
+      length_cm: maxL,
+      width_cm: maxW,
+      height_cm: maxH,
+      weight: effectiveWeight / Math.max(1, parseInt(package_count, 10) || 1)
+    }]
+  }];
+
   let recommendedSpec = VEHICLE_SPECS.find(spec => {
     const fitsWeight = spec.maxPayloadKg >= effectiveWeight;
     const fitsDim =
       (spec.length_cm >= maxL && spec.width_cm >= maxW && spec.height_cm >= maxH) ||
       (spec.length_cm >= maxW && spec.width_cm >= maxL && spec.height_cm >= maxH);
     const fitsVol = totalVolM3 === 0 || spec.volumeM3 * 0.9 >= totalVolM3;
-    return fitsWeight && fitsDim && fitsVol;
+    if (!fitsWeight || !fitsDim || !fitsVol) return false;
+
+    // Chạy mô phỏng xếp 3D để đảm bảo các kiện hàng khi đặt cạnh nhau trong thùng xe không bị tràn thể tích
+    if (typeof calculate3DLoadPlan === 'function') {
+      const simTruck = {
+        length_cm: spec.length_cm,
+        width_cm: spec.width_cm,
+        height_cm: spec.height_cm,
+        max_payload: spec.maxPayloadKg
+      };
+      const plan = calculate3DLoadPlan(simulatedOrders, simTruck);
+      if (plan && plan.overflowBlocks && plan.overflowBlocks.length > 0) {
+        return false;
+      }
+    }
+    return true;
   });
 
   if (!recommendedSpec) {
@@ -624,6 +653,9 @@ export const analyzeVehicleRecommendation = ({
     }
     if (totalVolM3 > customerSpec.volumeM3 * 0.9) {
       reasons.push(`thể tích hàng (~${totalVolM3} m³) vượt dung tích xếp an toàn của ${customerSpec.shortLabel} (${customerSpec.volumeM3} m³)`);
+    }
+    if (reasons.length === 0) {
+      reasons.push(`không gian lòng thùng ${customerSpec.shortLabel} không đủ để xếp đồng thời các kiện hàng cạnh nhau`);
     }
     reason = `Khách chọn ${customerSpec.label} nhưng ${reasons.join(' và ') || 'chưa đủ dung tích'}. Hệ thống đề xuất nâng lên ${recommendedSpec.label} (${recommendedSpec.boxDimText}, tải ${recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) và trao đổi chốt lại với khách.`;
   } else if (custIdx > recIdx && effectiveWeight > 0) {

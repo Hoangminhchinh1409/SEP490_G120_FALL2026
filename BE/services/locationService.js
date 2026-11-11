@@ -20,6 +20,11 @@ const formatLocation = (loc) => {
                       (loc.province_code === 'BN' ? 'Bắc Ninh' :
                       (loc.province_code === 'TN' ? 'Thái Nguyên' : 'Khác'))));
 
+  const isAlsHub = !loc.customer_id && (
+    loc.type === 'Warehouse' || loc.type === 'Company location' || loc.type === 'Customs Checkpoint' ||
+    loc.name?.toUpperCase().includes('ALS') || loc.name?.includes('Cửa khẩu')
+  );
+
   return {
     id: `LOC-${loc.id.toString().padStart(3, '0')}`,
     raw_id: loc.id,
@@ -27,6 +32,7 @@ const formatLocation = (loc) => {
     type: displayType,
     customer: loc.customer?.company_name || 'Khách hàng',
     customer_id: loc.customer_id,
+    is_als_hub: Boolean(isAlsHub),
     address: loc.address || '',
     province: provinceVal,
     lat: latVal,
