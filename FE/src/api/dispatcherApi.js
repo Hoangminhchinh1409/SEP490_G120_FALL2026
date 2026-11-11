@@ -252,6 +252,32 @@ export const dispatcherApi = {
     }
   },
 
+  getLeaveReassignments: async () => {
+    try {
+      const data = await fetchWithoutAuth('/dispatcher/leave-reassignments');
+      return {
+        reassignments: data?.reassignments || [],
+        availableDrivers: data?.availableDrivers || []
+      };
+    } catch (error) {
+      console.error('dispatcherApi.getLeaveReassignments error:', error);
+      throw error;
+    }
+  },
+
+  reassignTripDriver: async (tripId, { new_driver_id, reason }) => {
+    try {
+      const data = await fetchWithoutAuth(`/dispatcher/trips/${tripId}/reassign-driver`, {
+        method: 'PATCH',
+        body: JSON.stringify({ new_driver_id, reason })
+      });
+      return data;
+    } catch (error) {
+      console.error('dispatcherApi.reassignTripDriver error:', error);
+      throw error;
+    }
+  },
+
   // --- 5. Dashboard Stats ---
   getDashboardStats: async () => {
     try {

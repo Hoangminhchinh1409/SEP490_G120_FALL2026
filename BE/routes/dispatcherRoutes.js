@@ -39,6 +39,8 @@ router.post('/trips', tripController.createTrip);
 router.patch('/trips/:id/status', tripController.updateTripStatus);
 router.get('/trips/:id/replay', tripController.getTripReplay);
 router.get('/routing/road-route', tripController.calculateRoadRoute);
+router.get('/leave-reassignments', tripController.getLeaveReassignments);
+router.patch('/trips/:id/reassign-driver', tripController.reassignTripDriver);
 
 // 5. Incidents
 router.get('/incidents', incidentController.getAllIncidents);

@@ -247,6 +247,26 @@ const getSyncLogDetail = async (req, res) => {
   }
 };
 
+const getMyLeaveRequests = async (req, res) => {
+  try {
+    const result = await driverService.getMyLeaveRequests(req.user.id);
+    return res.json(result);
+  } catch (error) {
+    console.error("getMyLeaveRequests error:", error);
+    return res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
+const submitLeaveRequest = async (req, res) => {
+  try {
+    const result = await driverService.submitSuddenLeaveRequest(req.user.id, req.body);
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error("submitLeaveRequest error:", error);
+    return res.status(error.statusCode || 400).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getMyProfile,
   getActiveTrip,
@@ -262,6 +282,8 @@ module.exports = {
   getMyShifts,
   registerShift,
   cancelShift,
+  getMyLeaveRequests,
+  submitLeaveRequest,
   getDriverNotifications,
   markNotificationRead,
   markAllNotificationsRead,

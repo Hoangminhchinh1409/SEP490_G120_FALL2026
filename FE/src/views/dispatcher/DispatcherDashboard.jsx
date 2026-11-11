@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { Table, Tag, Button, Row, Col, Space } from 'antd';
 import { Users, Plus, DollarSign, Package, ShoppingCart, CloudDownload, RefreshCcw, Activity, Globe, Bell, RefreshCw } from 'lucide-react';
 import { orderApi } from '../../api/orderApi';
@@ -24,15 +25,19 @@ const DispatcherDashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [data, setData] = useState([]);
   const [dbStats, setDbStats] = useState(null);
+  const [leaveReassignments, setLeaveReassignments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const [ordersRes, statsRes] = await Promise.all([
+      const [ordersRes, statsRes, leaveReassignRes] = await Promise.all([
         orderApi.getAllOrders(),
-        dispatcherApi.getDashboardStats()
+        dispatcherApi.getDashboardStats(),
+        dispatcherApi.getLeaveReassignments().catch(() => ({ reassignments: [] }))
       ]);
+      setLeaveReassignments(leaveReassignRes?.reassignments || []);
 
       const currentUserId = user?.id ? Number(user.id) : null;
       const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
@@ -64,12 +69,14 @@ const DispatcherDashboard = () => {
 
     const loadDashboardData = async () => {
       try {
-        const [ordersRes, statsRes] = await Promise.all([
+        const [ordersRes, statsRes, leaveReassignRes] = await Promise.all([
           orderApi.getAllOrders(),
-          dispatcherApi.getDashboardStats()
+          dispatcherApi.getDashboardStats(),
+          dispatcherApi.getLeaveReassignments().catch(() => ({ reassignments: [] }))
         ]);
 
         if (active) {
+          setLeaveReassignments(leaveReassignRes?.reassignments || []);
           const currentUserId = user?.id ? Number(user.id) : null;
           const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
 
@@ -376,6 +383,25 @@ const DispatcherDashboard = () => {
           </Space>
         </div>
 
+        {leaveReassignments.length > 0 && (
+          <div className="mb-5 p-4 rounded-xl bg-orange-50 border border-orange-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs text-orange-950">
+              <div className="font-bold text-sm">
+                ⚠️ Cần đổi tài xế (Re-assign): Có {leaveReassignments.length} chuyến xe có tài xế được Quản lý duyệt nghỉ đột xuất
+              </div>
+              <div className="text-orange-800 mt-0.5">
+                Chuyến: {leaveReassignments.map((r) => r.trip_code).join(', ')}
+              </div>
+            </div>
+            <Link
+              href="/dispatcher/trips"
+              className="shrink-0 inline-flex items-center px-3.5 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs no-underline"
+            >
+              Đi tới Đổi tài xế &rarr;
+            </Link>
+          </div>
+        )}
+
         <Row gutter={[24, 24]}>
           {/* --- LEFT COLUMN --- */}
           <Col xs={24} xl={12} className="space-y-6">
@@ -435,7 +461,26 @@ const DispatcherDashboard = () => {
             </div>
 
             {/* 2. Support Bar Charts (Row of 2) */}
-            <Row gutter={[24, 24]}>
+            {leaveReassignments.length > 0 && (
+          <div className="mb-5 p-4 rounded-xl bg-orange-50 border border-orange-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs text-orange-950">
+              <div className="font-bold text-sm">
+                ⚠️ Cần đổi tài xế (Re-assign): Có {leaveReassignments.length} chuyến xe có tài xế được Quản lý duyệt nghỉ đột xuất
+              </div>
+              <div className="text-orange-800 mt-0.5">
+                Chuyến: {leaveReassignments.map((r) => r.trip_code).join(', ')}
+              </div>
+            </div>
+            <Link
+              href="/dispatcher/trips"
+              className="shrink-0 inline-flex items-center px-3.5 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs no-underline"
+            >
+              Đi tới Đổi tài xế &rarr;
+            </Link>
+          </div>
+        )}
+
+        <Row gutter={[24, 24]}>
               <Col xs={24} sm={12}>
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
                   <div className="p-6 pb-2">
@@ -528,7 +573,26 @@ const DispatcherDashboard = () => {
             </div>
 
             {/* 2. KPI Cards (2x2) */}
-            <Row gutter={[24, 24]}>
+            {leaveReassignments.length > 0 && (
+          <div className="mb-5 p-4 rounded-xl bg-orange-50 border border-orange-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs text-orange-950">
+              <div className="font-bold text-sm">
+                ⚠️ Cần đổi tài xế (Re-assign): Có {leaveReassignments.length} chuyến xe có tài xế được Quản lý duyệt nghỉ đột xuất
+              </div>
+              <div className="text-orange-800 mt-0.5">
+                Chuyến: {leaveReassignments.map((r) => r.trip_code).join(', ')}
+              </div>
+            </div>
+            <Link
+              href="/dispatcher/trips"
+              className="shrink-0 inline-flex items-center px-3.5 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs no-underline"
+            >
+              Đi tới Đổi tài xế &rarr;
+            </Link>
+          </div>
+        )}
+
+        <Row gutter={[24, 24]}>
               <Col span={12}>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">
                   <div className="flex justify-between items-start mb-2">

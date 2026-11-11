@@ -499,6 +499,31 @@ export const managerApi = {
     }
   },
 
+  // 10. Quản lý Đơn báo nghỉ đột xuất từ Tài xế
+  getLeaveRequests: async (status = 'ALL') => {
+    try {
+      const qs = status && status !== 'ALL' ? `?status=${encodeURIComponent(status)}` : '';
+      const data = await fetchWithAuth(`/manager/leave-requests${qs}`);
+      return data.leaveRequests || [];
+    } catch (error) {
+      console.error('managerApi.getLeaveRequests Error:', error);
+      throw error;
+    }
+  },
+
+  decideLeaveRequest: async (id, { decision, comment }) => {
+    try {
+      const data = await fetchWithAuth(`/manager/leave-requests/${id}/decide`, {
+        method: 'PATCH',
+        body: JSON.stringify({ decision, comment })
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.decideLeaveRequest Error:', error);
+      throw error;
+    }
+  },
+
   // 9. Quản lý Ca trực Tài xế
   autoAssignNextWeekShifts: async (force = true) => {
     try {

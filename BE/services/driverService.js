@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const driverModel = require("../models/driverModel");
+const leaveModel = require("../models/leaveModel");
 const supabase = require("../config/supabase");
 
 // Helper chuẩn hóa điểm lấy hàng (Pickup) hay điểm giao hàng (Drop-off)
@@ -1355,6 +1356,114 @@ const getSyncLogDetail = async (userId, logId) => {
   return data;
 };
 
+// ==========================================
+// 11. SUDDEN LEAVE REQUESTS (BÁO NGHỈ ĐỘT XUẤT)
+// ==========================================
+
+const getMyLeaveRequests = async (userId) => {
+  const profile = await getMyProfile(userId);
+  const leaveRequests = await leaveModel.getLeaveRequests({ driverProfileId: profile.id });
+  const todayStr = leaveModel.getTodayGMT7Str();
+  return {
+    leaveRequests,
+    todayStr,
+    tomorrowStr: addDaysStr(todayStr, 1),
+  };
+};
+
+const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}) => {
+  const profile = await getMyProfile(userId);
+  const rawDates = Array.isArray(dates) ? dates : [];
+  const cleanDates = [...new Set(rawDates.map((d) => String(d).split("T")[0].trim()).filter(Boolean))].sort();
+
+  if (cleanDates.length === 0) {
+    const err = new Error("Vui lòng chọn ít nhất 1 ngày sắp tới muốn xin nghỉ.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const todayStr = leaveModel.getTodayGMT7Str();
+  for (const dStr of cleanDates) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
+      const err = new Error(`Định dạng ngày không hợp lệ (${dStr}).`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (dStr <= todayStr) {
+      const err = new Error(
+        `Không thể chọn ngày hôm nay (${todayStr}) hoặc ngày đã qua. Tài xế chỉ được báo nghỉ cho các ngày từ ngày mai trở đi.`
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  const cleanReason = String(reason || "").trim();
+  if (!cleanReason) {
+    const err = new Error("Vui lòng nhập lý do xin nghỉ đột xuất.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const existing = await leaveModel.getLeaveRequests({ driverProfileId: profile.id });
+  const conflictDates = [];
+  existing.forEach((reqItem) => {
+    if (reqItem.status === "PENDING" || reqItem.status === "APPROVED") {
+      (reqItem.leave_dates || []).forEach((d) => {
+        if (cleanDates.includes(d)) conflictDates.push(d);
+      });
+    }
+  });
+  if (conflictDates.length > 0) {
+    const err = new Error(
+      `Ngày ${[...new Set(conflictDates)].join(", ")} đã có đơn xin nghỉ đang chờ duyệt hoặc đã được duyệt.`
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const affectedTrips = await leaveModel.getDriverAffectedTripsByDates(profile.id, cleanDates);
+
+  const created = await leaveModel.createLeaveRequest({
+    userId,
+    driverProfileId: profile.id,
+    dates: cleanDates,
+    reason: cleanReason,
+    affectedTrips,
+  });
+
+  const driverName = profile.user?.full_name || profile.user?.username || `Tài xế #${profile.id}`;
+  const dateDisplay = cleanDates.map((d) => d.split("-").reverse().join("/")).join(", ");
+  const tripSummaryMsg =
+    affectedTrips.length > 0
+      ? ` Có ${affectedTrips.length} chuyến xe bị ảnh hưởng (${affectedTrips.map((t) => t.trip_code).join(", ")}) cần Điều phối viên đổi tài sau khi duyệt.`
+      : " Không có chuyến xe nào đang giao trong các ngày này.";
+
+  try {
+    const managers = await leaveModel.getActiveUsersByRoles([2]);
+    for (const mgr of managers) {
+      await driverModel.createSystemNotification({
+        userAccountId: mgr.id,
+        targetType: "SHIFT",
+        targetId: created?.id || null,
+        message: `Tài xế ${driverName} gửi đơn báo nghỉ đột xuất các ngày ${dateDisplay}. Lý do: "${cleanReason}".${tripSummaryMsg}`,
+      });
+    }
+  } catch (notifErr) {
+    console.warn("Notify manager on leave request warning:", notifErr.message);
+  }
+
+  return {
+    success: true,
+    leaveRequest: created,
+    affectedTrips,
+    message:
+      affectedTrips.length > 0
+        ? `Đã gửi đơn báo nghỉ đột xuất (${cleanDates.length} ngày). ${affectedTrips.length} chuyến xe bị ảnh hưởng sẽ được Điều phối viên đổi tài xế sau khi Quản lý duyệt.`
+        : `Đã gửi đơn báo nghỉ đột xuất (${cleanDates.length} ngày) tới Quản lý chờ phê duyệt.`,
+  };
+};
+
 module.exports = {
   getMyProfile,
   getActiveTrip,
@@ -1371,6 +1480,8 @@ module.exports = {
   getMyShifts,
   registerShift,
   cancelShift,
+  getMyLeaveRequests,
+  submitSuddenLeaveRequest,
   getDriverNotifications,
   markNotificationRead,
   markAllNotificationsRead,
