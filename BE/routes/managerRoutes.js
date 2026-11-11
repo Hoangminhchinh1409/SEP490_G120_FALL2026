@@ -42,6 +42,8 @@ router.put('/shifts/:id', fleetController.updateShift);
 router.patch('/shifts/:id/approve', fleetController.approveShift);
 router.patch('/shifts/:id/reject', fleetController.rejectShift);
 router.delete('/shifts/:id', fleetController.deleteShift);
+router.get('/leave-requests', fleetController.getLeaveRequests);
+router.patch('/leave-requests/:id/decide', fleetController.decideLeaveRequest);
 
 // NHÓM 2: MANAGER OVERSIGHT — WORKLOAD, REASSIGN, DASHBOARD & DRIVER PERFORMANCE
 router.get('/orders', oversightController.getOrderWorkload);

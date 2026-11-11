@@ -16,13 +16,37 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/vi";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { driverApi } from "../../api/driverApi";
 
 dayjs.extend(relativeTime);
 dayjs.locale("vi");
 
+const darkModalStyles = {
+  content: {
+    backgroundColor: "#0f172a",
+    border: "1px solid #334155",
+    borderRadius: "1.5rem",
+    color: "#f8fafc",
+    padding: "1.25rem",
+  },
+  header: {
+    backgroundColor: "transparent",
+    borderBottom: "1px solid #1e293b",
+    paddingBottom: "0.75rem",
+    marginBottom: "0.75rem",
+  },
+};
+
+const getTripNotifHref = (notif) => {
+  if (notif?.target_id) return `/driver/trips?tripId=${notif.target_id}`;
+  const matchedCode = String(notif?.message || "").match(/TRIP-[A-Z0-9-]+/i)?.[0];
+  return matchedCode ? `/driver/trips?tripCode=${encodeURIComponent(matchedCode)}` : "/driver/trips";
+};
+
 export default function DriverNotificationsPage() {
   const { message } = App.useApp();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [markingAll, setMarkingAll] = useState(false);
@@ -166,6 +190,7 @@ export default function DriverNotificationsPage() {
                 onClick={() => {
                   if (!isRead) handleMarkRead(notif.id);
                   if (isSyncNotif) handleOpenSyncModal(notif);
+                  else if (notif.target_type === "TRIP") router.push(getTripNotifHref(notif));
                 }}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${
                   isRead
@@ -255,7 +280,11 @@ export default function DriverNotificationsPage() {
                       </span>
                       {notif.target_type === "TRIP" && (
                         <Link
-                          href="/driver"
+                          href={getTripNotifHref(notif)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isRead) handleMarkRead(notif.id);
+                          }}
                           className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"
                         >
                           Xem chuyến <ArrowRight size={12} />
@@ -286,12 +315,13 @@ export default function DriverNotificationsPage() {
       <Modal
         open={syncModalOpen}
         onCancel={() => setSyncModalOpen(false)}
+        styles={darkModalStyles}
         footer={[
           <Button
             key="close"
             type="primary"
             onClick={() => setSyncModalOpen(false)}
-            className="bg-blue-600 hover:bg-blue-500 rounded-xl font-bold px-5"
+            className="!bg-blue-600 hover:!bg-blue-500 !border-none !rounded-xl !font-bold !px-5"
           >
             Đóng
           </Button>
@@ -300,8 +330,8 @@ export default function DriverNotificationsPage() {
         width="95%"
         style={{ maxWidth: 520 }}
         title={
-          <div className="flex items-center gap-2 text-slate-800 font-bold text-base">
-            <RefreshCw size={18} className="text-cyan-600" />
+          <div className="flex items-center gap-2 text-white font-bold text-base">
+            <RefreshCw size={18} className="text-cyan-400" />
             <span>Chi tiết phiên đồng bộ ngoại tuyến</span>
           </div>
         }
@@ -309,39 +339,39 @@ export default function DriverNotificationsPage() {
         {loadingSyncDetail ? (
           <div className="py-12 text-center">
             <Spin size="large" />
-            <p className="text-xs text-slate-500 mt-2">Đang tải dữ liệu kiểm tra từ máy chủ...</p>
+            <p className="text-xs text-slate-400 mt-2">Đang tải dữ liệu kiểm tra từ máy chủ...</p>
           </div>
         ) : selectedSyncLog ? (
           <div className="py-2 text-xs space-y-3 max-h-[65vh] overflow-y-auto pr-1">
             {/* Tóm tắt */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
+            <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-700">Trạng thái đồng bộ:</span>
+                <span className="font-bold text-slate-200">Trạng thái đồng bộ:</span>
                 <span
-                  className={`px-2 py-0.5 rounded-full font-black text-[11px] ${
+                  className={`px-2.5 py-0.5 rounded-full font-black text-[11px] ${
                     (selectedSyncLog.changes?.failedCount || 0) === 0
-                      ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                      : "bg-amber-100 text-amber-700 border border-amber-300"
+                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/40"
+                      : "bg-amber-500/15 text-amber-300 border border-amber-500/40"
                   }`}
                 >
                   {(selectedSyncLog.changes?.failedCount || 0) === 0 ? "Thành công 100%" : "Có thao tác cần lưu ý"}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-slate-600">
+              <div className="flex items-center justify-between text-slate-300">
                 <span>Đã ghi nhận vào Database:</span>
-                <span className="font-bold text-emerald-600">
+                <span className="font-bold text-emerald-400">
                   {selectedSyncLog.changes?.syncedCount || 0} / {selectedSyncLog.changes?.totalCount || 0} thao tác
                 </span>
               </div>
               {selectedSyncLog.changes?.failedCount > 0 && (
-                <div className="flex items-center justify-between text-rose-600">
+                <div className="flex items-center justify-between text-rose-400">
                   <span>Thao tác thất bại / Bị từ chối:</span>
                   <span className="font-bold">{selectedSyncLog.changes?.failedCount}</span>
                 </div>
               )}
-              <div className="flex items-center justify-between text-slate-500 text-[11px] pt-1 border-t border-slate-200">
+              <div className="flex items-center justify-between text-slate-400 text-[11px] pt-2 border-t border-slate-700/80">
                 <span>Thời gian máy chủ xác nhận:</span>
-                <span className="font-medium text-slate-700">
+                <span className="font-medium text-slate-200 font-mono">
                   {dayjs(selectedSyncLog.created_time).format("HH:mm:ss - DD/MM/YYYY")}
                 </span>
               </div>
@@ -349,7 +379,7 @@ export default function DriverNotificationsPage() {
 
             {/* Danh sách chi tiết các hành động được ghi nhận */}
             <div>
-              <div className="text-xs font-bold text-slate-700 mb-2 flex items-center justify-between">
+              <div className="text-xs font-bold text-slate-200 mb-2 flex items-center justify-between">
                 <span>DANH SÁCH THAO TÁC ĐÃ GHI NHẬN:</span>
                 <span className="text-[10px] text-slate-400 font-normal">Nguồn: Database BE</span>
               </div>
@@ -360,52 +390,52 @@ export default function DriverNotificationsPage() {
                   return (
                     <div
                       key={idx}
-                      className={`p-3 rounded-xl border transition-all ${
+                      className={`p-3 rounded-2xl border transition-all ${
                         isSuccess
-                          ? "bg-white border-slate-200 hover:border-slate-300 shadow-xs"
-                          : "bg-rose-50/50 border-rose-200 shadow-xs"
+                          ? "bg-slate-800/80 border-slate-700/80 hover:border-slate-600"
+                          : "bg-rose-950/35 border-rose-500/40"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2 mb-1">
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
                         <div className="flex items-center gap-2">
                           {isSuccess ? (
-                            <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
                           ) : (
-                            <AlertCircle size={16} className="text-rose-500 shrink-0" />
+                            <AlertCircle size={16} className="text-rose-400 shrink-0" />
                           )}
-                          <span className="font-bold text-slate-800 text-xs">
+                          <span className="font-bold text-slate-100 text-xs">
                             {item.description || item.type}
                           </span>
                         </div>
                         <span
-                          className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded ${
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
                             isSuccess
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-rose-100 text-rose-700"
+                              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                              : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
                           }`}
                         >
                           {isSuccess ? "THÀNH CÔNG" : "LỖI"}
                         </span>
                       </div>
 
-                      <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 pl-6">
+                      <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 pl-6">
                         <span>
-                          Mã: <code className="text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">{item.type}</code>
+                          Mã: <code className="text-[10px] bg-slate-900 border border-slate-700 px-1.5 py-0.5 rounded text-blue-300 font-mono">{item.type}</code>
                         </span>
                         {item.clientTime && (
                           <span>
-                            Giờ bấm trên máy: <b>{dayjs(item.clientTime).format("HH:mm:ss")}</b>
+                            Giờ bấm trên máy: <b className="text-slate-200 font-mono">{dayjs(item.clientTime).format("HH:mm:ss")}</b>
                           </span>
                         )}
                         {item.syncedAt && (
                           <span>
-                            Giờ vào DB: <b>{dayjs(item.syncedAt).format("HH:mm:ss")}</b>
+                            Giờ vào DB: <b className="text-slate-200 font-mono">{dayjs(item.syncedAt).format("HH:mm:ss")}</b>
                           </span>
                         )}
                       </div>
 
                       {item.error && (
-                        <div className="mt-1.5 ml-6 p-2 bg-rose-100/70 border border-rose-200 rounded-lg text-rose-700 text-[11px]">
+                        <div className="mt-2 ml-6 p-2 bg-rose-950/60 border border-rose-500/40 rounded-xl text-rose-200 text-[11px]">
                           <b>Nguyên nhân lỗi:</b> {item.error}
                         </div>
                       )}
@@ -416,7 +446,7 @@ export default function DriverNotificationsPage() {
             </div>
           </div>
         ) : (
-          <div className="py-6 text-center text-slate-500 text-xs">
+          <div className="py-6 text-center text-slate-300 text-xs">
             <p>{selectedNotif?.message}</p>
             <p className="text-[11px] text-slate-400 mt-2 italic">Phiên đồng bộ đã được ghi nhận tự động vào cơ sở dữ liệu.</p>
           </div>

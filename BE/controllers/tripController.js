@@ -477,10 +477,45 @@ const getTripReplay = async (req, res) => {
   }
 };
 
+const getLeaveReassignments = async (req, res) => {
+  try {
+    const result = await tripService.getLeaveReassignments();
+    return res.json(result);
+  } catch (err) {
+    console.error('getLeaveReassignments error:', err);
+    return res.status(500).json({ message: 'Lỗi tải danh sách chuyến xe cần đổi tài xế', error: err.message });
+  }
+};
+
+const reassignTripDriver = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { new_driver_id, reason } = req.body || {};
+    const dispatcherUserId = req.user?.id || null;
+    const result = await tripService.reassignTripDriver(id, {
+      newDriverId: new_driver_id,
+      dispatcherUserId,
+      reason
+    });
+    return res.json({
+      success: true,
+      message: `Đã đổi tài xế chuyến ${result.trip_code} sang ${result.new_driver_name} thành công!`,
+      reassignment: result
+    });
+  } catch (err) {
+    console.error('reassignTripDriver error:', err);
+    return res.status(err.statusCode || 400).json({ message: err.message || 'Lỗi khi điều phối lại tài xế' });
+  }
+};
+
 module.exports = {
   getAllTrips,
   createTrip,
   updateTripStatus,
+  // route calc exported below
+  // route calc exported below
   calculateRoadRoute,
-  getTripReplay
+  getTripReplay,
+  getLeaveReassignments,
+  reassignTripDriver
 };

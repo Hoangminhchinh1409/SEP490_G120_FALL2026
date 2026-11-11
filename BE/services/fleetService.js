@@ -1,5 +1,6 @@
 const driverModel = require('../models/driverModel');
 const fleetModel = require('../models/fleetModel');
+const leaveModel = require('../models/leaveModel');
 
 const getTruckModelName = (payloadKg) => {
   const p = Number(payloadKg) || 1250;
@@ -688,6 +689,161 @@ const switchDriverWeekShiftType = async ({ driverId, weekStart, shiftType, revie
   };
 };
 
+const getLeaveRequests = async ({ status = null } = {}) => {
+  return await leaveModel.getLeaveRequests({ status });
+};
+
+const decideLeaveRequest = async ({ id, decision, comment = '', reviewerId = null }) => {
+  const normDecision = String(decision || '').trim().toUpperCase();
+  if (!['APPROVED', 'REJECTED'].includes(normDecision)) {
+    const err = new Error('Quyết định không hợp lệ (chỉ chấp nhận APPROVED hoặc REJECTED).');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const found = await leaveModel.getLeaveRequestById(id);
+  if (!found || !found.raw) {
+    const err = new Error('Không tìm thấy đơn báo nghỉ đột xuất này.');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const current = found.formatted;
+  if (current.status !== 'PENDING') {
+    const err = new Error(`Đơn xin nghỉ này đã được xử lý trước đó (${current.status}).`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const cleanComment = String(comment || '').trim();
+  if (normDecision === 'REJECTED' && !cleanComment) {
+    const err = new Error('Vui lòng nhập lý do từ chối đơn xin nghỉ.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const nowIso = new Date().toISOString();
+  const reviewerName = (await leaveModel.getUserDisplayName(reviewerId)) || 'Quản lý';
+  const rawChanges =
+    typeof found.raw.changes === 'object' && found.raw.changes
+      ? { ...found.raw.changes }
+      : JSON.parse(found.raw.changes || '{}');
+
+  const dateDisplay = (current.leave_dates || []).map((d) => d.split('-').reverse().join('/')).join(', ');
+
+  if (normDecision === 'REJECTED') {
+    const nextChanges = {
+      ...rawChanges,
+      status: 'REJECTED',
+      manager_comment: cleanComment,
+      reviewed_by: reviewerId ? Number(reviewerId) : null,
+      reviewed_by_name: reviewerName,
+      reviewed_at: nowIso,
+    };
+    await leaveModel.updateLeaveRequestChanges(current.id, nextChanges);
+
+    if (current.driver_user_id) {
+      await driverModel.createSystemNotification({
+        userAccountId: current.driver_user_id,
+        targetType: 'SHIFT',
+        targetId: current.id,
+        message: `Đơn báo nghỉ đột xuất các ngày ${dateDisplay} của bạn đã bị Quản lý từ chối. Lý do: ${cleanComment}`,
+      });
+    }
+
+    const updated = await leaveModel.getLeaveRequestById(current.id);
+    return {
+      leaveRequest: updated?.formatted || { ...current, status: 'REJECTED', manager_comment: cleanComment },
+      cancelledShiftsCount: 0,
+      releasedTripIds: [],
+      message: 'Đã từ chối đơn báo nghỉ đột xuất và thông báo cho tài xế.',
+    };
+  }
+
+  // Trường hợp APPROVED:
+  // 1. Lấy mới nhất các chuyến xe active của tài xế trong các ngày xin nghỉ
+  const liveAffectedTrips = await leaveModel.getDriverAffectedTripsByDates(current.driver_id, current.leave_dates);
+  const storedMap = new Map((current.affected_trips || []).map((t) => [Number(t.trip_id), t]));
+  liveAffectedTrips.forEach((t) => {
+    if (!storedMap.has(Number(t.trip_id))) {
+      storedMap.set(Number(t.trip_id), t);
+    }
+  });
+  const mergedAffectedTrips = [...storedMap.values()];
+  const affectedTripIds = mergedAffectedTrips.map((t) => Number(t.trip_id)).filter(Boolean);
+
+  // 2. Giải phóng phân công tài xế khỏi các chuyến bị ảnh hưởng -> chờ Dispatcher đổi tài xế
+  const releasedTripIds = await leaveModel.releaseDriverFromTripsOnApproval(
+    current.driver_id,
+    affectedTripIds,
+    current.reason
+  );
+
+  // 3. Đánh dấu Rejected (nghỉ đột xuất) các ca trực trong các ngày được duyệt
+  const cancelledShiftsCount = await leaveModel.markDriverShiftsOnDatesAsLeaveApproved(
+    current.driver_id,
+    current.leave_dates,
+    current.reason,
+    reviewerId
+  );
+
+  // 4. Lưu trạng thái APPROVED
+  const nextChanges = {
+    ...rawChanges,
+    status: 'APPROVED',
+    affected_trips: mergedAffectedTrips,
+    manager_comment: cleanComment || 'Đã duyệt cho nghỉ đột xuất',
+    reviewed_by: reviewerId ? Number(reviewerId) : null,
+    reviewed_by_name: reviewerName,
+    reviewed_at: nowIso,
+  };
+  await leaveModel.updateLeaveRequestChanges(current.id, nextChanges);
+
+  // 5. Thông báo cho Tài xế
+  if (current.driver_user_id) {
+    await driverModel.createSystemNotification({
+      userAccountId: current.driver_user_id,
+      targetType: 'SHIFT',
+      targetId: current.id,
+      message: `Đơn báo nghỉ đột xuất các ngày ${dateDisplay} đã được Quản lý duyệt.${
+        releasedTripIds.length > 0
+          ? ` ${releasedTripIds.length} chuyến xe bị ảnh hưởng sẽ được Điều phối viên bàn giao cho tài xế khác.`
+          : ''
+      }`,
+    });
+  }
+
+  // 6. Thông báo cho tất cả Điều phối viên (role_id = 3) để Re-assign tài xế mới
+  try {
+    const dispatchers = await leaveModel.getActiveUsersByRoles([3]);
+    const tripCodesText = mergedAffectedTrips.map((t) => t.trip_code).join(', ');
+    for (const disp of dispatchers) {
+      await driverModel.createSystemNotification({
+        userAccountId: disp.id,
+        targetType: 'TRIP',
+        targetId: releasedTripIds[0] || current.id,
+        message:
+          releasedTripIds.length > 0
+            ? `[Cần đổi tài xế] Tài xế ${current.driver_name} được Quản lý duyệt nghỉ đột xuất ngày ${dateDisplay}. Cần Re-assign ${releasedTripIds.length} chuyến: ${tripCodesText}.`
+            : `[Thông báo nghỉ đột xuất] Tài xế ${current.driver_name} được duyệt nghỉ ngày ${dateDisplay}. Lưu ý không điều phối chuyến vào ngày này.`,
+      });
+    }
+  } catch (dispNotifErr) {
+    console.warn('Notify dispatchers on approved leave warning:', dispNotifErr.message);
+  }
+
+  const updated = await leaveModel.getLeaveRequestById(current.id);
+  return {
+    leaveRequest: updated?.formatted || { ...current, status: 'APPROVED', affected_trips: mergedAffectedTrips },
+    cancelledShiftsCount,
+    releasedTripIds,
+    message:
+      releasedTripIds.length > 0
+        ? `Đã duyệt nghỉ đột xuất cho ${current.driver_name}. Đã chuyển ${releasedTripIds.length} chuyến xe sang Điều phối viên để Re-assign tài xế mới.`
+        : `Đã duyệt đơn nghỉ đột xuất cho ${current.driver_name} và cập nhật ${cancelledShiftsCount} ngày ca trực.`,
+  };
+};
+
 module.exports = {
   getTruckModelName,
   getTruckCategory,
@@ -707,5 +863,7 @@ module.exports = {
   sendShiftDeadlineReminders,
   approveDriverWeekShifts,
   switchDriverWeekShiftType,
+  getLeaveRequests,
+  decideLeaveRequest,
 };
 

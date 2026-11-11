@@ -99,7 +99,8 @@ export default function DriverDashboardModals({
         okText="Tôi đồng ý nhận chuyến"
         cancelText="Đóng"
         confirmLoading={actionLoading}
-        okButtonProps={{ className: "bg-blue-600 font-bold" }}
+        okButtonProps={{ className: "!bg-blue-600 hover:!bg-blue-500 !border-none !rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
         onOk={() => handleAcceptTrip(trip?.id)}
       >
         <p className="text-sm text-slate-300 my-2">
@@ -119,11 +120,12 @@ export default function DriverDashboardModals({
         styles={darkModalStyles} 
         okText="Lưu lấy hàng"
         confirmLoading={actionLoading}
-        okButtonProps={{ className: "bg-blue-600 font-bold" }}
+        okButtonProps={{ className: "!bg-blue-600 hover:!bg-blue-500 !border-none !rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
         onOk={handleSubmitPickup}
       >
         <div className="space-y-3 py-2 text-xs">
-          <p className="text-slate-500">
+          <p className="text-slate-400">
             Bắt buộc chụp đủ 3 ảnh: Hàng trước bốc, Hàng trong thùng xe, và Niêm chì kèm biển số xe.
           </p>
 
@@ -233,13 +235,14 @@ export default function DriverDashboardModals({
         styles={darkModalStyles} 
         okText="Lưu giao hàng"
         confirmLoading={actionLoading}
-        okButtonProps={{ className: "bg-emerald-600 font-bold" }}
+        okButtonProps={{ className: "!bg-emerald-600 hover:!bg-emerald-500 !border-none !rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
         onOk={handleSubmitDelivery}
       >
         <div className="space-y-3 py-2 text-xs">
           {activeStopTarget?.order?.order_type === "Export" ? (
             <div>
-              <p className="text-blue-600 font-bold mb-2">Đơn hàng Xuất Khẩu: Chụp ảnh cắt chì & ảnh dỡ hàng</p>
+              <p className="text-blue-400 font-bold mb-2">Đơn hàng Xuất Khẩu: Chụp ảnh cắt chì & ảnh dỡ hàng</p>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="font-bold text-slate-200 block mb-1">Ảnh cắt chì (*)</label>
@@ -340,11 +343,12 @@ export default function DriverDashboardModals({
         styles={darkModalStyles}
         okText="Gửi báo cáo từ chối"
         confirmLoading={actionLoading}
-        okButtonProps={{ danger: true, className: "font-bold" }}
+        okButtonProps={{ danger: true, className: "!rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
         onOk={handleSubmitRefusal}
       >
         <div className="space-y-3 py-2 text-xs">
-          <p className="text-slate-500">
+          <p className="text-slate-400">
             Ghi nhận khách từ chối nhận hàng tại điểm giao. Đơn hàng sẽ được chuyển sang <b>Delivered (Exception)</b> và gửi cảnh báo cho Điều phối viên.
           </p>
 
@@ -398,11 +402,12 @@ export default function DriverDashboardModals({
         styles={darkModalStyles}
         okText="Gửi đề xuất phí"
         confirmLoading={actionLoading}
-        okButtonProps={{ className: "bg-amber-600 font-bold" }}
+        okButtonProps={{ className: "!bg-amber-600 hover:!bg-amber-500 !border-none !rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
         onOk={handleSubmitExtraFee}
       >
         <div className="space-y-3 py-2 text-xs">
-          <p className="text-slate-500">
+          <p className="text-slate-400">
             Phụ phí đề xuất sẽ ở trạng thái <b>Proposed</b>. Điều phối viên sẽ nhận được thông báo để xác nhận hoặc từ chối.
           </p>
 
@@ -470,7 +475,7 @@ export default function DriverDashboardModals({
         title={<span className="font-bold text-white flex items-center gap-1.5"><FileText size={18} className="text-blue-400"/> Chứng từ chuyến xe</span>}
         styles={darkModalStyles}
         footer={[
-          <Button key="close" type="primary" onClick={() => setDocsModalOpen(false)}>
+          <Button key="close" type="primary" onClick={() => setDocsModalOpen(false)} className="!bg-blue-600 hover:!bg-blue-500 !border-none !rounded-xl !font-bold !px-5">
             Đóng
           </Button>
         ]}
@@ -488,7 +493,7 @@ export default function DriverDashboardModals({
             {stops.map((s) => (
               <div key={s.id} className="py-1 border-b border-slate-700/80 last:border-0">
                 <span className="font-semibold text-slate-200">Điểm #{s.sequence} - Đơn {s.order?.order_code || 'N/A'}:</span>
-                <p className="text-slate-500 text-[11px]">Người nhận: {s.order?.receiver_name || 'Khách hàng'} • ĐT: {s.order?.receiver_phone || 'N/A'}</p>
+                <p className="text-slate-400 text-[11px]">Người nhận: {s.order?.receiver_name || 'Khách hàng'} • ĐT: {s.order?.receiver_phone || 'N/A'}</p>
               </div>
             ))}
           </div>

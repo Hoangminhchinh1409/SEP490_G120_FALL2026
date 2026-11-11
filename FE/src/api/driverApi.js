@@ -171,6 +171,18 @@ export const driverApi = {
     });
   },
 
+  // Đơn báo nghỉ đột xuất
+  getMyLeaveRequests: async () => {
+    return await fetchWithAuth("/driver/leave-requests");
+  },
+
+  submitLeaveRequest: async (payload) => {
+    return await fetchWithAuth("/driver/leave-requests", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
   // Lấy chi tiết lịch sử phiên đồng bộ ngoại tuyến từ Database
   getSyncLogDetail: async (logId) => {
     return await fetchWithAuth(`/driver/sync-log/${logId}`);

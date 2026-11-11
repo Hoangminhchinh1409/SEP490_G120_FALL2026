@@ -33,7 +33,9 @@ export default function TripMonitoringTab({
   setSelectedTrip3D,
   setSelectedTripReplay,
   handleCompleteTrip,
-  handleCancelTrip
+  handleCancelTrip,
+  leaveReassignments = [],
+  onOpenReassignModal
 }) {
   const filteredTrips = trips.filter(item => {
     const matchSearch = searchText === '' ||
@@ -60,6 +62,11 @@ export default function TripMonitoringTab({
             >
               {r.id}
             </span>
+            {r.needs_driver_reassign && (
+              <Tag color="orange" className="text-[10px] m-0 px-1.5 py-0 flex items-center gap-1 font-bold">
+                <User size={10} /> Cần đổi tài xế
+              </Tag>
+            )}
             {r.has_incident && (
               <Tag color="error" className="text-[10px] m-0 px-1.5 py-0 flex items-center gap-1 font-bold animate-pulse">
                 <AlertTriangle size={10} /> Sự cố hiện trường
@@ -84,8 +91,10 @@ export default function TripMonitoringTab({
             <span className="text-gray-500 text-[11px]">({r.truck_model})</span>
           </div>
           <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
-            <User size={11} className="text-gray-400" />
-            <span>{r.driver_name} - {r.driver_phone}</span>
+            <User size={11} className={r.needs_driver_reassign ? "text-orange-500" : "text-gray-400"} />
+            <span className={r.needs_driver_reassign ? "text-orange-600 font-bold" : ""}>
+              {r.driver_name}{r.driver_phone ? ` - ${r.driver_phone}` : ""}
+            </span>
           </div>
         </div>
       )
@@ -142,6 +151,27 @@ export default function TripMonitoringTab({
         const tripIncident = incidents.find(i => i.trip_code === record.id && i.status === 'PENDING');
         return (
           <Space size="small" wrap>
+            {record.needs_driver_reassign && onOpenReassignModal ? (
+              <Tooltip title="Điều phối tài xế thay thế cho chuyến này">
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<User size={13} />}
+                  className="bg-orange-500 hover:bg-orange-600 border-orange-500 font-bold text-xs"
+                  onClick={() => onOpenReassignModal({
+                    trip_id: record.raw_id || record.id,
+                    trip_code: record.trip_code || record.id,
+                    plate_number: record.plate,
+                    route_summary: `${record.pickup} -> ${record.dropoff}`,
+                    planned_start: record.planned_start_iso,
+                    leaving_driver_name: record.previous_driver_name,
+                    leave_reason: record.leave_reason,
+                  })}
+                >
+                  Đổi tài xế
+                </Button>
+              </Tooltip>
+            ) : null}
             {record.has_incident && tripIncident ? (
               <Tooltip title="Mở cửa sổ xử lý sự cố hiện trường ngay lập tức">
                 <Button
@@ -219,6 +249,62 @@ export default function TripMonitoringTab({
 
   return (
     <div className="space-y-5 pt-2">
+      {/* Banner & Hàng đợi Chuyến xe cần đổi tài xế do nghỉ đột xuất đã duyệt */}
+      {leaveReassignments.length > 0 && (
+        <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl space-y-3 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-orange-100 text-orange-600 rounded-lg shrink-0 mt-0.5">
+                <User size={20} />
+              </div>
+              <div>
+                <h4 className="font-bold text-orange-950 text-sm">
+                  Cần đổi tài xế (Re-assign): Có {leaveReassignments.length} chuyến xe có tài xế được Quản lý duyệt nghỉ đột xuất!
+                </h4>
+                <p className="text-xs text-orange-800 mt-0.5">
+                  Vui lòng chọn tài xế thay thế để kịp tiến độ xuất phát và giữ nguyên kế hoạch vận tải.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {leaveReassignments.map((item) => (
+              <div
+                key={item.trip_id}
+                className="bg-white rounded-xl border border-orange-200 p-3 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0 space-y-0.5 text-xs">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono font-bold text-[#7367f0]">{item.trip_code}</span>
+                    <Tag color="orange" className="!m-0 text-[10px]">Chưa có tài mới</Tag>
+                    <span className="font-mono text-[11px] bg-gray-100 px-1.5 py-0.5 rounded border">
+                      {item.plate_number}
+                    </span>
+                  </div>
+                  <div className="text-gray-700 truncate">{item.route_summary}</div>
+                  <div className="text-[11px] text-gray-500">
+                    Tài xế nghỉ: <b>{item.leaving_driver_name}</b> • Lý do: {item.leave_reason}
+                  </div>
+                  {item.planned_start && (
+                    <div className="text-[11px] text-orange-700 font-mono">
+                      Khởi hành: {new Date(item.planned_start).toLocaleString("vi-VN")}
+                    </div>
+                  )}
+                </div>
+                <Button
+                  type="primary"
+                  size="small"
+                  onClick={() => onOpenReassignModal && onOpenReassignModal(item)}
+                  className="bg-orange-500 hover:bg-orange-600 border-orange-500 font-bold shrink-0 rounded-lg"
+                >
+                  Đổi tài xế
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Banner Cảnh báo sự cố hiện trường khẩn cấp */}
       {pendingIncidentsCount > 0 && incidents[0] && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-3 shadow-xs">

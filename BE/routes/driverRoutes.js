@@ -27,6 +27,8 @@ router.post("/trips/:id/extra-fees", driverController.proposeExtraFee);
 router.get("/shifts", driverController.getMyShifts);
 router.post("/shifts", driverController.registerShift);
 router.delete("/shifts/:id", driverController.cancelShift);
+router.get("/leave-requests", driverController.getMyLeaveRequests);
+router.post("/leave-requests", driverController.submitLeaveRequest);
 
 // 4. Thông báo Tài xế
 router.get("/notifications", driverController.getDriverNotifications);

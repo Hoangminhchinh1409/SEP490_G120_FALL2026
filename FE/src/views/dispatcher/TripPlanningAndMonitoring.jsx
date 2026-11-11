@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Modal, Badge, message, Tabs } from 'antd';
+import { Button, Modal, Badge, message, Tabs, Select, Input } from 'antd';
 import { Route, Truck, RefreshCw, ShieldAlert } from 'lucide-react';
 import TripAssignmentModal from '../../components/dispatcher/TripAssignmentModal';
 import IncidentDetailsModal from '../../components/dispatcher/IncidentDetailsModal';
@@ -40,17 +40,26 @@ export default function TripPlanningAndMonitoring() {
   const [selectedTrip3D, setSelectedTrip3D] = useState(null);
   const [activeIncidentModal, setActiveIncidentModal] = useState(null);
   const [selectedOrderForCancel, setSelectedOrderForCancel] = useState(null);
+  const [leaveReassignments, setLeaveReassignments] = useState([]);
+  const [reassignDriversPool, setReassignDriversPool] = useState([]);
+  const [reassignTargetTrip, setReassignTargetTrip] = useState(null);
+  const [selectedNewDriverId, setSelectedNewDriverId] = useState(null);
+  const [reassignReason, setReassignReason] = useState('');
+  const [submittingReassign, setSubmittingReassign] = useState(false);
 
   // Tải danh sách đơn hàng sẵn sàng xếp xe, chuyến xe và sự cố từ Backend Supabase
   const fetchData = useCallback(async () => {
     try {
-      const [ordersData, tripsData, incidentsData, trucksData, driversData] = await Promise.all([
-        orderApi.getAllOrders(),
-        dispatcherApi.getTrips(),
-        dispatcherApi.getIncidents(),
-        dispatcherApi.getTrucks(),
-        dispatcherApi.getDrivers()
+      const [ordersData, tripsData, incidentsData, trucksData, driversData, leaveReassignRes] = await Promise.all([
+        orderApi.getAllOrders().catch(() => []),
+        dispatcherApi.getTrips().catch(() => []),
+        dispatcherApi.getIncidents().catch(() => []),
+        dispatcherApi.getTrucks().catch(() => []),
+        dispatcherApi.getDrivers().catch(() => []),
+        dispatcherApi.getLeaveReassignments().catch(() => ({ reassignments: [], availableDrivers: [] }))
       ]);
+      setLeaveReassignments(leaveReassignRes?.reassignments || []);
+      setReassignDriversPool(leaveReassignRes?.availableDrivers || []);
       const currentUserId = user?.id ? Number(user.id): null;
       const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
 
@@ -82,14 +91,17 @@ export default function TripPlanningAndMonitoring() {
 
     const loadInitialData = async () => {
       try {
-        const [ordersData, tripsData, incidentsData, trucksData, driversData] = await Promise.all([
-          orderApi.getAllOrders(),
-          dispatcherApi.getTrips(),
-          dispatcherApi.getIncidents(),
-          dispatcherApi.getTrucks(),
-          dispatcherApi.getDrivers()
+        const [ordersData, tripsData, incidentsData, trucksData, driversData, leaveReassignRes] = await Promise.all([
+          orderApi.getAllOrders().catch(() => []),
+          dispatcherApi.getTrips().catch(() => []),
+          dispatcherApi.getIncidents().catch(() => []),
+          dispatcherApi.getTrucks().catch(() => []),
+          dispatcherApi.getDrivers().catch(() => []),
+          dispatcherApi.getLeaveReassignments().catch(() => ({ reassignments: [], availableDrivers: [] }))
         ]);
         if (!active) return;
+        setLeaveReassignments(leaveReassignRes?.reassignments || []);
+        setReassignDriversPool(leaveReassignRes?.availableDrivers || []);
         const currentUserId = user?.id ? Number(user.id): null;
         const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
 
@@ -225,6 +237,33 @@ export default function TripPlanningAndMonitoring() {
 
   const pendingIncidentsCount = incidents.filter(i => i.status === 'PENDING').length;
 
+  const handleOpenReassignModal = (tripItem) => {
+    setReassignTargetTrip(tripItem);
+    setSelectedNewDriverId(null);
+    setReassignReason('Thay thế tài xế được duyệt nghỉ đột xuất');
+  };
+
+  const handleConfirmReassignDriver = async () => {
+    if (!reassignTargetTrip || !selectedNewDriverId) {
+      message.warning('Vui lòng chọn tài xế thay thế.');
+      return;
+    }
+    setSubmittingReassign(true);
+    try {
+      const res = await dispatcherApi.reassignTripDriver(reassignTargetTrip.trip_id, {
+        new_driver_id: selectedNewDriverId,
+        reason: reassignReason.trim() || 'Thay thế tài xế nghỉ đột xuất',
+      });
+      message.success(res?.message || 'Đã điều phối lại tài xế thành công!');
+      setReassignTargetTrip(null);
+      await fetchData();
+    } catch (err) {
+      message.error(err.message || 'Không thể đổi tài xế cho chuyến xe này.');
+    } finally {
+      setSubmittingReassign(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -284,7 +323,7 @@ export default function TripPlanningAndMonitoring() {
               <span className="flex items-center gap-2 font-semibold text-sm">
                 <Route size={17} className="text-[#7367f0]" />
                 Giám sát Chuyến xe
-                <Badge count={trips.filter(t => t.status === 'IN_TRANSIT').length} overflowCount={99} className="ml-1" />
+                <Badge count={leaveReassignments.length > 0 ? leaveReassignments.length : trips.filter(t => t.status === 'IN_TRANSIT').length} overflowCount={99} className="ml-1" />
               </span>
             ),
             children: (
@@ -304,6 +343,8 @@ export default function TripPlanningAndMonitoring() {
                 setSelectedTripReplay={setSelectedTripReplay}
                 handleCompleteTrip={handleCompleteTrip}
                 handleCancelTrip={handleCancelTrip}
+                leaveReassignments={leaveReassignments}
+                onOpenReassignModal={handleOpenReassignModal}
               />
             )
           },
@@ -370,6 +411,82 @@ export default function TripPlanningAndMonitoring() {
         selectedTripReplay={selectedTripReplay}
         onClose={() => setSelectedTripReplay(null)}
       />
+
+      {/* Modal Điều phối lại tài xế (Re-assign) do tài xế cũ nghỉ đột xuất */}
+      <Modal
+        centered
+        open={Boolean(reassignTargetTrip)}
+        onCancel={() => setReassignTargetTrip(null)}
+        onOk={handleConfirmReassignDriver}
+        confirmLoading={submittingReassign}
+        okText="Xác nhận đổi tài xế"
+        cancelText="Hủy bỏ"
+        title={
+          <span className="font-bold text-sm text-orange-700">
+            Điều phối lại tài xế (Re-assign Driver)
+          </span>
+        }
+      >
+        {reassignTargetTrip && (
+          <div className="space-y-3 text-xs pt-2">
+            <div className="p-3 rounded-xl bg-orange-50 border border-orange-200 space-y-1">
+              <div>
+                <span className="text-gray-500">Chuyến xe:</span>{' '}
+                <strong className="font-mono text-[#7367f0]">{reassignTargetTrip.trip_code}</strong>{' '}
+                <span className="font-mono text-gray-600">({reassignTargetTrip.plate_number})</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Lộ trình:</span>{' '}
+                <span className="text-gray-800">{reassignTargetTrip.route_summary}</span>
+              </div>
+              {reassignTargetTrip.leaving_driver_name && (
+                <div>
+                  <span className="text-gray-500">Tài xế xin nghỉ:</span>{' '}
+                  <strong className="text-red-600">{reassignTargetTrip.leaving_driver_name}</strong>
+                </div>
+              )}
+              {reassignTargetTrip.leave_reason && (
+                <div>
+                  <span className="text-gray-500">Lý do nghỉ:</span>{' '}
+                  <span className="text-gray-700">{reassignTargetTrip.leave_reason}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block font-bold text-xs mb-1">
+                Chọn tài xế thay thế (*):
+              </label>
+              <Select
+                showSearch
+                placeholder="Chọn tài xế thay thế khả dụng"
+                value={selectedNewDriverId}
+                onChange={setSelectedNewDriverId}
+                className="w-full"
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                options={(reassignDriversPool || [])
+                  .filter((d) => Number(d.id) !== Number(reassignTargetTrip.leaving_driver_id))
+                  .map((d) => ({
+                    value: d.id,
+                    label: `${d.full_name} (Hạng ${d.license_class || 'C'}) • ${d.active_trips_count || 0} chuyến đang giữ${d.phone ? ` · ${d.phone}` : ''}`,
+                  }))}
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-xs mb-1">Ghi chú điều phối:</label>
+              <Input.TextArea
+                rows={2}
+                value={reassignReason}
+                onChange={(e) => setReassignReason(e.target.value)}
+                placeholder="Ví dụ: Điều phối thay thế tài xế nghỉ đột xuất đã được Quản lý duyệt"
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal Hủy Đơn Hàng theo chuẩn */}
       <CancelOrderModal

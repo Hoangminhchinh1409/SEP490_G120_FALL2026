@@ -1,5 +1,6 @@
 const tripModel = require('../models/tripModel');
 const fleetService = require('./fleetService');
+const leaveModel = require('../models/leaveModel');
 const { getOrCreateLocation } = require('./orderHelperService');
 
 const formatTrip = (trip) => {
@@ -16,6 +17,13 @@ const formatTrip = (trip) => {
     trip.trip_drivers?.[0] ||
     {};
   const driverObj = activeDriverAssign.driver?.user || trip.driver?.user || {};
+  const hasUnreleasedDriver = (trip.trip_drivers || []).some(td => !td.released_time);
+  const releasedDrivers = (trip.trip_drivers || []).filter(td => td.released_time);
+  const needsDriverReassign =
+    !hasUnreleasedDriver &&
+    releasedDrivers.length > 0 &&
+    !['COMPLETED', 'CANCELLED'].includes((trip.status || '').toUpperCase());
+  const latestReleasedAssign = releasedDrivers[0] || null;
 
   const sortedStops = (trip.stops || []).sort((a, b) => (a.sequence || a.seq || 0) - (b.sequence || b.seq || 0));
 
@@ -130,8 +138,13 @@ const formatTrip = (trip) => {
     plate: truckObj.plate_number || '29C-888.99',
     truck_model: truckObj.model || fleetService.getTruckModelName(truckObj.allowed_payload || 3500),
     max_payload: truckObj.allowed_payload || 3500,
-    driver_name: driverObj.full_name || 'Nguyễn Văn Lái',
-    driver_phone: driverObj.phone || '0912345678',
+    driver_name: needsDriverReassign ? 'Chờ điều phối tài xế mới' : (driverObj.full_name || 'Nguyễn Văn Lái'),
+    driver_phone: needsDriverReassign ? '' : (driverObj.phone || '0912345678'),
+    needs_driver_reassign: needsDriverReassign,
+    previous_driver_name: latestReleasedAssign?.driver?.user?.full_name || null,
+    leave_reason: latestReleasedAssign?.replacement_reason || null,
+    planned_start_iso: trip.planned_start || null,
+    // duplicate phone removed
     orders: orderCodes,
     orders_data: uniqueOrders.map(o => ({
       order_id: o.order_code,
@@ -433,9 +446,24 @@ const updateTripStatus = async (id, status, userId = 1) => {
   return formatTrip(updatedTrip);
 };
 
+const getLeaveReassignments = async () => {
+  return await leaveModel.getReassignmentsNeededForDispatcher();
+};
+
+const reassignTripDriver = async (tripId, { newDriverId, dispatcherUserId, reason } = {}) => {
+  return await leaveModel.reassignDriverOnTrip({
+    tripId,
+    newDriverId,
+    dispatcherUserId,
+    reason,
+  });
+};
+
 module.exports = {
   formatTrip,
   getAllTrips,
   createTrip,
-  updateTripStatus
+  updateTripStatus,
+  getLeaveReassignments,
+  reassignTripDriver
 };

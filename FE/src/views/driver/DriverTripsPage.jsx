@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { App, Spin, Empty, Modal, Tag } from "antd";
 import {
   Truck,
@@ -48,6 +48,7 @@ export default function DriverTripsPage() {
   const [acceptingTripId, setAcceptingTripId] = useState(null);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const handledDeepLinkRef = useRef(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -68,6 +69,35 @@ export default function DriverTripsPage() {
       const history = historyRes?.trips || [];
       setHistoryTrips(history);
       setHistoryTotal(historyRes?.total || history.length);
+
+      // Tự động mở popup chi tiết chuyến khi bấm "Xem chuyến" từ Thông báo (/driver/trips?tripId=...)
+      if (!handledDeepLinkRef.current && typeof window !== "undefined") {
+        handledDeepLinkRef.current = true;
+        const params = new URLSearchParams(window.location.search);
+        const paramTripId = params.get("tripId");
+        const paramTripCode = params.get("tripCode");
+        if (paramTripId || paramTripCode) {
+          const matchUpcoming = upcoming.find(
+            (t) =>
+              (paramTripId && Number(t.id) === Number(paramTripId)) ||
+              (paramTripCode && String(t.trip_code || "").toUpperCase() === paramTripCode.toUpperCase())
+          );
+          const matchHistory = !matchUpcoming
+            ? history.find(
+                (t) =>
+                  (paramTripId && Number(t.id) === Number(paramTripId)) ||
+                  (paramTripCode && String(t.trip_code || "").toUpperCase() === paramTripCode.toUpperCase())
+              )
+            : null;
+          const matched = matchUpcoming || matchHistory;
+          if (matched) {
+            setActiveTab(matchHistory ? "HISTORY" : "UPCOMING");
+            setSelectedTrip(matched);
+            setDetailModalOpen(true);
+            window.history.replaceState(null, "", window.location.pathname);
+          }
+        }
+      }
     } catch (err) {
       console.error("fetchTripsData error:", err);
       message.error("Không thể tải danh sách chuyến xe");
@@ -78,7 +108,10 @@ export default function DriverTripsPage() {
   }, []);
 
   useEffect(() => {
-    fetchTripsData();
+    const timer = setTimeout(() => {
+      fetchTripsData();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchTripsData]);
 
   // Handle Accept Trip

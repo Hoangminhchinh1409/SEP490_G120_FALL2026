@@ -67,6 +67,14 @@ export default function DriverShiftsPage() {
   // Data states
   const [shifts, setShifts] = useState([]);
   const [drivers, setDrivers] = useState([]);
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [leaveDecisionModal, setLeaveDecisionModal] = useState({
+    open: false,
+    request: null,
+    decision: "APPROVED",
+    comment: "",
+  });
+  const [submittingLeaveDecision, setSubmittingLeaveDecision] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchDriver, setSearchDriver] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -164,6 +172,42 @@ export default function DriverShiftsPage() {
     }
   };
 
+  const pendingLeaveCount = useMemo(
+    () => (leaveRequests || []).filter((lr) => lr.status === "PENDING").length,
+    [leaveRequests]
+  );
+
+  const handleOpenLeaveDecision = (leaveReq, decision) => {
+    setLeaveDecisionModal({
+      open: true,
+      request: leaveReq,
+      decision,
+      comment: decision === "APPROVED" ? "Đồng ý cho nghỉ đột xuất. Chuyển Điều phối đổi tài xế." : "",
+    });
+  };
+
+  const handleConfirmLeaveDecision = async () => {
+    if (!leaveDecisionModal.request) return;
+    if (leaveDecisionModal.decision === "REJECTED" && !leaveDecisionModal.comment.trim()) {
+      message.warning("Vui lòng nhập lý do từ chối đơn xin nghỉ.");
+      return;
+    }
+    setSubmittingLeaveDecision(true);
+    try {
+      const res = await managerApi.decideLeaveRequest(leaveDecisionModal.request.id, {
+        decision: leaveDecisionModal.decision,
+        comment: leaveDecisionModal.comment.trim(),
+      });
+      message.success(res?.message || "Đã xử lý đơn báo nghỉ đột xuất.");
+      setLeaveDecisionModal({ open: false, request: null, decision: "APPROVED", comment: "" });
+      await loadData();
+    } catch (err) {
+      message.error(err.message || "Không thể xử lý đơn báo nghỉ đột xuất.");
+    } finally {
+      setSubmittingLeaveDecision(false);
+    }
+  };
+
   const handleSwitchDriverWeek = async (driverId, targetShiftType, autoApprove = false) => {
     setWeeklyBusyKey(`switch_${driverId}`);
     try {
@@ -188,13 +232,15 @@ export default function DriverShiftsPage() {
       const fromStr = currentWeekStart.format("YYYY-MM-DD");
       const toStr = weekEnd.format("YYYY-MM-DD");
 
-      const [shiftsRes, driversRes] = await Promise.all([
+      const [shiftsRes, driversRes, leaveRes] = await Promise.all([
         managerApi.getShifts({ from: fromStr, to: toStr, status: statusFilter !== "ALL" ? statusFilter: undefined }),
-        managerApi.getFleetDrivers ? managerApi.getFleetDrivers(): Promise.resolve([])
+        managerApi.getFleetDrivers ? managerApi.getFleetDrivers(): Promise.resolve([]),
+        managerApi.getLeaveRequests ? managerApi.getLeaveRequests().catch(() => []) : Promise.resolve([])
       ]);
 
       setShifts(shiftsRes?.shifts || []);
       setDrivers(driversRes || []);
+      setLeaveRequests(Array.isArray(leaveRes) ? leaveRes : []);
     } catch (err) {
       console.error("loadData error:", err);
       message.error(err.message || "Không thể tải dữ liệu ca làm việc");
@@ -720,9 +766,139 @@ export default function DriverShiftsPage() {
         {/* Chú thích chân trang chuẩn  */}
         <div className="pt-2 text-xs text-on-surface-variant border-t border-surface-container/60">
           <div>
-            💡 <strong>Hướng dẫn:</strong> Bấm vào một ô hoặc nút <strong>"+ Thêm ca"</strong> để xếp ca trực mới (ca do Quản lý tạo tự động có hiệu lực). Bấm vào ca đã có để xem chi tiết, chỉnh sửa hoặc xóa ca.
+            💡 <strong>Hướng dẫn:</strong> Bấm vào một ô hoặc nút <strong>&ldquo;+ Thêm ca&rdquo;</strong> để xếp ca trực mới (ca do Quản lý tạo tự động có hiệu lực). Bấm vào ca đã có để xem chi tiết, chỉnh sửa hoặc xóa ca.
           </div>
         </div>
+      </div>
+
+      {/* 4A. ĐƠN BÁO NGHỈ ĐỘT XUẤT TỪ TÀI XẾ */}
+      <div className="bg-surface-container-lowest rounded-3xl shadow-sm p-5 border border-outline-variant/30 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-extrabold text-primary flex items-center gap-2">
+              <AlertTriangle size={18} className="text-amber-600" />
+              Đơn báo nghỉ đột xuất từ Tài xế
+              {pendingLeaveCount > 0 && (
+                <Tag color="warning" className="ml-1 font-bold rounded-full">
+                  {pendingLeaveCount} đơn chờ duyệt
+                </Tag>
+              )}
+            </h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Khi duyệt cho nghỉ, ca trực ngày đó tự động hủy và các chuyến xe bị ảnh hưởng sẽ chuyển sang Điều phối viên đổi tài xế (Re-assign).
+            </p>
+          </div>
+        </div>
+
+        {leaveRequests.length === 0 ? (
+          <div className="py-5 text-center text-on-surface-variant text-xs italic bg-surface-container-low/40 rounded-2xl">
+            Chưa có đơn báo nghỉ đột xuất nào.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-surface-container">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-surface-container-low text-on-surface-variant uppercase text-[11px] font-bold border-b border-surface-container">
+                  <th className="py-3 px-3">Tài xế</th>
+                  <th className="py-3 px-3">Ngày xin nghỉ</th>
+                  <th className="py-3 px-3">Lý do</th>
+                  <th className="py-3 px-3">Chuyến xe bị ảnh hưởng (Re-assign)</th>
+                  <th className="py-3 px-3">Trạng thái</th>
+                  <th className="py-3 px-3 text-right">Xử lý</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-container">
+                {leaveRequests.map((lr) => (
+                  <tr key={lr.id} className="hover:bg-surface-container-low/50 transition-colors">
+                    <td className="py-3 px-3">
+                      <div className="font-bold text-primary">{lr.driver_name}</div>
+                      <div className="text-[10px] text-on-surface-variant font-mono">
+                        {lr.license_class ? `Hạng ${lr.license_class}` : ""} {lr.driver_phone ? `· ${lr.driver_phone}` : ""}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(lr.leave_dates || []).map((dStr) => (
+                          <Tag key={dStr} color="blue" className="font-mono font-semibold !m-0">
+                            {dayjs(dStr).format("DD/MM/YYYY")}
+                          </Tag>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 max-w-[220px]">
+                      <div className="text-on-surface line-clamp-2">{lr.reason}</div>
+                      {lr.manager_comment && (
+                        <div className="text-[10px] text-on-surface-variant italic mt-0.5">
+                          Ghi chú: {lr.manager_comment}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-3">
+                      {(lr.affected_trips || []).length === 0 ? (
+                        <span className="text-on-surface-variant/60 italic">Không có chuyến</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {lr.affected_trips.map((tr) => (
+                            <div key={tr.trip_id} className="flex items-center gap-1.5 flex-wrap">
+                              <Tag color={tr.reassigned ? "green" : "orange"} className="font-mono font-bold !m-0">
+                                {tr.trip_code}
+                              </Tag>
+                              <span className="text-[10px] font-mono text-on-surface-variant">
+                                {tr.planned_start ? dayjs(tr.planned_start).format("DD/MM HH:mm") : ""}
+                              </span>
+                              {lr.status === "APPROVED" && (
+                                <span className={`text-[10px] font-semibold ${tr.reassigned ? "text-emerald-700" : "text-orange-600"}`}>
+                                  {tr.reassigned ? `✓ Đã đổi (${tr.reassigned_to_driver_name})` : "• Chờ Dispatcher"}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-3">
+                      {lr.status === "PENDING" ? (
+                        <Tag color="warning" className="font-bold">Chờ duyệt</Tag>
+                      ) : lr.status === "APPROVED" ? (
+                        <Tag color="success" className="font-bold">Đã duyệt</Tag>
+                      ) : (
+                        <Tag color="error" className="font-bold">Từ chối</Tag>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-right">
+                      {lr.status === "PENDING" ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<Check size={13} />}
+                            onClick={() => handleOpenLeaveDecision(lr, "APPROVED")}
+                            className="bg-emerald-600 hover:bg-emerald-700 font-bold rounded-lg text-xs"
+                          >
+                            Duyệt nghỉ
+                          </Button>
+                          <Button
+                            danger
+                            size="small"
+                            icon={<X size={13} />}
+                            onClick={() => handleOpenLeaveDecision(lr, "REJECTED")}
+                            className="font-bold rounded-lg text-xs"
+                          >
+                            Từ chối
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-on-surface-variant">
+                          {lr.reviewed_by_name || "Quản lý"}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* 4B. CÂN ĐỐI CA TUẦN & DUYỆT NHANH THEO TUẦN (BAO GỒM CA HỆ THỐNG TỰ XẾP) */}
@@ -928,6 +1104,75 @@ export default function DriverShiftsPage() {
         )}
       </div>
 
+      {/* MODAL XỬ LÝ ĐƠN BÁO NGHỈ ĐỘT XUẤT */}
+      <Modal
+        centered
+        open={leaveDecisionModal.open}
+        onCancel={() => setLeaveDecisionModal({ open: false, request: null, decision: "APPROVED", comment: "" })}
+        onOk={handleConfirmLeaveDecision}
+        confirmLoading={submittingLeaveDecision}
+        okText={leaveDecisionModal.decision === "APPROVED" ? "Xác nhận duyệt cho nghỉ" : "Xác nhận từ chối"}
+        okButtonProps={{
+          danger: leaveDecisionModal.decision === "REJECTED",
+          className: leaveDecisionModal.decision === "APPROVED" ? "bg-emerald-600 font-bold" : "font-bold",
+        }}
+        cancelText="Quay lại"
+        title={
+          <span className="font-bold text-sm">
+            {leaveDecisionModal.decision === "APPROVED"
+              ? "Duyệt đơn báo nghỉ đột xuất"
+              : "Từ chối đơn báo nghỉ đột xuất"}
+          </span>
+        }
+      >
+        {leaveDecisionModal.request && (
+          <div className="space-y-3 text-xs pt-2">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+              <div>
+                <span className="text-slate-500">Tài xế:</span>{" "}
+                <strong className="text-slate-800">{leaveDecisionModal.request.driver_name}</strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Ngày nghỉ:</span>{" "}
+                <strong className="font-mono text-slate-800">
+                  {(leaveDecisionModal.request.leave_dates || [])
+                    .map((d) => dayjs(d).format("DD/MM/YYYY"))
+                    .join(", ")}
+                </strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Lý do tài xế gửi:</span>{" "}
+                <span className="text-slate-700">{leaveDecisionModal.request.reason}</span>
+              </div>
+              {(leaveDecisionModal.request.affected_trips || []).length > 0 && (
+                <div className="pt-1 text-amber-700 font-semibold">
+                  ⚠️ Có {leaveDecisionModal.request.affected_trips.length} chuyến xe bị ảnh hưởng (
+                  {leaveDecisionModal.request.affected_trips.map((t) => t.trip_code).join(", ")}) sẽ tự động chuyển cho Điều phối viên đổi tài xế khác!
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block font-bold text-xs mb-1">
+                {leaveDecisionModal.decision === "APPROVED"
+                  ? "Ghi chú phản hồi (tùy chọn):"
+                  : "Lý do từ chối (*):"}
+              </label>
+              <Input.TextArea
+                rows={3}
+                value={leaveDecisionModal.comment}
+                onChange={(e) => setLeaveDecisionModal((prev) => ({ ...prev, comment: e.target.value }))}
+                placeholder={
+                  leaveDecisionModal.decision === "APPROVED"
+                    ? "Nhập ghi chú gửi tài xế & điều phối viên..."
+                    : "Nhập lý do từ chối để tài xế nắm rõ..."
+                }
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* ========================================================= */}
       {/* MODAL 1: XẾP CA MỚI / CHỈNH SỬA CA LÀM VIỆC */}
       {/* ========================================================= */}
@@ -1126,7 +1371,7 @@ export default function DriverShiftsPage() {
                 <div className="pt-2 border-t border-surface-container/60">
                   <span className="text-on-surface-variant block mb-1">Ghi chú:</span>
                   <div className="italic text-on-surface bg-surface-container-lowest p-2 rounded-lg">
-                    "{detailModal.shift.note}"
+                    &ldquo;{detailModal.shift.note}&rdquo;
                   </div>
                 </div>
               )}
@@ -1135,7 +1380,7 @@ export default function DriverShiftsPage() {
                 <div className="pt-2 border-t border-surface-container/60">
                   <span className="text-error block mb-1 font-bold">Lý do từ chối:</span>
                   <div className="italic text-error bg-error/10 p-2 rounded-lg">
-                    "{detailModal.shift.rejection_reason}"
+                    &ldquo;{detailModal.shift.rejection_reason}&rdquo;
                   </div>
                 </div>
               )}

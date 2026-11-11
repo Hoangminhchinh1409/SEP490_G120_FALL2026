@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Input, Popconfirm, Spin, Tag } from "antd";
+import { App, Button, Input, Modal, Popconfirm, Spin, Tag } from "antd";
 import {
   Calendar,
   ChevronLeft,
@@ -19,9 +19,12 @@ import {
   WifiOff,
   CheckCircle2,
   AlertTriangle,
+  Send,
+  Plus,
+  X,
 } from "lucide-react";
 import dayjs from "dayjs";
-import { driverApi, queueOfflineAction } from "../../api/driverApi";
+import { driverApi, getOfflineActions, queueOfflineAction } from "../../api/driverApi";
 
 const WEEKDAY_LABELS = [
   "Chủ Nhật",
@@ -60,7 +63,8 @@ const getMondayOfWeek = (d = dayjs()) => {
 const detectShiftType = (shift) => {
   if (!shift) return null;
   const noteStr = String(shift.note || "").toUpperCase();
-  if (noteStr.includes("CA SÁNG") || noteStr.includes("MORNING")) return "MORNING";
+  if (noteStr.includes("CA SÁNG") || noteStr.includes("MORNING"))
+    return "MORNING";
   if (noteStr.includes("CA ĐÊM") || noteStr.includes("NIGHT")) return "NIGHT";
   if (shift.start_time) {
     const h = dayjs(shift.start_time).hour();
@@ -74,10 +78,13 @@ const formatShiftSummaryText = (shift) => {
   const st = shift.start_time ? dayjs(shift.start_time).format("HH:mm") : null;
   const et = shift.end_time ? dayjs(shift.end_time).format("HH:mm") : null;
   if (st === "08:00" && et === "17:00") return "Ca Sáng • 08:00 – 17:00";
-  if (st === "17:00" && et === "08:00") return "Ca Đêm • 17:00 – 08:00 (+1 ngày)";
+  if (st === "17:00" && et === "08:00")
+    return "Ca Đêm • 17:00 – 08:00 (+1 ngày)";
   if (st && et) return `Ca tùy chỉnh • ${st} – ${et}`;
   const sType = detectShiftType(shift);
-  return sType === "NIGHT" ? "Ca Đêm • 17:00 – 08:00 (+1 ngày)" : "Ca Sáng • 08:00 – 17:00";
+  return sType === "NIGHT"
+    ? "Ca Đêm • 17:00 – 08:00 (+1 ngày)"
+    : "Ca Sáng • 08:00 – 17:00";
 };
 
 const isSystemAutoAssigned = (shift) => {
@@ -91,17 +98,36 @@ const isSystemAutoAssigned = (shift) => {
 };
 
 const TRIP_STATUS_LABELS = {
-  Assigned: { label: "Chờ nhận", cls: "border-blue-500/40 bg-blue-950/60 text-blue-300" },
-  Dispatched: { label: "Đã điều xe", cls: "border-sky-500/40 bg-sky-950/60 text-sky-300" },
-  Accepted: { label: "Đã nhận", cls: "border-indigo-500/40 bg-indigo-950/60 text-indigo-300" },
-  "In Progress": { label: "Đang chạy", cls: "border-amber-500/40 bg-amber-950/60 text-amber-300" },
-  Completed: { label: "Hoàn thành", cls: "border-emerald-500/40 bg-emerald-950/60 text-emerald-300" },
-  Cancelled: { label: "Đã hủy", cls: "border-red-500/40 bg-red-950/60 text-red-300" },
+  Assigned: {
+    label: "Chờ nhận",
+    cls: "border-blue-500/40 bg-blue-950/60 text-blue-300",
+  },
+  Dispatched: {
+    label: "Đã điều xe",
+    cls: "border-sky-500/40 bg-sky-950/60 text-sky-300",
+  },
+  Accepted: {
+    label: "Đã nhận",
+    cls: "border-indigo-500/40 bg-indigo-950/60 text-indigo-300",
+  },
+  "In Progress": {
+    label: "Đang chạy",
+    cls: "border-amber-500/40 bg-amber-950/60 text-amber-300",
+  },
+  Completed: {
+    label: "Hoàn thành",
+    cls: "border-emerald-500/40 bg-emerald-950/60 text-emerald-300",
+  },
+  Cancelled: {
+    label: "Đã hủy",
+    cls: "border-red-500/40 bg-red-950/60 text-red-300",
+  },
 };
 
 const mergeDriverTrips = (activeRes, historyRes) => {
   const map = new Map();
-  const upcoming = activeRes?.upcomingTrips || (activeRes?.trip ? [activeRes.trip] : []);
+  const upcoming =
+    activeRes?.upcomingTrips || (activeRes?.trip ? [activeRes.trip] : []);
   const history = historyRes?.trips || [];
   [...upcoming, ...history].forEach((t) => {
     if (t && t.id && !map.has(t.id)) {
@@ -116,34 +142,58 @@ export default function ShiftRegistrationPage() {
   const { message } = App.useApp();
 
   const currentMonday = useMemo(() => getMondayOfWeek(dayjs()), []);
-  const nextMonday = useMemo(() => currentMonday.add(7, "day"), [currentMonday]);
+  const nextMonday = useMemo(
+    () => currentMonday.add(7, "day"),
+    [currentMonday],
+  );
 
-  // Mặc định mở tab Tuần tới để tài xế đăng ký nhanh
-  const [selectedMonday, setSelectedMonday] = useState(() => getMondayOfWeek(dayjs()).add(7, "day"));
+  // Mặc định mở tab Tuần này khi vào trang Ca làm việc
+  const [selectedMonday, setSelectedMonday] = useState(() =>
+    getMondayOfWeek(dayjs()),
+  );
   const [selectedShiftType, setSelectedShiftType] = useState("MORNING");
   const [note, setNote] = useState("");
 
   const [shifts, setShifts] = useState([]);
   const [driverTrips, setDriverTrips] = useState([]);
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+  const [leaveDates, setLeaveDates] = useState([]);
+  const [customLeaveDate, setCustomLeaveDate] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [submittingLeave, setSubmittingLeave] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
-  const weekStartStr = useMemo(() => selectedMonday.format("YYYY-MM-DD"), [selectedMonday]);
+  const weekStartStr = useMemo(
+    () => selectedMonday.format("YYYY-MM-DD"),
+    [selectedMonday],
+  );
   const weekEnd = useMemo(() => selectedMonday.add(6, "day"), [selectedMonday]);
   const weekEndStr = useMemo(() => weekEnd.format("YYYY-MM-DD"), [weekEnd]);
 
   const fetchShifts = useCallback(async () => {
     setLoading(true);
     try {
-      const [shiftsRes, activeRes, historyRes] = await Promise.all([
+      const [shiftsRes, activeRes, historyRes, leaveRes] = await Promise.all([
         driverApi.getMyShifts({ from: weekStartStr, to: weekEndStr }),
-        driverApi.getActiveTrip().catch(() => ({ trip: null, upcomingTrips: [] })),
-        driverApi.getTripHistory({ page: 1, limit: 50 }).catch(() => ({ trips: [] })),
+        driverApi
+          .getActiveTrip()
+          .catch(() => ({ trip: null, upcomingTrips: [] })),
+        driverApi
+          .getTripHistory({ page: 1, limit: 50 })
+          .catch(() => ({ trips: [] })),
+        driverApi
+          .getMyLeaveRequests()
+          .catch(() => ({ leaveRequests: [] })),
       ]);
-      const rows = Array.isArray(shiftsRes) ? shiftsRes : shiftsRes?.shifts || shiftsRes?.data || [];
+      const rows = Array.isArray(shiftsRes)
+        ? shiftsRes
+        : shiftsRes?.shifts || shiftsRes?.data || [];
       setShifts(rows);
       setDriverTrips(mergeDriverTrips(activeRes, historyRes));
+      setLeaveRequests(leaveRes?.leaveRequests || []);
     } catch (err) {
       console.error("fetchShifts error:", err);
       message.error(err.message || "Không thể tải lịch làm việc của bạn.");
@@ -156,15 +206,25 @@ export default function ShiftRegistrationPage() {
     let active = true;
     const loadWeekShifts = async () => {
       try {
-        const [shiftsRes, activeRes, historyRes] = await Promise.all([
+        const [shiftsRes, activeRes, historyRes, leaveRes] = await Promise.all([
           driverApi.getMyShifts({ from: weekStartStr, to: weekEndStr }),
-          driverApi.getActiveTrip().catch(() => ({ trip: null, upcomingTrips: [] })),
-          driverApi.getTripHistory({ page: 1, limit: 50 }).catch(() => ({ trips: [] })),
+          driverApi
+            .getActiveTrip()
+            .catch(() => ({ trip: null, upcomingTrips: [] })),
+          driverApi
+            .getTripHistory({ page: 1, limit: 50 })
+            .catch(() => ({ trips: [] })),
+          driverApi
+            .getMyLeaveRequests()
+            .catch(() => ({ leaveRequests: [] })),
         ]);
         if (!active) return;
-        const rows = Array.isArray(shiftsRes) ? shiftsRes : shiftsRes?.shifts || shiftsRes?.data || [];
+        const rows = Array.isArray(shiftsRes)
+          ? shiftsRes
+          : shiftsRes?.shifts || shiftsRes?.data || [];
         setShifts(rows);
         setDriverTrips(mergeDriverTrips(activeRes, historyRes));
+      setLeaveRequests(leaveRes?.leaveRequests || []);
       } catch (err) {
         if (active) {
           console.error("fetchShifts error:", err);
@@ -183,27 +243,30 @@ export default function ShiftRegistrationPage() {
   // Tính trạng thái tuần đang chọn
   const activeWeekShifts = useMemo(
     () => shifts.filter((s) => s.status !== "Rejected"),
-    [shifts]
+    [shifts],
   );
 
   const rejectedWeekShifts = useMemo(
     () => shifts.filter((s) => s.status === "Rejected"),
-    [shifts]
+    [shifts],
   );
 
   const hasAutoAssigned = useMemo(
     () => activeWeekShifts.some((s) => isSystemAutoAssigned(s)),
-    [activeWeekShifts]
+    [activeWeekShifts],
   );
 
   const hasApproved = useMemo(
     () => activeWeekShifts.some((s) => s.status === "Approved"),
-    [activeWeekShifts]
+    [activeWeekShifts],
   );
 
   const hasPendingRequested = useMemo(
-    () => !hasApproved && !hasAutoAssigned && activeWeekShifts.some((s) => s.status === "Requested"),
-    [activeWeekShifts, hasApproved, hasAutoAssigned]
+    () =>
+      !hasApproved &&
+      !hasAutoAssigned &&
+      activeWeekShifts.some((s) => s.status === "Requested"),
+    [activeWeekShifts, hasApproved, hasAutoAssigned],
   );
 
   const lockedShiftType = useMemo(() => {
@@ -212,11 +275,123 @@ export default function ShiftRegistrationPage() {
   }, [activeWeekShifts]);
 
   const now = dayjs();
-  const todayStr = now.format("YYYY-MM-DD");
+  const todayStr = useMemo(() => dayjs().format("YYYY-MM-DD"), []);
+  const tomorrowStr = useMemo(() => dayjs().add(1, "day").format("YYYY-MM-DD"), []);
+
+  const blockedLeaveDateSet = useMemo(() => {
+    const set = new Set();
+    (leaveRequests || []).forEach((lr) => {
+      if (lr.status === "PENDING" || lr.status === "APPROVED") {
+        (lr.leave_dates || []).forEach((d) => set.add(d));
+      }
+    });
+    return set;
+  }, [leaveRequests]);
+
+  const activeTripsByDate = useMemo(() => {
+    const map = new Map();
+    (driverTrips || []).forEach((tr) => {
+      if (tr.status === "Completed" || tr.status === "Cancelled") return;
+      const rawDate = tr.planned_start || tr.created_at;
+      if (!rawDate) return;
+      const dKey = dayjs(rawDate).format("YYYY-MM-DD");
+      if (!map.has(dKey)) map.set(dKey, []);
+      map.get(dKey).push(tr);
+    });
+    return map;
+  }, [driverTrips]);
+
+  const upcomingLeaveChoices = useMemo(() => {
+    return Array.from({ length: 14 }, (_, idx) => {
+      const d = dayjs().startOf("day").add(idx + 1, "day");
+      const dStr = d.format("YYYY-MM-DD");
+      return {
+        dateStr: dStr,
+        dayName: WEEKDAY_LABELS[d.day()],
+        displayDate: d.format("DD/MM"),
+        tripCount: (activeTripsByDate.get(dStr) || []).length,
+        alreadyRequested: blockedLeaveDateSet.has(dStr),
+      };
+    });
+  }, [activeTripsByDate, blockedLeaveDateSet]);
+
+  const affectedLeavePreviewTrips = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    [...leaveDates].sort().forEach((dStr) => {
+      (activeTripsByDate.get(dStr) || []).forEach((tr) => {
+        if (!seen.has(tr.id)) {
+          seen.add(tr.id);
+          list.push({ ...tr, leaveDateStr: dStr });
+        }
+      });
+    });
+    return list;
+  }, [leaveDates, activeTripsByDate]);
+
+  const toggleLeaveDate = (dateStr) => {
+    if (!dateStr || dateStr <= todayStr) {
+      message.warning("Chỉ được chọn nghỉ từ ngày mai trở đi. Không thể chọn hôm nay.");
+      return;
+    }
+    if (blockedLeaveDateSet.has(dateStr)) {
+      message.info("Ngày này đã nằm trong đơn báo nghỉ đang chờ duyệt hoặc đã duyệt.");
+      return;
+    }
+    setLeaveDates((prev) =>
+      prev.includes(dateStr) ? prev.filter((d) => d !== dateStr) : [...prev, dateStr].sort()
+    );
+  };
+
+  const handleAddCustomLeaveDate = () => {
+    if (!customLeaveDate) return;
+    if (customLeaveDate <= todayStr) {
+      message.warning("Không thể chọn ngày hôm nay hoặc ngày đã qua. Vui lòng chọn từ ngày mai.");
+      return;
+    }
+    if (!leaveDates.includes(customLeaveDate)) {
+      toggleLeaveDate(customLeaveDate);
+    }
+    setCustomLeaveDate("");
+  };
+
+  const handleSubmitLeaveRequest = async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      message.error("Cần kết nối mạng để gửi đơn báo nghỉ đột xuất tới Quản lý.");
+      return;
+    }
+    if (leaveDates.length === 0) {
+      message.warning("Vui lòng chọn ít nhất 1 ngày sắp tới (từ ngày mai trở đi).");
+      return;
+    }
+    if (!leaveReason.trim()) {
+      message.warning("Vui lòng nhập lý do xin nghỉ đột xuất.");
+      return;
+    }
+    setSubmittingLeave(true);
+    try {
+      const res = await driverApi.submitLeaveRequest({
+        dates: leaveDates,
+        reason: leaveReason.trim(),
+      });
+      message.success(
+        res?.message || "Đã gửi đơn báo nghỉ đột xuất tới Quản lý chờ phê duyệt."
+      );
+      setLeaveModalOpen(false);
+      setLeaveDates([]);
+      setLeaveReason("");
+      await fetchShifts();
+    } catch (err) {
+      message.error(err.message || "Không thể gửi đơn báo nghỉ đột xuất.");
+    } finally {
+      setSubmittingLeave(false);
+    }
+  };
   const isPastWeek = weekEndStr < todayStr;
   const isNextWeek = weekStartStr === nextMonday.format("YYYY-MM-DD");
   const isCurrentWeek = weekStartStr === currentMonday.format("YYYY-MM-DD");
-  const isPastSundayDeadline = isNextWeek && now.day() === 0 && now.hour() >= 22;
+  const isPastSundayDeadline =
+    isNextWeek && now.day() === 0 && now.hour() >= 22;
 
   const canRegister =
     !loading &&
@@ -235,7 +410,9 @@ export default function ShiftRegistrationPage() {
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       await queueOfflineAction("REGISTER_SHIFT", null, null, payload);
-      message.info("Đang mất mạng: Yêu cầu đăng ký ca cả tuần đã lưu vào hàng đợi ngoại tuyến!");
+      message.info(
+        "Đang mất mạng: Yêu cầu đăng ký ca cả tuần đã lưu vào hàng đợi ngoại tuyến!",
+      );
       setNote("");
       return;
     }
@@ -248,11 +425,15 @@ export default function ShiftRegistrationPage() {
         selectedShiftType === "MORNING"
           ? "Ca Sáng (08:00 - 17:00)"
           : "Ca Đêm (17:00 - 08:00 hôm sau)";
-      message.success(`Đã gửi đăng ký ${shiftLabel} cho ${count} ngày trong tuần!`);
+      message.success(
+        `Đã gửi đăng ký ${shiftLabel} cho ${count} ngày trong tuần!`,
+      );
       setNote("");
       await fetchShifts();
     } catch (err) {
-      message.error(err.message || "Không thể đăng ký lịch tuần. Vui lòng thử lại.");
+      message.error(
+        err.message || "Không thể đăng ký lịch tuần. Vui lòng thử lại.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -266,7 +447,8 @@ export default function ShiftRegistrationPage() {
     try {
       const res = await driverApi.cancelShift(firstPending.id);
       message.success(
-        res?.message || "Đã hủy đăng ký cả tuần. Bạn có thể chọn lại Ca Sáng hoặc Ca Đêm."
+        res?.message ||
+          "Đã hủy đăng ký cả tuần. Bạn có thể chọn lại Ca Sáng hoặc Ca Đêm.",
       );
       await fetchShifts();
     } catch (err) {
@@ -299,7 +481,8 @@ export default function ShiftRegistrationPage() {
       const dStr = d.format("YYYY-MM-DD");
       const shift = mapByDate.get(dStr) || null;
       const dayTrips = [...(tripsByDate.get(dStr) || [])].sort(
-        (a, b) => new Date(a.planned_start || 0) - new Date(b.planned_start || 0)
+        (a, b) =>
+          new Date(a.planned_start || 0) - new Date(b.planned_start || 0),
       );
       return {
         dateObj: d,
@@ -311,7 +494,10 @@ export default function ShiftRegistrationPage() {
       };
     });
 
-    const totalTrips = list.reduce((sum, item) => sum + item.dayTrips.length, 0);
+    const totalTrips = list.reduce(
+      (sum, item) => sum + item.dayTrips.length,
+      0,
+    );
     return { weekDaysList: list, weekTripsCount: totalTrips };
   }, [selectedMonday, shifts, driverTrips, todayStr]);
 
@@ -376,25 +562,53 @@ export default function ShiftRegistrationPage() {
   return (
     <div className="w-full max-w-full min-w-0 px-3 py-4 pb-24 space-y-4 text-slate-100 overflow-x-hidden">
       {/* HEADER */}
-      <div className="flex items-start justify-between gap-2 min-w-0">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 leading-snug">
-            <Calendar size={18} className="text-blue-400 shrink-0" />
-            <span className="truncate">Đăng ký lịch làm theo tuần</span>
-          </h1>
-          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-            Chọn cố định 1 ca cả tuần (T2 – CN) • Hạn chót 22:00 CN
-          </p>
+      <div className="space-y-2.5 min-w-0">
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 leading-snug">
+              <Calendar size={18} className="text-blue-400 shrink-0" />
+              <span className="truncate">Ca làm việc</span>
+            </h1>
+            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+              Chọn cố định 1 ca cả tuần (T2 – CN) • Hạn chót 22:00 CN
+            </p>
+          </div>
+          <Button
+            size="small"
+            onClick={fetchShifts}
+            loading={loading}
+            className="shrink-0 !bg-slate-800 !border-slate-700 !text-slate-200 hover:!border-blue-500 !rounded-lg flex items-center gap-1"
+            icon={<RefreshCw size={13} />}
+          >
+            Làm mới
+          </Button>
         </div>
-        <Button
-          size="small"
-          onClick={fetchShifts}
-          loading={loading}
-          className="shrink-0 !bg-slate-800 !border-slate-700 !text-slate-200 hover:!border-blue-500 !rounded-lg flex items-center gap-1"
-          icon={<RefreshCw size={13} />}
+
+        <button
+          type="button"
+          onClick={() => {
+            setLeaveDates([]);
+            setLeaveReason("");
+            setCustomLeaveDate("");
+            setLeaveModalOpen(true);
+          }}
+          className="w-full flex items-center justify-between gap-2 rounded-xl bg-amber-950/40 hover:bg-amber-900/50 border border-amber-600/50 px-3 py-2.5 text-left transition cursor-pointer"
         >
-          Làm mới
-        </Button>
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle size={16} className="text-amber-400 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-amber-200 truncate">
+                Báo nghỉ đột xuất (Từ ngày mai)
+              </div>
+              <div className="text-[10px] text-amber-300/80 truncate">
+                Gửi Quản lý duyệt &amp; Điều phối viên đổi tài xế các chuyến trùng lịch
+              </div>
+            </div>
+          </div>
+          <span className="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[11px] font-bold">
+            Tạo đơn
+          </span>
+        </button>
       </div>
 
       {/* CHỌN TUẦN NHANH + MŨI TÊN CHUYỂN TUẦN */}
@@ -411,7 +625,8 @@ export default function ShiftRegistrationPage() {
           >
             <div>Tuần này</div>
             <div className="text-[10px] font-mono opacity-80 mt-0.5">
-              {currentMonday.format("DD/MM")} – {currentMonday.add(6, "day").format("DD/MM")}
+              {currentMonday.format("DD/MM")} –{" "}
+              {currentMonday.add(6, "day").format("DD/MM")}
             </div>
           </button>
           <button
@@ -425,7 +640,8 @@ export default function ShiftRegistrationPage() {
           >
             <div>Tuần tới</div>
             <div className="text-[10px] font-mono opacity-80 mt-0.5">
-              {nextMonday.format("DD/MM")} – {nextMonday.add(6, "day").format("DD/MM")}
+              {nextMonday.format("DD/MM")} –{" "}
+              {nextMonday.add(6, "day").format("DD/MM")}
             </div>
           </button>
         </div>
@@ -441,16 +657,17 @@ export default function ShiftRegistrationPage() {
           </button>
           <div className="text-center min-w-0 flex-1 px-1">
             <div className="text-xs sm:text-sm font-bold text-white truncate">
-              T2 ({selectedMonday.format("DD/MM")}) – CN ({weekEnd.format("DD/MM/YYYY")})
+              T2 ({selectedMonday.format("DD/MM")}) – CN (
+              {weekEnd.format("DD/MM/YYYY")})
             </div>
             <div className="text-[11px] text-slate-400 truncate">
               {isNextWeek
                 ? "Tuần đăng ký tiếp theo"
                 : isCurrentWeek
-                ? "Tuần làm việc hiện tại"
-                : isPastWeek
-                ? "Tuần đã qua"
-                : "Tuần kế hoạch"}
+                  ? "Tuần làm việc hiện tại"
+                  : isPastWeek
+                    ? "Tuần đã qua"
+                    : "Tuần kế hoạch"}
             </div>
           </div>
           <button
@@ -469,10 +686,16 @@ export default function ShiftRegistrationPage() {
         <div className="rounded-xl bg-amber-950/30 border border-amber-700/40 px-3.5 py-2.5 flex items-start gap-2.5 text-xs text-amber-200">
           <ShieldAlert size={16} className="text-amber-400 shrink-0 mt-0.5" />
           <div>
-            <span className="font-semibold text-amber-300">Lưu ý hạn chót 22:00 Chủ Nhật:</span>{" "}
+            <span className="font-semibold text-amber-300">
+              Lưu ý hạn chót 22:00 Chủ Nhật:
+            </span>{" "}
             Nếu bạn không đăng ký trước 22:00 Chủ Nhật, hệ thống sẽ{" "}
-            <strong className="text-white">tự động xếp lịch cố định tuần tới</strong> (Ca Sáng hoặc Ca Đêm) và bạn{" "}
-            <strong className="text-white">không thể chỉnh sửa</strong> sau khi đã bị xếp.
+            <strong className="text-white">
+              tự động xếp lịch cố định tuần tới
+            </strong>{" "}
+            (Ca Sáng hoặc Ca Đêm) và bạn{" "}
+            <strong className="text-white">không thể chỉnh sửa</strong> sau khi
+            đã bị xếp.
           </div>
         </div>
       )}
@@ -494,7 +717,9 @@ export default function ShiftRegistrationPage() {
           <div className="flex items-center gap-2">
             <Lock
               size={18}
-              className={hasAutoAssigned ? "text-amber-400" : "text-emerald-400"}
+              className={
+                hasAutoAssigned ? "text-amber-400" : "text-emerald-400"
+              }
             />
             <span className="text-sm font-bold text-white">
               {hasAutoAssigned
@@ -503,13 +728,15 @@ export default function ShiftRegistrationPage() {
             </span>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">
-            Ca áp dụng suốt tuần ({selectedMonday.format("DD/MM")} – {weekEnd.format("DD/MM")}):{" "}
+            Ca áp dụng suốt tuần ({selectedMonday.format("DD/MM")} –{" "}
+            {weekEnd.format("DD/MM")}):{" "}
             <strong className="text-white">
               {lockedShiftType === "NIGHT"
                 ? "Ca Đêm (17:00 - 08:00 hôm sau)"
                 : "Ca Sáng (08:00 - 17:00)"}
             </strong>
-            . Lịch đã chốt không thể sửa đổi hoặc hủy trực tiếp. Nếu có sự cố bất khả kháng, vui lòng liên hệ Quản lý.
+            . Lịch đã chốt không thể sửa đổi hoặc hủy trực tiếp. Nếu có sự cố
+            bất khả kháng, vui lòng liên hệ Quản lý.
           </p>
         </div>
       ) : hasPendingRequested ? (
@@ -563,13 +790,15 @@ export default function ShiftRegistrationPage() {
         <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-4 space-y-4 shadow-lg">
           {rejectedWeekShifts.length > 0 && (
             <div className="rounded-xl bg-red-950/30 border border-red-700/40 px-3 py-2 text-xs text-red-200">
-              Đăng ký trước đó cho tuần này đã bị từ chối. Bạn có thể chọn lại ca mới bên dưới.
+              Đăng ký trước đó cho tuần này đã bị từ chối. Bạn có thể chọn lại
+              ca mới bên dưới.
             </div>
           )}
 
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
-              Chọn ca cố định cho cả tuần ({selectedMonday.format("DD/MM")} – {weekEnd.format("DD/MM")})
+              Chọn ca cố định cho cả tuần ({selectedMonday.format("DD/MM")} –{" "}
+              {weekEnd.format("DD/MM")})
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {SHIFT_OPTIONS.map((opt) => {
@@ -596,11 +825,15 @@ export default function ShiftRegistrationPage() {
                       <IconComp size={18} />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-sm font-bold text-white">{opt.title}</div>
+                      <div className="text-sm font-bold text-white">
+                        {opt.title}
+                      </div>
                       <div className="text-xs font-semibold text-blue-300 mt-0.5">
                         {opt.timeRange}
                       </div>
-                      <div className="text-[11px] text-slate-400 mt-1">{opt.subDesc}</div>
+                      <div className="text-[11px] text-slate-400 mt-1">
+                        {opt.subDesc}
+                      </div>
                     </div>
                   </button>
                 );
@@ -624,7 +857,10 @@ export default function ShiftRegistrationPage() {
           {typeof navigator !== "undefined" && !navigator.onLine && (
             <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-950/30 border border-amber-700/40 px-3 py-2 rounded-xl">
               <WifiOff size={14} />
-              <span>Đang ngoại tuyến — Đăng ký sẽ được lưu hàng đợi để đồng bộ khi có mạng.</span>
+              <span>
+                Đang ngoại tuyến — Đăng ký sẽ được lưu hàng đợi để đồng bộ khi
+                có mạng.
+              </span>
             </div>
           )}
 
@@ -645,116 +881,457 @@ export default function ShiftRegistrationPage() {
       <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-4 space-y-3 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-bold text-white">
-            Chi tiết lịch 7 ngày ({selectedMonday.format("DD/MM")} – {weekEnd.format("DD/MM")})
+            Chi tiết lịch 7 ngày ({selectedMonday.format("DD/MM")} –{" "}
+            {weekEnd.format("DD/MM")})
           </h2>
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span>{activeWeekShifts.length}/7 ngày có ca</span>
             <span>•</span>
-            <span className="text-blue-300 font-semibold">{weekTripsCount} chuyến được giao</span>
+            <span className="text-blue-300 font-semibold">
+              {weekTripsCount} chuyến được giao
+            </span>
           </div>
         </div>
 
         <div className="divide-y divide-slate-800/80">
-          {weekDaysList.map(({ dateObj, dateStr, dayName, isToday, shift, dayTrips }) => {
-            return (
-              <div key={dateStr} className="py-3 space-y-2 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-white">
-                        {dayName}, {dateObj.format("DD/MM")}
-                      </span>
-                      {isToday && (
-                        <span className="px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-500/40 text-[10px] font-semibold">
-                          Hôm nay
+          {weekDaysList.map(
+            ({ dateObj, dateStr, dayName, isToday, shift, dayTrips }) => {
+              return (
+                <div key={dateStr} className="py-3 space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-white">
+                          {dayName}, {dateObj.format("DD/MM")}
                         </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      {formatShiftSummaryText(shift)}
-                    </div>
-                    {shift?.note && !shift.note.includes("Đăng ký ca cố định cả tuần") && (
-                      <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[210px]">
-                        {shift.note}
-                      </div>
-                    )}
-                    {shift?.rejection_reason && shift.status === "Rejected" && (
-                      <div className="text-[11px] text-red-400 mt-0.5">
-                        Lý do từ chối: {shift.rejection_reason}
-                      </div>
-                    )}
-                  </div>
-                  <div className="shrink-0">{renderStatusBadge(shift)}</div>
-                </div>
-
-                {dayTrips.length > 0 && (
-                  <div className="space-y-1.5 pl-2.5 border-l-2 border-blue-500/40 min-w-0 w-full overflow-hidden">
-                    {dayTrips.map((tr) => {
-                      const statusCfg = TRIP_STATUS_LABELS[tr.status] || {
-                        label: tr.status || "Chuyến xe",
-                        cls: "border-slate-700 bg-slate-800 text-slate-300",
-                      };
-                      const plate =
-                        tr.truck?.plate_number ||
-                        tr.truck_assignments?.[0]?.truck?.plate_number ||
-                        "";
-                      const sortedStops = [...(tr.stops || [])].sort(
-                        (a, b) => (a.sequence || 0) - (b.sequence || 0)
-                      );
-                      const firstLoc = sortedStops[0]?.location?.name;
-                      const lastLoc =
-                        sortedStops.length > 1
-                          ? sortedStops[sortedStops.length - 1]?.location?.name
-                          : null;
-                      const routeText =
-                        firstLoc && lastLoc
-                          ? `${firstLoc} → ${lastLoc}`
-                          : firstLoc || `${sortedStops.length} điểm dừng`;
-
-                      return (
-                        <button
-                          key={tr.id}
-                          type="button"
-                          onClick={() => router.push(`/driver?tripId=${tr.id}`)}
-                          className="w-full max-w-full min-w-0 overflow-hidden text-left rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-blue-500/50 px-2.5 py-2 transition cursor-pointer flex items-center justify-between gap-2"
-                        >
-                          <div className="flex-1 min-w-0 overflow-hidden space-y-0.5">
-                            <div className="flex items-center flex-wrap gap-1.5 min-w-0">
-                              <span className="inline-flex items-center gap-1 font-bold text-blue-300 shrink-0">
-                                <Truck size={12} />
-                                {tr.trip_code || `TRIP-${tr.id}`}
-                              </span>
-                              {tr.planned_start && (
-                                <span className="text-[11px] font-mono text-slate-300 shrink-0">
-                                  {dayjs(tr.planned_start).format("HH:mm")}
-                                </span>
-                              )}
-                              {plate && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
-                                  {plate}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 text-[11px] text-slate-400 min-w-0 w-full">
-                              <MapPin size={11} className="shrink-0 text-slate-500" />
-                              <span className="truncate flex-1 min-w-0 block">{routeText}</span>
-                            </div>
-                          </div>
-                          <span
-                            className={`shrink-0 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statusCfg.cls}`}
-                          >
-                            {statusCfg.label}
+                        {isToday && (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-500/40 text-[10px] font-semibold">
+                            Hôm nay
                           </span>
-                        </button>
-                      );
-                    })}
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {formatShiftSummaryText(shift)}
+                      </div>
+                      {shift?.note &&
+                        !shift.note.includes("Đăng ký ca cố định cả tuần") && (
+                          <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[210px]">
+                            {shift.note}
+                          </div>
+                        )}
+                      {shift?.rejection_reason &&
+                        shift.status === "Rejected" && (
+                          <div className="text-[11px] text-red-400 mt-0.5">
+                            Lý do từ chối: {shift.rejection_reason}
+                          </div>
+                        )}
+                    </div>
+                    <div className="shrink-0">{renderStatusBadge(shift)}</div>
                   </div>
-                )}
-              </div>
-            );
-          })}
+
+                  {dayTrips.length > 0 && (
+                    <div className="space-y-1.5 pl-2.5 border-l-2 border-blue-500/40 min-w-0 w-full overflow-hidden">
+                      {dayTrips.map((tr) => {
+                        const statusCfg = TRIP_STATUS_LABELS[tr.status] || {
+                          label: tr.status || "Chuyến xe",
+                          cls: "border-slate-700 bg-slate-800 text-slate-300",
+                        };
+                        const plate =
+                          tr.truck?.plate_number ||
+                          tr.truck_assignments?.[0]?.truck?.plate_number ||
+                          "";
+                        const sortedStops = [...(tr.stops || [])].sort(
+                          (a, b) => (a.sequence || 0) - (b.sequence || 0),
+                        );
+                        const firstLoc = sortedStops[0]?.location?.name;
+                        const lastLoc =
+                          sortedStops.length > 1
+                            ? sortedStops[sortedStops.length - 1]?.location
+                                ?.name
+                            : null;
+                        const routeText =
+                          firstLoc && lastLoc
+                            ? `${firstLoc} → ${lastLoc}`
+                            : firstLoc || `${sortedStops.length} điểm dừng`;
+
+                        return (
+                          <button
+                            key={tr.id}
+                            type="button"
+                            onClick={() =>
+                              router.push(`/driver/trips?tripId=${tr.id}`)
+                            }
+                            className="w-full max-w-full min-w-0 overflow-hidden text-left rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-blue-500/50 px-2.5 py-2 transition cursor-pointer flex items-center justify-between gap-2"
+                          >
+                            <div className="flex-1 min-w-0 overflow-hidden space-y-0.5">
+                              <div className="flex items-center flex-wrap gap-1.5 min-w-0">
+                                <span className="inline-flex items-center gap-1 font-bold text-blue-300 shrink-0">
+                                  <Truck size={12} />
+                                  {tr.trip_code || `TRIP-${tr.id}`}
+                                </span>
+                                {tr.planned_start && (
+                                  <span className="text-[11px] font-mono text-slate-300 shrink-0">
+                                    {dayjs(tr.planned_start).format("HH:mm")}
+                                  </span>
+                                )}
+                                {plate && (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                                    {plate}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 text-[11px] text-slate-400 min-w-0 w-full">
+                                <MapPin
+                                  size={11}
+                                  className="shrink-0 text-slate-500"
+                                />
+                                <span className="truncate flex-1 min-w-0 block">
+                                  {routeText}
+                                </span>
+                              </div>
+                            </div>
+                            <span
+                              className={`shrink-0 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statusCfg.cls}`}
+                            >
+                              {statusCfg.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            },
+          )}
         </div>
       </div>
+
+      {/* DANH SÁCH ĐƠN BÁO NGHỈ ĐỘT XUẤT ĐÃ GỬI */}
+      {leaveRequests.length > 0 && (
+        <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-3.5 shadow-lg space-y-2.5 min-w-0">
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 truncate">
+              <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+              <span className="truncate">Đơn báo nghỉ đột xuất đã gửi</span>
+            </h2>
+            <span className="text-[11px] text-slate-400 shrink-0">
+              {leaveRequests.length} đơn
+            </span>
+          </div>
+
+          <div className="space-y-2.5">
+            {leaveRequests.map((lr) => {
+              const statusMap = {
+                PENDING: {
+                  label: "Chờ Quản lý duyệt",
+                  cls: "!border-amber-500/50 !bg-amber-950/60 !text-amber-300",
+                },
+                APPROVED: {
+                  label: "Đã duyệt nghỉ",
+                  cls: "!border-emerald-500/50 !bg-emerald-950/60 !text-emerald-300",
+                },
+                REJECTED: {
+                  label: "Quản lý từ chối",
+                  cls: "!border-red-500/50 !bg-red-950/60 !text-red-300",
+                },
+              };
+              const st = statusMap[lr.status] || statusMap.PENDING;
+
+              return (
+                <div
+                  key={lr.id}
+                  className="rounded-xl bg-slate-950/70 border border-slate-800 p-3 space-y-2 text-xs min-w-0"
+                >
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="flex flex-wrap gap-1 min-w-0">
+                      {(lr.leave_dates || []).map((dStr) => (
+                        <span
+                          key={dStr}
+                          className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[11px]"
+                        >
+                          {dayjs(dStr).format("DD/MM/YYYY")}
+                        </span>
+                      ))}
+                    </div>
+                    <Tag className={`!m-0 !rounded-full !text-[10px] !px-2 shrink-0 ${st.cls}`}>
+                      {st.label}
+                    </Tag>
+                  </div>
+
+                  <div className="text-slate-300 text-[11px] leading-snug">
+                    <span className="text-slate-400">Lý do:</span> {lr.reason}
+                  </div>
+
+                  {(lr.affected_trips || []).length > 0 && (
+                    <div className="rounded-lg bg-slate-900/90 border border-slate-800/90 p-2 space-y-1">
+                      <div className="text-[10px] font-semibold text-amber-300">
+                        Chuyến xe bị ảnh hưởng ({lr.affected_trips.length}):
+                      </div>
+                      {lr.affected_trips.map((tr) => (
+                        <div
+                          key={tr.trip_id}
+                          className="flex items-center justify-between gap-2 text-[11px] text-slate-300 min-w-0"
+                        >
+                          <span className="font-mono text-blue-300 shrink-0">
+                            {tr.trip_code}
+                          </span>
+                          <span className="truncate flex-1 text-slate-400">
+                            {tr.planned_start ? dayjs(tr.planned_start).format("DD/MM HH:mm") : ""}
+                          </span>
+                          {lr.status === "APPROVED" ? (
+                            <span
+                              className={`shrink-0 text-[10px] font-semibold ${
+                                tr.reassigned ? "text-emerald-400" : "text-amber-300"
+                              }`}
+                            >
+                              {tr.reassigned
+                                ? `Đã đổi → ${tr.reassigned_to_driver_name || "Tài mới"}`
+                                : "Chờ Điều phối đổi tài"}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 text-[10px] text-slate-500">
+                              Chờ xét duyệt
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {lr.manager_comment && (
+                    <div className="text-[11px] text-slate-400 italic">
+                      Phản hồi Quản lý: {lr.manager_comment}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL FORM BÁO NGHỈ ĐỘT XUẤT */}
+      <Modal
+        centered
+        open={leaveModalOpen}
+        styles={{
+          content: {
+            backgroundColor: "#0f172a",
+            border: "1px solid #334155",
+            borderRadius: "1.5rem",
+            color: "#f8fafc",
+            padding: "1.25rem",
+          },
+          header: {
+            backgroundColor: "transparent",
+            borderBottom: "1px solid #1e293b",
+            paddingBottom: "0.75rem",
+            marginBottom: "0.75rem",
+          },
+        }}
+        onCancel={() => setLeaveModalOpen(false)}
+        footer={null}
+        width="95%"
+        style={{ maxWidth: 440 }}
+        destroyOnHidden
+        title={
+          <div className="flex items-center gap-2 text-amber-300 text-sm font-bold">
+            <AlertTriangle size={17} className="shrink-0" />
+            <span>Báo nghỉ đột xuất</span>
+          </div>
+        }
+      >
+        <div className="space-y-3.5 pt-2 text-xs">
+          <div className="rounded-xl bg-amber-950/40 border border-amber-700/50 px-3 py-2 text-[11px] text-amber-200 leading-relaxed">
+            <strong>Quy định:</strong> Chỉ được chọn xin nghỉ cho{" "}
+            <strong className="text-white">các ngày từ ngày mai trở đi</strong>{" "}
+            (từ <span className="font-mono">{dayjs(tomorrowStr).format("DD/MM/YYYY")}</span>). Không thể chọn nghỉ cho hôm nay.
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-semibold text-slate-300">
+              1. Chọn ngày sắp tới muốn nghỉ ({leaveDates.length} ngày đã chọn):
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+              {upcomingLeaveChoices.map((opt) => {
+                const selected = leaveDates.includes(opt.dateStr);
+                return (
+                  <button
+                    key={opt.dateStr}
+                    type="button"
+                    disabled={opt.alreadyRequested}
+                    onClick={() => toggleLeaveDate(opt.dateStr)}
+                    className={`rounded-xl border px-2 py-1.5 text-left transition ${
+                      opt.alreadyRequested
+                        ? "bg-slate-900/40 border-slate-800 text-slate-600 cursor-not-allowed opacity-60"
+                        : selected
+                          ? "bg-amber-600/25 border-amber-400 text-white cursor-pointer shadow-sm"
+                          : "bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500 cursor-pointer"
+                    }`}
+                  >
+                    <div className="text-[10px] text-slate-400 truncate">
+                      {opt.dayName}
+                    </div>
+                    <div className="font-mono font-bold text-xs">
+                      {opt.displayDate}
+                    </div>
+                    {opt.alreadyRequested ? (
+                      <div className="text-[9px] text-slate-500 truncate">Đã gửi đơn</div>
+                    ) : opt.tripCount > 0 ? (
+                      <div className="text-[9px] font-semibold text-amber-300 truncate">
+                        {opt.tripCount} chuyến xe
+                      </div>
+                    ) : (
+                      <div className="text-[9px] text-slate-500 truncate">Trống chuyến</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="date"
+                min={tomorrowStr}
+                value={customLeaveDate}
+                onChange={(e) => setCustomLeaveDate(e.target.value)}
+                className="flex-1 min-w-0 rounded-xl bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+              />
+              <Button
+                size="small"
+                icon={<Plus size={13} />}
+                onClick={handleAddCustomLeaveDate}
+                disabled={!customLeaveDate}
+                className="!rounded-xl !bg-slate-800 !border-slate-700 !text-slate-200"
+              >
+                Thêm ngày
+              </Button>
+            </div>
+
+            {leaveDates.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {leaveDates.map((dStr) => (
+                  <span
+                    key={dStr}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-200 font-mono text-[11px]"
+                  >
+                    {dayjs(dStr).format("DD/MM/YYYY")}
+                    <button
+                      type="button"
+                      onClick={() => toggleLeaveDate(dStr)}
+                      className="hover:text-white cursor-pointer"
+                      aria-label={`Bỏ chọn ${dStr}`}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {leaveDates.length > 0 && (
+            <div
+              className={`rounded-xl border p-3 space-y-2 ${
+                affectedLeavePreviewTrips.length > 0
+                  ? "bg-red-950/35 border-red-700/60"
+                  : "bg-slate-900/70 border-slate-800"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                  <Truck size={14} className={affectedLeavePreviewTrips.length > 0 ? "text-red-400" : "text-slate-400"} />
+                  Chuyến xe sẽ phải Re-assign ({affectedLeavePreviewTrips.length})
+                </span>
+              </div>
+
+              {affectedLeavePreviewTrips.length === 0 ? (
+                <div className="text-[11px] text-slate-400">
+                  Không có chuyến xe nào đang giao vào các ngày bạn chọn.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
+                  <div className="text-[11px] text-red-200">
+                    Sau khi Quản lý duyệt cho nghỉ, các chuyến sau sẽ được chuyển Điều phối viên gán cho tài xế khác:
+                  </div>
+                  {affectedLeavePreviewTrips.map((tr) => {
+                    const sortedStops = [...(tr.stops || [])].sort(
+                      (a, b) => (a.sequence || 0) - (b.sequence || 0)
+                    );
+                    const firstLoc = sortedStops[0]?.location?.name;
+                    const lastLoc =
+                      sortedStops.length > 1
+                        ? sortedStops[sortedStops.length - 1]?.location?.name
+                        : null;
+                    const routeText =
+                      firstLoc && lastLoc
+                        ? `${firstLoc} → ${lastLoc}`
+                        : firstLoc || `${sortedStops.length} điểm dừng`;
+                    const plate =
+                      tr.truck?.plate_number ||
+                      tr.truck_assignments?.[0]?.truck?.plate_number ||
+                      "";
+
+                    return (
+                      <div
+                        key={tr.id}
+                        className="rounded-lg bg-slate-950/80 border border-red-800/40 px-2.5 py-1.5 space-y-0.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-bold text-blue-300">
+                            {tr.trip_code || `TRIP-${tr.id}`}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-300">
+                            {dayjs(tr.planned_start || tr.created_at).format("DD/MM HH:mm")}
+                            {plate ? ` • ${plate}` : ""}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          {routeText}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="block text-[11px] font-semibold text-slate-300">
+              2. Lý do báo nghỉ đột xuất <span className="text-red-400">*</span>
+            </label>
+            <Input.TextArea
+              rows={3}
+              maxLength={250}
+              value={leaveReason}
+              onChange={(e) => setLeaveReason(e.target.value)}
+              placeholder="Ví dụ: Bị ốm đột xuất, có việc gia đình khẩn cấp..."
+              className="!bg-slate-950 !border-slate-700 !text-slate-100 !rounded-xl"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <Button
+              onClick={() => setLeaveModalOpen(false)}
+              className="!rounded-xl !bg-slate-800 !border-slate-700 !text-slate-200"
+            >
+              Đóng
+            </Button>
+            <Button
+              type="primary"
+              loading={submittingLeave}
+              disabled={leaveDates.length === 0 || !leaveReason.trim()}
+              onClick={handleSubmitLeaveRequest}
+              icon={<Send size={13} />}
+              className="!rounded-xl !bg-amber-600 hover:!bg-amber-500 !border-amber-500 !font-bold"
+            >
+              Gửi Quản lý duyệt
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

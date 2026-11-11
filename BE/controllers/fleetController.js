@@ -881,6 +881,39 @@ const switchDriverWeekShiftType = async (req, res, next) => {
   }
 };
 
+const getLeaveRequests = async (req, res, next) => {
+  try {
+    const { status } = req.query;
+    const leaveRequests = await fleetService.getLeaveRequests({ status });
+    return res.status(200).json({
+      success: true,
+      leaveRequests,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const decideLeaveRequest = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { decision, comment } = req.body || {};
+    const result = await fleetService.decideLeaveRequest({
+      id,
+      decision,
+      comment,
+      reviewerId: req.user?.id || null,
+    });
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   // Dispatcher Fleet & Drivers
   getTruckModelName: fleetService.getTruckModelName,
@@ -918,5 +951,7 @@ module.exports = {
   updateShift,
   approveShift,
   rejectShift,
-  deleteShift
+  deleteShift,
+  getLeaveRequests,
+  decideLeaveRequest
 };
