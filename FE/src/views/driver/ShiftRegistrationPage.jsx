@@ -147,9 +147,9 @@ export default function ShiftRegistrationPage() {
     [currentMonday],
   );
 
-  // Mặc định mở tab Tuần tới để tài xế đăng ký nhanh
+  // Mặc định mở tab Tuần này khi vào trang Ca làm việc
   const [selectedMonday, setSelectedMonday] = useState(() =>
-    getMondayOfWeek(dayjs()).add(7, "day"),
+    getMondayOfWeek(dayjs()),
   );
   const [selectedShiftType, setSelectedShiftType] = useState("MORNING");
   const [note, setNote] = useState("");
@@ -567,7 +567,7 @@ export default function ShiftRegistrationPage() {
           <div className="min-w-0 flex-1">
             <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 leading-snug">
               <Calendar size={18} className="text-blue-400 shrink-0" />
-              <span className="truncate">Đăng ký lịch làm theo tuần</span>
+              <span className="truncate">Ca làm việc</span>
             </h1>
             <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
               Chọn cố định 1 ca cả tuần (T2 – CN) • Hạn chót 22:00 CN
@@ -959,7 +959,7 @@ export default function ShiftRegistrationPage() {
                             key={tr.id}
                             type="button"
                             onClick={() =>
-                              router.push(`/driver?tripId=${tr.id}`)
+                              router.push(`/driver/trips?tripId=${tr.id}`)
                             }
                             className="w-full max-w-full min-w-0 overflow-hidden text-left rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-blue-500/50 px-2.5 py-2 transition cursor-pointer flex items-center justify-between gap-2"
                           >

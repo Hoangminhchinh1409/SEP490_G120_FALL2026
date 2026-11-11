@@ -50,7 +50,7 @@ const DriverLayout = ({ children }) => {
   const navItems = [
     { label: "Trang chủ", href: "/driver", icon: Home },
     { label: "Lịch trình", href: "/driver/trips", icon: Truck },
-    { label: "Đăng ký ca", href: "/driver/shifts", icon: Calendar },
+    { label: "Ca làm", href: "/driver/shifts", icon: Calendar },
     { label: "Thông báo", href: "/driver/notifications", icon: Bell, badge: unreadCount },
     { label: "Sự cố", href: "/driver/incidents", icon: AlertTriangle }
   ];

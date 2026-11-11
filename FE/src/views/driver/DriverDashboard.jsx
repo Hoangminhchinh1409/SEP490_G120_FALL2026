@@ -29,6 +29,8 @@ import {
   Ban,
   LogOut,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
 import Link from "next/link";
@@ -124,6 +126,7 @@ export default function DriverDashboard() {
   const [profile, setProfile] = useState(null);
   const [tripData, setTripData] = useState(null);
   const [selectedTripId, setSelectedTripId] = useState(null);
+  const [tripWeekOffset, setTripWeekOffset] = useState(0);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -131,6 +134,7 @@ export default function DriverDashboard() {
       const paramId = params.get("tripId");
       if (paramId) {
         setSelectedTripId(Number(paramId));
+        window.history.replaceState(null, "", window.location.pathname);
       }
     }
   }, []);
@@ -319,6 +323,35 @@ export default function DriverDashboard() {
     });
   };
 
+  const getActiveDisplayedTrip = () => {
+    const list = tripData?.upcomingTrips || (tripData?.trip ? [tripData.trip] : []);
+    return (selectedTripId ? list.find((t) => t.id === selectedTripId) : null) || tripData?.trip || null;
+  };
+
+  const patchTripState = (targetTripId, tripUpdater, stopUpdater) => {
+    setTripData((prev) => {
+      if (!prev) return prev;
+      const nextUpcoming = (prev.upcomingTrips || []).map((t) =>
+        t.id === targetTripId ? tripUpdater(t) : t,
+      );
+      const nextMainTrip =
+        prev.trip && prev.trip.id === targetTripId ? tripUpdater(prev.trip) : prev.trip;
+      const nextStop =
+        typeof stopUpdater === "function"
+          ? stopUpdater(prev, nextMainTrip)
+          : stopUpdater !== undefined
+            ? stopUpdater
+            : prev.currentStop;
+      return {
+        ...prev,
+        hasActiveTrip: true,
+        trip: nextMainTrip,
+        upcomingTrips: nextUpcoming,
+        currentStop: nextStop,
+      };
+    });
+  };
+
   // 3. Workflow Action: Nhận Chuyến Xe (MSG17, BR-09)
   const handleAcceptTrip = async (tripId) => {
     try {
@@ -335,18 +368,17 @@ export default function DriverDashboard() {
           payload: { clientActionId, phoneTime: new Date().toISOString() },
         });
         message.info("Đã ghi nhận nhận chuyến xe (Ngoại tuyến).");
-        setTripData((prev) => {
-          if (!prev || !prev.trip) return prev;
-          const firstStop =
-            (prev.trip.stops || []).find((s) => s.status !== "Done") ||
-            prev.trip.stops?.[0] ||
-            null;
-          return {
-            ...prev,
-            trip: { ...prev.trip, status: "Accepted" },
-            currentStop: prev.currentStop || firstStop,
-          };
-        });
+        patchTripState(
+          tripId,
+          (t) => ({ ...t, status: "Accepted" }),
+          (prev, nextMain) => {
+            const firstStop =
+              (nextMain?.stops || []).find((s) => s.status !== "Done") ||
+              nextMain?.stops?.[0] ||
+              null;
+            return prev.currentStop || firstStop;
+          },
+        );
       } else {
         const res = await driverApi.acceptTrip(tripId, { clientActionId });
         message.success(res.message || "Đã nhận chuyến xe thành công!");
@@ -382,31 +414,22 @@ export default function DriverDashboard() {
           },
         });
         message.info("Đã ghi nhận đến điểm dừng (Ngoại tuyến).");
-        setTripData((prev) => {
-          if (!prev || !prev.trip) return prev;
-          const updatedStops = (prev.trip.stops || []).map((s) =>
-            s.id === stopId
-              ? {
-                  ...s,
-                  status: "Arrived",
-                  actual_arrival: new Date().toISOString(),
-                }
-              : s,
-          );
-          return {
-            ...prev,
-            trip: {
-              ...prev.trip,
-              status: "In Progress",
-              stops: updatedStops,
-            },
-            currentStop: {
-              ...(prev.currentStop || {}),
-              status: "Arrived",
-              actual_arrival: new Date().toISOString(),
-            },
-          };
-        });
+        const nowIso = new Date().toISOString();
+        patchTripState(
+          tripId,
+          (t) => ({
+            ...t,
+            status: "In Progress",
+            stops: (t.stops || []).map((s) =>
+              s.id === stopId ? { ...s, status: "Arrived", actual_arrival: nowIso } : s,
+            ),
+          }),
+          (prev) => ({
+            ...(prev.currentStop || {}),
+            status: "Arrived",
+            actual_arrival: nowIso,
+          }),
+        );
       } else {
         const res = await driverApi.arriveStop(tripId, stopId, {
           ...coords,
@@ -451,20 +474,19 @@ export default function DriverDashboard() {
           },
         });
         message.info("Đã ghi nhận bắt đầu bốc/dỡ (Ngoại tuyến).");
-        setTripData((prev) => {
-          if (!prev || !prev.trip) return prev;
-          const updatedStops = (prev.trip.stops || []).map((s) =>
-            s.id === stopId ? { ...s, status: "Loading Started" } : s,
-          );
-          return {
-            ...prev,
-            trip: { ...prev.trip, stops: updatedStops },
-            currentStop: {
-              ...(prev.currentStop || {}),
-              status: "Loading Started",
-            },
-          };
-        });
+        patchTripState(
+          tripId,
+          (t) => ({
+            ...t,
+            stops: (t.stops || []).map((s) =>
+              s.id === stopId ? { ...s, status: "Loading Started" } : s,
+            ),
+          }),
+          (prev) => ({
+            ...(prev.currentStop || {}),
+            status: "Loading Started",
+          }),
+        );
       } else {
         const res = await driverApi.recordStopEvent(tripId, stopId, {
           eventType: "Loading Started",
@@ -520,23 +542,21 @@ export default function DriverDashboard() {
           },
         });
         message.info("Đã ghi nhận rời đi (Ngoại tuyến).");
-        setTripData((prev) => {
-          if (!prev || !prev.trip) return prev;
-          const updatedStops = (prev.trip.stops || []).map((s) =>
-            s.id === stopId ? { ...s, status: "Done" } : s,
-          );
-          const nextStop =
-            updatedStops.find((s) => s.status !== "Done") || null;
-          return {
-            ...prev,
-            trip: {
-              ...prev.trip,
-              status: nextStop ? "In Progress" : "Completed",
+        patchTripState(
+          tripId,
+          (t) => {
+            const updatedStops = (t.stops || []).map((s) =>
+              s.id === stopId ? { ...s, status: "Done" } : s,
+            );
+            const hasMore = updatedStops.some((s) => s.status !== "Done");
+            return {
+              ...t,
+              status: hasMore ? "In Progress" : "Completed",
               stops: updatedStops,
-            },
-            currentStop: nextStop,
-          };
-        });
+            };
+          },
+          (_prev, nextMain) => (nextMain?.stops || []).find((s) => s.status !== "Done") || null,
+        );
       } else {
         await driverApi.recordStopEvent(tripId, stopId, {
           eventType: "Left",
@@ -555,7 +575,8 @@ export default function DriverDashboard() {
 
   // 5. Workflow Action: Bốc Hàng & Niêm Chì 3 Bước (BR-11, BR-33, MSG45)
   const handleSubmitPickup = async () => {
-    if (!activeStopTarget || !tripData?.trip?.id) return;
+    const targetTrip = getActiveDisplayedTrip();
+    if (!activeStopTarget || !targetTrip?.id) return;
     if (!sealNumber.trim()) {
       message.error(
         "Hãy chụp rõ số chì và biển số xe, rồi nhập số chì (MSG18)",
@@ -569,7 +590,7 @@ export default function DriverDashboard() {
       return;
     }
 
-    const truckPayload = tripData.trip.truck?.allowed_payload || 5000;
+    const truckPayload = targetTrip.truck?.allowed_payload || 5000;
     if (parseFloat(loadedWeight) > truckPayload) {
       message.error(
         `Tổng khối lượng ${loadedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe. (MSG45)`,
@@ -597,39 +618,38 @@ export default function DriverDashboard() {
       if (isOffline) {
         await queueOfflineAction({
           type: "RECORD_PICKUP",
-          tripId: tripData.trip.id,
+          tripId: targetTrip.id,
           stopId: activeStopTarget.id,
           payload,
         });
         message.info("Đã lưu bốc hàng và niêm chì (Ngoại tuyến).");
-        setTripData((prev) => {
-          if (!prev || !prev.trip) return prev;
-          const updatedStops = (prev.trip.stops || []).map((s) =>
-            s.id === activeStopTarget.id
-              ? {
-                  ...s,
-                  status: "Loading Done",
-                  loaded_packages: payload.loaded_packages,
-                  loaded_weight: payload.loaded_weight,
-                }
-              : s,
-          );
-          return {
-            ...prev,
-            trip: { ...prev.trip, stops: updatedStops },
-            currentStop: {
-              ...(prev.currentStop || {}),
-              status: "Loading Done",
-            },
-          };
-        });
+        patchTripState(
+          targetTrip.id,
+          (t) => ({
+            ...t,
+            stops: (t.stops || []).map((s) =>
+              s.id === activeStopTarget.id
+                ? {
+                    ...s,
+                    status: "Loading Done",
+                    loaded_packages: payload.loaded_packages,
+                    loaded_weight: payload.loaded_weight,
+                  }
+                : s,
+            ),
+          }),
+          (prev) => ({
+            ...(prev.currentStop || {}),
+            status: "Loading Done",
+          }),
+        );
       } else {
         await driverApi.recordPickup(
-          tripData.trip.id,
+          targetTrip.id,
           activeStopTarget.id,
           payload,
         );
-        await driverApi.recordStopEvent(tripData.trip.id, activeStopTarget.id, {
+        await driverApi.recordStopEvent(targetTrip.id, activeStopTarget.id, {
           eventType: "Loading Done",
         });
         message.success("Ghi nhận lấy hàng và niêm chì thành công! (BR-11)");
@@ -645,7 +665,8 @@ export default function DriverDashboard() {
 
   // 6. Workflow Action: Giao Hàng & POD (BR-12, BR-19, BR-24)
   const handleSubmitDelivery = async () => {
-    if (!activeStopTarget || !tripData?.trip?.id) return;
+    const targetTrip = getActiveDisplayedTrip();
+    if (!activeStopTarget || !targetTrip?.id) return;
     const isExport = activeStopTarget.order?.order_type === "Export";
 
     if (isExport) {
@@ -684,55 +705,11 @@ export default function DriverDashboard() {
             : undefined,
       };
 
-      if (isOffline) {
-        queueOfflineAction({
-          type: "RECORD_DELIVERY",
-          tripId: tripData.trip.id,
-          stopId: activeStopTarget.id,
-          payload,
-        });
-        message.info("Đã lưu biên bản giao nhận POD (Ngoại tuyến).");
-        setTripData((prev) => {
-          if (!prev || !prev.trip) return prev;
-          const updatedStops = (prev.trip.stops || []).map((s) =>
-            s.id === activeStopTarget.id
-              ? {
-                  ...s,
-                  status: "Done",
-                  delivered_quantity: payload.delivered_packages,
-                }
-              : s,
-          );
-          const nextStop =
-            updatedStops.find((s) => s.status !== "Done") || null;
-          return {
-            ...prev,
-            hasActiveTrip: true,
-            trip: {
-              ...prev.trip,
-              status: nextStop ? "In Progress" : "Completed",
-              stops: updatedStops,
-            },
-            currentStop: nextStop || {
-              ...activeStopTarget,
-              status: "Done",
-            },
-          };
-        });
-      } else {
-        const res = await driverApi.recordDelivery(
-          tripData.trip.id,
-          activeStopTarget.id,
-          payload,
-        );
-        if (res.isTripCompleted) {
-          message.success(
-            "Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe (BR-24)!",
-          );
-          // Cập nhật ngay trạng thái chuyến xe sang Completed (BR-24)
-          setTripData((prev) => {
-            if (!prev || !prev.trip) return prev;
-            const updatedStops = (prev.trip.stops || []).map((s) =>
+      const applyDeliveryUpdate = (forceComplete) => {
+        patchTripState(
+          targetTrip.id,
+          (t) => {
+            const updatedStops = (t.stops || []).map((s) =>
               s.id === activeStopTarget.id
                 ? {
                     ...s,
@@ -741,20 +718,40 @@ export default function DriverDashboard() {
                   }
                 : s,
             );
+            const hasMore = updatedStops.some((s) => s.status !== "Done");
             return {
-              ...prev,
-              hasActiveTrip: true,
-              trip: {
-                ...prev.trip,
-                status: "Completed",
-                stops: updatedStops,
-              },
-              currentStop: {
-                ...activeStopTarget,
-                status: "Done",
-              },
+              ...t,
+              status: forceComplete || !hasMore ? "Completed" : "In Progress",
+              stops: updatedStops,
             };
-          });
+          },
+          (_prev, nextMain) => {
+            const nextUndone = (nextMain?.stops || []).find((s) => s.status !== "Done");
+            return nextUndone || { ...activeStopTarget, status: "Done" };
+          },
+        );
+      };
+
+      if (isOffline) {
+        await queueOfflineAction({
+          type: "RECORD_DELIVERY",
+          tripId: targetTrip.id,
+          stopId: activeStopTarget.id,
+          payload,
+        });
+        message.info("Đã lưu biên bản giao nhận POD (Ngoại tuyến).");
+        applyDeliveryUpdate(false);
+      } else {
+        const res = await driverApi.recordDelivery(
+          targetTrip.id,
+          activeStopTarget.id,
+          payload,
+        );
+        if (res.isTripCompleted) {
+          message.success(
+            "Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe (BR-24)!",
+          );
+          applyDeliveryUpdate(true);
         } else {
           message.success("Ghi nhận giao hàng và lưu POD thành công!");
           await fetchDashboardData();
@@ -770,7 +767,8 @@ export default function DriverDashboard() {
 
   // 7. Workflow Action: Khách không nhận hàng (BR-57, MSG74, MSG75)
   const handleSubmitRefusal = async () => {
-    if (!activeStopTarget || !tripData?.trip?.id) return;
+    const targetTrip = getActiveDisplayedTrip();
+    if (!activeStopTarget || !targetTrip?.id) return;
     if (!refusalReason.trim()) {
       message.error("Vui lòng nhập lý do khách từ chối nhận hàng (MSG02)");
       return;
@@ -795,39 +793,47 @@ export default function DriverDashboard() {
       };
 
       if (isOffline) {
-        queueOfflineAction({
+        await queueOfflineAction({
           type: "REFUSE_CARGO",
-          tripId: tripData.trip.id,
+          tripId: targetTrip.id,
           stopId: activeStopTarget.id,
           payload,
         });
         message.info("Đã lưu báo cáo khách không nhận hàng (Ngoại tuyến).");
+        patchTripState(
+          targetTrip.id,
+          (t) => ({
+            ...t,
+            stops: (t.stops || []).map((s) =>
+              s.id === activeStopTarget.id ? { ...s, status: "Done" } : s,
+            ),
+          }),
+          { ...activeStopTarget, status: "Done" },
+        );
       } else {
         const res = await driverApi.reportCustomerRefusal(
-          tripData.trip.id,
+          targetTrip.id,
           activeStopTarget.id,
           payload,
         );
         message.success(
           res.message || "Đã ghi nhận khách không nhận hàng. (MSG74)",
         );
-        // Cập nhật trạng thái điểm dừng sang Done
-        setTripData((prev) => {
-          if (!prev || !prev.trip) return prev;
-          const updatedStops = (prev.trip.stops || []).map((s) =>
-            s.id === activeStopTarget.id ? { ...s, status: "Done" } : s,
-          );
-          return {
-            ...prev,
-            trip: { ...prev.trip, stops: updatedStops },
-            currentStop: { ...activeStopTarget, status: "Done" },
-          };
-        });
+        patchTripState(
+          targetTrip.id,
+          (t) => ({
+            ...t,
+            stops: (t.stops || []).map((s) =>
+              s.id === activeStopTarget.id ? { ...s, status: "Done" } : s,
+            ),
+          }),
+          { ...activeStopTarget, status: "Done" },
+        );
+        await fetchDashboardData();
       }
       setRefusalModalOpen(false);
       setRefusalReason("");
       setRefusalNote("");
-      fetchDashboardData();
     } catch (err) {
       message.error(err.message || "Lỗi khi gửi báo cáo từ chối nhận hàng");
     } finally {
@@ -837,7 +843,8 @@ export default function DriverDashboard() {
 
   // 8. Workflow Action: Đề xuất phụ phí (BR-30, MSG85)
   const handleSubmitExtraFee = async () => {
-    if (!tripData?.trip?.id) return;
+    const targetTrip = getActiveDisplayedTrip();
+    if (!targetTrip?.id) return;
     if (!feeAmount || feeAmount <= 0) {
       message.error("Vui lòng nhập số tiền phụ phí hợp lệ");
       return;
@@ -866,21 +873,20 @@ export default function DriverDashboard() {
       };
 
       if (isOffline) {
-        queueOfflineAction({
+        await queueOfflineAction({
           type: "PROPOSE_EXTRA_FEE",
-          tripId: tripData.trip.id,
+          tripId: targetTrip.id,
           payload,
         });
         message.info("Đã lưu đề xuất phụ phí (Ngoại tuyến).");
       } else {
-        const res = await driverApi.proposeExtraFee(tripData.trip.id, payload);
+        const res = await driverApi.proposeExtraFee(targetTrip.id, payload);
         message.success(
           res.message || "Đã gửi đề xuất phụ phí cho Điều phối viên! (MSG85)",
         );
       }
       setExtraFeeModalOpen(false);
       setFeeReason("");
-      fetchDashboardData();
     } catch (err) {
       message.error(err.message || "Lỗi khi gửi đề xuất phụ phí");
     } finally {
@@ -922,6 +928,30 @@ export default function DriverDashboard() {
   const stops = trip?.stops || [];
   const truck = trip?.truck;
   const drivingHours = tripData?.drivingHours || profile?.drivingHours;
+
+  const getMondayOfWeek = (d) => {
+    const day = d.day();
+    const diff = day === 0 ? -6 : 1 - day;
+    return d.startOf("day").add(diff, "day");
+  };
+  const selectedWeekMonday = getMondayOfWeek(dayjs()).add(tripWeekOffset, "week");
+  const selectedWeekSunday = selectedWeekMonday.add(6, "day");
+  const weekStartStr = selectedWeekMonday.format("YYYY-MM-DD");
+  const weekEndStr = selectedWeekSunday.format("YYYY-MM-DD");
+  const weekTitleLabel =
+    tripWeekOffset === 0
+      ? "Tuần này"
+      : tripWeekOffset === 1
+        ? "Tuần sau"
+        : tripWeekOffset === -1
+          ? "Tuần trước"
+          : `Tuần ${selectedWeekMonday.format("DD/MM")}`;
+  const filteredWeekTrips = upcomingTrips.filter((t) => {
+    const rawDate = t.planned_start || t.created_at;
+    if (!rawDate) return tripWeekOffset === 0;
+    const dStr = dayjs(rawDate).format("YYYY-MM-DD");
+    return dStr >= weekStartStr && dStr <= weekEndStr;
+  });
 
   return (
     <div className="bg-slate-900 min-h-screen font-sans text-slate-100 relative overflow-x-hidden">
@@ -1087,14 +1117,14 @@ export default function DriverDashboard() {
           </div>
         ) : (
           <>
-            {/* BỘ CHỌN CHUYẾN XE HÔM NAY CHO TÀI XẾ */}
+            {/* BỘ CHỌN CHUYẾN XE SẮP TỚI THEO TỪNG TUẦN */}
             {upcomingTrips && upcomingTrips.length > 0 && (
-              <div className="mb-3 bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-2.5 shadow-xl">
-                <div className="flex items-center justify-between mb-2 px-1">
+              <div className="mb-3 bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-2.5 shadow-xl space-y-2">
+                <div className="flex items-center justify-between px-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-extrabold text-slate-200 flex items-center gap-1.5">
                       <Calendar size={13} className="text-blue-400" />
-                      Chuyến xe hôm nay
+                      Chuyến xe sắp tới
                     </span>
                     <span className="text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2 py-0.5 rounded-md flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -1109,61 +1139,102 @@ export default function DriverDashboard() {
                     <span>→</span>
                   </Link>
                 </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {upcomingTrips.map((t, idx) => {
-                    const isSelected = t.id === trip?.id;
-                    const tripDate = t.planned_start ? dayjs(t.planned_start) : null;
-                    const isToday = tripDate ? tripDate.isSame(dayjs(), "day") : false;
-                    const isTomorrow = tripDate ? tripDate.isSame(dayjs().add(1, "day"), "day") : false;
-                    const timeStr = tripDate ? tripDate.format("HH:mm") : "Chờ xếp";
-                    const dateBadge = isToday
-                      ? "Hôm nay"
-                      : isTomorrow
-                      ? "Ngày mai"
-                      : tripDate ? tripDate.format("DD/MM") : "";
 
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setSelectedTripId(t.id)}
-                        className={`p-2 rounded-xl text-left transition-all border ${
-                          isSelected
-                            ? "bg-blue-600/30 border-blue-400 shadow-md shadow-blue-500/20 ring-1 ring-blue-400"
-                            : "bg-slate-900/60 border-slate-700/60 hover:border-slate-600 text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className={`text-[10px] font-bold ${isSelected ? "text-white" : "text-slate-400"}`}>
-                            #{idx + 1}
-                          </span>
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              t.status === "In Progress"
-                                ? "bg-amber-400 animate-pulse"
-                                : t.status === "Accepted"
-                                ? "bg-emerald-400"
-                                : "bg-blue-400"
-                            }`}
-                          />
-                        </div>
-                        <p className={`text-[11px] font-extrabold truncate ${isSelected ? "text-blue-200" : "text-slate-200"}`}>
-                          {t.trip_code}
-                        </p>
-                        <div className="flex items-center justify-between mt-1 text-[9px]">
-                          <span className="font-mono text-slate-300 font-semibold">{timeStr}</span>
-                          <span className={`px-1 py-0.2 rounded font-medium ${
-                            isToday
-                              ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20"
-                              : "bg-slate-800 text-slate-400"
-                          }`}>
-                            {dateBadge}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                {/* Bộ chuyển tuần (chỉ hiển thị chuyến trong từng tuần) */}
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-900/75 border border-slate-700/60 px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => setTripWeekOffset((w) => w - 1)}
+                    className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
+                    aria-label="Tuần trước"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTripWeekOffset(0)}
+                    className="flex-1 text-center text-[11px] text-slate-200 font-semibold cursor-pointer"
+                    title="Bấm để quay về tuần hiện tại"
+                  >
+                    <span>{weekTitleLabel}</span>{" "}
+                    <span className="font-mono text-slate-400 text-[10px]">
+                      ({selectedWeekMonday.format("DD/MM")} – {selectedWeekSunday.format("DD/MM")})
+                    </span>{" "}
+                    <span className="ml-1 inline-block px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-bold">
+                      {filteredWeekTrips.length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTripWeekOffset((w) => w + 1)}
+                    className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
+                    aria-label="Tuần sau"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
                 </div>
+
+                {filteredWeekTrips.length === 0 ? (
+                  <div className="py-3 text-center text-[11px] text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/70">
+                    Không có chuyến xe nào trong tuần {selectedWeekMonday.format("DD/MM")} – {selectedWeekSunday.format("DD/MM")}.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {filteredWeekTrips.map((t, idx) => {
+                      const isSelected = t.id === trip?.id;
+                      const tripDate = t.planned_start ? dayjs(t.planned_start) : null;
+                      const isToday = tripDate ? tripDate.isSame(dayjs(), "day") : false;
+                      const isTomorrow = tripDate ? tripDate.isSame(dayjs().add(1, "day"), "day") : false;
+                      const timeStr = tripDate ? tripDate.format("HH:mm") : "Chờ xếp";
+                      const dateBadge = isToday
+                        ? "Hôm nay"
+                        : isTomorrow
+                        ? "Ngày mai"
+                        : tripDate ? tripDate.format("DD/MM") : "";
+
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setSelectedTripId(t.id)}
+                          className={`p-2 rounded-xl text-left transition-all border ${
+                            isSelected
+                              ? "bg-blue-600/30 border-blue-400 shadow-md shadow-blue-500/20 ring-1 ring-blue-400"
+                              : "bg-slate-900/60 border-slate-700/60 hover:border-slate-600 text-slate-400 hover:text-slate-200"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className={`text-[10px] font-bold ${isSelected ? "text-white" : "text-slate-400"}`}>
+                              #{idx + 1}
+                            </span>
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                t.status === "In Progress"
+                                  ? "bg-amber-400 animate-pulse"
+                                  : t.status === "Accepted"
+                                  ? "bg-emerald-400"
+                                  : "bg-blue-400"
+                              }`}
+                            />
+                          </div>
+                          <p className={`text-[11px] font-extrabold truncate ${isSelected ? "text-blue-200" : "text-slate-200"}`}>
+                            {t.trip_code}
+                          </p>
+                          <div className="flex items-center justify-between mt-1 text-[9px]">
+                            <span className="font-mono text-slate-300 font-semibold">{timeStr}</span>
+                            <span className={`px-1 py-0.2 rounded font-medium ${
+                              isToday
+                                ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20"
+                                : "bg-slate-800 text-slate-400"
+                            }`}>
+                              {dateBadge}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1627,6 +1698,7 @@ export default function DriverDashboard() {
                   <Button
                     type="primary"
                     onClick={() => {
+                      setSelectedTripId(null);
                       setTripData({ hasActiveTrip: false, trip: null });
                       fetchDashboardData();
                     }}

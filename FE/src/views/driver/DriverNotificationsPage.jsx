@@ -16,6 +16,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/vi";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { driverApi } from "../../api/driverApi";
 
 dayjs.extend(relativeTime);
@@ -37,8 +38,15 @@ const darkModalStyles = {
   },
 };
 
+const getTripNotifHref = (notif) => {
+  if (notif?.target_id) return `/driver/trips?tripId=${notif.target_id}`;
+  const matchedCode = String(notif?.message || "").match(/TRIP-[A-Z0-9-]+/i)?.[0];
+  return matchedCode ? `/driver/trips?tripCode=${encodeURIComponent(matchedCode)}` : "/driver/trips";
+};
+
 export default function DriverNotificationsPage() {
   const { message } = App.useApp();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [markingAll, setMarkingAll] = useState(false);
@@ -182,6 +190,7 @@ export default function DriverNotificationsPage() {
                 onClick={() => {
                   if (!isRead) handleMarkRead(notif.id);
                   if (isSyncNotif) handleOpenSyncModal(notif);
+                  else if (notif.target_type === "TRIP") router.push(getTripNotifHref(notif));
                 }}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${
                   isRead
@@ -271,7 +280,11 @@ export default function DriverNotificationsPage() {
                       </span>
                       {notif.target_type === "TRIP" && (
                         <Link
-                          href="/driver"
+                          href={getTripNotifHref(notif)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isRead) handleMarkRead(notif.id);
+                          }}
                           className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"
                         >
                           Xem chuyến <ArrowRight size={12} />
