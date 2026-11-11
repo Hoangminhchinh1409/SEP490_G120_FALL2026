@@ -299,10 +299,101 @@ const calculateDriverDailyHours = async (driverProfileId, date) => {
   return Number(totalHours.toFixed(1));
 };
 
+const bulkInsertDriverShifts = async (shiftPayloads) => {
+  if (!Array.isArray(shiftPayloads) || shiftPayloads.length === 0) return [];
+  const nowIso = new Date().toISOString();
+  const rows = shiftPayloads.map((p) => ({
+    ...p,
+    created_at: p.created_at || nowIso,
+    updated_at: p.updated_at || nowIso,
+  }));
+
+  const { data, error } = await supabase
+    .from("driver_shifts")
+    .insert(rows)
+    .select();
+
+  if (error) {
+    console.error("bulkInsertDriverShifts error:", error);
+    throw error;
+  }
+  return data || [];
+};
+
+const getShiftsInRange = async (driverProfileId, startDate, endDate) => {
+  const { data, error } = await supabase
+    .from("driver_shifts")
+    .select("id, driver_id, date, start_time, end_time, status, note, registered_by, created_by")
+    .eq("driver_id", driverProfileId)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .in("status", ["Requested", "Approved"]);
+
+  if (error) {
+    console.error("getShiftsInRange error:", error);
+    throw error;
+  }
+  return data || [];
+};
+
+const getAllActiveDriverProfiles = async () => {
+  const { data, error } = await supabase
+    .from("driver_profiles")
+    .select(`
+      id,
+      user_account_id,
+      status,
+      users (
+        id,
+        full_name,
+        username,
+        status
+      )
+    `)
+    .not("status", "in", '("INACTIVE","Inactive","LOCKED","Locked","Suspended","SUSPENDED")');
+
+  if (error) {
+    console.error("getAllActiveDriverProfiles error:", error);
+    throw error;
+  }
+  return (data || []).filter((d) => {
+    const uStatus = String(d.users?.status || "ACTIVE").toUpperCase();
+    return uStatus !== "INACTIVE" && uStatus !== "LOCKED";
+  });
+};
+
+const getAllShiftsBetweenDates = async (fromDate, toDate) => {
+  const { data, error } = await supabase
+    .from("driver_shifts")
+    .select("id, driver_id, date, start_time, end_time, status, note, registered_by, created_by")
+    .gte("date", fromDate)
+    .lte("date", toDate)
+    .in("status", ["Requested", "Approved"]);
+
+  if (error) {
+    console.error("getAllShiftsBetweenDates error:", error);
+    throw error;
+  }
+  return data || [];
+};
+
+const getWeekMondaySundayFromDateStr = (dateStr) => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const day = dt.getUTCDay();
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const mon = new Date(dt.getTime() + diffToMon * 86400000);
+  const sun = new Date(mon.getTime() + 6 * 86400000);
+  return {
+    weekStart: mon.toISOString().split("T")[0],
+    weekEnd: sun.toISOString().split("T")[0],
+  };
+};
+
 const cancelDriverShiftRequest = async (shiftId, driverProfileId) => {
   const { data: existing, error: findError } = await supabase
     .from("driver_shifts")
-    .select("id, status, driver_id")
+    .select("id, status, driver_id, date, note, registered_by")
     .eq("id", shiftId)
     .eq("driver_id", driverProfileId)
     .single();
@@ -311,26 +402,98 @@ const cancelDriverShiftRequest = async (shiftId, driverProfileId) => {
     throw new Error("Không tìm thấy ca làm việc hoặc bạn không có quyền hủy.");
   }
 
+  const isAutoAssigned =
+    (existing.note && existing.note.includes("[Hệ thống tự động xếp lịch]")) ||
+    existing.registered_by === null;
+
+  if (isAutoAssigned || existing.status === "Approved") {
+    const err = new Error("Lịch làm việc đã được hệ thống tự động xếp hoặc đã duyệt, không thể hủy hay chỉnh sửa!");
+    err.statusCode = 400;
+    throw err;
+  }
+
   if (existing.status !== "Requested") {
     throw new Error("Chỉ có thể hủy ca làm việc đang ở trạng thái Chờ duyệt.");
   }
 
-  const { error: deleteError } = await supabase
+  const { weekStart, weekEnd } = getWeekMondaySundayFromDateStr(existing.date);
+  const weekShifts = await getShiftsInRange(driverProfileId, weekStart, weekEnd);
+  const hasLockedShift = weekShifts.some(
+    (sh) =>
+      sh.status === "Approved" ||
+      (sh.note && sh.note.includes("[Hệ thống tự động xếp lịch]")) ||
+      sh.registered_by === null
+  );
+  if (hasLockedShift) {
+    const err = new Error("Tuần này đã có lịch được duyệt hoặc tự động xếp, không thể hủy hay chỉnh sửa!");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const { data: deletedRows, error: deleteError } = await supabase
     .from("driver_shifts")
     .delete()
-    .eq("id", shiftId);
+    .eq("driver_id", driverProfileId)
+    .gte("date", weekStart)
+    .lte("date", weekEnd)
+    .eq("status", "Requested")
+    .select("id");
 
   if (deleteError) {
     console.error("cancelDriverShiftRequest error:", deleteError);
     throw deleteError;
   }
-  return true;
+  return { deletedCount: (deletedRows || []).length, weekStart, weekEnd };
+};
+
+const bulkApproveDriverShiftsInRange = async (driverProfileId, startDate, endDate, reviewerId) => {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("driver_shifts")
+    .update({
+      status: "Approved",
+      reviewed_by: reviewerId,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq("driver_id", driverProfileId)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .eq("status", "Requested")
+    .select();
+
+  if (error) {
+    console.error("bulkApproveDriverShiftsInRange error:", error);
+    throw error;
+  }
+  return data || [];
+};
+
+const getSystemSettingValue = async (key) => {
+  const { data, error } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getSystemSettingValue error:", error);
+    return null;
+  }
+  return data ? data.value : null;
 };
 
 module.exports = {
   getDriverShifts,
   checkShiftOverlap,
   createDriverShift,
+  bulkInsertDriverShifts,
+  getShiftsInRange,
+  getAllActiveDriverProfiles,
+  getAllShiftsBetweenDates,
+  bulkApproveDriverShiftsInRange,
+  getWeekMondaySundayFromDateStr,
+  getSystemSettingValue,
   getShiftsWithDriverInfo,
   getShiftById,
   insertShiftRecord,

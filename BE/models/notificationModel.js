@@ -82,9 +82,43 @@ const createNotification = async (notificationData) => {
   return mapNotification(data);
 };
 
+const hasNotificationWithText = async (userAccountId, textSubstring) => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('user_account_id', userAccountId)
+    .ilike('message', `%${textSubstring}%`)
+    .limit(1);
+
+  if (error) {
+    console.error('hasNotificationWithText error:', error);
+    return false;
+  }
+  return Array.isArray(data) && data.length > 0;
+};
+
+const createSystemNotification = async ({
+  userAccountId,
+  user_account_id,
+  targetType,
+  target_type,
+  targetId,
+  target_id,
+  message,
+} = {}) => {
+  return createNotification({
+    user_account_id: userAccountId ?? user_account_id,
+    target_type: targetType ?? target_type ?? null,
+    target_id: targetId ?? target_id ?? null,
+    message,
+  });
+};
+
 module.exports = {
   getDriverNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
-  createNotification
+  createNotification,
+  createSystemNotification,
+  hasNotificationWithText
 };

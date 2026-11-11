@@ -38,10 +38,30 @@ import {
 import dayjs from "dayjs";
 import { managerApi } from "../../api/managerApi";
 
+const getMondayOfWeek = (d = dayjs()) => {
+  const dow = d.day();
+  const diffToMon = dow === 0 ? -6 : 1 - dow;
+  return d.startOf("day").add(diffToMon, "day");
+};
+
+const detectShiftTypeManager = (sh) => {
+  if (!sh) return 'MORNING';
+  const noteStr = String(sh.note || '').toUpperCase();
+  if (noteStr.includes('CA ĐÊM') || noteStr.includes('NIGHT')) return 'NIGHT';
+  if (noteStr.includes('CA SÁNG') || noteStr.includes('MORNING')) return 'MORNING';
+  const h = sh.start_time ? dayjs(sh.start_time).hour() : 8;
+  return h >= 15 ? 'NIGHT' : 'MORNING';
+};
+
+const isAutoAssignedManager = (sh) => {
+  if (!sh) return false;
+  return (sh.note && sh.note.includes('[Hệ thống tự động xếp lịch]')) || sh.registered_by === null || sh.registered_by === undefined;
+};
+
 export default function DriverShiftsPage() {
   // State quản lý ngày tuần
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-    return dayjs().startOf("week").add(1, "day"); // Thứ Hai
+    return getMondayOfWeek(dayjs()); // Thứ Hai chuẩn bất kể locale
   });
 
   // Data states
@@ -84,6 +104,84 @@ export default function DriverShiftsPage() {
   }, [currentWeekStart]);
 
   // Tải danh sách ca và danh sách tài xế
+  const [autoAssigning, setAutoAssigning] = useState(false);
+
+  const handleAutoAssignNextWeek = async () => {
+    setAutoAssigning(true);
+    try {
+      const res = await managerApi.autoAssignNextWeekShifts(true);
+      const data = res?.data || res;
+      if (data?.assignedDriversCount > 0) {
+        message.success(
+          `Đã tự động xếp lịch tuần tới (${data.nextMonday} - ${data.nextSunday}) cho ${data.assignedDriversCount} tài xế (Sáng: ${data.assignedMorning}, Đêm: ${data.assignedNight}).`,
+          6
+        );
+      } else {
+        message.info(data?.message || "Tất cả tài xế đang hoạt động đều đã có lịch cho tuần tới.");
+      }
+      await loadData();
+    } catch (err) {
+      console.error("handleAutoAssignNextWeek error:", err);
+      message.error(err.message || "Không thể chạy xếp lịch tự động tuần tới.");
+    } finally {
+      setAutoAssigning(false);
+    }
+  };
+
+  const [sendingReminders, setSendingReminders] = useState(false);
+  const [weeklyBusyKey, setWeeklyBusyKey] = useState(null);
+
+  const handleSendReminders21h = async () => {
+    setSendingReminders(true);
+    try {
+      const res = await managerApi.sendShiftReminders(true);
+      const data = res?.data || res;
+      if (data?.sentCount > 0) {
+        message.success(data.message || `Đã gửi nhắc nhở 21h cho ${data.sentCount} tài xế.`);
+      } else {
+        message.info(data?.message || 'Tất cả tài xế đều đã có lịch tuần tới hoặc đã được nhắc.');
+      }
+    } catch (err) {
+      message.error(err.message || 'Không thể gửi thông báo nhắc đăng ký.');
+    } finally {
+      setSendingReminders(false);
+    }
+  };
+
+  const handleApproveDriverWeek = async (driverId) => {
+    setWeeklyBusyKey(`approve_${driverId}`);
+    try {
+      const res = await managerApi.approveDriverWeekShifts({
+        driver_id: driverId,
+        week_start: currentWeekStart.format('YYYY-MM-DD'),
+      });
+      message.success(res.message || 'Đã phê duyệt cả tuần cho tài xế.');
+      await loadData();
+    } catch (err) {
+      message.error(err.message || 'Không thể phê duyệt cả tuần.');
+    } finally {
+      setWeeklyBusyKey(null);
+    }
+  };
+
+  const handleSwitchDriverWeek = async (driverId, targetShiftType, autoApprove = false) => {
+    setWeeklyBusyKey(`switch_${driverId}`);
+    try {
+      const res = await managerApi.switchDriverWeekShiftType({
+        driver_id: driverId,
+        week_start: currentWeekStart.format('YYYY-MM-DD'),
+        shift_type: targetShiftType,
+        auto_approve: autoApprove,
+      });
+      message.success(res.message || 'Đã điều chỉnh ca làm việc cả tuần.');
+      await loadData();
+    } catch (err) {
+      message.error(err.message || 'Không thể điều chỉnh ca làm việc cả tuần.');
+    } finally {
+      setWeeklyBusyKey(null);
+    }
+  };
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -140,11 +238,44 @@ export default function DriverShiftsPage() {
       activeDriversCount: activeDriverIds.size
     };
   }, [shifts, pendingShifts]);
+  const weeklyOverview = useMemo(() => {
+    const rows = [];
+    let morningCount = 0;
+    let nightCount = 0;
+    let unscheduledCount = 0;
+
+    filteredDrivers.forEach((drv) => {
+      const drvShifts = shifts.filter((sh) => Number(sh.driver_id) === Number(drv.id) && sh.status !== 'Rejected');
+      if (drvShifts.length === 0) {
+        unscheduledCount++;
+        return;
+      }
+      const shiftType = detectShiftTypeManager(drvShifts[0]);
+      if (shiftType === 'NIGHT') nightCount++;
+      else morningCount++;
+
+      const isAuto = drvShifts.some((sh) => isAutoAssignedManager(sh));
+      const hasPending = drvShifts.some((sh) => sh.status === 'Requested');
+      const allApproved = drvShifts.every((sh) => sh.status === 'Approved');
+
+      rows.push({
+        driver: drv,
+        shifts: drvShifts,
+        daysCount: drvShifts.length,
+        shiftType,
+        isAuto,
+        hasPending,
+        allApproved,
+      });
+    });
+
+    return { rows, morningCount, nightCount, unscheduledCount };
+  }, [filteredDrivers, shifts]);
 
   // Điều hướng tuần
   const handlePrevWeek = () => setCurrentWeekStart((prev) => prev.subtract(1, "week"));
   const handleNextWeek = () => setCurrentWeekStart((prev) => prev.add(1, "week"));
-  const handleTodayWeek = () => setCurrentWeekStart(dayjs().startOf("week").add(1, "day"));
+  const handleTodayWeek = () => setCurrentWeekStart(getMondayOfWeek(dayjs()));
 
   // Mở modal tạo ca mới (pre-fill tài xế và ngày nếu có)
   const handleOpenCreateShift = (driverId = null, dateMoment = null) => {
@@ -181,7 +312,7 @@ export default function DriverShiftsPage() {
     shiftForm.setFieldsValue({
       time_range: [
         curDate.hour(startH).minute(startM).second(0),
-        curDate.hour(endH).minute(endM).second(0)
+        curDate.add(endH <= startH ? 1 : 0, "day").hour(endH).minute(endM).second(0)
       ]
     });
   };
@@ -193,12 +324,13 @@ export default function DriverShiftsPage() {
       const dateStr = values.date.format("YYYY-MM-DD");
       const startTimeStr = values.time_range[0].format("HH:mm:ss");
       const endTimeStr = values.time_range[1].format("HH:mm:ss");
+      const endDateStr = endTimeStr <= startTimeStr ? values.date.add(1, "day").format("YYYY-MM-DD") : dateStr;
 
       const payload = {
         driver_id: values.driver_id,
         date: dateStr,
         start_time: `${dateStr}T${startTimeStr}+07:00`,
-        end_time: `${dateStr}T${endTimeStr}+07:00`,
+        end_time: `${endDateStr}T${endTimeStr}+07:00`,
         note: values.note ? values.note.trim(): null
       };
 
@@ -317,6 +449,20 @@ export default function DriverShiftsPage() {
           >
             Làm mới
           </Button>
+          <Button
+            onClick={handleAutoAssignNextWeek}
+            loading={autoAssigning}
+            className="rounded-xl h-10 font-semibold border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100"
+          >
+            Tự động xếp lịch tuần tới
+          </Button>
+          <Button
+            onClick={handleSendReminders21h}
+            loading={sendingReminders}
+            className="rounded-xl h-10 font-semibold border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100"
+          >
+            Gửi nhắc 21h
+          </Button>
         </div>
       </div>
 
@@ -384,7 +530,7 @@ export default function DriverShiftsPage() {
             picker="week"
             value={currentWeekStart}
             onChange={(d) => {
-              if (d) setCurrentWeekStart(d.startOf("week").add(1, "day"));
+              if (d) setCurrentWeekStart(getMondayOfWeek(d));
             }}
             className="w-36 rounded-xl text-xs"
             placeholder="Chọn tuần"
@@ -579,6 +725,117 @@ export default function DriverShiftsPage() {
         </div>
       </div>
 
+      {/* 4B. CÂN ĐỐI CA TUẦN & DUYỆT NHANH THEO TUẦN (BAO GỒM CA HỆ THỐNG TỰ XẾP) */}
+      <div className="bg-surface-container-lowest rounded-3xl shadow-sm p-5 border border-outline-variant/30 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-extrabold text-primary flex items-center gap-2">
+              Tổng hợp ca tuần &amp; Cân đối Sáng / Đêm
+            </h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Quản lý duyệt trọn tuần (kể cả ca hệ thống tự động xếp lúc 22h) hoặc đổi nhanh Ca Sáng ↔ Ca Đêm nếu phân bổ bị lệch
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+            <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-300 text-amber-800">
+              Ca Sáng (08:00–17:00): {weeklyOverview.morningCount} tài xế
+            </span>
+            <span className="px-3 py-1 rounded-full bg-indigo-50 border border-indigo-300 text-indigo-800">
+              Ca Đêm (17:00–08:00): {weeklyOverview.nightCount} tài xế
+            </span>
+            {weeklyOverview.unscheduledCount > 0 && (
+              <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-300 text-slate-600">
+                Chưa xếp: {weeklyOverview.unscheduledCount}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {weeklyOverview.rows.length === 0 ? (
+          <div className="py-6 text-center text-on-surface-variant text-xs italic bg-surface-container-low/40 rounded-2xl">
+            Chưa có tài xế nào đăng ký hoặc được xếp ca trong tuần này.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-surface-container">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-surface-container-low text-on-surface-variant uppercase text-[11px] font-bold border-b border-surface-container">
+                  <th className="py-3 px-3">Tài xế</th>
+                  <th className="py-3 px-3">Nguồn lịch</th>
+                  <th className="py-3 px-3">Ca cố định tuần</th>
+                  <th className="py-3 px-3">Số ngày</th>
+                  <th className="py-3 px-3">Trạng thái</th>
+                  <th className="py-3 px-3 text-right">Điều chỉnh &amp; Duyệt cả tuần</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-container">
+                {weeklyOverview.rows.map((row) => {
+                  const drv = row.driver;
+                  const targetSwitchType = row.shiftType === 'NIGHT' ? 'MORNING' : 'NIGHT';
+                  const targetSwitchLabel = targetSwitchType === 'NIGHT' ? 'Đổi sang Ca Đêm' : 'Đổi sang Ca Sáng';
+                  const isSwitching = weeklyBusyKey === `switch_${drv.id}`;
+                  const isApproving = weeklyBusyKey === `approve_${drv.id}`;
+                  return (
+                    <tr key={drv.id} className="hover:bg-surface-container-low/50 transition-colors">
+                      <td className="py-3 px-3 font-bold text-primary">
+                        <div>{drv.name}</div>
+                        <div className="text-[10px] text-on-surface-variant font-mono">
+                          Hạng {drv.license_class || 'C'} {drv.phone ? `· ${drv.phone}` : ''}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        {row.isAuto ? (
+                          <Tag color="gold" className="font-semibold rounded-full">Hệ thống tự động xếp</Tag>
+                        ) : (
+                          <Tag color="blue" className="font-semibold rounded-full">Tài xế / Quản lý</Tag>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold">
+                        {row.shiftType === 'NIGHT' ? 'Ca Đêm (17:00 – 08:00)' : 'Ca Sáng (08:00 – 17:00)'}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-semibold">{row.daysCount}/7 ngày</td>
+                      <td className="py-3 px-3">
+                        {row.hasPending ? (
+                          <Tag color="warning" className="font-bold">Chờ duyệt ⏳</Tag>
+                        ) : row.allApproved ? (
+                          <Tag color="success" className="font-bold">Đã duyệt</Tag>
+                        ) : (
+                          <Tag>Hỗn hợp</Tag>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <div className="inline-flex items-center flex-wrap justify-end gap-2">
+                          <Button
+                            size="small"
+                            loading={isSwitching}
+                            onClick={() => handleSwitchDriverWeek(drv.id, targetSwitchType, false)}
+                            className="rounded-lg font-semibold h-8 border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                          >
+                            {targetSwitchLabel}
+                          </Button>
+                          {row.hasPending && (
+                            <Button
+                              type="primary"
+                              size="small"
+                              icon={<Check size={14} />}
+                              loading={isApproving}
+                              onClick={() => handleApproveDriverWeek(drv.id)}
+                              className="bg-emerald-600 hover:bg-emerald-700 font-bold rounded-lg h-8"
+                            >
+                              Duyệt cả tuần
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* 5. BẢNG 2: DANH SÁCH CA CHỜ PHÊ DUYỆT */}
       <div className="bg-surface-container-lowest rounded-3xl shadow-sm p-5 border border-outline-variant/30 space-y-4">
         <div className="flex items-center justify-between">
@@ -750,6 +1007,13 @@ export default function DriverShiftsPage() {
               >
                 Hành chính (08:00 - 17:00)
               </button>
+              <button
+                type="button"
+                onClick={() => handleApplyShiftTemplate(17, 0, 8, 0)}
+                className="px-2.5 py-1 rounded-lg bg-surface-container text-[11px] font-medium hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+              >
+                Ca Đêm (17:00 - 08:00)
+              </button>
             </div>
 
             <Form.Item
@@ -758,6 +1022,7 @@ export default function DriverShiftsPage() {
               rules={[{ required: true, message: "Vui lòng chọn giờ bắt đầu và kết thúc" }]}
             >
               <TimePicker.RangePicker
+                order={false}
                 format="HH:mm"
                 minuteStep={15}
                 className="w-full py-1.5 rounded-xl font-mono"

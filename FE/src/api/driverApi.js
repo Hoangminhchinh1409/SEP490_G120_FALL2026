@@ -133,6 +133,12 @@ export const driverApi = {
     return await fetchWithAuth(url);
   },
 
+  cancelShift: async (shiftId) => {
+    return await fetchWithAuth(`/driver/shifts/${shiftId}`, {
+      method: "DELETE",
+    });
+  },
+
   registerShift: async (shiftData) => {
     return await fetchWithAuth("/driver/shifts", {
       method: "POST",

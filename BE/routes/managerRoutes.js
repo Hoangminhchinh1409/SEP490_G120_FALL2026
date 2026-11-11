@@ -33,6 +33,10 @@ router.post('/drivers', fleetController.createDriver);
 router.put('/drivers/:id', fleetController.updateDriverProfile);
 
 router.get('/shifts', fleetController.getShifts);
+router.post('/shifts/auto-assign', fleetController.autoAssignNextWeekShifts);
+router.post('/shifts/send-reminders', fleetController.sendShiftReminders);
+router.patch('/shifts/week-approve', fleetController.approveDriverWeekShifts);
+router.patch('/shifts/week-switch', fleetController.switchDriverWeekShiftType);
 router.post('/shifts', fleetController.createShift);
 router.put('/shifts/:id', fleetController.updateShift);
 router.patch('/shifts/:id/approve', fleetController.approveShift);

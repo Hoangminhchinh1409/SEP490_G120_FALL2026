@@ -1,3 +1,4 @@
+const fleetService = require("../services/fleetService");
 const supabase = require('../config/supabase');
 
 /**
@@ -158,6 +159,25 @@ const runJob02_CheckDriverShiftOvertime = async () => {
 };
 
 // Khởi động các Background Jobs
+const runJob07_AutoAssignNextWeekShifts = async () => {
+  try {
+    const remRes = await fleetService.sendShiftDeadlineReminders();
+    if (remRes?.sentCount > 0) {
+      console.log(
+        `[JOB-07] Đã gửi thông báo nhắc đăng ký ca 21h (${remRes.nextMonday} - ${remRes.nextSunday}) cho ${remRes.sentCount} tài xế.`
+      );
+    }
+    const res = await fleetService.autoAssignNextWeekShifts({ force: false });
+    if (res?.executed && res.assignedDriversCount > 0) {
+      console.log(
+        `[JOB-07] Tự động xếp lịch tuần tới (${res.nextMonday} - ${res.nextSunday}) cho ${res.assignedDriversCount} tài xế (Sáng: ${res.assignedMorning}, Đêm: ${res.assignedNight}).`
+      );
+    }
+  } catch (err) {
+    console.error("[JOB-07] Auto-assign next week shifts error:", err.message);
+  }
+};
+
 const initManagerJobs = () => {
   console.log('Khởi tạo Background Jobs Phân hệ Quản lý (JOB-01, JOB-02, JOB-03, JOB-06)...');
 
@@ -175,11 +195,14 @@ const initManagerJobs = () => {
 
   // JOB-06: Mỗi 6 giờ (21,600,000 ms)
   setInterval(runJob06_AutoLockExpiredTrucks, 6 * 60 * 60 * 1000);
+  runJob07_AutoAssignNextWeekShifts();
+  setInterval(runJob07_AutoAssignNextWeekShifts, 60 * 1000);
 };
 
 module.exports = {
   initManagerJobs,
   runJob06_AutoLockExpiredTrucks,
   runJob03_FlagOverdueOrders,
-  runJob02_CheckDriverShiftOvertime
+  runJob02_CheckDriverShiftOvertime,
+  runJob07_AutoAssignNextWeekShifts,
 };

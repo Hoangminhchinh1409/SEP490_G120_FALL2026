@@ -500,6 +500,54 @@ export const managerApi = {
   },
 
   // 9. Quản lý Ca trực Tài xế
+  autoAssignNextWeekShifts: async (force = true) => {
+    try {
+      return await fetchWithAuth('/manager/shifts/auto-assign', {
+        method: 'POST',
+        body: JSON.stringify({ force }),
+      });
+    } catch (error) {
+      console.error('managerApi.autoAssignNextWeekShifts Error:', error);
+      throw error;
+    }
+  },
+
+  sendShiftReminders: async (force = true) => {
+    try {
+      return await fetchWithAuth('/manager/shifts/send-reminders', {
+        method: 'POST',
+        body: JSON.stringify({ force }),
+      });
+    } catch (error) {
+      console.error('managerApi.sendShiftReminders Error:', error);
+      throw error;
+    }
+  },
+
+  approveDriverWeekShifts: async ({ driver_id, week_start }) => {
+    try {
+      return await fetchWithAuth('/manager/shifts/week-approve', {
+        method: 'PATCH',
+        body: JSON.stringify({ driver_id, week_start }),
+      });
+    } catch (error) {
+      console.error('managerApi.approveDriverWeekShifts Error:', error);
+      throw error;
+    }
+  },
+
+  switchDriverWeekShiftType: async ({ driver_id, week_start, shift_type, auto_approve = false }) => {
+    try {
+      return await fetchWithAuth('/manager/shifts/week-switch', {
+        method: 'PATCH',
+        body: JSON.stringify({ driver_id, week_start, shift_type, auto_approve }),
+      });
+    } catch (error) {
+      console.error('managerApi.switchDriverWeekShiftType Error:', error);
+      throw error;
+    }
+  },
+
   getShifts: async (params = {}) => {
     try {
       const query = new URLSearchParams();

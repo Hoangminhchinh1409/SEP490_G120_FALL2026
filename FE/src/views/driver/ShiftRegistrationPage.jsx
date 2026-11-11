@@ -1,370 +1,759 @@
 "use client";
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Form, DatePicker, TimePicker, Input, Button, Tag, App, Spin, Empty, Card, Popconfirm } from "antd";
-import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, XCircle, CloudOff, Cloud } from "lucide-react";
+
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { App, Button, Input, Popconfirm, Spin, Tag } from "antd";
+import {
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Lock,
+  MapPin,
+  Moon,
+  RefreshCw,
+  ShieldAlert,
+  Sun,
+  Trash2,
+  Truck,
+  WifiOff,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
 import dayjs from "dayjs";
-import "dayjs/locale/vi";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
 
-dayjs.locale("vi");
+const WEEKDAY_LABELS = [
+  "Chủ Nhật",
+  "Thứ 2",
+  "Thứ 3",
+  "Thứ 4",
+  "Thứ 5",
+  "Thứ 6",
+  "Thứ 7",
+];
+
+const SHIFT_OPTIONS = [
+  {
+    value: "MORNING",
+    title: "Ca Sáng (Thứ 2 – Chủ Nhật)",
+    timeRange: "08:00 - 17:00",
+    subDesc: "Làm việc khung giờ ban ngày cố định suốt cả tuần",
+    icon: Sun,
+  },
+  {
+    value: "NIGHT",
+    title: "Ca Đêm (Thứ 2 – Chủ Nhật)",
+    timeRange: "17:00 - 08:00 hôm sau",
+    subDesc: "Làm việc khung giờ ca đêm xuyên ngày cố định suốt cả tuần",
+    icon: Moon,
+  },
+];
+
+// Tính Thứ 2 đầu tuần bất kể locale trình duyệt / dayjs
+const getMondayOfWeek = (d = dayjs()) => {
+  const dow = d.day(); // 0=CN, 1=T2..6=T7
+  const diffToMon = dow === 0 ? -6 : 1 - dow;
+  return d.startOf("day").add(diffToMon, "day");
+};
+
+const detectShiftType = (shift) => {
+  if (!shift) return null;
+  const noteStr = String(shift.note || "").toUpperCase();
+  if (noteStr.includes("CA SÁNG") || noteStr.includes("MORNING")) return "MORNING";
+  if (noteStr.includes("CA ĐÊM") || noteStr.includes("NIGHT")) return "NIGHT";
+  if (shift.start_time) {
+    const h = dayjs(shift.start_time).hour();
+    return h >= 17 || h < 6 ? "NIGHT" : "MORNING";
+  }
+  return "MORNING";
+};
+
+const formatShiftSummaryText = (shift) => {
+  if (!shift) return "Chưa đăng ký / chưa được xếp ca";
+  const st = shift.start_time ? dayjs(shift.start_time).format("HH:mm") : null;
+  const et = shift.end_time ? dayjs(shift.end_time).format("HH:mm") : null;
+  if (st === "08:00" && et === "17:00") return "Ca Sáng • 08:00 – 17:00";
+  if (st === "17:00" && et === "08:00") return "Ca Đêm • 17:00 – 08:00 (+1 ngày)";
+  if (st && et) return `Ca tùy chỉnh • ${st} – ${et}`;
+  const sType = detectShiftType(shift);
+  return sType === "NIGHT" ? "Ca Đêm • 17:00 – 08:00 (+1 ngày)" : "Ca Sáng • 08:00 – 17:00";
+};
+
+const isSystemAutoAssigned = (shift) => {
+  if (!shift) return false;
+  const noteStr = String(shift.note || "");
+  return (
+    noteStr.includes("[Hệ thống tự động xếp lịch]") ||
+    shift.registered_by === null ||
+    shift.registered_by === undefined
+  );
+};
+
+const TRIP_STATUS_LABELS = {
+  Assigned: { label: "Chờ nhận", cls: "border-blue-500/40 bg-blue-950/60 text-blue-300" },
+  Dispatched: { label: "Đã điều xe", cls: "border-sky-500/40 bg-sky-950/60 text-sky-300" },
+  Accepted: { label: "Đã nhận", cls: "border-indigo-500/40 bg-indigo-950/60 text-indigo-300" },
+  "In Progress": { label: "Đang chạy", cls: "border-amber-500/40 bg-amber-950/60 text-amber-300" },
+  Completed: { label: "Hoàn thành", cls: "border-emerald-500/40 bg-emerald-950/60 text-emerald-300" },
+  Cancelled: { label: "Đã hủy", cls: "border-red-500/40 bg-red-950/60 text-red-300" },
+};
+
+const mergeDriverTrips = (activeRes, historyRes) => {
+  const map = new Map();
+  const upcoming = activeRes?.upcomingTrips || (activeRes?.trip ? [activeRes.trip] : []);
+  const history = historyRes?.trips || [];
+  [...upcoming, ...history].forEach((t) => {
+    if (t && t.id && !map.has(t.id)) {
+      map.set(t.id, t);
+    }
+  });
+  return Array.from(map.values());
+};
 
 export default function ShiftRegistrationPage() {
+  const router = useRouter();
   const { message } = App.useApp();
-  const [form] = Form.useForm();
+
+  const currentMonday = useMemo(() => getMondayOfWeek(dayjs()), []);
+  const nextMonday = useMemo(() => currentMonday.add(7, "day"), [currentMonday]);
+
+  // Mặc định mở tab Tuần tới để tài xế đăng ký nhanh
+  const [selectedMonday, setSelectedMonday] = useState(() => getMondayOfWeek(dayjs()).add(7, "day"));
+  const [selectedShiftType, setSelectedShiftType] = useState("MORNING");
+  const [note, setNote] = useState("");
+
+  const [shifts, setShifts] = useState([]);
+  const [driverTrips, setDriverTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [shifts, setShifts] = useState([]);
-  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-    return dayjs().startOf("week").add(1, "day"); // Thứ Hai
-  });
-  const [isOffline, setIsOffline] = useState(() => {
-    if (typeof window !== "undefined" && typeof navigator !== "undefined") {
-      return !navigator.onLine;
-    }
-    return false;
-  });
+  const [cancelling, setCancelling] = useState(false);
 
-  const weekEnd = useMemo(() => currentWeekStart.add(6, "day"), [currentWeekStart]);
+  const weekStartStr = useMemo(() => selectedMonday.format("YYYY-MM-DD"), [selectedMonday]);
+  const weekEnd = useMemo(() => selectedMonday.add(6, "day"), [selectedMonday]);
+  const weekEndStr = useMemo(() => weekEnd.format("YYYY-MM-DD"), [weekEnd]);
 
   const fetchShifts = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const fromStr = currentWeekStart.format("YYYY-MM-DD");
-      const toStr = currentWeekStart.add(6, "day").format("YYYY-MM-DD");
-      const res = await driverApi.getMyShifts({ from: fromStr, to: toStr });
-      setShifts(res?.shifts || []);
+      const [shiftsRes, activeRes, historyRes] = await Promise.all([
+        driverApi.getMyShifts({ from: weekStartStr, to: weekEndStr }),
+        driverApi.getActiveTrip().catch(() => ({ trip: null, upcomingTrips: [] })),
+        driverApi.getTripHistory({ page: 1, limit: 50 }).catch(() => ({ trips: [] })),
+      ]);
+      const rows = Array.isArray(shiftsRes) ? shiftsRes : shiftsRes?.shifts || shiftsRes?.data || [];
+      setShifts(rows);
+      setDriverTrips(mergeDriverTrips(activeRes, historyRes));
     } catch (err) {
       console.error("fetchShifts error:", err);
-      message.error(err.message || "Không thể tải danh sách ca làm việc");
+      message.error(err.message || "Không thể tải lịch làm việc của bạn.");
     } finally {
       setLoading(false);
     }
-  }, [currentWeekStart]);
+  }, [weekStartStr, weekEndStr, message]);
 
   useEffect(() => {
-    void fetchShifts();
-
-    const handleOnline = () => {
-      setIsOffline(false);
-      void fetchShifts();
+    let active = true;
+    const loadWeekShifts = async () => {
+      try {
+        const [shiftsRes, activeRes, historyRes] = await Promise.all([
+          driverApi.getMyShifts({ from: weekStartStr, to: weekEndStr }),
+          driverApi.getActiveTrip().catch(() => ({ trip: null, upcomingTrips: [] })),
+          driverApi.getTripHistory({ page: 1, limit: 50 }).catch(() => ({ trips: [] })),
+        ]);
+        if (!active) return;
+        const rows = Array.isArray(shiftsRes) ? shiftsRes : shiftsRes?.shifts || shiftsRes?.data || [];
+        setShifts(rows);
+        setDriverTrips(mergeDriverTrips(activeRes, historyRes));
+      } catch (err) {
+        if (active) {
+          console.error("fetchShifts error:", err);
+          message.error(err.message || "Không thể tải lịch làm việc của bạn.");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
     };
-    const handleOffline = () => setIsOffline(true);
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("online", handleOnline);
-      window.addEventListener("offline", handleOffline);
-    }
+    loadWeekShifts();
     return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("online", handleOnline);
-        window.removeEventListener("offline", handleOffline);
-      }
+      active = false;
     };
-  }, [fetchShifts]);
+  }, [weekStartStr, weekEndStr, message]);
 
-  const handlePrevWeek = () => {
-    setCurrentWeekStart((prev) => prev.subtract(1, "week"));
-  };
+  // Tính trạng thái tuần đang chọn
+  const activeWeekShifts = useMemo(
+    () => shifts.filter((s) => s.status !== "Rejected"),
+    [shifts]
+  );
 
-  const handleNextWeek = () => {
-    setCurrentWeekStart((prev) => prev.add(1, "week"));
-  };
+  const rejectedWeekShifts = useMemo(
+    () => shifts.filter((s) => s.status === "Rejected"),
+    [shifts]
+  );
 
-  const handleRegister = async () => {
+  const hasAutoAssigned = useMemo(
+    () => activeWeekShifts.some((s) => isSystemAutoAssigned(s)),
+    [activeWeekShifts]
+  );
+
+  const hasApproved = useMemo(
+    () => activeWeekShifts.some((s) => s.status === "Approved"),
+    [activeWeekShifts]
+  );
+
+  const hasPendingRequested = useMemo(
+    () => !hasApproved && !hasAutoAssigned && activeWeekShifts.some((s) => s.status === "Requested"),
+    [activeWeekShifts, hasApproved, hasAutoAssigned]
+  );
+
+  const lockedShiftType = useMemo(() => {
+    if (activeWeekShifts.length === 0) return null;
+    return detectShiftType(activeWeekShifts[0]);
+  }, [activeWeekShifts]);
+
+  const now = dayjs();
+  const todayStr = now.format("YYYY-MM-DD");
+  const isPastWeek = weekEndStr < todayStr;
+  const isNextWeek = weekStartStr === nextMonday.format("YYYY-MM-DD");
+  const isCurrentWeek = weekStartStr === currentMonday.format("YYYY-MM-DD");
+  const isPastSundayDeadline = isNextWeek && now.day() === 0 && now.hour() >= 22;
+
+  const canRegister =
+    !loading &&
+    activeWeekShifts.length === 0 &&
+    !isPastWeek &&
+    !isPastSundayDeadline;
+
+  const handleSubmitWeekShift = async () => {
+    if (!canRegister) return;
+
+    const payload = {
+      week_start: weekStartStr,
+      shift_type: selectedShiftType,
+      note: note.trim() || null,
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      await queueOfflineAction("REGISTER_SHIFT", null, null, payload);
+      message.info("Đang mất mạng: Yêu cầu đăng ký ca cả tuần đã lưu vào hàng đợi ngoại tuyến!");
+      setNote("");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      const values = await form.validateFields();
-      setSubmitting(true);
-
-      const dateStr = values.date.format("YYYY-MM-DD");
-
-      // Ghép ngày làm việc với giờ bắt đầu & kết thúc theo đúng múi giờ địa phương (tránh lệch múi giờ UTC+7)
-      let startDateTime = values.date
-        .hour(values.timeRange[0].hour())
-        .minute(values.timeRange[0].minute())
-        .second(0);
-
-      let endDateTime = values.date
-        .hour(values.timeRange[1].hour())
-        .minute(values.timeRange[1].minute())
-        .second(0);
-
-      // Nếu ca làm việc qua đêm (giờ kết thúc nhỏ hơn hoặc bằng giờ bắt đầu), tính sang ngày hôm sau
-      if (endDateTime.isBefore(startDateTime) || endDateTime.isSame(startDateTime)) {
-        endDateTime = endDateTime.add(1, "day");
-      }
-
-      const payload = {
-        date: dateStr,
-        start_time: startDateTime.toISOString(),
-        end_time: endDateTime.toISOString(),
-        note: values.note ? values.note.trim() : null
-      };
-
-      if (isOffline) {
-        await queueOfflineAction({
-          type: "REGISTER_SHIFT",
-          payload: {
-            ...payload,
-            clientActionId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID(): undefined
-          }
-        });
-        message.warning("Mất kết nối mạng. Đăng ký ca đã được lưu ngoại tuyến và sẽ tự động gửi khi có mạng!");
-        
-        // Optimistic update: Thêm ngay ca này vào danh sách hiển thị với trạng thái 'Chờ duyệt'
-        const optimisticShift = {
-          id: `temp_${Date.now()}`,
-          date: dateStr,
-          start_time: startDateTime.toISOString(),
-          end_time: endDateTime.toISOString(),
-          note: values.note ? values.note.trim() : null,
-          status: "Requested",
-          isOfflinePending: true,
-        };
-        setShifts(prev => [optimisticShift, ...prev]);
-        form.resetFields();
-      } else {
-        const res = await driverApi.registerShift(payload);
-        message.success(res.message || "Đã gửi đăng ký ca. Vui lòng chờ Quản lý duyệt.");
-        form.resetFields();
-        fetchShifts();
-      }
+      const res = await driverApi.registerShift(payload);
+      const count = res?.count || res?.data?.count || 7;
+      const shiftLabel =
+        selectedShiftType === "MORNING"
+          ? "Ca Sáng (08:00 - 17:00)"
+          : "Ca Đêm (17:00 - 08:00 hôm sau)";
+      message.success(`Đã gửi đăng ký ${shiftLabel} cho ${count} ngày trong tuần!`);
+      setNote("");
+      await fetchShifts();
     } catch (err) {
-      if (err.errorFields) return;
-      message.error(err.message || "Không thể đăng ký ca làm việc");
+      message.error(err.message || "Không thể đăng ký lịch tuần. Vui lòng thử lại.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleCancelShift = async (shiftId) => {
+  const handleCancelWeek = async () => {
+    const firstPending = activeWeekShifts.find((s) => s.status === "Requested");
+    if (!firstPending) return;
+
+    setCancelling(true);
     try {
-      await driverApi.cancelShift(shiftId);
-      message.success("Đã hủy yêu cầu đăng ký ca làm việc thành công.");
-      fetchShifts();
+      const res = await driverApi.cancelShift(firstPending.id);
+      message.success(
+        res?.message || "Đã hủy đăng ký cả tuần. Bạn có thể chọn lại Ca Sáng hoặc Ca Đêm."
+      );
+      await fetchShifts();
     } catch (err) {
-      message.error(err.message || "Không thể hủy ca làm việc");
+      message.error(err.message || "Không thể hủy lịch đăng ký tuần.");
+    } finally {
+      setCancelling(false);
     }
   };
 
-  const getStatusTag = (status, rejectionReason) => {
-    switch (status) {
-      case "Approved":
-        return <Tag color="success" className="font-bold flex items-center gap-1"><CheckCircle2 size={12}/> Đã duyệt</Tag>;
-      case "Rejected":
-        return (
-          <div className="flex flex-col items-start gap-1">
-            <Tag color="error" className="font-bold flex items-center gap-1"><XCircle size={12}/> Từ chối</Tag>
-            {rejectionReason && (
-              <span className="text-[11px] text-red-400 italic">Lý do: {rejectionReason}</span>
-            )}
-          </div>
-        );
-      case "Requested":
-      default:
-        return <Tag color="warning" className="font-bold flex items-center gap-1"><AlertCircle size={12}/> Chờ duyệt</Tag>;
+  // Danh sách 7 ngày Thứ 2 -> Chủ Nhật kèm các chuyến xe được giao từng ngày
+  const { weekDaysList, weekTripsCount } = useMemo(() => {
+    const mapByDate = new Map();
+    shifts.forEach((s) => {
+      if (!mapByDate.has(s.date) || s.status !== "Rejected") {
+        mapByDate.set(s.date, s);
+      }
+    });
+
+    const tripsByDate = new Map();
+    driverTrips.forEach((tr) => {
+      const rawDate = tr.planned_start || tr.created_at;
+      if (!rawDate) return;
+      const dKey = dayjs(rawDate).format("YYYY-MM-DD");
+      if (!tripsByDate.has(dKey)) tripsByDate.set(dKey, []);
+      tripsByDate.get(dKey).push(tr);
+    });
+
+    const list = Array.from({ length: 7 }, (_, i) => {
+      const d = selectedMonday.add(i, "day");
+      const dStr = d.format("YYYY-MM-DD");
+      const shift = mapByDate.get(dStr) || null;
+      const dayTrips = [...(tripsByDate.get(dStr) || [])].sort(
+        (a, b) => new Date(a.planned_start || 0) - new Date(b.planned_start || 0)
+      );
+      return {
+        dateObj: d,
+        dateStr: dStr,
+        dayName: WEEKDAY_LABELS[d.day()],
+        isToday: dStr === todayStr,
+        shift,
+        dayTrips,
+      };
+    });
+
+    const totalTrips = list.reduce((sum, item) => sum + item.dayTrips.length, 0);
+    return { weekDaysList: list, weekTripsCount: totalTrips };
+  }, [selectedMonday, shifts, driverTrips, todayStr]);
+
+  const renderStatusBadge = (shift) => {
+    if (!shift) {
+      return (
+        <Tag className="!m-0 !rounded-full !border-slate-700 !bg-slate-800/70 !text-slate-400 !text-[11px] !px-2.5">
+          Chưa xếp lịch
+        </Tag>
+      );
     }
+    if (shift.status === "Approved" && isSystemAutoAssigned(shift)) {
+      return (
+        <Tag
+          icon={<Lock size={11} className="inline mr-1" />}
+          className="!m-0 !rounded-full !border-amber-600/50 !bg-amber-950/60 !text-amber-300 !text-[11px] !px-2.5"
+        >
+          Tự động xếp (Cố định)
+        </Tag>
+      );
+    }
+    if (shift.status === "Approved") {
+      return (
+        <Tag
+          icon={<CheckCircle2 size={11} className="inline mr-1" />}
+          className="!m-0 !rounded-full !border-emerald-600/50 !bg-emerald-950/60 !text-emerald-300 !text-[11px] !px-2.5"
+        >
+          Đã duyệt (Cố định)
+        </Tag>
+      );
+    }
+    if (shift.status === "Requested" && isSystemAutoAssigned(shift)) {
+      return (
+        <Tag
+          icon={<Lock size={11} className="inline mr-1" />}
+          className="!m-0 !rounded-full !border-amber-600/50 !bg-amber-950/60 !text-amber-300 !text-[11px] !px-2.5"
+        >
+          Tự động xếp (Chờ duyệt)
+        </Tag>
+      );
+    }
+    if (shift.status === "Requested") {
+      return (
+        <Tag
+          icon={<Clock size={11} className="inline mr-1" />}
+          className="!m-0 !rounded-full !border-blue-500/50 !bg-blue-950/60 !text-blue-300 !text-[11px] !px-2.5"
+        >
+          Chờ duyệt
+        </Tag>
+      );
+    }
+    if (shift.status === "Rejected") {
+      return (
+        <Tag className="!m-0 !rounded-full !border-red-600/50 !bg-red-950/60 !text-red-300 !text-[11px] !px-2.5">
+          Đã từ chối
+        </Tag>
+      );
+    }
+    return <Tag>{shift.status}</Tag>;
   };
 
   return (
-    <div className="p-4 max-w-md mx-auto text-slate-100 min-h-screen">
-      {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-black text-white flex items-center gap-2">
-            <Calendar className="text-blue-500" size={24} /> Đăng ký Ca làm việc
+    <div className="w-full max-w-full min-w-0 px-3 py-4 pb-24 space-y-4 text-slate-100 overflow-x-hidden">
+      {/* HEADER */}
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 leading-snug">
+            <Calendar size={18} className="text-blue-400 shrink-0" />
+            <span className="truncate">Đăng ký lịch làm theo tuần</span>
           </h1>
-          <p className="text-xs text-slate-400">Xem lịch và gửi đăng ký ca</p>
+          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+            Chọn cố định 1 ca cả tuần (T2 – CN) • Hạn chót 22:00 CN
+          </p>
         </div>
-        <div className="text-xs">
-          {isOffline ? (
-            <span className="flex items-center gap-1 text-amber-400 bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/30">
-              <CloudOff size={12} /> Ngoại tuyến
-            </span>
-          ): (
-            <span className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/30">
-              <Cloud size={12} /> Trực tuyến
-            </span>
-          )}
+        <Button
+          size="small"
+          onClick={fetchShifts}
+          loading={loading}
+          className="shrink-0 !bg-slate-800 !border-slate-700 !text-slate-200 hover:!border-blue-500 !rounded-lg flex items-center gap-1"
+          icon={<RefreshCw size={13} />}
+        >
+          Làm mới
+        </Button>
+      </div>
+
+      {/* CHỌN TUẦN NHANH + MŨI TÊN CHUYỂN TUẦN */}
+      <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-3 space-y-2.5 shadow-lg min-w-0">
+        <div className="grid grid-cols-2 gap-2 w-full min-w-0">
+          <button
+            type="button"
+            onClick={() => setSelectedMonday(currentMonday)}
+            className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold border transition cursor-pointer text-center ${
+              isCurrentWeek
+                ? "bg-blue-600/20 border-blue-500 text-blue-300"
+                : "bg-slate-800/70 border-slate-700 text-slate-300 hover:border-slate-600"
+            }`}
+          >
+            <div>Tuần này</div>
+            <div className="text-[10px] font-mono opacity-80 mt-0.5">
+              {currentMonday.format("DD/MM")} – {currentMonday.add(6, "day").format("DD/MM")}
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedMonday(nextMonday)}
+            className={`min-w-0 py-2 px-2 rounded-xl text-xs font-semibold border transition cursor-pointer text-center ${
+              isNextWeek
+                ? "bg-blue-600/20 border-blue-500 text-blue-300"
+                : "bg-slate-800/70 border-slate-700 text-slate-300 hover:border-slate-600"
+            }`}
+          >
+            <div>Tuần tới</div>
+            <div className="text-[10px] font-mono opacity-80 mt-0.5">
+              {nextMonday.format("DD/MM")} – {nextMonday.add(6, "day").format("DD/MM")}
+            </div>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-1 bg-slate-950/60 border border-slate-800 rounded-xl px-2 py-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => setSelectedMonday((prev) => prev.subtract(7, "day"))}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 cursor-pointer shrink-0"
+            aria-label="Tuần trước"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <div className="text-center min-w-0 flex-1 px-1">
+            <div className="text-xs sm:text-sm font-bold text-white truncate">
+              T2 ({selectedMonday.format("DD/MM")}) – CN ({weekEnd.format("DD/MM/YYYY")})
+            </div>
+            <div className="text-[11px] text-slate-400 truncate">
+              {isNextWeek
+                ? "Tuần đăng ký tiếp theo"
+                : isCurrentWeek
+                ? "Tuần làm việc hiện tại"
+                : isPastWeek
+                ? "Tuần đã qua"
+                : "Tuần kế hoạch"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedMonday((prev) => prev.add(7, "day"))}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 cursor-pointer shrink-0"
+            aria-label="Tuần sau"
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
       </div>
 
-      {/* Week Selector */}
-      <div className="bg-slate-800/80 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 mb-4 flex items-center justify-between shadow-lg">
-        <button
-          onClick={handlePrevWeek}
-          className="p-2 hover:bg-slate-700 rounded-xl text-slate-300 transition-colors"
+      {/* BANNER QUY ĐỊNH 22:00 TỰ ĐỘNG XẾP LỊCH */}
+      {isNextWeek && activeWeekShifts.length === 0 && !isPastSundayDeadline && (
+        <div className="rounded-xl bg-amber-950/30 border border-amber-700/40 px-3.5 py-2.5 flex items-start gap-2.5 text-xs text-amber-200">
+          <ShieldAlert size={16} className="text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-semibold text-amber-300">Lưu ý hạn chót 22:00 Chủ Nhật:</span>{" "}
+            Nếu bạn không đăng ký trước 22:00 Chủ Nhật, hệ thống sẽ{" "}
+            <strong className="text-white">tự động xếp lịch cố định tuần tới</strong> (Ca Sáng hoặc Ca Đêm) và bạn{" "}
+            <strong className="text-white">không thể chỉnh sửa</strong> sau khi đã bị xếp.
+          </div>
+        </div>
+      )}
+
+      {/* KHỐI TRẠNG THÁI HOẶC FORM ĐĂNG KÝ */}
+      {loading ? (
+        <div className="rounded-2xl bg-slate-900/90 border border-slate-800 py-10 flex flex-col items-center justify-center gap-2">
+          <Spin />
+          <span className="text-xs text-slate-400">Đang tải lịch tuần...</span>
+        </div>
+      ) : hasAutoAssigned || hasApproved ? (
+        <div
+          className={`rounded-2xl border p-4 space-y-2 shadow-lg ${
+            hasAutoAssigned
+              ? "bg-amber-950/30 border-amber-700/60"
+              : "bg-emerald-950/30 border-emerald-700/60"
+          }`}
         >
-          <ChevronLeft size={20} />
-        </button>
-        <div className="text-center">
-          <span className="text-xs text-slate-400 uppercase tracking-wider block font-bold">Tuần</span>
-          <span className="text-sm font-black text-white">
-            {currentWeekStart.format("DD/MM")} - {weekEnd.format("DD/MM/YYYY")}
+          <div className="flex items-center gap-2">
+            <Lock
+              size={18}
+              className={hasAutoAssigned ? "text-amber-400" : "text-emerald-400"}
+            />
+            <span className="text-sm font-bold text-white">
+              {hasAutoAssigned
+                ? "Hệ thống đã tự động xếp lịch & Khóa chỉnh sửa"
+                : "Lịch làm việc tuần này đã được duyệt cố định"}
+            </span>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Ca áp dụng suốt tuần ({selectedMonday.format("DD/MM")} – {weekEnd.format("DD/MM")}):{" "}
+            <strong className="text-white">
+              {lockedShiftType === "NIGHT"
+                ? "Ca Đêm (17:00 - 08:00 hôm sau)"
+                : "Ca Sáng (08:00 - 17:00)"}
+            </strong>
+            . Lịch đã chốt không thể sửa đổi hoặc hủy trực tiếp. Nếu có sự cố bất khả kháng, vui lòng liên hệ Quản lý.
+          </p>
+        </div>
+      ) : hasPendingRequested ? (
+        <div className="rounded-2xl bg-blue-950/30 border border-blue-700/50 p-4 space-y-3 shadow-lg">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-sm font-bold text-blue-200 flex items-center gap-2">
+                <Clock size={16} className="text-blue-400" />
+                Đã gửi đăng ký lịch cả tuần (Chờ Quản lý duyệt)
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Ca đã chọn:{" "}
+                <strong className="text-white">
+                  {lockedShiftType === "NIGHT"
+                    ? "Ca Đêm (17:00 - 08:00 hôm sau)"
+                    : "Ca Sáng (08:00 - 17:00)"}
+                </strong>{" "}
+                cho toàn bộ tuần ({activeWeekShifts.length} ngày).
+              </p>
+            </div>
+          </div>
+
+          <Popconfirm
+            title="Hủy đăng ký lịch tuần?"
+            description="Toàn bộ các ngày Chờ duyệt trong tuần này sẽ bị hủy để bạn chọn lại Ca Sáng hoặc Ca Đêm."
+            okText="Hủy cả tuần"
+            cancelText="Giữ nguyên"
+            okButtonProps={{ danger: true, loading: cancelling }}
+            onConfirm={handleCancelWeek}
+          >
+            <Button
+              danger
+              loading={cancelling}
+              icon={<Trash2 size={14} />}
+              className="!rounded-xl !font-semibold !text-xs flex items-center"
+            >
+              Hủy đăng ký cả tuần để chọn lại
+            </Button>
+          </Popconfirm>
+        </div>
+      ) : isPastWeek || isPastSundayDeadline ? (
+        <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-4 flex items-center gap-3 text-xs text-slate-300">
+          <AlertTriangle size={18} className="text-amber-400 shrink-0" />
+          <span>
+            {isPastWeek
+              ? "Tuần này đã kết thúc, không thể đăng ký thêm ca làm việc."
+              : "Đã quá hạn chót 22:00 Chủ Nhật. Hệ thống sẽ tự động xếp lịch cố định tuần tới cho bạn."}
           </span>
         </div>
-        <button
-          onClick={handleNextWeek}
-          className="p-2 hover:bg-slate-700 rounded-xl text-slate-300 transition-colors"
-        >
-          <ChevronRight size={20} />
-        </button>
-      </div>
+      ) : (
+        <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-4 space-y-4 shadow-lg">
+          {rejectedWeekShifts.length > 0 && (
+            <div className="rounded-xl bg-red-950/30 border border-red-700/40 px-3 py-2 text-xs text-red-200">
+              Đăng ký trước đó cho tuần này đã bị từ chối. Bạn có thể chọn lại ca mới bên dưới.
+            </div>
+          )}
 
-      {/* New Shift Form */}
-      <div className="bg-slate-800/90 border border-slate-700/80 rounded-3xl p-4 mb-5 shadow-xl text-slate-100">
-        <h2 className="text-sm font-black text-white mb-3 flex items-center gap-2">
-          <Plus size={16} className="text-blue-400" /> Đăng ký Ca mới
-        </h2>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
+              Chọn ca cố định cho cả tuần ({selectedMonday.format("DD/MM")} – {weekEnd.format("DD/MM")})
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {SHIFT_OPTIONS.map((opt) => {
+                const IconComp = opt.icon;
+                const isSelected = selectedShiftType === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setSelectedShiftType(opt.value)}
+                    className={`text-left rounded-xl p-3.5 border transition cursor-pointer flex items-start gap-3 ${
+                      isSelected
+                        ? "bg-blue-600/20 border-blue-500 ring-1 ring-blue-500/40"
+                        : "bg-slate-950/60 border-slate-800 hover:border-slate-700"
+                    }`}
+                  >
+                    <div
+                      className={`p-2 rounded-lg shrink-0 ${
+                        isSelected
+                          ? "bg-blue-500/20 text-blue-300"
+                          : "bg-slate-800 text-slate-400"
+                      }`}
+                    >
+                      <IconComp size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-white">{opt.title}</div>
+                      <div className="text-xs font-semibold text-blue-300 mt-0.5">
+                        {opt.timeRange}
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-1">{opt.subDesc}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="date"
-            label={<span className="text-xs font-bold text-slate-300">Ngày làm việc (*)</span>}
-            rules={[{ required: true, message: "Vui lòng chọn ngày" }]}
-          >
-            <DatePicker
-              className="w-full py-2 bg-slate-900 border-slate-700 text-white rounded-xl"
-              disabledDate={(current) => current && current < dayjs().startOf("day")}
-              placeholder="Chọn ngày làm việc (hôm nay trở đi)"
-              format="DD/MM/YYYY"
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="timeRange"
-            label={
-              <div className="flex items-center justify-between w-full">
-                <span className="text-xs font-bold text-slate-300">Khung giờ ca (*)</span>
-                <span className="text-[10px] text-blue-400 font-normal">Hỗ trợ ca xuyên đêm qua hôm sau</span>
-              </div>
-            }
-            rules={[{ required: true, message: "Vui lòng chọn giờ bắt đầu và kết thúc" }]}
-          >
-            <TimePicker.RangePicker
-              order={false}
-              className="w-full py-2 bg-slate-900 border-slate-700 text-white rounded-xl"
-              format="HH:mm"
-              minuteStep={15}
-              placeholder={["Giờ bắt đầu", "Giờ kết thúc"]}
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="note"
-            label={<span className="text-xs font-bold text-slate-300">Ghi chú (Tối đa 200 ký tự)</span>}
-          >
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+              Ghi chú cho Quản lý (không bắt buộc)
+            </label>
             <Input.TextArea
               rows={2}
-              maxLength={200}
-              placeholder="Ghi chú thêm về tuyến đường mong muốn hoặc lý do..."
-              className="bg-slate-900 border-slate-700 text-white rounded-xl placeholder-slate-500"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ví dụ: Xin chạy cố định Ca Sáng cả tuần..."
+              className="!bg-slate-950/70 !border-slate-700 !text-slate-100 placeholder:!text-slate-500 !rounded-xl"
             />
-          </Form.Item>
+          </div>
+
+          {typeof navigator !== "undefined" && !navigator.onLine && (
+            <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-950/30 border border-amber-700/40 px-3 py-2 rounded-xl">
+              <WifiOff size={14} />
+              <span>Đang ngoại tuyến — Đăng ký sẽ được lưu hàng đợi để đồng bộ khi có mạng.</span>
+            </div>
+          )}
 
           <Button
             type="primary"
+            block
             size="large"
             loading={submitting}
-            onClick={handleRegister}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 border-none font-black rounded-xl h-12 shadow-lg shadow-blue-600/30"
+            onClick={handleSubmitWeekShift}
+            className="!h-11 !rounded-xl !font-bold !bg-blue-600 hover:!bg-blue-500 !border-none"
           >
-            Gửi Đăng Ký Ca
+            Đăng ký cả tuần (Thứ 2 – Chủ Nhật)
           </Button>
-        </Form>
-      </div>
+        </div>
+      )}
 
-      {/* Registered Shifts List */}
-      <div>
-        <h2 className="text-sm font-black text-white mb-3 flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <Clock size={16} className="text-blue-400" /> Ca đã đăng ký trong tuần
-          </span>
-          <span className="text-xs text-slate-400 font-normal">
-            {shifts.length} ca
-          </span>
-        </h2>
-
-        {loading ? (
-          <div className="text-center py-8">
-            <Spin size="large" />
+      {/* CHI TIẾT 7 NGÀY TRONG TUẦN */}
+      <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-4 space-y-3 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-white">
+            Chi tiết lịch 7 ngày ({selectedMonday.format("DD/MM")} – {weekEnd.format("DD/MM")})
+          </h2>
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span>{activeWeekShifts.length}/7 ngày có ca</span>
+            <span>•</span>
+            <span className="text-blue-300 font-semibold">{weekTripsCount} chuyến được giao</span>
           </div>
-        ): shifts.length === 0 ? (
-          <div className="bg-slate-800/40 border border-slate-800 rounded-2xl p-6 text-center">
-            <Empty description={<span className="text-slate-400 text-xs">Chưa có ca làm việc nào trong tuần này</span>} />
-          </div>
-        ): (
-          <div className="space-y-3">
-            {shifts.map((shift) => {
-              const startT = dayjs(shift.start_time).format("HH:mm");
-              const endT = dayjs(shift.end_time).format("HH:mm");
-              const dateFormatted = dayjs(shift.date).format("dddd, DD/MM/YYYY");
-              
-              // Kiểm tra xem ca làm có kéo dài sang ngày hôm sau hay không
-              const isOvernight =
-                dayjs(shift.end_time).isAfter(dayjs(shift.start_time), "day") ||
-                dayjs(shift.end_time).diff(dayjs(shift.start_time), "hour") >= 24;
+        </div>
 
-              return (
-                <div
-                  key={shift.id}
-                  className="bg-slate-800/90 border border-slate-700/80 p-3.5 rounded-2xl shadow-md transition-all hover:border-slate-600"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <span className="text-xs font-bold text-slate-300 block capitalize">
-                        {dateFormatted}
+        <div className="divide-y divide-slate-800/80">
+          {weekDaysList.map(({ dateObj, dateStr, dayName, isToday, shift, dayTrips }) => {
+            return (
+              <div key={dateStr} className="py-3 space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-white">
+                        {dayName}, {dateObj.format("DD/MM")}
                       </span>
-                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                        <span className="text-sm font-black text-white">
-                          {startT} - {endT}
+                      {isToday && (
+                        <span className="px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-500/40 text-[10px] font-semibold">
+                          Hôm nay
                         </span>
-                        {isOvernight && (
-                          <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 px-1.5 py-0.2 rounded-md font-bold flex items-center gap-1">
-                            🌙 Hôm sau (+1 ngày)
-                          </span>
-                        )}
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      {formatShiftSummaryText(shift)}
+                    </div>
+                    {shift?.note && !shift.note.includes("Đăng ký ca cố định cả tuần") && (
+                      <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[210px]">
+                        {shift.note}
                       </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      {getStatusTag(shift.status, shift.rejection_reason)}
-                      {shift.isOfflinePending && (
-                        <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                          Chờ đồng bộ
-                        </span>
-                      )}
-                    </div>
-<div className="flex items-center gap-2">
-                      {getStatusTag(shift.status, shift.rejection_reason)}
-                      {shift.status === "Requested" && (
-                        <Popconfirm
-                          title="Hủy yêu cầu ca?"
-                          description="Bạn có chắc chắn muốn hủy yêu cầu đăng ký ca này không?"
-                          onConfirm={() => handleCancelShift(shift.id)}
-                          okText="Hủy ca"
-                          cancelText="Không"
-                          okButtonProps={{ danger: true }}
-                        >
-                          <button
-                            type="button"
-                            className="text-xs text-red-400 hover:text-red-300 underline cursor-pointer"
-                          >
-                            Hủy
-                          </button>
-                        </Popconfirm>
-                      )}
-                    </div>
+                    )}
+                    {shift?.rejection_reason && shift.status === "Rejected" && (
+                      <div className="text-[11px] text-red-400 mt-0.5">
+                        Lý do từ chối: {shift.rejection_reason}
+                      </div>
+                    )}
                   </div>
-
-                  {shift.note && (
-                    <p className="text-xs text-slate-400 bg-slate-900/50 p-2 rounded-lg mt-1 italic">
-                      &ldquo;{shift.note}&rdquo;
-                    </p>
-                  )}
+                  <div className="shrink-0">{renderStatusBadge(shift)}</div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                {dayTrips.length > 0 && (
+                  <div className="space-y-1.5 pl-2.5 border-l-2 border-blue-500/40 min-w-0 w-full overflow-hidden">
+                    {dayTrips.map((tr) => {
+                      const statusCfg = TRIP_STATUS_LABELS[tr.status] || {
+                        label: tr.status || "Chuyến xe",
+                        cls: "border-slate-700 bg-slate-800 text-slate-300",
+                      };
+                      const plate =
+                        tr.truck?.plate_number ||
+                        tr.truck_assignments?.[0]?.truck?.plate_number ||
+                        "";
+                      const sortedStops = [...(tr.stops || [])].sort(
+                        (a, b) => (a.sequence || 0) - (b.sequence || 0)
+                      );
+                      const firstLoc = sortedStops[0]?.location?.name;
+                      const lastLoc =
+                        sortedStops.length > 1
+                          ? sortedStops[sortedStops.length - 1]?.location?.name
+                          : null;
+                      const routeText =
+                        firstLoc && lastLoc
+                          ? `${firstLoc} → ${lastLoc}`
+                          : firstLoc || `${sortedStops.length} điểm dừng`;
+
+                      return (
+                        <button
+                          key={tr.id}
+                          type="button"
+                          onClick={() => router.push(`/driver?tripId=${tr.id}`)}
+                          className="w-full max-w-full min-w-0 overflow-hidden text-left rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-blue-500/50 px-2.5 py-2 transition cursor-pointer flex items-center justify-between gap-2"
+                        >
+                          <div className="flex-1 min-w-0 overflow-hidden space-y-0.5">
+                            <div className="flex items-center flex-wrap gap-1.5 min-w-0">
+                              <span className="inline-flex items-center gap-1 font-bold text-blue-300 shrink-0">
+                                <Truck size={12} />
+                                {tr.trip_code || `TRIP-${tr.id}`}
+                              </span>
+                              {tr.planned_start && (
+                                <span className="text-[11px] font-mono text-slate-300 shrink-0">
+                                  {dayjs(tr.planned_start).format("HH:mm")}
+                                </span>
+                              )}
+                              {plate && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                                  {plate}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 text-[11px] text-slate-400 min-w-0 w-full">
+                              <MapPin size={11} className="shrink-0 text-slate-500" />
+                              <span className="truncate flex-1 min-w-0 block">{routeText}</span>
+                            </div>
+                          </div>
+                          <span
+                            className={`shrink-0 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statusCfg.cls}`}
+                          >
+                            {statusCfg.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

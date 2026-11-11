@@ -812,6 +812,75 @@ const deleteShift = async (req, res) => {
   }
 };
 
+const autoAssignNextWeekShifts = async (req, res, next) => {
+  try {
+    const force = req.body?.force !== undefined ? Boolean(req.body.force) : true;
+    const result = await fleetService.autoAssignNextWeekShifts({
+      force,
+      triggeredBy: req.user?.id || null,
+    });
+    return res.status(200).json({
+      success: true,
+      message: result.message || "Hoàn tất xử lý xếp lịch tự động cho tuần tới.",
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const sendShiftReminders = async (req, res, next) => {
+  try {
+    const force = req.body?.force !== undefined ? Boolean(req.body.force) : true;
+    const result = await fleetService.sendShiftDeadlineReminders({ force });
+    return res.status(200).json({
+      success: true,
+      message: result.message || "Hoàn tất gửi thông báo nhắc đăng ký ca.",
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const approveDriverWeekShifts = async (req, res, next) => {
+  try {
+    const { driver_id, week_start } = req.body || {};
+    const result = await fleetService.approveDriverWeekShifts({
+      driverId: driver_id,
+      weekStart: week_start,
+      reviewerId: req.user?.id || null,
+    });
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const switchDriverWeekShiftType = async (req, res, next) => {
+  try {
+    const { driver_id, week_start, shift_type, auto_approve } = req.body || {};
+    const result = await fleetService.switchDriverWeekShiftType({
+      driverId: driver_id,
+      weekStart: week_start,
+      shiftType: shift_type,
+      reviewerId: req.user?.id || null,
+      autoApprove: Boolean(auto_approve),
+    });
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   // Dispatcher Fleet & Drivers
   getTruckModelName: fleetService.getTruckModelName,
@@ -841,6 +910,10 @@ module.exports = {
 
   // Manager Driver Shifts
   getShifts,
+  autoAssignNextWeekShifts,
+  sendShiftReminders,
+  approveDriverWeekShifts,
+  switchDriverWeekShiftType,
   createShift,
   updateShift,
   approveShift,

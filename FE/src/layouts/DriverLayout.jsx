@@ -72,7 +72,7 @@ const DriverLayout = ({ children }) => {
       <App>
         <div className="bg-slate-950 min-h-screen text-slate-100 font-sans flex flex-col justify-between selection:bg-blue-600 selection:text-white">
       {/* Mobile-first PWA Layout wrapper with Safe Area support */}
-      <main className="w-full max-w-md mx-auto min-h-screen relative bg-slate-900 shadow-2xl flex flex-col pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
+      <main className="w-full max-w-md mx-auto min-h-screen relative bg-slate-900 shadow-2xl flex flex-col min-w-0 overflow-x-hidden pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
         {children}
 
         {/* Global Mobile Bottom Navigation Bar with Safe Area support */}

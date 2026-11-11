@@ -924,72 +924,177 @@ const getMyShifts = async (userId, { from = null, to = null } = {}) => {
   return await driverModel.getDriverShifts(profile.id, { from, to });
 };
 
-const registerShift = async (userId, shiftData) => {
-  const { date, start_time, end_time, note = null } = shiftData;
+const addDaysStr = (dateStr, days) => {
+  const dt = new Date(`${dateStr}T00:00:00Z`);
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().split("T")[0];
+};
 
-  if (!date || !start_time || !end_time) {
-    const error = new Error("Vui lòng nhập đầy đủ ngày làm việc, giờ bắt đầu và kết thúc");
-    error.statusCode = 400;
-    throw error;
+const getMondaySundayOfDate = (dateStr) => {
+  const dt = new Date(`${dateStr}T00:00:00Z`);
+  const day = dt.getUTCDay(); // 0=Sun, 1=Mon..6=Sat
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const weekStart = addDaysStr(dateStr, diffToMon);
+  const weekEnd = addDaysStr(weekStart, 6);
+  return { weekStart, weekEnd };
+};
+
+const getNowGMT7Info = () => {
+  const gmt7 = new Date(Date.now() + 7 * 3600 * 1000);
+  const todayStr = gmt7.toISOString().split("T")[0];
+  const dayOfWeek = gmt7.getUTCDay(); // 0=Sun..6=Sat
+  const hour = gmt7.getUTCHours();
+  const { weekStart: currentMondayStr, weekEnd: currentSundayStr } = getMondaySundayOfDate(todayStr);
+  const nextMondayStr = addDaysStr(currentMondayStr, 7);
+  const nextSundayStr = addDaysStr(nextMondayStr, 6);
+  return {
+    todayStr,
+    dayOfWeek,
+    hour,
+    currentMondayStr,
+    currentSundayStr,
+    nextMondayStr,
+    nextSundayStr,
+  };
+};
+
+const normalizeWeeklyShiftType = ({ shift_type, start_time } = {}) => {
+  const rawType = String(shift_type || "").trim().toUpperCase();
+  if (rawType === "MORNING" || rawType === "CA_SANG" || rawType === "DAY") return "MORNING";
+  if (rawType === "NIGHT" || rawType === "CA_DEM") return "NIGHT";
+  if (start_time) {
+    const str = String(start_time);
+    const timeMatch = str.match(/T(\d{2}):/);
+    if (timeMatch) {
+      const h = parseInt(timeMatch[1], 10);
+      if (h === 8) return "MORNING";
+      if (h === 17) return "NIGHT";
+    }
   }
+  return null;
+};
 
-  const shiftDate = new Date(date);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  if (shiftDate < today) {
-    const error = new Error("Ngày đăng ký ca phải từ hôm nay trở đi");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const startTimeObj = new Date(start_time);
-  const endTimeObj = new Date(end_time);
-
-  if (startTimeObj >= endTimeObj) {
-    const error = new Error("Giờ kết thúc phải sau giờ bắt đầu ca làm việc");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (note && note.length > 200) {
-    const error = new Error("Ghi chú ca làm việc không được vượt quá 200 ký tự");
-    error.statusCode = 400;
-    throw error;
-  }
-
+const registerShift = async (userId, shiftData = {}) => {
   const profile = await getMyProfile(userId);
+  const { week_start, date, shift_type, start_time, note = null } = shiftData;
 
-  // Kiểm tra trùng ca
-  const isOverlap = await driverModel.checkShiftOverlap(profile.id, date, start_time, end_time);
-  if (isOverlap) {
-    const error = new Error("Ca này trùng với ca khác của bạn.");
-    error.statusCode = 400;
-    throw error;
+  const shiftType = normalizeWeeklyShiftType({ shift_type, start_time });
+  if (!shiftType) {
+    const err = new Error("Vui lòng chọn ca làm việc hợp lệ: Ca Sáng (08:00 - 17:00) hoặc Ca Đêm (17:00 - 08:00 hôm sau).");
+    err.statusCode = 400;
+    throw err;
   }
 
-  const shift = await driverModel.createDriverShift({
-    driverId: profile.id,
-    date,
-    startTime: start_time,
-    endTime: end_time,
-    note: note ? note.trim(): null,
-    registeredBy: userId
-  });
+  const nowInfo = getNowGMT7Info();
+  const anchorInput = week_start || date || nowInfo.nextMondayStr;
+  const anchorDateStr = String(anchorInput).split("T")[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDateStr)) {
+    const err = new Error("Định dạng ngày/tuần đăng ký không hợp lệ (YYYY-MM-DD).");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const { weekStart, weekEnd } = getMondaySundayOfDate(anchorDateStr);
+
+  if (weekEnd < nowInfo.todayStr) {
+    const err = new Error("Không thể đăng ký lịch làm việc cho tuần đã qua.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Kiểm tra hạn chót 22:00 Chủ Nhật cho tuần tới
+  if (weekStart === nowInfo.nextMondayStr && nowInfo.dayOfWeek === 0 && nowInfo.hour >= 22) {
+    const err = new Error("Đã quá hạn chót 22:00 Chủ Nhật để đăng ký tuần tới. Hệ thống sẽ tự động xếp lịch cố định.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const existingShifts = await driverModel.getShiftsInRange(profile.id, weekStart, weekEnd);
+  const activeShifts = existingShifts.filter((sh) => sh.status !== "Rejected");
+
+  const hasLockedShift = activeShifts.some(
+    (sh) =>
+      sh.status === "Approved" ||
+      (sh.note && sh.note.includes("[Hệ thống tự động xếp lịch]")) ||
+      sh.registered_by === null
+  );
+  if (hasLockedShift) {
+    const err = new Error("Lịch làm việc tuần này đã được duyệt hoặc hệ thống tự động xếp, không thể sửa đổi!");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (activeShifts.length > 0) {
+    const err = new Error("Bạn đã gửi đăng ký ca cho tuần này (đang chờ duyệt). Vui lòng hủy đăng ký tuần trước khi chọn lại.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const shiftLabel = shiftType === "MORNING" ? "Ca Sáng (08:00 - 17:00)" : "Ca Đêm (17:00 - 08:00 hôm sau)";
+  const effectiveStartDate = weekStart < nowInfo.todayStr ? nowInfo.todayStr : weekStart;
+  const shiftPayloads = [];
+
+  let curDate = effectiveStartDate;
+  while (curDate <= weekEnd) {
+    const startIso = shiftType === "MORNING" ? `${curDate}T08:00:00+07:00` : `${curDate}T17:00:00+07:00`;
+    const endDate = shiftType === "MORNING" ? curDate : addDaysStr(curDate, 1);
+    const endIso = shiftType === "MORNING" ? `${endDate}T17:00:00+07:00` : `${endDate}T08:00:00+07:00`;
+    const trimmedNote = note && String(note).trim() ? String(note).trim() : null;
+    const finalNote = trimmedNote
+      ? `[${shiftLabel}] ${trimmedNote}`
+      : `[${shiftLabel}] Đăng ký ca cố định cả tuần (${weekStart} đến ${weekEnd})`;
+
+    shiftPayloads.push({
+      driver_id: profile.id,
+      date: curDate,
+      start_time: startIso,
+      end_time: endIso,
+      status: "Requested",
+      note: finalNote,
+      registered_by: userId,
+      created_by: userId,
+    });
+    curDate = addDaysStr(curDate, 1);
+  }
+
+  const inserted = await driverModel.bulkInsertDriverShifts(shiftPayloads);
 
   await driverModel.logDriverActivity({
     actorId: userId,
     actorType: "DRIVER",
-    action: "REGISTER_SHIFT",
+    action: "REGISTER_SHIFT_WEEK",
     targetType: "DRIVER_SHIFT",
-    targetId: shift.id,
-    reason: `Tài xế đăng ký ca làm việc ngày ${date} (${start_time} - ${end_time})`
+    targetId: inserted[0]?.id || null,
+    reason: `Đăng ký ${shiftLabel} cho cả tuần (${effectiveStartDate} - ${weekEnd})`,
+  });
+
+  return {
+    weekStart,
+    weekEnd,
+    shiftType,
+    shiftLabel,
+    count: inserted.length,
+    shifts: inserted,
+  };
+};
+
+const cancelShift = async (userId, shiftId) => {
+  const profile = await getMyProfile(userId);
+  const result = await driverModel.cancelDriverShiftRequest(shiftId, profile.id);
+
+  await driverModel.logDriverActivity({
+    actorId: userId,
+    actorType: "DRIVER",
+    action: "CANCEL_SHIFT_WEEK",
+    targetType: "DRIVER_SHIFT",
+    targetId: shiftId,
+    reason: `Hủy đăng ký lịch tuần (${result.weekStart} - ${result.weekEnd}) - ${result.deletedCount} ngày`,
   });
 
   return {
     success: true,
-    message: "Đã gửi đăng ký ca. Vui lòng chờ Quản lý duyệt.",
-    shift
+    ...result,
+    message: `Đã hủy đăng ký toàn bộ ${result.deletedCount} ngày trong tuần (${result.weekStart} - ${result.weekEnd}).`,
   };
 };
 
@@ -1062,6 +1167,12 @@ const formatActionDescription = (type, payload = {}, tripId, stopId) => {
           const d = new Date(endStr);
           endStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
         } catch {}
+      }
+      const st = normalizeWeeklyShiftType(payload);
+      if (st) {
+        const wk = payload?.week_start || date;
+        const label = st === "MORNING" ? "Ca Sáng (08:00 - 17:00)" : "Ca Đêm (17:00 - 08:00 hôm sau)";
+        return `Đăng ký ${label} cả tuần bắt đầu ${wk}`;
       }
       const hours = startStr && endStr ? ` (${startStr} - ${endStr})` : "";
       return `Đăng ký ca làm việc ngày ${date}${hours}`;
@@ -1259,6 +1370,7 @@ module.exports = {
   reportIncident,
   getMyShifts,
   registerShift,
+  cancelShift,
   getDriverNotifications,
   markNotificationRead,
   markAllNotificationsRead,
