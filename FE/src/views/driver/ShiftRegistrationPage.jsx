@@ -99,7 +99,7 @@ const isSystemAutoAssigned = (shift) => {
 
 const TRIP_STATUS_LABELS = {
   Assigned: {
-    label: "Chờ nhận",
+    label: "Sắp tới",
     cls: "border-blue-500/40 bg-blue-950/60 text-blue-300",
   },
   Dispatched: {

@@ -45,7 +45,6 @@ export default function DriverTripsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   
   // Action states
-  const [acceptingTripId, setAcceptingTripId] = useState(null);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const handledDeepLinkRef = useRef(false);
@@ -114,31 +113,6 @@ export default function DriverTripsPage() {
     return () => clearTimeout(timer);
   }, [fetchTripsData]);
 
-  // Handle Accept Trip
-  const handleAcceptTrip = async (trip, e) => {
-    if (e) e.stopPropagation();
-    if (!trip?.id) return;
-
-    try {
-      setAcceptingTripId(trip.id);
-      await driverApi.acceptTrip(trip.id);
-      message.success(`Đã nhận chuyến ${trip.trip_code || `#${trip.id}`} thành công!`);
-
-      // Update locally
-      setUpcomingTrips((prev) =>
-        prev.map((t) => (t.id === trip.id ? { ...t, status: "Accepted" } : t))
-      );
-      if (selectedTrip?.id === trip.id) {
-        setSelectedTrip((prev) => ({ ...prev, status: "Accepted" }));
-      }
-    } catch (err) {
-      console.error("Accept trip error:", err);
-      message.error(err.message || "Lỗi khi nhận chuyến xe");
-    } finally {
-      setAcceptingTripId(null);
-    }
-  };
-
   // Navigate to execute trip on Driver Dashboard
   const handleGoToExecuteTrip = (tripId) => {
     router.push(`/driver?tripId=${tripId}`);
@@ -163,7 +137,7 @@ export default function DriverTripsPage() {
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-            Chờ nhận
+            Sắp tới
           </span>
         );
       case "Accepted":
@@ -351,7 +325,7 @@ export default function DriverTripsPage() {
               </div>
               <h3 className="text-sm font-bold text-slate-300 mb-1">Không có chuyến xe sắp tới</h3>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                Khi Điều phối viên gán chuyến mới cho bạn, chuyến sẽ hiển thị tại đây để bạn bấm <b>Nhận chuyến</b>.
+                Khi Điều phối viên gán chuyến mới cho bạn, chuyến sẽ hiển thị tại đây để bạn vào theo dõi và thực hiện.
               </p>
             </div>
           ) : (
@@ -360,7 +334,6 @@ export default function DriverTripsPage() {
               const truckPayload = t.truck?.allowed_payload || t.truck_assignments?.[0]?.truck?.allowed_payload || "";
               const stops = t.stops || [];
               const isAssigned = t.status === "Assigned";
-              const isAccepted = t.status === "Accepted";
               const isInProgress = t.status === "In Progress";
 
               return (
@@ -371,7 +344,7 @@ export default function DriverTripsPage() {
                     setDetailModalOpen(true);
                   }}
                   className={`bg-slate-800/90 border rounded-2xl p-4 shadow-lg transition-all active:scale-[0.99] cursor-pointer ${
-                    isInProgress
+                    isInProgress || idx === 0
                       ? "border-emerald-500/50 shadow-emerald-500/10"
                       : isAssigned
                       ? "border-blue-500/50 shadow-blue-500/10"
@@ -385,6 +358,11 @@ export default function DriverTripsPage() {
                         {t.trip_code || `TRIP-#${t.id}`}
                       </span>
                       {renderStatusBadge(t.status)}
+                      {idx === 0 && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-sans">
+                          Chuyến hiện tại
+                        </span>
+                      )}
                     </div>
                     <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 font-mono">
                       <Clock size={12} className="text-blue-400" />
@@ -434,38 +412,41 @@ export default function DriverTripsPage() {
 
                   {/* Action Buttons */}
                   <div className="pt-2 border-t border-slate-700/60 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    {isAssigned ? (
-                      <button
-                        type="button"
-                        disabled={acceptingTripId === t.id}
-                        onClick={(e) => handleAcceptTrip(t, e)}
-                        className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs transition-all shadow-md shadow-blue-600/30 flex items-center justify-center gap-1.5 disabled:opacity-50"
-                      >
-                        <Check size={14} />
-                        {acceptingTripId === t.id ? "Đang nhận..." : "Nhận Chuyến Xe"}
-                      </button>
+                    {idx === 0 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleGoToExecuteTrip(t.id)}
+                          className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs transition-all shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5"
+                        >
+                          <PlayCircle size={14} />
+                          Vào Thực Hiện Chuyến
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTrip(t);
+                            setDetailModalOpen(true);
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-slate-700/70 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-all border border-slate-600/70 flex items-center gap-1"
+                        >
+                          <Eye size={13} />
+                          Chi tiết
+                        </button>
+                      </>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleGoToExecuteTrip(t.id)}
-                        className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs transition-all shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5"
+                        onClick={() => {
+                          setSelectedTrip(t);
+                          setDetailModalOpen(true);
+                        }}
+                        className="w-full py-2 px-3 rounded-xl bg-slate-700/70 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-all border border-slate-600/70 flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99]"
                       >
-                        <PlayCircle size={14} />
-                        Vào Thực Hiện Chuyến
+                        <Eye size={13} />
+                        Xem Chi Tiết Chuyến Xe
                       </button>
                     )}
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedTrip(t);
-                        setDetailModalOpen(true);
-                      }}
-                      className="px-3 py-2 rounded-xl bg-slate-700/70 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-all border border-slate-600/70 flex items-center gap-1"
-                    >
-                      <Eye size={13} />
-                      Chi tiết
-                    </button>
                   </div>
                 </div>
               );
@@ -684,33 +665,25 @@ export default function DriverTripsPage() {
 
             {/* Modal Actions */}
             <div className="pt-3.5 mt-3 border-t border-slate-800 flex items-center gap-2">
-              {selectedTrip.status === "Assigned" && (
-                <button
-                  type="button"
-                  disabled={acceptingTripId === selectedTrip.id}
-                  onClick={(e) => handleAcceptTrip(selectedTrip, e)}
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  <Check size={14} />
-                  {acceptingTripId === selectedTrip.id ? "Đang nhận..." : "Nhận Chuyến Ngay"}
-                </button>
-              )}
-
-              {(selectedTrip.status === "Accepted" || selectedTrip.status === "In Progress") && (
-                <button
-                  type="button"
-                  onClick={() => handleGoToExecuteTrip(selectedTrip.id)}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5"
-                >
-                  <PlayCircle size={14} />
-                  Vào Thực Hiện Chuyến
-                </button>
-              )}
+              {selectedTrip.status !== "Completed" &&
+                selectedTrip.status !== "Cancelled" &&
+                selectedTrip.id === upcomingTrips[0]?.id && (
+                  <button
+                    type="button"
+                    onClick={() => handleGoToExecuteTrip(selectedTrip.id)}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <PlayCircle size={14} />
+                    Vào Thực Hiện Chuyến
+                  </button>
+                )}
 
               <button
                 type="button"
                 onClick={() => setDetailModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700 transition-colors"
+                className={`py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700 transition-colors ${
+                  selectedTrip.id === upcomingTrips[0]?.id ? "px-6" : "w-full"
+                }`}
               >
                 Đóng
               </button>

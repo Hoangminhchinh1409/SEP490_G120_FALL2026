@@ -96,7 +96,7 @@ const formatStopStatus = (status, stopType = "Pickup") => {
 const formatTripStatus = (status) => {
   switch (status) {
     case "Assigned":
-      return "Chờ nhận";
+      return "Sắp tới";
     case "Accepted":
       return "Đã nhận";
     case "In Progress":
@@ -133,7 +133,9 @@ export default function DriverDashboard() {
       const params = new URLSearchParams(window.location.search);
       const paramId = params.get("tripId");
       if (paramId) {
-        setSelectedTripId(Number(paramId));
+        setTimeout(() => {
+          setSelectedTripId(Number(paramId));
+        }, 0);
         window.history.replaceState(null, "", window.location.pathname);
       }
     }
@@ -1407,28 +1409,8 @@ export default function DriverDashboard() {
                 )}
               </div>
 
-              {/* Case 1: Trip is Assigned -> Need to Accept (MSG17, BR-09) */}
-              {trip.status === "Assigned" && (
-                <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-center">
-                  <p className="text-xs text-blue-200 font-semibold mb-3">
-                    Chuyến xe đã được điều phối cho bạn. Xác nhận nhận chuyến để
-                    bắt đầu.
-                  </p>
-                  <Button
-                    type="primary"
-                    size="large"
-                    loading={actionLoading}
-                    onClick={() => setAcceptModalOpen(true)}
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 border-none font-black rounded-xl h-12 shadow-lg shadow-blue-600/30"
-                  >
-                    NHẬN CHUYẾN XE (MSG17)
-                  </Button>
-                </div>
-              )}
-
-              {/* Case 2: Trip Accepted or In Progress -> Process active stop */}
-              {(trip.status === "Accepted" || trip.status === "In Progress") &&
-                currentStop && (
+              {/* Auto vào thực hiện chuỗi 4 bước cho chuyến xe được điều phối */}
+              {trip.status !== "Completed" && currentStop && (
                   <div className="space-y-3">
                     <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700 flex justify-between items-center">
                       <div>
@@ -1626,40 +1608,27 @@ export default function DriverDashboard() {
                         </Button>
                       )}
 
-                    {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal / Từ chối (BR-12, BR-57) */}
+                    {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal (BR-12) */}
                     {currentStop.status === "Loading Started" &&
                       isDropoffStop(currentStop) && (
-                        <div className="grid grid-cols-5 gap-1.5">
-                          <Button
-                            type="primary"
-                            size="large"
-                            onClick={() => {
-                              setActiveStopTarget(currentStop);
-                              setPodModalOpen(true);
-                            }}
-                            className="col-span-3 bg-emerald-600 hover:bg-emerald-500 border-none rounded-xl h-auto py-2 shadow-lg shadow-emerald-600/30 flex flex-col items-center justify-center text-center text-white"
-                          >
-                            <span className="text-[11px] font-black flex items-center gap-1">
-                              <Camera size={13} /> GIAO HÀNG & POD
+                        <Button
+                          type="primary"
+                          size="large"
+                          onClick={() => {
+                            setActiveStopTarget(currentStop);
+                            setPodModalOpen(true);
+                          }}
+                          className="w-full bg-emerald-600 hover:bg-emerald-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-emerald-600/30 flex items-center justify-center text-center text-white"
+                        >
+                          <div className="flex flex-col items-center justify-center w-full leading-tight">
+                            <span className="text-xs font-black flex items-center gap-1.5">
+                              <Camera size={15} /> BƯỚC 3: GIAO HÀNG & POD
                             </span>
-                            <span className="text-[9px] opacity-85">(BR-12)</span>
-                          </Button>
-
-                          <Button
-                            danger
-                            size="large"
-                            onClick={() => {
-                              setActiveStopTarget(currentStop);
-                              setRefusalModalOpen(true);
-                            }}
-                            className="col-span-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 rounded-xl h-auto py-2 flex flex-col items-center justify-center text-center"
-                          >
-                            <span className="text-[11px] font-bold flex items-center gap-1">
-                              <Ban size={12} /> TỪ CHỐI
+                            <span className="text-[10px] font-normal opacity-85">
+                              (Record Cargo Delivery & POD - BR-12)
                             </span>
-                            <span className="text-[9px] opacity-80">(BR-57)</span>
-                          </Button>
-                        </div>
+                          </div>
+                        </Button>
                       )}
 
                     {/* Step 4: If Loading Done -> Rời khỏi điểm dừng (Left - BR-36) */}
@@ -1812,7 +1781,7 @@ export default function DriverDashboard() {
                 <AlertTriangle size={14} /> Chú ý: Chưa đồng bộ hết dữ liệu
               </p>
               <p className="text-[11px] leading-relaxed text-amber-200/90">
-                Bạn đang có <b>{pendingOfflineCount} thao tác ngoại tuyến</b> chưa gửi lên máy chủ. Bạn nên bấm <b>"Đồng bộ ngay"</b> trước khi đăng xuất để tránh mất hoặc chậm trễ cập nhật chuyến xe.
+                Bạn đang có <b>{pendingOfflineCount} thao tác ngoại tuyến</b> chưa gửi lên máy chủ. Bạn nên bấm <b>&quot;Đồng bộ ngay&quot;</b> trước khi đăng xuất để tránh mất hoặc chậm trễ cập nhật chuyến xe.
               </p>
             </div>
           )}
