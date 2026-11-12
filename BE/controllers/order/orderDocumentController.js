@@ -1,7 +1,8 @@
 const supabase = require('../../config/supabase');
 const {
   sendOrderPriceConfirmationEmail,
-  sendDocumentRejectionEmail
+  sendDocumentRejectionEmail,
+  sendContractToCustomerEmail
 } = require('../../services/emailService');
 const { parseOrderMeta, saveOrderMeta } = require('../../services/orderHelperService');
 
@@ -617,6 +618,109 @@ const uploadContractFile = async (req, res) => {
   }
 };
 
+// 9b. ĐIỀU PHỐI VIÊN GỬI EMAIL BẢN HỢP ĐỒNG MẪU CHO KHÁCH HÀNG (KÈM ĐIỀU KHOẢN BỔ SUNG)
+const sendContractToCustomer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { custom_terms, pdf_base64 } = req.body;
+
+    const currentOrder = await findOrderByIdentifier(id, true);
+    if (!currentOrder) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    }
+
+    const meta = parseOrderMeta(currentOrder);
+    const nowIso = new Date().toISOString();
+
+    const termsArray = Array.isArray(custom_terms) ? custom_terms : [];
+    meta.contract_custom_terms = termsArray;
+    meta.contract_sent_email_at = nowIso;
+
+    if (!meta.web_workflow) meta.web_workflow = {};
+    meta.web_workflow.contract_custom_terms = termsArray;
+    meta.web_workflow.contract_sent_email_at = nowIso;
+
+    await saveOrderMeta(currentOrder.id, meta);
+
+    const targetEmail =
+      meta.customer_email ||
+      currentOrder.customer?.email ||
+      'khachhang@example.com';
+
+    const clientOrigin = process.env.CLIENT_URL || 'http://localhost:3000';
+    const trackingUrl = `${clientOrigin}/f/${(currentOrder.tracking_token || currentOrder.order_code || '').trim()}`;
+
+    let pdfAttachment = null;
+    if (pdf_base64) {
+      const base64Data = pdf_base64.replace(/^data:application\/pdf;base64,/, '');
+      pdfAttachment = {
+        filename: `HopDongVanTai_ALS_${currentOrder.order_code}.pdf`,
+        content: Buffer.from(base64Data, 'base64')
+      };
+    }
+
+    const emailRes = await sendContractToCustomerEmail({
+      customerEmail: targetEmail,
+      customerName: currentOrder.customer?.company_name || currentOrder.receiver_name || 'Quý khách',
+      orderCode: currentOrder.order_code,
+      agreedPrice: currentOrder.agreed_price || meta.agreed_price || 0,
+      truckModel: meta.agreed_vehicle_type || meta.proposed_vehicle_type || 'Xe tải chuyên dụng ALS',
+      pickupAddress: currentOrder.pickup_location?.address || meta.pickup_address,
+      deliveryAddress: currentOrder.delivery_location?.address || meta.delivery_address,
+      customTerms: termsArray,
+      trackingUrl,
+      pdfAttachment
+    });
+
+    return res.json({
+      message: `Đã gửi email Hợp đồng vận tải thành công tới [${targetEmail}]! Khách hàng có thể in file, ký đóng dấu và gửi lại bản scan qua hệ thống.`,
+      contract_sent_email_at: nowIso,
+      custom_terms: termsArray,
+      email_result: emailRes
+    });
+  } catch (err) {
+    console.error('sendContractToCustomer Error:', err);
+    return res.status(500).json({ message: 'Lỗi khi gửi email hợp đồng cho khách hàng', error: err.message });
+  }
+};
+
+// 9c. ĐIỀU PHỐI VIÊN XÁC NHẬN ĐÃ NHẬN BẢN CỨNG HỢP ĐỒNG GỐC QUA ĐƯỜNG BƯU ĐIỆN
+const confirmHardcopyContractReceived = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { received, received_notes } = req.body;
+
+    const currentOrder = await findOrderByIdentifier(id, false);
+    if (!currentOrder) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    }
+
+    const meta = parseOrderMeta(currentOrder);
+    const nowIso = new Date().toISOString();
+
+    meta.contract_hardcopy_received = received !== false;
+    meta.contract_hardcopy_received_at = received !== false ? nowIso : null;
+    if (received_notes) meta.contract_hardcopy_notes = received_notes;
+
+    if (!meta.web_workflow) meta.web_workflow = {};
+    meta.web_workflow.contract_hardcopy_received = meta.contract_hardcopy_received;
+    meta.web_workflow.contract_hardcopy_received_at = meta.contract_hardcopy_received_at;
+
+    await saveOrderMeta(currentOrder.id, meta);
+
+    return res.json({
+      message: meta.contract_hardcopy_received
+        ? 'Đã xác nhận nhận đủ bản hợp đồng giấy (bản cứng có dấu đỏ) qua bưu điện/chuyển phát nhanh!'
+        : 'Đã cập nhật trạng thái bản cứng hợp đồng.',
+      contract_hardcopy_received: meta.contract_hardcopy_received,
+      contract_hardcopy_received_at: meta.contract_hardcopy_received_at
+    });
+  } catch (err) {
+    console.error('confirmHardcopyContractReceived Error:', err);
+    return res.status(500).json({ message: 'Lỗi khi cập nhật trạng thái bản cứng hợp đồng', error: err.message });
+  }
+};
+
 
 // 9c. ĐIỀU PHỐI VIÊN / KHÁCH HÀNG LƯU TOÀN BỘ CHỨNG TỪ ĐÃ TẢI LÊN VÀO HỒ SƠ
 const uploadOrderDocuments = async (req, res) => {
@@ -750,5 +854,7 @@ module.exports = {
   approveWebOrderDocuments,
   uploadContractFile,
   uploadOrderDocuments,
-  issueInvoiceToAccounting
+  issueInvoiceToAccounting,
+  sendContractToCustomer,
+  confirmHardcopyContractReceived
 };

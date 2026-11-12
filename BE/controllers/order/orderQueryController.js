@@ -263,6 +263,10 @@ const getAllOrders = async (req, res) => {
           meta.contract_uploaded_at ||
           meta.web_workflow?.signed_contract?.signed_at ||
           null,
+        contract_sent_email_at: meta.contract_sent_email_at || null,
+        contract_custom_terms: meta.contract_custom_terms || [],
+        contract_hardcopy_received: Boolean(meta.contract_hardcopy_received),
+        contract_hardcopy_received_at: meta.contract_hardcopy_received_at || null,
         documents: (() => {
           const docs =
             meta.documents ||
@@ -439,6 +443,24 @@ const getOrderByToken = async (req, res) => {
         },
         items: extraMeta.items || null,
         user_note: extraMeta.user_note || null,
+        contract_uploaded: !!(
+          extraMeta.contract_uploaded ||
+          extraMeta.contract_file ||
+          extraMeta.web_workflow?.signed_contract
+        ),
+        contract_file:
+          extraMeta.contract_file ||
+          extraMeta.web_workflow?.signed_contract?.contract_file ||
+          null,
+        contract_file_data: extraMeta.contract_file_data || null,
+        contract_uploaded_at:
+          extraMeta.contract_uploaded_at ||
+          extraMeta.web_workflow?.signed_contract?.signed_at ||
+          null,
+        contract_sent_email_at: extraMeta.contract_sent_email_at || null,
+        contract_custom_terms: extraMeta.contract_custom_terms || [],
+        contract_hardcopy_received: Boolean(extraMeta.contract_hardcopy_received),
+        contract_hardcopy_received_at: extraMeta.contract_hardcopy_received_at || null,
       },
     });
   } catch (err) {

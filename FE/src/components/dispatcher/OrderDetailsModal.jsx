@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import CancelOrderModal from './CancelOrderModal';
 import DocumentAssistantDrawer from './DocumentAssistantDrawer';
+import LoadPlan3DModal from './LoadPlan3DModal';
 import { 
   SPECIALIZED_CARGO_CATEGORIES, 
   getRecommendedDocsByCargo,
@@ -21,6 +22,7 @@ import { orderApi } from '../../api/orderApi';
 // Subcomponents đã được tách module
 import OrderOverviewTab from './orderDetails/OrderOverviewTab';
 import OrderDocumentsTab from './orderDetails/OrderDocumentsTab';
+import OrderContractTab from './orderDetails/OrderContractTab';
 import OrderFinancialTab from './orderDetails/OrderFinancialTab';
 import OrderDriverChatTab from './orderDetails/OrderDriverChatTab';
 import { RejectDocModal } from './orderDetails/RejectDocModal';
@@ -139,6 +141,10 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
   const [contractFileData, setContractFileData] = useState(order.contract_file_data || null);
   const [contractUploadedAt, setContractUploadedAt] = useState(order.contract_uploaded_at || null);
   const [uploadingContract, setUploadingContract] = useState(false);
+
+  // State Modal mô phỏng xếp xe 3D
+  const [is3DModalOpen, setIs3DModalOpen] = useState(false);
+  const [selected3DVehicleType, setSelected3DVehicleType] = useState(null);
 
   // State Tuyến đường & Ước tính
   const [routeInfo, setRouteInfo] = useState({
@@ -788,6 +794,10 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
           documents={documents}
           setDocuments={setDocuments}
           onOpenAssistant={() => setAssistantDrawerOpen(true)}
+          onOpen3DModal={(vType) => {
+            setSelected3DVehicleType(vType || proposedVehicleType);
+            setIs3DModalOpen(true);
+          }}
         />
       )
     }
@@ -823,6 +833,23 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
 
     tabItems.push({
       key: '3',
+      label: <span className="font-semibold text-xs flex items-center gap-1">
+        <span>Hợp đồng vận tải</span>
+        {order.contract_hardcopy_received && <Tag color="green" className="m-0 text-[9px] px-1 py-0">Bản cứng</Tag>}
+      </span>,
+      children: (
+        <OrderContractTab
+          order={order}
+          currentAgreedPrice={currentAgreedPrice}
+          proposedVehicleType={proposedVehicleType}
+          currentProposedSpec={getVehicleSpecByKey(proposedVehicleType)}
+          onUpdateOrder={onUpdateOrder}
+        />
+      )
+    });
+
+    tabItems.push({
+      key: '4',
       label: <span className="font-semibold text-xs">Tài chính &amp; Phụ phí</span>,
       children: (
         <OrderFinancialTab
@@ -1042,6 +1069,25 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         currentCargo={order.cargo_name || order.cargo_type || ''}
         order={order}
       />
+
+      {/* Modal Mô phỏng xếp hàng 3D trong bước chốt xe với khách */}
+      {is3DModalOpen && (
+        <LoadPlan3DModal
+          open={is3DModalOpen}
+          onClose={() => setIs3DModalOpen(false)}
+          trip={{
+            id: `PREVIEW-${order.id || order.order_id}`,
+            trip_code: `XEM-XE-${selected3DVehicleType || proposedVehicleType}`,
+            truck_model: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.label || 'Xe tải ALS',
+            plate: 'XE-DU-KIEN',
+            truck_length_cm: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.length_cm || 420,
+            truck_width_cm: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.width_cm || 190,
+            truck_height_cm: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.height_cm || 190,
+            max_payload: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.maxPayloadKg || 2500,
+            order: order
+          }}
+        />
+      )}
     </>
   );
 }

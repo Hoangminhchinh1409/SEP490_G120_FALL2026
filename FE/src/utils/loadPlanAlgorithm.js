@@ -422,13 +422,15 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
       }
 
       // Quyết định quy cách kích thước kiện hàng dựa trên packingMode:
-      // Khi khách khai báo VD: 20 Thùng Carton, kích thước 200x200x200 cm, nặng 2000 kg:
-      // - Nếu 'AUTO' và pkgCount > 1 và thể tích (inputL*inputW*inputH) >= 1.2 m³:
-      //   200x200x200 cm (8 m³) là kích thước tổng của lô 20 thùng. Chia lưới (grid subdivision) để hiển thị đủ 20 kiện thùng carton!
+      // Trong vận tải thực tế, DxRxC là kích thước của từng kiện (PER_PACKAGE).
+      // Chỉ khi người dùng chọn rõ ràng LOT_SUBDIVIDED hoặc khi kích thước nhập vào vượt quá lòng thùng xe container (L > 1200 hoặc W > 240 hoặc H > 250 hoặc singleVolume >= 25 m³ và pkgCount > 1), hệ thống mới phân tách lô.
       const singleVolumeM3 = (inputL * inputW * inputH) / 1000000;
       let effectiveMode = packingMode;
       if (effectiveMode === "AUTO") {
-        if (pkgCount > 1 && singleVolumeM3 >= 1.2) {
+        if (
+          pkgCount > 1 &&
+          (singleVolumeM3 >= 25 || inputL > 1200 || inputW > 240 || inputH > 250)
+        ) {
           effectiveMode = "LOT_SUBDIVIDED";
         } else {
           effectiveMode = "PER_PACKAGE";

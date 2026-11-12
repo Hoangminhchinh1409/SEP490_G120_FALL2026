@@ -16,7 +16,9 @@ const {
   approveWebOrderDocuments,
   uploadContractFile,
   uploadOrderDocuments,
-  issueInvoiceToAccounting
+  issueInvoiceToAccounting,
+  sendContractToCustomer,
+  confirmHardcopyContractReceived
 } = require('../controllers/orderController');
 
 const router = express.Router();
@@ -53,6 +55,12 @@ router.patch('/:id/price', updateAgreedPrice);
 
 // 9b. Điều phối viên tải lên tệp hợp đồng đã ký thật
 router.post('/:id/contract-file', uploadContractFile);
+
+// 9b.1 Điều phối viên gửi email hợp đồng (PDF kèm điều khoản) cho khách hàng
+router.post('/:id/send-contract', sendContractToCustomer);
+
+// 9b.2 Điều phối viên xác nhận đã nhận bản cứng hợp đồng gốc có dấu đỏ qua bưu điện
+router.patch('/:id/hardcopy-contract', confirmHardcopyContractReceived);
 
 // 9c. Điều phối viên cập nhật/lưu chứng từ vào hồ sơ đơn hàng
 router.post('/:id/documents', uploadOrderDocuments);

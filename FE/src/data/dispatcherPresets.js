@@ -579,8 +579,9 @@ export const analyzeVehicleRecommendation = ({
       if (w > maxW) maxW = w;
       if (h > maxH) maxH = h;
       const singleBoxM3 = (l * w * h) / 1000000;
-      // Nếu khách nhập kích thước tổng của cả lô (VD: 200x200x200cm = 8m3 cho 20 thùng), không nhân 20 lần gây ảo thể tích
-      if (singleBoxM3 >= 1.5 && qty > 4) {
+      // Nhận diện chuẩn thể tích: Nếu kích thước từng cạnh vượt quá kích thước lòng thùng xe lớn nhất (12m x 2.35m x 2.39m)
+      // hoặc thể tích 1 kiện > 25 m³ thì mới là khách nhập thể tích tổng của cả lô
+      if (singleBoxM3 >= 25 && qty > 1) {
         totalVolM3 += singleBoxM3;
       } else {
         totalVolM3 += singleBoxM3 * qty;
@@ -589,7 +590,7 @@ export const analyzeVehicleRecommendation = ({
   } else if (maxL > 0 && maxW > 0 && maxH > 0) {
     const qty = Math.max(1, parseInt(package_count, 10) || 1);
     const singleBoxM3 = (maxL * maxW * maxH) / 1000000;
-    totalVolM3 = (singleBoxM3 >= 1.5 && qty > 4) ? singleBoxM3: singleBoxM3 * qty;
+    totalVolM3 = (singleBoxM3 >= 25 && qty > 1) ? singleBoxM3 : singleBoxM3 * qty;
   }
 
   totalVolM3 = Number(totalVolM3.toFixed(2));
@@ -615,13 +616,14 @@ export const analyzeVehicleRecommendation = ({
     const fitsVol = totalVolM3 === 0 || spec.volumeM3 * 0.9 >= totalVolM3;
     if (!fitsWeight || !fitsDim || !fitsVol) return false;
 
-    // Chạy mô phỏng xếp 3D để đảm bảo các kiện hàng khi đặt cạnh nhau trong thùng xe không bị tràn thể tích
+    // Chạy mô phỏng xếp 3D (chế độ PER_PACKAGE thực tế) để đảm bảo các kiện hàng khi đặt trong thùng xe không bị tràn thể tích
     if (typeof calculate3DLoadPlan === 'function') {
       const simTruck = {
         length_cm: spec.length_cm,
         width_cm: spec.width_cm,
         height_cm: spec.height_cm,
-        max_payload: spec.maxPayloadKg
+        max_payload: spec.maxPayloadKg,
+        packingMode: 'PER_PACKAGE'
       };
       const plan = calculate3DLoadPlan(simulatedOrders, simTruck);
       if (plan && plan.overflowBlocks && plan.overflowBlocks.length > 0) {

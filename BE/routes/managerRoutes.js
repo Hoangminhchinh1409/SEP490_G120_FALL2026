@@ -11,9 +11,9 @@ const blogController = require('../controllers/blogController');
 
 const router = express.Router();
 
-// Tất cả các route trong file này đều yêu cầu đăng nhập và có quyền MANAGER hoặc ADMIN
+// Tất cả các route trong file này đều yêu cầu đăng nhập và có quyền MANAGER, ADMIN hoặc các role được cấp quyền xem chéo
 router.use(requireAuth);
-router.use(requireRole(['MANAGER', 'ADMINISTRATOR', 'ADMIN']));
+router.use(requireRole(['MANAGER', 'ADMINISTRATOR', 'ADMIN', 1, 2], 'INCIDENT_MANAGE'));
 
 // NHÓM 1: FLEET, DRIVERS, SHIFTS & STAFF ACCOUNTS
 router.get('/accounts', fleetController.getStaffAccounts);

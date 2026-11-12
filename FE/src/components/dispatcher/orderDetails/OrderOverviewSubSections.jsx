@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tag, Button, Input, Select, Popover, message } from 'antd';
-import { Sparkles, Trash2, Plus, PhoneCall, MessageCircle, Mail, DollarSign, Calculator } from 'lucide-react';
+import { Sparkles, Trash2, Plus, PhoneCall, MessageCircle, Mail, DollarSign, Calculator, Box } from 'lucide-react';
 import { SPECIALIZED_CARGO_CATEGORIES, getVehicleSpecByKey } from '../../../data/dispatcherPresets';
 
 export function OrderVehicleRecommendationBox({
@@ -15,7 +15,8 @@ export function OrderVehicleRecommendationBox({
   handleGeminiAnalyzeVehicle,
   aiVehicleInsight,
   vehicleAnalysisNote,
-  setVehicleAnalysisNote
+  setVehicleAnalysisNote,
+  onOpen3DModal
 }) {
   return (
     <div className="bg-gradient-to-r from-emerald-50/70 via-teal-50/50 to-indigo-50/60 p-4 rounded-xl border border-emerald-200/80 space-y-3">
@@ -29,11 +30,24 @@ export function OrderVehicleRecommendationBox({
             Dựa trên tải trọng thực tế, kích thước hàng (D×R×C) và yêu cầu bảo quản để chọn xe phù hợp nhất.
           </span>
         </div>
-        {vehicleRecommendation?.isDifferent && (
-          <Tag color="orange" className="font-bold text-xs px-2.5 py-0.5 m-0 rounded-full animate-pulse self-start sm:self-auto">
-            Khách chọn xe khác gợi ý kỹ thuật
-          </Tag>
-        )}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {onOpen3DModal && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<Box size={13} className="text-white" />}
+              onClick={() => onOpen3DModal(proposedVehicleType)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs"
+            >
+              Mô phỏng xếp xe 3D
+            </Button>
+          )}
+          {vehicleRecommendation?.isDifferent && (
+            <Tag color="orange" className="font-bold text-xs px-2.5 py-0.5 m-0 rounded-full animate-pulse">
+              Khách chọn xe khác gợi ý kỹ thuật
+            </Tag>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">

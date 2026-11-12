@@ -26,14 +26,31 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
   const resetThreeViewRef = useRef(null);
 
   const truckSpec = useMemo(() => {
-    const is35T = trip?.plate?.includes('995.72') || trip?.plate?.includes('996.88') || trip?.truck_model?.includes('3.5');
+    // 1. Nếu trip đã có đầy đủ kích thước từ selectedTruckSpec
+    if (Number(trip?.truck_length_cm) > 0 && Number(trip?.truck_width_cm) > 0 && Number(trip?.truck_height_cm) > 0) {
+      return {
+        length_cm: Number(trip.truck_length_cm),
+        width_cm: Number(trip.truck_width_cm),
+        height_cm: Number(trip.truck_height_cm),
+        max_payload: Number(trip?.max_payload) || 3500,
+        is_multi_drop: trip?.is_multi_drop,
+        assignment_stops: trip?.assignment_stops,
+        order: trip?.order,
+        packingMode
+      };
+    }
+
+    const isCont40 = trip?.plate?.includes('040') || trip?.truck_model?.includes('40');
+    const isCont20 = trip?.plate?.includes('020') || trip?.plate?.includes('150.99') || trip?.truck_model?.includes('20');
+    const is8T = trip?.plate?.includes('888.68') || trip?.truck_model?.includes('8');
     const is5T = trip?.plate?.includes('767.99') || trip?.plate?.includes('649.48') || trip?.plate?.includes('888.99') || trip?.truck_model?.includes('5');
+    const is35T = trip?.plate?.includes('995.72') || trip?.plate?.includes('996.88') || trip?.truck_model?.includes('3.5');
     const is125T = trip?.plate?.includes('112.34') || trip?.plate?.includes('115.68') || trip?.truck_model?.includes('1.25');
 
-    const defaultLength = is5T ? 620: is35T ? 500: is125T ? 310: 420;
-    const defaultWidth = is5T ? 220: is35T ? 205: is125T ? 160: 190;
-    const defaultHeight = is5T ? 220: is35T ? 205: is125T ? 160: 190;
-    const defaultPayload = is5T ? 5000: is35T ? 3500: is125T ? 1250: 2500;
+    const defaultLength = isCont40 ? 1200 : isCont20 ? 590 : is8T ? 780 : is5T ? 620 : is35T ? 500 : is125T ? 310 : 420;
+    const defaultWidth = (isCont40 || isCont20 || is8T) ? 235 : is5T ? 220 : is35T ? 205 : is125T ? 160 : 190;
+    const defaultHeight = (isCont40 || isCont20) ? 239 : is8T ? 240 : is5T ? 220 : is35T ? 205 : is125T ? 160 : 190;
+    const defaultPayload = isCont40 ? 25000 : isCont20 ? 12000 : is8T ? 8000 : is5T ? 5000 : is35T ? 3500 : is125T ? 1250 : 2500;
 
     return {
       length_cm: Number(trip?.truck_length_cm) || defaultLength,

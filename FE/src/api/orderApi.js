@@ -209,6 +209,34 @@ export const orderApi = {
     }
   },
 
+  // 14b. Gửi email hợp đồng vận tải chính thức kèm điều khoản bổ sung cho khách hàng
+  sendContractToCustomer: async (orderId, { custom_terms = [], pdf_base64 = null } = {}) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/send-contract`, {
+        method: 'POST',
+        body: JSON.stringify({ custom_terms, pdf_base64 })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.sendContractToCustomer Error:', error);
+      throw error;
+    }
+  },
+
+  // 14c. Xác nhận đã nhận bản cứng hợp đồng gốc có dấu đỏ qua bưu điện/chuyển phát
+  confirmHardcopyContractReceived: async (orderId, { received = true, notes = '' } = {}) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/hardcopy-contract`, {
+        method: 'PATCH',
+        body: JSON.stringify({ received, notes })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.confirmHardcopyContractReceived Error:', error);
+      throw error;
+    }
+  },
+
   // 15. Điều phối viên: Lưu danh mục chứng từ vào hồ sơ đơn hàng
   uploadOrderDocuments: async (orderId, documents) => {
     try {

@@ -446,9 +446,140 @@ const sendPasswordResetEmail = async ({
   return { success: true, messageId: info.messageId };
 };
 
+/**
+ * Gửi email kèm Hợp đồng vận chuyển mẫu (bản PDF in & ký) cho Khách hàng
+ */
+const sendContractToCustomerEmail = async ({
+  customerEmail,
+  customerName,
+  orderCode,
+  agreedPrice,
+  truckModel,
+  pickupAddress,
+  deliveryAddress,
+  customTerms = [],
+  trackingUrl,
+  pdfAttachment = null
+}) => {
+  const mailTransporter = await getTransporter();
+  const formattedPrice = (agreedPrice || 0).toLocaleString('vi-VN');
+
+  const termsHtml = Array.isArray(customTerms) && customTerms.length > 0
+    ? customTerms.map((t, idx) => `<li><b>Điều khoản ${idx + 1}:</b> ${t}</li>`).join('')
+    : '<li>Tuân thủ các điều khoản chuẩn trong Hợp đồng khung vận tải hàng không ALS và Luật Thương mại.</li>';
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; color: #1e293b; }
+        .container { max-width: 650px; margin: 20px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+        .header { background: linear-gradient(135deg, #059669 0%, #047857 100%); padding: 32px 24px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+        .content { padding: 30px 28px; }
+        .order-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px; margin: 20px 0; }
+        .instructions { background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; padding: 18px; margin: 20px 0; }
+        .step-num { display: inline-block; width: 22px; height: 22px; line-height: 22px; border-radius: 50%; background: #d97706; color: white; text-align: center; font-size: 12px; font-weight: bold; margin-right: 6px; }
+        .step-num-green { display: inline-block; width: 22px; height: 22px; line-height: 22px; border-radius: 50%; background: #059669; color: white; text-align: center; font-size: 12px; font-weight: bold; margin-right: 6px; }
+        .footer { background: #f8fafc; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+        .btn { display: inline-block; background: #059669; color: #ffffff !important; padding: 12px 28px; border-radius: 8px; font-weight: bold; text-decoration: none; margin: 10px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>HỢP ĐỒNG VẬN TẢI HÀNG HÓA ALS</h1>
+          <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">Công ty Cổ phần Logistics Hàng không (ALS) — Hệ thống NEXLOG</p>
+        </div>
+        <div class="content">
+          <p style="font-size: 14px; line-height: 1.6;">
+            Kính gửi Quý khách hàng <b>${customerName || 'Quý khách'}</b>,<br/>
+            Bộ phận Điều phối ALS thông báo hồ sơ chứng từ của Đơn hàng <b>#${orderCode}</b> đã được thẩm duyệt hợp lệ. Chúng tôi gửi đến Quý khách dự thảo Hợp đồng vận chuyển với đầy đủ thông tin thỏa thuận kỹ thuật & pháp lý:
+          </p>
+
+          <div class="order-box">
+            <div style="font-size: 14px; font-weight: bold; color: #065f46; margin-bottom: 8px;">THÔNG TIN VẬN TẢI ĐÃ CHỐT:</div>
+            <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+              <tr><td style="padding: 4px 0; color: #64748b; width: 140px;">Mã đơn hàng:</td><td style="font-weight: bold; font-family: monospace;">${orderCode}</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Phương tiện chốt:</td><td style="font-weight: bold; color: #047857;">${truckModel || 'Xe tải chuyên dụng ALS'}</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Cước phí vận chuyển:</td><td style="font-weight: bold; color: #b91c1c;">${formattedPrice} VNĐ</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Điểm lấy hàng:</td><td>${pickupAddress || 'Kho khách hàng'}</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Điểm giao nhận:</td><td>${deliveryAddress || 'Nhà ga Hàng hóa ALS Nội Bài'}</td></tr>
+            </table>
+
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #bbf7d0; font-size: 12px; color: #047857;">
+              <b>Điều khoản bổ sung riêng theo yêu cầu của đơn:</b>
+              <ul style="margin: 4px 0 0; padding-left: 18px;">
+                ${termsHtml}
+              </ul>
+            </div>
+          </div>
+
+          <div class="instructions">
+            <div style="font-weight: bold; color: #92400e; font-size: 13px; margin-bottom: 8px;">
+              ⚠️ HƯỚNG DẪN HOÀN THIỆN HỢP ĐỒNG (BẮT BUỘC):
+            </div>
+            <div style="font-size: 13px; line-height: 1.6; color: #78350f;">
+              <p style="margin: 6px 0;">
+                <span class="step-num-green">1</span> <b>Bước 1 (Online):</b> Quý khách vui lòng tải tệp PDF đính kèm, in ra giấy, ký tên &amp; đóng dấu tròn pháp nhân. Sau đó chụp/scan bản hợp đồng có dấu và tải lên hệ thống qua đường link bên dưới để ALS kích hoạt xếp xe ngay:
+              </p>
+              <div style="text-align: center; margin: 12px 0;">
+                <a href="${trackingUrl}" class="btn" target="_blank">Tải Lên Bản Hợp Đồng Đã Ký (Scan PDF)</a>
+              </div>
+              <p style="margin: 10px 0 0;">
+                <span class="step-num">2</span> <b>Bước 2 (Offline - Bắt buộc):</b> Quý khách vui lòng gửi bản cứng (bản gốc có dấu đỏ) qua đường bưu điện hoặc chuyển phát nhanh về Văn phòng Điều phối ALS (Nhà ga Hàng hóa ALS, Cảng HKQT Nội Bài) trong vòng 03 - 05 ngày làm việc để lưu trữ hồ sơ thanh quyết toán.
+              </p>
+            </div>
+          </div>
+
+          <p style="font-size: 12px; color: #64748b; line-height: 1.5; margin-top: 20px;">
+            Mọi thắc mắc cần hỗ trợ xin vui lòng liên hệ Hotline Điều phối ALS: <b>1900 6868</b> hoặc phản hồi trực tiếp qua email này.
+          </p>
+        </div>
+        <div class="footer">
+          <p>CÔNG TY CỔ PHẦN LOGISTICS HÀNG KHÔNG (ALS) — HỆ THỐNG ĐIỀU VẬN NEXLOG</p>
+          <p>© 2026 NEXLOG ALS Logistics Solution. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const fromAddress = process.env.SMTP_FROM || `ALS NEXLOG Logistics <${process.env.SMTP_USER || 'dispatch@nexlog.vn'}>`;
+    
+    const mailOptions = {
+      from: fromAddress,
+      to: customerEmail || 'khachhang@example.com',
+      subject: `[ALS - NEXLOG] Hợp đồng vận chuyển hàng hóa & Hướng dẫn ký gửi #${orderCode}`,
+      html: htmlContent
+    };
+
+    if (pdfAttachment && pdfAttachment.content) {
+      mailOptions.attachments = [
+        {
+          filename: pdfAttachment.filename || `HopDongVanTai_${orderCode}.pdf`,
+          content: pdfAttachment.content,
+          contentType: 'application/pdf'
+        }
+      ];
+    }
+
+    const info = await mailTransporter.sendMail(mailOptions);
+    console.log('[EmailService] Contract email sent to customer:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('[EmailService] Error sending contract email to customer:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   sendOrderPriceConfirmationEmail,
   sendDocumentRejectionEmail,
   sendContractSigningEmail,
+  sendContractToCustomerEmail,
   sendPasswordResetEmail
 };

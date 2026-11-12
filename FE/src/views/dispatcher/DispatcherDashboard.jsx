@@ -27,7 +27,6 @@ const DispatcherDashboard = () => {
   const [dbStats, setDbStats] = useState(null);
   const [leaveReassignments, setLeaveReassignments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loading, setLoading] = useState(true);
 
   const fetchDashboardData = useCallback(async () => {
     try {

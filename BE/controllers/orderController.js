@@ -33,7 +33,9 @@ const {
   approveWebOrderDocuments,
   uploadContractFile,
   uploadOrderDocuments,
-  issueInvoiceToAccounting
+  issueInvoiceToAccounting,
+  sendContractToCustomer,
+  confirmHardcopyContractReceived
 } = require('./order/orderDocumentController');
 
 const {
@@ -67,6 +69,8 @@ module.exports = {
   uploadContractFile,
   uploadOrderDocuments,
   issueInvoiceToAccounting,
+  sendContractToCustomer,
+  confirmHardcopyContractReceived,
 
   // Workflow
   confirmOrder,

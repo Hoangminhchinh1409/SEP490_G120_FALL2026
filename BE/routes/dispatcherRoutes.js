@@ -42,10 +42,12 @@ router.get('/routing/road-route', tripController.calculateRoadRoute);
 router.get('/leave-reassignments', tripController.getLeaveReassignments);
 router.patch('/trips/:id/reassign-driver', tripController.reassignTripDriver);
 
-// 5. Incidents
+// 5. Incidents & Claims (Xem sự cố & khiếu nại bồi thường)
 router.get('/incidents', incidentController.getAllIncidents);
 router.post('/incidents', incidentController.createIncident);
 router.patch('/incidents/:id/status', incidentController.updateIncidentStatus);
+router.get('/claims', incidentController.getClaims);
+router.get('/approvals', incidentController.getApprovals);
 
 // 6. Dashboard Stats
 router.get('/dashboard-stats', oversightController.getDispatcherDashboardStats);
