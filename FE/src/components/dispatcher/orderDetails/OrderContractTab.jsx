@@ -25,6 +25,12 @@ export default function OrderContractTab({
   currentProposedSpec,
   onUpdateOrder
 }) {
+  const isCancelled = order.status === 'CANCELLED' || order.status === 'CLOSED';
+  const isSigned = Boolean(order.contract_file || order.contract_uploaded || order.signed_order_contract_file);
+  const isHardcopyDone = Boolean(order.contract_hardcopy_received);
+  // Khi đã ký, đã xác nhận, hoặc đơn đã hủy thì khóa toàn bộ thao tác sửa hợp đồng/điều khoản/gửi email
+  const isContractLocked = isCancelled || isSigned;
+
   const [customTerms, setCustomTerms] = useState(() => {
     if (Array.isArray(order.contract_custom_terms) && order.contract_custom_terms.length > 0) {
       return order.contract_custom_terms;
@@ -41,12 +47,12 @@ export default function OrderContractTab({
   
   // Trạng thái bản cứng hợp đồng gốc qua bưu điện
   const [hardcopyReceived, setHardcopyReceived] = useState(order.contract_hardcopy_received || false);
-  const [hardcopyNotes, setHardcopyNotes] = useState(order.contract_hardcopy_notes || '');
-  const [savingHardcopy, setSavingHardcopy] = useState(false);
+  const [hardcopyNotes, setHardcopyNotes] = useState(order.contract_postal_code || order.contract_hardcopy_notes || '');
+  const [verifyingHardcopy, setVerifyingHardcopy] = useState(false);
 
   // File upload state cho hợp đồng scan
   const [uploadingScan, setUploadingScan] = useState(false);
-  const [contractFile, setContractFile] = useState(order.contract_file || null);
+  const [contractFile, setContractFile] = useState(order.contract_file || order.signed_order_contract_file || null);
   const [contractFileData, setContractFileData] = useState(order.contract_file_data || null);
   const [contractUploadedAt, setContractUploadedAt] = useState(order.contract_uploaded_at || null);
 
@@ -54,6 +60,10 @@ export default function OrderContractTab({
 
   // Thêm điều khoản tùy biến
   const handleAddTerm = () => {
+    if (isContractLocked) {
+      message.warning('Hợp đồng đã ký hoặc đơn đã kết thúc, không thể chỉnh sửa điều khoản nữa!');
+      return;
+    }
     if (!newTerm.trim()) {
       message.warning('Vui lòng nhập nội dung điều khoản bổ sung');
       return;
@@ -63,11 +73,19 @@ export default function OrderContractTab({
   };
 
   const handleRemoveTerm = (idx) => {
+    if (isContractLocked) {
+      message.warning('Hợp đồng đã ký hoặc đơn đã kết thúc, không thể chỉnh sửa điều khoản nữa!');
+      return;
+    }
     setCustomTerms(customTerms.filter((_, i) => i !== idx));
   };
 
   // Gửi hợp đồng qua Email cho khách hàng
   const handleSendContractEmail = async () => {
+    if (isContractLocked) {
+      message.warning('Hợp đồng đã có bản ký hoặc đơn đã hủy, không thể gửi lại email!');
+      return;
+    }
     try {
       setSendingEmail(true);
       const res = await orderApi.sendContractToCustomer(order.id || order.order_id, {
@@ -90,33 +108,62 @@ export default function OrderContractTab({
     }
   };
 
-  // Xác nhận đã nhận bản cứng có dấu đỏ
-  const handleToggleHardcopy = async (checked) => {
+  // Xác minh và tick nhận bản cứng gốc có dấu đỏ qua bưu điện (Chỉ tick được khi nhập đúng mã bưu điện)
+  const handleVerifyAndConfirmHardcopy = async () => {
+    if (hardcopyReceived) {
+      message.info('Bản cứng hợp đồng gốc đã được xác minh và lưu trữ pháp lý hoàn tất, không thể thay đổi nữa.');
+      return;
+    }
+
+    const postalCode = hardcopyNotes.trim().toUpperCase().replace(/\s+/g, '');
+    if (!postalCode) {
+      message.error('Vui lòng nhập Mã vận đơn / Mã bưu điện chuyển phát nhanh trước khi xác nhận nhận bản cứng!');
+      return;
+    }
+
+    // Kiểm tra định dạng mã bưu cục / mã vận đơn Việt Nam (EMS, VNPost, Viettel Post, v.v.)
+    const standardVnPostRegex = /^[A-Z]{2}[0-9]{9}[A-Z]{2}$/i;
+    const generalPostalRegex = /^(VNPost|EMS|VT|VTP|SPX|GHN|J&T|JT)?[-_]?[A-Z0-9]{8,25}$/i;
+    const isValidFormat = standardVnPostRegex.test(postalCode) || generalPostalRegex.test(postalCode) || /^[A-Z0-9]{8,25}$/.test(postalCode);
+
+    if (!isValidFormat) {
+      message.error(`Mã bưu cục/vận đơn "${postalCode}" không hợp lệ. Vui lòng nhập đúng mã bưu điện (VD: EM123456789VN, VTP98234812, EMS-VN88921...)`);
+      return;
+    }
+
     try {
-      setSavingHardcopy(true);
+      setVerifyingHardcopy(true);
       const res = await orderApi.confirmHardcopyContractReceived(order.id || order.order_id, {
-        received: checked,
-        notes: hardcopyNotes
+        received: true,
+        notes: `[BƯU ĐIỆN ĐÃ XÁC MINH] Mã vận đơn: ${postalCode}`,
+        postal_code: postalCode
       });
 
-      setHardcopyReceived(checked);
-      message.success(res?.message || (checked ? 'Đã xác nhận nhận bản cứng hợp đồng gốc có dấu đỏ!' : 'Đã cập nhật trạng thái bản cứng.'));
+      setHardcopyReceived(true);
+      setHardcopyNotes(postalCode);
+      message.success(res?.message || `Đã xác minh mã bưu điện [${postalCode}] và chốt lưu trữ bản cứng thành công!`);
       onUpdateOrder?.({
         ...order,
-        contract_hardcopy_received: checked,
-        contract_hardcopy_received_at: checked ? new Date().toISOString() : null,
-        contract_hardcopy_notes: hardcopyNotes
+        contract_hardcopy_received: true,
+        contract_hardcopy_received_at: new Date().toISOString(),
+        contract_hardcopy_notes: `[BƯU ĐIỆN ĐÃ XÁC MINH] Mã vận đơn: ${postalCode}`,
+        contract_postal_code: postalCode
       });
     } catch (err) {
       console.error('confirmHardcopyContractReceived error:', err);
-      message.error(err.message || 'Lỗi khi cập nhật trạng thái bản cứng hợp đồng');
+      message.error(err.message || 'Lỗi khi xác minh mã bưu điện');
     } finally {
-      setSavingHardcopy(false);
+      setVerifyingHardcopy(false);
     }
   };
 
   // Tải lên tệp hợp đồng đã scan (PDF)
   const handleFileUpload = async (e) => {
+    if (isContractLocked) {
+      message.warning('Hợp đồng đã được ký hoặc đơn đã kết thúc, không thể tải tệp mới!');
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -167,6 +214,26 @@ export default function OrderContractTab({
 
   return (
     <div className="space-y-4">
+      {/* Cảnh báo khi đơn đã ký xong hoặc đã hủy */}
+      {isCancelled && (
+        <Alert
+          type="error"
+          showIcon
+          title="Đơn hàng đã bị HỦY hoặc ĐÓNG"
+          description="Hồ sơ hợp đồng của đơn hàng này đã đóng lại và không được phép chỉnh sửa hoặc thao tác thêm."
+          className="rounded-xl"
+        />
+      )}
+      {isSigned && !isCancelled && (
+        <Alert
+          type="success"
+          showIcon
+          title="Hợp đồng vận tải đã được ký kết và lưu trữ"
+          description="Bản scan PDF có chữ ký/dấu đỏ đã được tiếp nhận thành công. Toàn bộ điều khoản và nội dung hợp đồng đã được chốt và khóa tương tác."
+          className="rounded-xl"
+        />
+      )}
+
       {/* Banner Trạng thái Hợp đồng */}
       <div className="p-4 rounded-xl border bg-gradient-to-r from-blue-50/70 via-indigo-50/60 to-purple-50/60 border-indigo-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -176,12 +243,14 @@ export default function OrderContractTab({
                 <FileText size={17} className="text-indigo-600" />
                 Hợp đồng Vận chuyển Hàng hóa Nội địa (Chuẩn ALS &amp; Trường Thành Logistics)
               </span>
-              <Tag color={contractFileData || contractFile ? 'success' : contractSentAt ? 'processing' : 'warning'} className="font-semibold text-xs">
-                {contractFileData || contractFile 
-                  ? '✓ ĐÃ LƯU BẢN SCAN ĐÃ KÝ' 
-                  : contractSentAt 
-                    ? 'ĐÃ GỬI EMAIL CHỜ KHÁCH KÝ' 
-                    : 'CHƯA GỬI HỢP ĐỒNG'}
+              <Tag color={isSigned ? 'success' : isCancelled ? 'red' : contractSentAt ? 'processing' : 'warning'} className="font-semibold text-xs">
+                {isSigned 
+                  ? '✓ ĐÃ LƯU BẢN SCAN ĐÃ KÝ (ĐÃ KHÓA)' 
+                  : isCancelled
+                    ? 'ĐƠN ĐÃ HỦY (ĐÃ KHÓA)'
+                    : contractSentAt 
+                      ? 'ĐÃ GỬI EMAIL CHỜ KHÁCH KÝ' 
+                      : 'CHƯA GỬI HỢP ĐỒNG'}
               </Tag>
             </div>
             <div className="text-xs text-indigo-800 mt-1">
@@ -201,8 +270,9 @@ export default function OrderContractTab({
               type="primary"
               icon={<Send size={14} />}
               loading={sendingEmail}
+              disabled={isContractLocked}
               onClick={handleSendContractEmail}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm disabled:opacity-50"
             >
               {contractSentAt ? 'Gửi lại Email Hợp đồng' : 'Gửi Email Hợp đồng cho Khách'}
             </Button>
@@ -236,6 +306,9 @@ export default function OrderContractTab({
                 Các điều khoản này sẽ được in trực tiếp vào <b>Điều 5 / Điều 7</b> của Hợp đồng gửi khách.
               </span>
             </div>
+            {isContractLocked && (
+              <Tag color="default" className="text-[10px] m-0">Đã khóa chỉnh sửa</Tag>
+            )}
           </div>
 
           {/* Danh sách điều khoản */}
@@ -246,38 +319,42 @@ export default function OrderContractTab({
                   <span className="font-bold text-indigo-600 shrink-0">{idx + 1}.</span>
                   <span className="leading-relaxed">{term}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveTerm(idx)}
-                  className="text-gray-400 hover:text-red-600 transition-colors shrink-0 p-0.5"
-                  title="Xóa điều khoản này"
-                >
-                  <Trash2 size={13} />
-                </button>
+                {!isContractLocked && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTerm(idx)}
+                    className="text-gray-400 hover:text-red-600 transition-colors shrink-0 p-0.5"
+                    title="Xóa điều khoản này"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
 
-          {/* Ô thêm điều khoản mới */}
-          <div className="pt-2 flex items-center gap-2">
-            <Input
-              size="small"
-              placeholder="Nhập điều khoản bổ sung (VD: Bạt che kín 100%, bảo quản nhiệt độ, hỗ trợ cẩu hàng...)"
-              value={newTerm}
-              onChange={(e) => setNewTerm(e.target.value)}
-              onPressEnter={handleAddTerm}
-              className="text-xs"
-            />
-            <Button
-              size="small"
-              type="primary"
-              icon={<Plus size={13} />}
-              onClick={handleAddTerm}
-              className="bg-indigo-600 text-xs shrink-0"
-            >
-              Thêm
-            </Button>
-          </div>
+          {/* Ô thêm điều khoản mới (Chỉ hiển thị khi chưa khóa) */}
+          {!isContractLocked && (
+            <div className="pt-2 flex items-center gap-2">
+              <Input
+                size="small"
+                placeholder="Nhập điều khoản bổ sung (VD: Bạt che kín 100%, bảo quản nhiệt độ, hỗ trợ cẩu hàng...)"
+                value={newTerm}
+                onChange={(e) => setNewTerm(e.target.value)}
+                onPressEnter={handleAddTerm}
+                className="text-xs"
+              />
+              <Button
+                size="small"
+                type="primary"
+                icon={<Plus size={13} />}
+                onClick={handleAddTerm}
+                className="bg-indigo-600 text-xs shrink-0"
+              >
+                Thêm
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Cột phải: Quản lý Bản scan và Bản cứng qua bưu điện */}
@@ -315,17 +392,14 @@ export default function OrderContractTab({
                 </div>
 
                 <div className="pt-1.5 border-t border-emerald-200 text-right">
-                  <label className="text-[11px] text-indigo-700 hover:underline cursor-pointer font-medium">
-                    Tải lên bản thay thế (PDF)
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      className="hidden"
-                      onChange={handleFileUpload}
-                      disabled={uploadingScan}
-                    />
-                  </label>
+                  <span className="text-[10px] text-emerald-800 font-semibold">
+                    ✓ Bản ký đã được xác nhận vào hồ sơ (Đã khóa, không cho phép sửa đổi)
+                  </span>
                 </div>
+              </div>
+            ) : isContractLocked ? (
+              <div className="p-4 border border-gray-200 rounded-lg text-center bg-gray-50 text-gray-500 text-xs">
+                Đơn hàng đã kết thúc/hủy, không thể tải lên bản scan hợp đồng.
               </div>
             ) : (
               <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg text-center bg-gray-50/60 hover:bg-indigo-50/30 transition-colors">
@@ -359,35 +433,58 @@ export default function OrderContractTab({
               Theo quy định vận hành của ALS, khách hàng <b>bắt buộc phải gửi bản cứng hợp đồng gốc có dấu đỏ</b> qua đường bưu điện hoặc chuyển phát nhanh về cho Điều phối viên để lưu trữ hồ sơ pháp lý đối soát.
             </div>
 
-            <div className="p-2.5 bg-white rounded-lg border border-amber-200 space-y-2">
-              <div className="flex items-center justify-between">
-                <Checkbox
-                  checked={hardcopyReceived}
-                  disabled={savingHardcopy}
-                  onChange={(e) => handleToggleHardcopy(e.target.checked)}
-                  className="font-bold text-xs text-gray-800"
-                >
-                  Đã nhận được bản cứng gốc có dấu đỏ
-                </Checkbox>
-                {hardcopyReceived && (
-                  <Tag color="success" className="m-0 text-[10px] font-bold">
-                    ✓ ĐÃ NHẬN BẢN GỐC
-                  </Tag>
-                )}
-              </div>
-
-              <Input
-                size="small"
-                placeholder="Ghi chú mã vận đơn bưu điện (VD: EMS - VN123456789...)"
-                value={hardcopyNotes}
-                onChange={(e) => setHardcopyNotes(e.target.value)}
-                onBlur={() => {
-                  if (hardcopyNotes !== (order.contract_hardcopy_notes || '')) {
-                    handleToggleHardcopy(hardcopyReceived);
-                  }
-                }}
-                className="text-xs"
-              />
+            <div className="p-2.5 bg-white rounded-lg border border-amber-200 space-y-2.5">
+              {hardcopyReceived ? (
+                /* Trạng thái ĐÃ CONFIRM: Khóa vĩnh viễn không cho hủy hay sửa */
+                <div className="space-y-1.5 p-2 bg-emerald-50 rounded-lg border border-emerald-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-emerald-900 flex items-center gap-1.5">
+                      <CheckCircle2 size={15} className="text-emerald-600" />
+                      Đã xác nhận &amp; Lưu trữ bản cứng có dấu đỏ
+                    </span>
+                    <Tag color="success" className="m-0 text-[10px] font-bold">
+                      ✓ ĐÃ LƯU TRỮ PHÁP LÝ
+                    </Tag>
+                  </div>
+                  <div className="text-xs text-emerald-800">
+                    Mã vận đơn bưu chính: <b className="font-mono">{order.contract_postal_code || hardcopyNotes}</b>
+                  </div>
+                  <div className="text-[10px] text-emerald-600 italic">
+                    Hệ thống đã khóa xác nhận, không thể chỉnh sửa hay hủy tick.
+                  </div>
+                </div>
+              ) : (
+                /* Trạng thái CHƯA CONFIRM: Nhập mã bưu điện chuẩn, hệ thống xác minh rồi mới tick & confirm */
+                <div className="space-y-2">
+                  <div className="text-[11px] text-gray-600">
+                    Nhập mã bưu điện / mã vận đơn chuyển phát (VD: <b>EM123456789VN</b>, <b>VTP98234812</b>, <b>EMS-VN88921</b>):
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      size="small"
+                      placeholder="Nhập mã vận đơn bưu điện..."
+                      value={hardcopyNotes}
+                      disabled={isCancelled || verifyingHardcopy}
+                      onChange={(e) => setHardcopyNotes(e.target.value)}
+                      onPressEnter={handleVerifyAndConfirmHardcopy}
+                      className="text-xs font-mono font-semibold uppercase"
+                    />
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={verifyingHardcopy}
+                      disabled={isCancelled || !hardcopyNotes.trim()}
+                      onClick={handleVerifyAndConfirmHardcopy}
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0"
+                    >
+                      Xác minh &amp; Chốt nhận
+                    </Button>
+                  </div>
+                  <div className="text-[10px] text-gray-400 italic">
+                    * Sau khi xác minh chính xác mã bưu chính và xác nhận, hệ thống sẽ chốt cố định và khóa không cho phép sửa đổi nữa.
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

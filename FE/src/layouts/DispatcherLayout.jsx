@@ -12,10 +12,7 @@ const DispatcherLayout = ({ children }) => {
     { href: '/dispatcher/trips', icon: Route, name: 'Kế hoạch & Chuyến xe', permission: 'ORDER_ASSIGN' },
     { href: '/dispatcher/locations', icon: MapPin, name: 'Điểm giao nhận' },
     { href: '/dispatcher/fleet', icon: Truck, name: 'Đội xe & Tài xế' },
-    { href: '/dispatcher/tracking', icon: Compass, name: 'Bản đồ Theo dõi', permission: 'TRIP_MONITOR' },
-    // Menu xem chéo được cấp quyền bởi Admin (Chỉ xem - Read-only)
-    { href: '/manager/approvals', icon: AlertTriangle, name: 'Sự cố & Bồi thường (Chỉ xem)', permission: 'INCIDENT_MANAGE', isCrossRole: true },
-    { href: '/manager/vendors', icon: Building2, name: 'Nhà xe & Thầu phụ (Chỉ xem)', permission: 'VENDOR_MANAGE', isCrossRole: true },
+    { href: '/dispatcher/tracking', icon: Compass, name: 'Bản đồ Theo dõi', permission: 'TRIP_MONITOR' }
   ];
 
   const navItems = allNavItems.filter(item => {

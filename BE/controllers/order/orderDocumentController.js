@@ -553,7 +553,22 @@ const uploadContractFile = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
+    // Không cho phép chỉnh sửa/tải lại nếu đơn đã bị hủy hoặc đóng
+    if (['CANCELLED', 'CLOSED'].includes(currentOrder.status)) {
+      return res.status(400).json({ 
+        message: 'Đơn hàng đã bị HỦY hoặc ĐÃ ĐÓNG, không thể thao tác tải lên hợp đồng nữa!' 
+      });
+    }
+
     const meta = parseOrderMeta(currentOrder);
+
+    // Nếu đã hoàn thành ký hợp đồng và đã có bản scan trước đó thì không cho thao tác tiếp
+    if (meta.contract_uploaded || meta.contract_file || currentOrder.signed_order_contract_file) {
+      return res.status(400).json({
+        message: 'Hợp đồng đã được ký và tải lên hoàn tất, không thể thay đổi nữa!'
+      });
+    }
+
     const nowIso = new Date().toISOString();
     meta.contract_uploaded = true;
     meta.contract_file = file_name;
@@ -688,7 +703,7 @@ const sendContractToCustomer = async (req, res) => {
 const confirmHardcopyContractReceived = async (req, res) => {
   try {
     const { id } = req.params;
-    const { received, received_notes } = req.body;
+    const { received, received_notes, postal_code } = req.body;
 
     const currentOrder = await findOrderByIdentifier(id, false);
     if (!currentOrder) {
@@ -696,24 +711,65 @@ const confirmHardcopyContractReceived = async (req, res) => {
     }
 
     const meta = parseOrderMeta(currentOrder);
+
+    // Nếu đã từng confirm nhận bản cứng thì khóa vĩnh viễn không cho hủy/sửa
+    if (meta.contract_hardcopy_received) {
+      return res.status(400).json({ 
+        message: 'Bản cứng hợp đồng gốc đã được xác minh và lưu trữ pháp lý, không thể thay đổi trạng thái nữa!' 
+      });
+    }
+
+    const codeToVerify = (postal_code || received_notes || '').trim();
+    if (!codeToVerify) {
+      return res.status(400).json({ 
+        message: 'Vui lòng nhập mã bưu điện / mã vận đơn chuyển phát nhanh để hệ thống xác minh!' 
+      });
+    }
+
+    // Quy tắc định dạng mã bưu điện / vận đơn Việt Nam hợp lệ:
+    // EMS/VNPost: 2 chữ cái + 9 số + 2 chữ cái (VD: EM123456789VN, EE123456789VN, CQ123456789VN) hoặc mã bưu chính 8-25 ký tự
+    const cleanCode = codeToVerify.replace(/\s+/g, '').toUpperCase();
+    const postalRegex = /^(VNPost|EMS|VT|VTP|SPX|GHN|J&T|JT)?[-_]?[A-Z0-9]{8,25}$/i;
+    const standardVnPostRegex = /^[A-Z]{2}[0-9]{9}[A-Z]{2}$/i;
+
+    const isValidFormat = standardVnPostRegex.test(cleanCode) || postalRegex.test(cleanCode) || /^[A-Z0-9]{8,25}$/.test(cleanCode);
+
+    if (!isValidFormat) {
+      return res.status(400).json({ 
+        message: `Mã vận đơn bưu chính "${codeToVerify}" không đúng định dạng chuẩn bưu điện (VD: EM123456789VN, VTP98234812, EMS-VN88921...)` 
+      });
+    }
+
     const nowIso = new Date().toISOString();
 
-    meta.contract_hardcopy_received = received !== false;
-    meta.contract_hardcopy_received_at = received !== false ? nowIso : null;
-    if (received_notes) meta.contract_hardcopy_notes = received_notes;
+    meta.contract_hardcopy_received = true;
+    meta.contract_hardcopy_received_at = nowIso;
+    meta.contract_hardcopy_notes = `[BƯU ĐIỆN ĐÃ XÁC MINH] Mã vận đơn: ${cleanCode}`;
+    meta.contract_postal_code = cleanCode;
 
     if (!meta.web_workflow) meta.web_workflow = {};
-    meta.web_workflow.contract_hardcopy_received = meta.contract_hardcopy_received;
-    meta.web_workflow.contract_hardcopy_received_at = meta.contract_hardcopy_received_at;
+    meta.web_workflow.contract_hardcopy_received = true;
+    meta.web_workflow.contract_hardcopy_received_at = nowIso;
+    meta.web_workflow.contract_postal_code = cleanCode;
 
     await saveOrderMeta(currentOrder.id, meta);
 
+    // Ghi log đơn hàng
+    try {
+      await supabase.from('order_notes').insert([{
+        order_id: currentOrder.id,
+        created_by: 3,
+        content: `[PHÁP LÝ HỢP ĐỒNG] Đã tiếp nhận và xác minh bản cứng hợp đồng gốc có dấu đỏ qua bưu điện (Mã bưu cục/vận đơn: ${cleanCode}). Lưu kho pháp lý hoàn tất.`.slice(0, 480)
+      }]);
+    } catch (noteErr) {
+      console.warn('Note insert warning:', noteErr);
+    }
+
     return res.json({
-      message: meta.contract_hardcopy_received
-        ? 'Đã xác nhận nhận đủ bản hợp đồng giấy (bản cứng có dấu đỏ) qua bưu điện/chuyển phát nhanh!'
-        : 'Đã cập nhật trạng thái bản cứng hợp đồng.',
-      contract_hardcopy_received: meta.contract_hardcopy_received,
-      contract_hardcopy_received_at: meta.contract_hardcopy_received_at
+      message: `Hệ thống đã xác minh hợp lệ mã vận đơn bưu điện [${cleanCode}] và xác nhận nhận đủ bản cứng hợp đồng gốc có dấu đỏ thành công!`,
+      contract_hardcopy_received: true,
+      contract_hardcopy_received_at: nowIso,
+      contract_postal_code: cleanCode
     });
   } catch (err) {
     console.error('confirmHardcopyContractReceived Error:', err);

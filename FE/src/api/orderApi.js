@@ -224,11 +224,11 @@ export const orderApi = {
   },
 
   // 14c. Xác nhận đã nhận bản cứng hợp đồng gốc có dấu đỏ qua bưu điện/chuyển phát
-  confirmHardcopyContractReceived: async (orderId, { received = true, notes = '' } = {}) => {
+  confirmHardcopyContractReceived: async (orderId, { received = true, notes = '', postal_code = '' } = {}) => {
     try {
       const data = await fetchWithoutAuth(`/orders/${orderId}/hardcopy-contract`, {
         method: 'PATCH',
-        body: JSON.stringify({ received, notes })
+        body: JSON.stringify({ received, notes, postal_code })
       });
       return data;
     } catch (error) {
