@@ -15,7 +15,20 @@ import {
     fetchWithoutAuth,
 } from "../api/apiClient";
 
-const AuthContext = createContext();
+const DEFAULT_AUTH_CONTEXT = {
+    user: null,
+    login: async () => {},
+    logout: async () => {},
+    loading: false,
+    hasRole: () => false,
+    hasPermission: () => false,
+    isReadOnly: () => false,
+    getPermissionLevel: () => 'NONE',
+    refreshUser: async () => {},
+    setUser: () => {},
+};
+
+const AuthContext = createContext(DEFAULT_AUTH_CONTEXT);
 const USER_CACHE_KEY = "nexlog_cached_user";
 
 const readCachedUser = () => {
@@ -41,7 +54,10 @@ const writeCachedUser = (userObj) => {
     }
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+    const context = useContext(AuthContext);
+    return context || DEFAULT_AUTH_CONTEXT;
+};
 
 export const AuthProvider = ({ children }) => {
     // Khởi tạo đồng nhất giữa Server & Client để tránh lỗi Hydration Mismatch của Next.js
@@ -63,14 +79,14 @@ export const AuthProvider = ({ children }) => {
 
     // Kiểm tra đăng nhập khi mở ứng dụng
     useEffect(() => {
-        // Nạp ngay từ sessionStorage sau khi Hydrate xong (0ms, không cần chờ mạng)
-        const cached = readCachedUser();
-        if (cached) {
-            setUserState(cached);
-            setLoading(false);
-        }
-
         const initializeAuth = async () => {
+            // Nạp ngay từ sessionStorage sau khi Hydrate xong (0ms, không cần chờ mạng)
+            const cached = readCachedUser();
+            if (cached) {
+                setUserState(cached);
+                setLoading(false);
+            }
+
             try {
                 const data = await fetchWithAuth(
                     API_ENDPOINTS.AUTH.ME

@@ -13,7 +13,7 @@ const SYSTEM_ROLES = [
 ];
 
 export default function UsersPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser } = useAuth() || {};
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState(SYSTEM_ROLES);
   const [loading, setLoading] = useState(true);
