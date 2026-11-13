@@ -462,6 +462,40 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     }
   });
 
+  // 3.1. Lưu trực tiếp vào bảng delivery_evidences để bảo đảm hiển thị đầy đủ trên mọi view giám sát
+  if (pod_photo_url?.trim() || cut_seal_photo_url?.trim()) {
+    try {
+      const evidencesToInsert = [];
+      if (pod_photo_url?.trim()) {
+        evidencesToInsert.push({
+          trip_stop_id: stopId,
+          order_id: stop.order_id || null,
+          evidence_type: 'POD',
+          file_url: pod_photo_url.trim(),
+          captured_time: new Date().toISOString(),
+          latitude: phoneLat,
+          longitude: phoneLng
+        });
+      }
+      if (cut_seal_photo_url?.trim()) {
+        evidencesToInsert.push({
+          trip_stop_id: stopId,
+          order_id: stop.order_id || null,
+          evidence_type: 'CutSeal',
+          file_url: cut_seal_photo_url.trim(),
+          captured_time: new Date().toISOString(),
+          latitude: phoneLat,
+          longitude: phoneLng
+        });
+      }
+      if (evidencesToInsert.length > 0) {
+        await supabase.from('delivery_evidences').insert(evidencesToInsert);
+      }
+    } catch (e) {
+      console.warn('[recordDelivery] Error inserting into delivery_evidences:', e.message);
+    }
+  }
+
   // 4. Cập nhật đơn hàng liên kết sang Delivered
   if (stop.order_id) {
     await driverModel.updateOrdersStatus(

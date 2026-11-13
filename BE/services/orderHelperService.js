@@ -170,7 +170,8 @@ const mapDbStatusToFe = (dbStatus, order, meta = null) => {
         resolvedMeta?.web_workflow?.stage === 'CUSTOMER_CONFIRMED' ||
         resolvedMeta?.web_workflow?.stage === 'DOCS_UPLOADED' ||
         resolvedMeta?.web_workflow?.stage === 'DOCS_REJECTED' ||
-        resolvedMeta?.web_workflow?.stage === 'DOCS_APPROVED'
+        resolvedMeta?.web_workflow?.stage === 'DOCS_APPROVED' ||
+        resolvedMeta?.web_workflow?.stage === 'CONTRACT_SENT'
       ) {
         return 'CONFIRMED';
       }

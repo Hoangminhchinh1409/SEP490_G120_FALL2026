@@ -633,11 +633,11 @@ const uploadContractFile = async (req, res) => {
   }
 };
 
-// 9b. ĐIỀU PHỐI VIÊN GỬI EMAIL BẢN HỢP ĐỒNG MẪU CHO KHÁCH HÀNG (KÈM ĐIỀU KHOẢN BỔ SUNG)
+// 9b. ĐIỀU PHỐI VIÊN GỬI EMAIL BẢN HỢP ĐỒNG MẪU CHO KHÁCH HÀNG (KÈM ĐIỀU KHOẢN BỔ SUNG VÀ THÔNG TIN ĐÃ CHỈNH SỬA)
 const sendContractToCustomer = async (req, res) => {
   try {
     const { id } = req.params;
-    const { custom_terms, pdf_base64 } = req.body;
+    const { custom_terms, contract_details, pdf_base64 } = req.body;
 
     const currentOrder = await findOrderByIdentifier(id, true);
     if (!currentOrder) {
@@ -647,13 +647,23 @@ const sendContractToCustomer = async (req, res) => {
     const meta = parseOrderMeta(currentOrder);
     const nowIso = new Date().toISOString();
 
-    const termsArray = Array.isArray(custom_terms) ? custom_terms : [];
+    const termsArray = Array.isArray(custom_terms) ? custom_terms : (meta.contract_custom_terms || []);
     meta.contract_custom_terms = termsArray;
     meta.contract_sent_email_at = nowIso;
 
+    if (contract_details && typeof contract_details === 'object') {
+      meta.contract_details = {
+        ...(meta.contract_details || {}),
+        ...contract_details,
+        updated_at: nowIso
+      };
+    }
+
     if (!meta.web_workflow) meta.web_workflow = {};
     meta.web_workflow.contract_custom_terms = termsArray;
+    meta.web_workflow.contract_details = meta.contract_details || null;
     meta.web_workflow.contract_sent_email_at = nowIso;
+    meta.web_workflow.stage = 'CONTRACT_SENT';
 
     await saveOrderMeta(currentOrder.id, meta);
 
@@ -663,7 +673,8 @@ const sendContractToCustomer = async (req, res) => {
       'khachhang@example.com';
 
     const clientOrigin = process.env.CLIENT_URL || 'http://localhost:3000';
-    const trackingUrl = `${clientOrigin}/f/${(currentOrder.tracking_token || currentOrder.order_code || '').trim()}`;
+    // Đường link tra cứu và nộp hợp đồng chuẩn của khách hàng: /customer/order-documents/[token]
+    const trackingUrl = `${clientOrigin}/customer/order-documents/${(currentOrder.tracking_token || currentOrder.order_code || '').trim()}`;
 
     let pdfAttachment = null;
     if (pdf_base64) {
@@ -674,23 +685,26 @@ const sendContractToCustomer = async (req, res) => {
       };
     }
 
+    const contractInfo = meta.contract_details || {};
     const emailRes = await sendContractToCustomerEmail({
       customerEmail: targetEmail,
-      customerName: currentOrder.customer?.company_name || currentOrder.receiver_name || 'Quý khách',
+      customerName: contractInfo.customer_name || currentOrder.customer?.company_name || currentOrder.receiver_name || 'Quý khách',
       orderCode: currentOrder.order_code,
-      agreedPrice: currentOrder.agreed_price || meta.agreed_price || 0,
-      truckModel: meta.agreed_vehicle_type || meta.proposed_vehicle_type || 'Xe tải chuyên dụng ALS',
-      pickupAddress: currentOrder.pickup_location?.address || meta.pickup_address,
-      deliveryAddress: currentOrder.delivery_location?.address || meta.delivery_address,
+      agreedPrice: contractInfo.price_amount || currentOrder.agreed_price || meta.agreed_price || 0,
+      truckModel: contractInfo.truck_model || meta.agreed_vehicle_type || meta.proposed_vehicle_type || 'Xe tải chuyên dụng ALS',
+      pickupAddress: contractInfo.pickup_address || currentOrder.pickup_location?.address || meta.pickup_address,
+      deliveryAddress: contractInfo.delivery_address || currentOrder.delivery_location?.address || meta.delivery_address,
       customTerms: termsArray,
+      contractData: contractInfo,
       trackingUrl,
       pdfAttachment
     });
 
     return res.json({
-      message: `Đã gửi email Hợp đồng vận tải thành công tới [${targetEmail}]! Khách hàng có thể in file, ký đóng dấu và gửi lại bản scan qua hệ thống.`,
+      message: `Đã gửi email dự thảo Hợp đồng vận tải thành công tới [${targetEmail}]! Khách hàng có thể in file, ký đóng dấu và gửi lại bản scan qua hệ thống.`,
       contract_sent_email_at: nowIso,
       custom_terms: termsArray,
+      contract_details: meta.contract_details,
       email_result: emailRes
     });
   } catch (err) {

@@ -174,13 +174,14 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
 
   const watchedValues = Form.useWatch([], form);
 
-  // Phân tích gợi ý loại xe tự động
+  // Phân tích gợi ý loại xe tự động (truyền cờ isCustomerContext: true để câu thông báo xưng hô đúng với khách)
   const vehicleRecommendation = useMemo(() => {
     return analyzeVehicleRecommendation({
       actualWeightKg: parseFloat(totals.actualWeight) || 0,
       chargeableWeightKg: parseFloat(totals.chargeableWeight) || 0,
       items: cargoItems,
-      customerRequestedVehicle: watchedValues?.vehicle_type_required || 'TRUCK_2.5T'
+      customerRequestedVehicle: watchedValues?.vehicle_type_required || 'TRUCK_2.5T',
+      isCustomerContext: true
     });
   }, [totals.actualWeight, totals.chargeableWeight, cargoItems, watchedValues?.vehicle_type_required]);
 

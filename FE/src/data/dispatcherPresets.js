@@ -561,7 +561,8 @@ export const analyzeVehicleRecommendation = ({
   height_cm = 0,
   package_count = 1,
   items = [],
-  customerRequestedVehicle = 'TRUCK_2.5T'
+  customerRequestedVehicle = 'TRUCK_2.5T',
+  isCustomerContext = false
 }) => {
   const effectiveWeight = Math.max(Number(actualWeightKg) || 0, Number(chargeableWeightKg) || 0);
   let maxL = Number(length_cm) || 0;
@@ -659,10 +660,16 @@ export const analyzeVehicleRecommendation = ({
     if (reasons.length === 0) {
       reasons.push(`không gian lòng thùng ${customerSpec.shortLabel} không đủ để xếp đồng thời các kiện hàng cạnh nhau`);
     }
-    reason = `Khách chọn ${customerSpec.label} nhưng ${reasons.join(' và ') || 'chưa đủ dung tích'}. Hệ thống đề xuất nâng lên ${recommendedSpec.label} (${recommendedSpec.boxDimText}, tải ${recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) và trao đổi chốt lại với khách.`;
+    
+    // Câu thông báo phân biệt ngữ cảnh: form khách hàng tự đặt trực tuyến vs form điều phối viên
+    reason = isCustomerContext
+      ? `Quý khách đang chọn ${customerSpec.label} nhưng ${reasons.join(' và ') || 'chưa đủ dung tích'}. Hệ thống khuyến nghị Quý khách nên chọn ${recommendedSpec.label} (${recommendedSpec.boxDimText}, tải ${recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) để đảm bảo bốc xếp an toàn và thuận tiện.`
+      : `Khách chọn ${customerSpec.label} nhưng ${reasons.join(' và ') || 'chưa đủ dung tích'}. Hệ thống đề xuất nâng lên ${recommendedSpec.label} (${recommendedSpec.boxDimText}, tải ${recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) và trao đổi chốt lại với khách.`;
   } else if (custIdx > recIdx && effectiveWeight > 0) {
     status = 'OVER_CAPACITY';
-    reason = `Khách yêu cầu ${customerSpec.label}, tuy nhiên theo phân tích tải trọng (${effectiveWeight.toLocaleString('vi-VN')} kg) và kích thước (${maxL}×${maxW}×${maxH} cm), chỉ cần ${recommendedSpec.label} (${recommendedSpec.boxDimText}) là đủ xếp hàng. Có thể tư vấn khách tối ưu chi phí hoặc giữ nguyên theo yêu cầu riêng của khách.`;
+    reason = isCustomerContext
+      ? `Quý khách đang chọn ${customerSpec.label}. Theo phân tích tải trọng (${effectiveWeight.toLocaleString('vi-VN')} kg) và kích thước kiện hàng, ${recommendedSpec.label} (${recommendedSpec.boxDimText}) đã đủ đáp ứng. Quý khách có thể chuyển sang ${recommendedSpec.shortLabel} để tiết kiệm chi phí vận chuyển.`
+      : `Khách yêu cầu ${customerSpec.label}, tuy nhiên theo phân tích tải trọng (${effectiveWeight.toLocaleString('vi-VN')} kg) và kích thước (${maxL}×${maxW}×${maxH} cm), chỉ cần ${recommendedSpec.label} (${recommendedSpec.boxDimText}) là đủ xếp hàng. Có thể tư vấn khách tối ưu chi phí hoặc giữ nguyên theo yêu cầu riêng của khách.`;
   }
 
   return {

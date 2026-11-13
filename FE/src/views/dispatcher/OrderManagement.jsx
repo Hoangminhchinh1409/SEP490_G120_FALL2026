@@ -346,10 +346,17 @@ const OrderManagement = () => {
               </Tag>
             );
           }
+          if (record.web_workflow?.stage === 'CONTRACT_SENT') {
+            return (
+              <Tag color="cyan" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap border-cyan-400 text-cyan-800 bg-cyan-50">
+                Đã gửi HĐ - Chờ khách ký
+              </Tag>
+            );
+          }
           if (record.web_workflow?.stage === 'DOCS_APPROVED') {
             return (
               <Tag color="cyan" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
-                Đã duyệt CT - Chờ đính kèm HĐ PDF
+                Đã duyệt CT - Chờ gửi HĐ
               </Tag>
             );
           }

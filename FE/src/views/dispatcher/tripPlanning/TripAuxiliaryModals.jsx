@@ -89,18 +89,49 @@ export function TripDetailsDrawer({ selectedTripDetails, onClose }) {
         {/* Chứng cứ giao nhận */}
         <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
           <h4 className="font-bold text-gray-800 mb-2">Ảnh chứng chỉ niêm phong &amp; Biên bản giao nhận (POD):</h4>
-          <div className="flex items-center gap-4">
-            <div className="text-center p-3 bg-white rounded-lg border border-dashed text-gray-500 flex-1">
-              <CheckCircle2 size={24} className="text-emerald-500 mx-auto mb-1" />
-              <div className="font-semibold text-gray-700">Ảnh chì nguyên seal ({selectedTripDetails.seal_number})</div>
-              <div className="text-[10px] text-emerald-600">Đã lưu trữ hợp lệ</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-3 bg-white rounded-lg border border-gray-200 text-center flex flex-col items-center justify-center">
+              {selectedTripDetails.seal_photo_url && selectedTripDetails.seal_photo_url !== '/assets/hero.png' ? (
+                <div className="w-full space-y-1.5">
+                  <img
+                    src={selectedTripDetails.seal_photo_url}
+                    alt="Ảnh niêm phong chì"
+                    className="w-full h-32 object-cover rounded-lg border border-emerald-300 shadow-xs cursor-pointer hover:opacity-90"
+                    onClick={() => window.open(selectedTripDetails.seal_photo_url, '_blank')}
+                  />
+                  <div className="font-semibold text-xs text-gray-700">Ảnh chì: <b>{selectedTripDetails.seal_number || 'Chưa rõ số'}</b></div>
+                  <div className="text-[10px] text-emerald-600 font-bold">✓ Đã lưu trữ niêm phong</div>
+                </div>
+              ) : (
+                <div className="py-4">
+                  <CheckCircle2 size={24} className="text-emerald-500 mx-auto mb-1" />
+                  <div className="font-semibold text-gray-700">Ảnh chì ({selectedTripDetails.seal_number || 'Chưa cập nhật'})</div>
+                  <div className="text-[10px] text-emerald-600">Đã lưu trữ số seal</div>
+                </div>
+              )}
             </div>
-            <div className="text-center p-3 bg-white rounded-lg border border-dashed text-gray-500 flex-1">
-              <CheckCircle2 size={24} className="text-blue-500 mx-auto mb-1" />
-              <div className="font-semibold text-gray-700">Biên bản POD có chữ ký</div>
-              <div className="text-[10px] text-blue-600">
-                {selectedTripDetails.status === 'COMPLETED' ? 'Đã đối soát hoàn tất' : 'Chờ ký nhận tại điểm giao'}
-              </div>
+
+            <div className="p-3 bg-white rounded-lg border border-gray-200 text-center flex flex-col items-center justify-center">
+              {selectedTripDetails.pod_photo_url ? (
+                <div className="w-full space-y-1.5">
+                  <img
+                    src={selectedTripDetails.pod_photo_url}
+                    alt="Biên bản giao nhận POD"
+                    className="w-full h-32 object-cover rounded-lg border border-blue-300 shadow-xs cursor-pointer hover:opacity-90"
+                    onClick={() => window.open(selectedTripDetails.pod_photo_url, '_blank')}
+                  />
+                  <div className="font-semibold text-xs text-gray-700">Biên bản giao nhận (POD) có chữ ký</div>
+                  <div className="text-[10px] text-blue-600 font-bold">✓ Đã ký nhận và tải lên từ tài xế</div>
+                </div>
+              ) : (
+                <div className="py-4">
+                  <CheckCircle2 size={24} className="text-blue-500 mx-auto mb-1" />
+                  <div className="font-semibold text-gray-700">Biên bản POD có chữ ký</div>
+                  <div className="text-[10px] text-blue-600">
+                    {selectedTripDetails.status === 'COMPLETED' ? 'Đã đối soát hoàn tất' : 'Chờ tài xế tải lên tại điểm giao'}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

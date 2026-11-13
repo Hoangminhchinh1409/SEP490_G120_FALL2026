@@ -106,8 +106,10 @@ const formatTrip = (trip) => {
   for (const s of sortedStops) {
     for (const ev of (s.evidences || [])) {
       if (ev.seal_number) sealNumber = ev.seal_number;
-      if (ev.type === 'Seal' && ev.file_link) sealPhotoUrl = ev.file_link;
-      if (ev.type === 'POD' && ev.file_link) podPhotoUrl = ev.file_link;
+      const evType = String(ev.evidence_type || ev.type || '').toUpperCase();
+      const link = ev.file_url || ev.file_link;
+      if ((evType === 'SEAL' || evType.includes('SEAL')) && link) sealPhotoUrl = link;
+      if ((evType === 'POD' || evType.includes('POD')) && link) podPhotoUrl = link;
     }
   }
 

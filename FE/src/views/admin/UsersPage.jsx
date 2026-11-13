@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Table, Tag, Button, Input, Select, Modal, Form, Switch, message, Popconfirm, Tooltip } from 'antd';
 import { Search, Plus, Edit, Lock, Unlock, RotateCcw, User, Mail, Phone, Shield } from 'lucide-react';
 import { adminApi } from '../../api/adminApi';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../providers/AuthProvider';
 
 const SYSTEM_ROLES = [
   { id: 1, name: 'ADMINISTRATOR (Quản trị viên)' },

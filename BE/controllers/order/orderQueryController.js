@@ -459,6 +459,7 @@ const getOrderByToken = async (req, res) => {
           null,
         contract_sent_email_at: extraMeta.contract_sent_email_at || null,
         contract_custom_terms: extraMeta.contract_custom_terms || [],
+        contract_details: extraMeta.contract_details || extraMeta.web_workflow?.contract_details || null,
         contract_hardcopy_received: Boolean(extraMeta.contract_hardcopy_received),
         contract_hardcopy_received_at: extraMeta.contract_hardcopy_received_at || null,
       },

@@ -121,9 +121,15 @@ export default function TripAssignmentModal({
     });
   }, [chargeableWeight, actualWeight, order]);
 
-  // Xe đã chốt của đơn (ưu tiên agreed_vehicle_type -> proposed_vehicle_type -> vehicle_type_required)
+  // Xe đã chốt của đơn (ưu tiên web_workflow?.agreed_vehicle_type -> agreed_vehicle_type -> proposed_vehicle_type -> vehicle_type_required)
   const agreedVehicleSpecKey = useMemo(() => {
-    const rawKey = order?.agreed_vehicle_type || order?.proposed_vehicle_type || order?.vehicle_type_required || 'TRUCK_3.5T';
+    const rawKey =
+      order?.web_workflow?.agreed_vehicle_type ||
+      order?.agreed_vehicle_type ||
+      order?.web_workflow?.proposed_vehicle_type ||
+      order?.proposed_vehicle_type ||
+      order?.vehicle_type_required ||
+      'TRUCK_3.5T';
     const spec = getVehicleSpecByKey(rawKey);
     return spec.key;
   }, [order]);
@@ -149,7 +155,7 @@ export default function TripAssignmentModal({
     if (defaultOption) {
       setSelectedTruckPlate(defaultOption);
     }
-  }, [defaultOption]);
+  }, [defaultOption, order]);
   const [driverCount, setDriverCount] = useState(1);
   const [selectedDriver1, setSelectedDriver1] = useState('Nguyễn Văn Lái');
   const [selectedDriver2, setSelectedDriver2] = useState(undefined);
@@ -934,7 +940,8 @@ export default function TripAssignmentModal({
       <LoadPlan3DModal
         open={is3DOpen}
         trip={{
-          trip_code: `TR-${orderCode}`,
+          id: `PREVIEW-${order.id || order.order_id}`,
+          trip_code: `XEM-XE-${selectedTruckSpec.key || currentFleetItem.specKey}`,
           plate: currentFleetItem.plate,
           truck_model: selectedTruckSpec.label,
           box_dim: selectedTruckSpec.boxDimText || selectedTruckSpec.boxText,
@@ -946,20 +953,8 @@ export default function TripAssignmentModal({
           total_weight: actualWeight || chargeableWeight,
           orders_count: 1,
           total_volume: cargoVolume,
-          order: {
-            ...order,
-            weight: actualWeight || order.weight || 2850,
-            chargeable: chargeableWeight || order.chargeable || 2850,
-            actual_weight_kg: actualWeight || 2850,
-            chargeable_weight_kg: chargeableWeight || 2850
-          },
-          orders: [{
-            ...order,
-            weight: actualWeight || order.weight || 2850,
-            chargeable: chargeableWeight || order.chargeable || 2850,
-            actual_weight_kg: actualWeight || 2850,
-            chargeable_weight_kg: chargeableWeight || 2850
-          }],
+          order: order,
+          orders: [order],
           assignment_stops: stops,
           is_multi_drop: multiDropMode === 'MULTI_POINTS'
         }}

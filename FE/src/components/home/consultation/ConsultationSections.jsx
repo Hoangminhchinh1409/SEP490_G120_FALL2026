@@ -54,13 +54,13 @@ export function ConsultationReceiverSection({
         {parseFloat(totals.actualWeight) > 0 && (
           <div className={`mt-2.5 p-2.5 rounded-lg border text-xs flex flex-wrap items-center justify-between gap-2 ${
             vehicleRecommendation.status === 'UNDER_CAPACITY'
-              ? 'bg-red-50 border-red-300 text-red-950 shadow-xs'
+              ? 'bg-amber-50 border-amber-300 text-amber-950 shadow-xs'
               : 'bg-white border-emerald-200 text-emerald-900'
           }`}>
             <div className="flex-1 min-w-[240px]">
               <div className="flex items-center gap-1.5 font-bold">
                 {vehicleRecommendation.status === 'UNDER_CAPACITY' ? (
-                  <span className="text-red-600 flex items-center gap-1">❌ CẢNH BÁO VƯỢT TẢI TRỌNG XE:</span>
+                  <span className="text-amber-700 flex items-center gap-1">⚠️ KHUYẾN NGHỊ CHỌN LOẠI XE:</span>
                 ) : (
                   <span>💡 Gợi ý xếp xe theo hàng hóa:</span>
                 )}
@@ -70,8 +70,8 @@ export function ConsultationReceiverSection({
                 Quy cách thùng: {vehicleRecommendation.recommendedSpec.boxDimText} • Tải tối đa: <b>{vehicleRecommendation.recommendedSpec.maxPayloadKg.toLocaleString('vi-VN')} kg</b>
               </div>
               {vehicleRecommendation.status === 'UNDER_CAPACITY' && (
-                <div className="text-[11px] text-red-700 font-semibold mt-1 bg-red-100/60 p-1.5 rounded">
-                  ⚠️ {vehicleRecommendation.reason}
+                <div className="text-[11px] text-amber-900 font-medium mt-1 bg-amber-100/70 p-2 rounded-lg border border-amber-200 leading-relaxed">
+                  ℹ️ {vehicleRecommendation.reason}
                 </div>
               )}
             </div>
@@ -79,11 +79,10 @@ export function ConsultationReceiverSection({
               <Button
                 size="small"
                 type="primary"
-                danger={vehicleRecommendation.status === 'UNDER_CAPACITY'}
-                className="text-xs font-semibold h-8"
+                className="text-xs font-semibold h-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
                 onClick={() => form.setFieldsValue({ vehicle_type_required: vehicleRecommendation.recommendedVehicleKey })}
               >
-                Đổi sang {vehicleRecommendation.recommendedSpec.shortLabel}
+                Chọn {vehicleRecommendation.recommendedSpec.shortLabel}
               </Button>
             )}
           </div>

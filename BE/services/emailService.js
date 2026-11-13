@@ -458,15 +458,16 @@ const sendContractToCustomerEmail = async ({
   pickupAddress,
   deliveryAddress,
   customTerms = [],
+  contractData = {},
   trackingUrl,
   pdfAttachment = null
 }) => {
   const mailTransporter = await getTransporter();
-  const formattedPrice = (agreedPrice || 0).toLocaleString('vi-VN');
+  const formattedPrice = (contractData?.price_amount || agreedPrice || 0).toLocaleString('vi-VN');
 
   const termsHtml = Array.isArray(customTerms) && customTerms.length > 0
     ? customTerms.map((t, idx) => `<li><b>Điều khoản ${idx + 1}:</b> ${t}</li>`).join('')
-    : '<li>Tuân thủ các điều khoản chuẩn trong Hợp đồng khung vận tải hàng không ALS và Luật Thương mại.</li>';
+    : '<li>Tuân thủ các điều khoản chuẩn trong Hợp đồng khung vận tải hàng không ALS và Nghị định 158/2024/NĐ-CP.</li>';
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -490,27 +491,29 @@ const sendContractToCustomerEmail = async ({
     <body>
       <div class="container">
         <div class="header">
-          <h1>HỢP ĐỒNG VẬN TẢI HÀNG HÓA ALS</h1>
-          <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">Công ty Cổ phần Logistics Hàng không (ALS) — Hệ thống NEXLOG</p>
+          <h1>HỢP ĐỒNG VẬN TẢI HÀNG HÓA ĐƯỜNG BỘ</h1>
+          <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">Công ty TNHH Vận tải &amp; Logistics Hàng không ALS (NEXLOG)</p>
         </div>
         <div class="content">
           <p style="font-size: 14px; line-height: 1.6;">
-            Kính gửi Quý khách hàng <b>${customerName || 'Quý khách'}</b>,<br/>
-            Bộ phận Điều phối ALS thông báo hồ sơ chứng từ của Đơn hàng <b>#${orderCode}</b> đã được thẩm duyệt hợp lệ. Chúng tôi gửi đến Quý khách dự thảo Hợp đồng vận chuyển với đầy đủ thông tin thỏa thuận kỹ thuật & pháp lý:
+            Kính gửi Quý khách hàng <b>${contractData?.customer_name || customerName || 'Quý khách'}</b>,<br/>
+            Bộ phận Điều phối ALS gửi tới Quý khách dự thảo Hợp đồng vận chuyển hàng hóa đường bộ cho Đơn hàng <b>#${orderCode}</b> với đầy đủ các điều khoản kỹ thuật, hành trình và cước phí thỏa thuận:
           </p>
 
           <div class="order-box">
-            <div style="font-size: 14px; font-weight: bold; color: #065f46; margin-bottom: 8px;">THÔNG TIN VẬN TẢI ĐÃ CHỐT:</div>
+            <div style="font-size: 14px; font-weight: bold; color: #065f46; margin-bottom: 8px;">THÔNG TIN HỢP ĐỒNG ĐÃ XÁC LẬP:</div>
             <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
-              <tr><td style="padding: 4px 0; color: #64748b; width: 140px;">Mã đơn hàng:</td><td style="font-weight: bold; font-family: monospace;">${orderCode}</td></tr>
-              <tr><td style="padding: 4px 0; color: #64748b;">Phương tiện chốt:</td><td style="font-weight: bold; color: #047857;">${truckModel || 'Xe tải chuyên dụng ALS'}</td></tr>
-              <tr><td style="padding: 4px 0; color: #64748b;">Cước phí vận chuyển:</td><td style="font-weight: bold; color: #b91c1c;">${formattedPrice} VNĐ</td></tr>
-              <tr><td style="padding: 4px 0; color: #64748b;">Điểm lấy hàng:</td><td>${pickupAddress || 'Kho khách hàng'}</td></tr>
-              <tr><td style="padding: 4px 0; color: #64748b;">Điểm giao nhận:</td><td>${deliveryAddress || 'Nhà ga Hàng hóa ALS Nội Bài'}</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b; width: 140px;">Mã đơn / Hợp đồng:</td><td style="font-weight: bold; font-family: monospace;">#${orderCode}</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Hàng hóa:</td><td>${contractData?.cargo_name || 'Hàng hóa thông thường'} (${contractData?.weight || 0} kg)</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Phương tiện vận chuyển:</td><td style="font-weight: bold; color: #047857;">${contractData?.truck_model || truckModel || 'Xe tải chuyên dụng ALS'}</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Tổng giá trị hợp đồng:</td><td style="font-weight: bold; color: #b91c1c;">${formattedPrice} VNĐ</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Điểm đầu (Lấy hàng):</td><td>${contractData?.pickup_address || pickupAddress || 'Kho khách hàng'}</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Điểm cuối (Trả hàng):</td><td>${contractData?.delivery_address || deliveryAddress || 'Nhà ga Hàng hóa ALS Nội Bài'}</td></tr>
+              <tr><td style="padding: 4px 0; color: #64748b;">Thời hạn thanh toán:</td><td>${contractData?.payment_term || 'Trong vòng 07 ngày làm việc kể từ ngày giao hàng'}</td></tr>
             </table>
 
             <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #bbf7d0; font-size: 12px; color: #047857;">
-              <b>Điều khoản bổ sung riêng theo yêu cầu của đơn:</b>
+              <b>Điều khoản bổ sung thỏa thuận riêng:</b>
               <ul style="margin: 4px 0 0; padding-left: 18px;">
                 ${termsHtml}
               </ul>
@@ -519,23 +522,23 @@ const sendContractToCustomerEmail = async ({
 
           <div class="instructions">
             <div style="font-weight: bold; color: #92400e; font-size: 13px; margin-bottom: 8px;">
-              ⚠️ HƯỚNG DẪN HOÀN THIỆN HỢP ĐỒNG (BẮT BUỘC):
+              ⚠️ HƯỚNG DẪN HOÀN THIỆN &amp; XÁC NHẬN HỢP ĐỒNG:
             </div>
             <div style="font-size: 13px; line-height: 1.6; color: #78350f;">
               <p style="margin: 6px 0;">
-                <span class="step-num-green">1</span> <b>Bước 1 (Online):</b> Quý khách vui lòng tải tệp PDF đính kèm, in ra giấy, ký tên &amp; đóng dấu tròn pháp nhân. Sau đó chụp/scan bản hợp đồng có dấu và tải lên hệ thống qua đường link bên dưới để ALS kích hoạt xếp xe ngay:
+                <span class="step-num-green">1</span> <b>Kiểm tra &amp; Ký (Online):</b> Quý khách vui lòng kiểm tra nội dung dự thảo. Nếu đồng ý, Quý khách in ra giấy, ký tên &amp; đóng dấu tròn pháp nhân. Sau đó tải bản scan PDF có dấu lên hệ thống qua đường link bên dưới. <i>(Nếu Quý khách có yêu cầu chỉnh sửa điều khoản hay thông tin, xin vui lòng phản hồi qua link hoặc liên hệ Điều phối để được điều chỉnh lại hợp đồng trước khi ký).</i>
               </p>
               <div style="text-align: center; margin: 12px 0;">
-                <a href="${trackingUrl}" class="btn" target="_blank">Tải Lên Bản Hợp Đồng Đã Ký (Scan PDF)</a>
+                <a href="${trackingUrl}" class="btn" target="_blank">Xem Chi Tiết &amp; Tải Lên Hợp Đồng Đã Ký</a>
               </div>
               <p style="margin: 10px 0 0;">
-                <span class="step-num">2</span> <b>Bước 2 (Offline - Bắt buộc):</b> Quý khách vui lòng gửi bản cứng (bản gốc có dấu đỏ) qua đường bưu điện hoặc chuyển phát nhanh về Văn phòng Điều phối ALS (Nhà ga Hàng hóa ALS, Cảng HKQT Nội Bài) trong vòng 03 - 05 ngày làm việc để lưu trữ hồ sơ thanh quyết toán.
+                <span class="step-num">2</span> <b>Gửi bản cứng (Bắt buộc):</b> Quý khách vui lòng gửi bản cứng gốc có dấu đỏ qua bưu điện / chuyển phát nhanh về Văn phòng Điều phối ALS (Cảng HKQT Nội Bài) trong vòng 03 ngày làm việc để hoàn tất lưu trữ hồ sơ pháp lý.
               </p>
             </div>
           </div>
 
           <p style="font-size: 12px; color: #64748b; line-height: 1.5; margin-top: 20px;">
-            Mọi thắc mắc cần hỗ trợ xin vui lòng liên hệ Hotline Điều phối ALS: <b>1900 6868</b> hoặc phản hồi trực tiếp qua email này.
+            Đường dây nóng phản ánh, khiếu nại &amp; hỗ trợ Điều phối ALS: <b>1900 3133 / 0988 123 456</b> hoặc phản hồi trực tiếp qua email này.
           </p>
         </div>
         <div class="footer">

@@ -342,8 +342,8 @@ const LocationSearchInput = ({
     const apiTimer = setTimeout(async () => {
       try {
         setIsLoading(true);
-        const searchContext = [query, selectedWardName, selectedProvinceName].filter(Boolean).join(', ');
-        const vietmapUrl = `https://maps.vietmap.vn/api/autocomplete/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(searchContext)}`;
+        // Tìm kiếm tự do theo từ khóa người dùng gõ trên toàn quốc, không bó hẹp cứng theo tỉnh/xã đã chọn trước đó
+        const vietmapUrl = `https://maps.vietmap.vn/api/autocomplete/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(query)}`;
         const res = await fetch(vietmapUrl, { signal: controller.signal });
 
         if (res.ok) {
@@ -378,7 +378,7 @@ const LocationSearchInput = ({
       clearTimeout(apiTimer);
       controller.abort();
     };
-  }, [detailText, selectedWardName, selectedProvinceName, isOpen]);
+  }, [detailText, isOpen]);
 
   // Xử lý khi thay đổi ô Địa chỉ cụ thể
   const handleDetailChange = (e) => {
@@ -431,13 +431,11 @@ const LocationSearchInput = ({
     const provBoundary = (item.boundaries || []).find((b) => b.type === 0);
     const wardBoundary = (item.boundaries || []).find((b) => b.type === 2);
 
-    let matchedProv = selectedProvinceCode
-      ? VIETNAM_PROVINCES_2026.find((p) => p.code === selectedProvinceCode)
-      : null;
+    let matchedProv = null;
 
     if (provBoundary?.name) {
       const bNorm = normalizeVi(provBoundary.name);
-      const foundProv = VIETNAM_PROVINCES_2026.find((p) => normalizeVi(p.name).includes(bNorm));
+      const foundProv = VIETNAM_PROVINCES_2026.find((p) => normalizeVi(p.name).includes(bNorm) || bNorm.includes(normalizeVi(p.name).replace(/^(tinh|thanh pho)\s+/i, '')));
       if (foundProv) {
         matchedProv = foundProv;
         setSelectedProvinceCode(foundProv.code);
@@ -445,10 +443,18 @@ const LocationSearchInput = ({
       }
     }
 
-    let nextWard = selectedWardName;
+    // Nếu VietMap không trả về boundary tỉnh nhưng đã chọn tỉnh trước đó, giữ lại tỉnh đó
+    if (!matchedProv && selectedProvinceCode) {
+      matchedProv = VIETNAM_PROVINCES_2026.find((p) => p.code === selectedProvinceCode) || null;
+    }
+
+    let nextWard = undefined;
     if (wardBoundary?.full_name || wardBoundary?.name) {
       nextWard = wardBoundary.full_name || `${wardBoundary.prefix || 'Xã'} ${wardBoundary.name}`.trim();
       setSelectedWardName(nextWard);
+    } else {
+      // Khi chọn địa điểm mới khác hẳn, reset phường/xã cũ để người dùng chọn đúng theo địa bàn mới
+      setSelectedWardName(undefined);
     }
 
     const nextProvName = matchedProv?.name || selectedProvinceName;
@@ -604,8 +610,32 @@ const LocationSearchInput = ({
         )}
       </div>
 
-      {/* 2. Bên dưới: Hàng chọn Tỉnh/Thành phố & Phường/Xã */}
+      {/* 2. Bên dưới: Hàng chọn Phường/Xã & Tỉnh/Thành phố (Đã đổi chỗ Phường/Xã sang trước, Tỉnh/TP sang sau) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <div className="text-[10px] font-semibold text-gray-500 mb-1">
+            Phường / Xã <span className="text-red-500">*</span>
+          </div>
+          <Select
+            showSearch
+            allowClear
+            disabled={!selectedProvinceCode}
+            loading={loadingWards}
+            placeholder={selectedProvinceCode ? 'Chọn Phường / Xã...' : 'Chọn Tỉnh/TP bên cạnh'}
+            value={selectedWardName}
+            onChange={handleWardChange}
+            optionFilterProp="label"
+            filterOption={(input, option) =>
+              normalizeVi(option?.label || '').includes(normalizeVi(input))
+            }
+            className="w-full text-xs"
+            options={wardsList.map((w) => ({
+              value: w.name,
+              label: w.name
+            }))}
+          />
+        </div>
+
         <div>
           <div className="text-[10px] font-semibold text-gray-500 mb-1">
             Tỉnh / Thành phố <span className="text-red-500">*</span>
@@ -624,30 +654,6 @@ const LocationSearchInput = ({
             options={VIETNAM_PROVINCES_2026.map((p) => ({
               value: p.code,
               label: p.name
-            }))}
-          />
-        </div>
-
-        <div>
-          <div className="text-[10px] font-semibold text-gray-500 mb-1">
-            Phường / Xã <span className="text-red-500">*</span>
-          </div>
-          <Select
-            showSearch
-            allowClear
-            disabled={!selectedProvinceCode}
-            loading={loadingWards}
-            placeholder={selectedProvinceCode ? 'Chọn Phường / Xã...' : 'Chọn Tỉnh/TP trước'}
-            value={selectedWardName}
-            onChange={handleWardChange}
-            optionFilterProp="label"
-            filterOption={(input, option) =>
-              normalizeVi(option?.label || '').includes(normalizeVi(input))
-            }
-            className="w-full text-xs"
-            options={wardsList.map((w) => ({
-              value: w.name,
-              label: w.name
             }))}
           />
         </div>

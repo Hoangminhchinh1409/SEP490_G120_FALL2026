@@ -209,12 +209,12 @@ export const orderApi = {
     }
   },
 
-  // 14b. Gửi email hợp đồng vận tải chính thức kèm điều khoản bổ sung cho khách hàng
-  sendContractToCustomer: async (orderId, { custom_terms = [], pdf_base64 = null } = {}) => {
+  // 14b. Gửi email hợp đồng vận tải chính thức kèm điều khoản bổ sung & thông tin điều chỉnh cho khách hàng
+  sendContractToCustomer: async (orderId, { custom_terms = [], contract_details = {}, pdf_base64 = null } = {}) => {
     try {
       const data = await fetchWithoutAuth(`/orders/${orderId}/send-contract`, {
         method: 'POST',
-        body: JSON.stringify({ custom_terms, pdf_base64 })
+        body: JSON.stringify({ custom_terms, contract_details, pdf_base64 })
       });
       return data;
     } catch (error) {

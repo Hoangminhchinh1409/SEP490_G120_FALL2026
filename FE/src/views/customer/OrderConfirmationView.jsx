@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, Button, Result, Tag, Spin, message, Alert, Modal, Input, InputNumber, Select, Form } from 'antd';
+import { Card, Button, Result, Tag, Spin, message, Alert } from 'antd';
 import { 
   Package, 
   MapPin, 
@@ -11,14 +11,10 @@ import {
   ArrowRight,
   Info,
   MessageSquare,
-  RefreshCw,
   Truck
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
-import { VEHICLE_SPECS, getVehicleSpecByKey } from '../../../src/data/dispatcherPresets';
-
-const { TextArea } = Input;
-const { Option } = Select;
+import { getVehicleSpecByKey } from '../../../src/data/dispatcherPresets';
 
 export default function OrderConfirmationView() {
   const params = useParams();
@@ -43,11 +39,6 @@ export default function OrderConfirmationView() {
             data.web_workflow?.stage === 'CONTRACT_SIGNED') {
           setAgreedSuccess(true);
         }
-        if (data.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') {
-          setFeedbackSuccess(true);
-        } else {
-          setFeedbackSuccess(false);
-        }
       } catch (err) {
         console.error('Failed to load order by token:', err);
         message.error('Không tìm thấy thông tin đơn hàng hoặc đường link đã hết hạn.');
@@ -64,14 +55,10 @@ export default function OrderConfirmationView() {
         if (latestData) {
           setOrder(prev => {
             if (!prev) return latestData;
-            const stageChangedToQuoted =
-              prev.web_workflow?.stage === 'CUSTOMER_NEGOTIATING' &&
-              latestData.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER';
             const priceChanged = prev.agreed_price !== latestData.agreed_price;
             const vehicleChanged = prev.proposed_vehicle_type !== latestData.proposed_vehicle_type;
 
-            if (stageChangedToQuoted || priceChanged || vehicleChanged) {
-              setFeedbackSuccess(false);
+            if (priceChanged || vehicleChanged) {
               const vSpec = getVehicleSpecByKey(latestData.proposed_vehicle_type || latestData.vehicle_type_required);
               message.info(
                 `Điều phối viên vừa cập nhật phương án ${vSpec.label} & chốt lại mức giá: ${Number(latestData.agreed_price).toLocaleString('vi-VN')} VNĐ${
@@ -137,9 +124,7 @@ export default function OrderConfirmationView() {
     );
   }
 
-  const isCurrentlyNegotiating = feedbackSuccess || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
   const hasDispatcherRequoted =
-    !isCurrentlyNegotiating &&
     Boolean(order.web_workflow?.adjustment_reason) &&
     order.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER';
 
@@ -175,11 +160,6 @@ export default function OrderConfirmationView() {
                 <span className="text-xs font-bold uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
                   <DollarSign size={15} /> Giá cước trọn gói ({proposedVehicleSpec.label})
                 </span>
-                {isCurrentlyNegotiating && (
-                  <span className="text-[11px] bg-amber-400 text-slate-950 font-bold px-2.5 py-0.5 rounded-full">
-                    Đang thương lượng
-                  </span>
-                )}
               </div>
               <div className="text-3xl sm:text-4xl font-extrabold mt-1 font-mono tracking-tight">
                 {(order.agreed_price || 0).toLocaleString()} <span className="text-xl font-normal text-indigo-200">VNĐ</span>
@@ -263,7 +243,7 @@ export default function OrderConfirmationView() {
           )}
         </div>
 
-        {/* Thông báo phản hồi giá mới từ Điều phối viên sau khi thương lượng */}
+        {/* Thông báo phản hồi giá mới từ Điều phối viên */}
         {hasDispatcherRequoted && !agreedSuccess && (
           <Alert
             title={
@@ -277,7 +257,7 @@ export default function OrderConfirmationView() {
                   • Lý do điều chỉnh / phản hồi từ Điều phối viên: <b>&ldquo;{order.web_workflow.adjustment_reason}&rdquo;</b>
                 </div>
                 <div className="text-slate-600 pt-0.5">
-                  Nếu Quý khách đồng ý với phương án xe và mức giá trên, vui lòng bấm <b>&ldquo;Đồng ý chốt Phương án xe &amp; Giá cước&rdquo;</b>. Nếu chưa ưng ý, Quý khách có thể bấm <b>&ldquo;Thương lượng lại giá (Deal lại)&rdquo;</b> bên dưới để tiếp tục đề xuất!
+                  Nếu Quý khách đồng ý với phương án xe và mức giá trên, vui lòng bấm <b>&ldquo;Đồng ý chốt Phương án xe &amp; Giá cước&rdquo;</b>. Nếu cần trao đổi thêm, Quý khách có thể liên hệ trực tiếp Điều phối viên theo số Hotline ở trên!
                 </div>
               </div>
             }
@@ -412,37 +392,6 @@ export default function OrderConfirmationView() {
               <li>Giám sát lộ trình trực tuyến và bảo hiểm an toàn hàng hóa nguyên seal 100%.</li>
             </ul>
           </div>
-
-          {/* Thông báo nếu khách đang yêu cầu đàm phán lại */}
-          {isCurrentlyNegotiating && (
-            <Alert
-              title={
-                <span className="font-bold text-amber-950">
-                  Trạng thái: Đang thương lượng — Yêu cầu điều chỉnh giá / phương án xe của Quý khách đã được gửi tới Điều phối viên!
-                </span>
-              }
-              description={
-                <div className="text-xs text-amber-900 space-y-1 mt-1">
-                  <div>• Lý do: <b>{order.web_workflow?.negotiation?.feedback_reason || 'Cần điều chỉnh thêm'}</b></div>
-                  {order.web_workflow?.negotiation?.proposed_price && (
-                    <div>• Mức giá Quý khách đề xuất: <b>{order.web_workflow.negotiation.proposed_price.toLocaleString('vi-VN')} VNĐ</b></div>
-                  )}
-                  {order.web_workflow?.negotiation?.proposed_vehicle_type && (
-                    <div>• Loại xe Quý khách đề xuất: <b>{getVehicleSpecByKey(order.web_workflow.negotiation.proposed_vehicle_type).label}</b></div>
-                  )}
-                  {order.web_workflow?.negotiation?.customer_note && (
-                    <div>• Ghi chú: <i>&ldquo;{order.web_workflow.negotiation.customer_note}&rdquo;</i></div>
-                  )}
-                  <div className="pt-1 text-slate-600">
-                    Điều phối viên NEXLOG đang xem xét và sẽ chốt lại mức giá kèm phương án xe ngay trên trang này (tự động cập nhật).
-                  </div>
-                </div>
-              }
-              type="warning"
-              showIcon
-              className="rounded-2xl border border-amber-300 bg-amber-50/90"
-            />
-          )}
 
           {/* Nút Hành Động Đồng Ý & Thương Lượng Hotline Trực Tiếp */}
           {!agreedSuccess ? (
