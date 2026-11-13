@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Modal, Badge, message, Tabs, Select, Input } from 'antd';
+import { Button, Modal, Badge, message, Tabs, Select, Input, Tag, Result } from 'antd';
 import { Route, Truck, RefreshCw, ShieldAlert } from 'lucide-react';
 import TripAssignmentModal from '../../components/dispatcher/TripAssignmentModal';
 import IncidentDetailsModal from '../../components/dispatcher/IncidentDetailsModal';
@@ -20,8 +20,13 @@ import {
   TripReplayModal 
 } from './tripPlanning/TripAuxiliaryModals';
 
-export default function TripPlanningAndMonitoring() {
-  const { user } = useAuth();
+export default function TripPlanningAndMonitoring({ readOnly = false }) {
+  const { user, hasPermission } = useAuth();
+  const userRoleId = Number(user?.role_id);
+  const isManager = userRoleId === 2;
+  const isReadOnly = readOnly || isManager || (user && userRoleId !== 1 && userRoleId !== 3);
+  const hasManagerAccess = !isManager || (hasPermission && (hasPermission('ORDER_ASSIGN') || hasPermission('TRIP_MONITOR')));
+
   const [activeMainTab, setActiveMainTab] = useState('planning');
   const [trips, setTrips] = useState([]);
   const [incidents, setIncidents] = useState([]);
@@ -49,6 +54,10 @@ export default function TripPlanningAndMonitoring() {
 
   // Tải danh sách đơn hàng sẵn sàng xếp xe, chuyến xe và sự cố từ Backend Supabase
   const fetchData = useCallback(async () => {
+    if (isManager && !hasManagerAccess) {
+      setLoading(false);
+      return;
+    }
     try {
       const [ordersData, tripsData, incidentsData, trucksData, driversData, leaveReassignRes] = await Promise.all([
         orderApi.getAllOrders().catch(() => []),
@@ -264,14 +273,45 @@ export default function TripPlanningAndMonitoring() {
     }
   };
 
+  if (isManager && !hasManagerAccess) {
+    return (
+      <div className="p-8 max-w-2xl mx-auto my-12 bg-white rounded-2xl border border-gray-100 shadow-sm">
+        <Result
+          status="403"
+          icon={<ShieldAlert size={64} className="text-red-500 mx-auto" />}
+          title={<span className="text-xl font-bold text-gray-800">403 - Quyền truy cập bị từ chối</span>}
+          subTitle={
+            <span className="text-gray-600 text-sm">
+              Bạn không có quyền xem hoặc thao tác trên trang <b>Kế hoạch chuyến xe</b>. Vui lòng liên hệ Quản trị viên hệ thống để được cấp quyền xem chéo trong Ma trận phân quyền.
+            </span>
+          }
+          extra={
+            <Button
+              type="primary"
+              className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold"
+              onClick={() => { window.location.href = '/manager'; }}
+            >
+              Quay lại Bảng điều khiển Quản lý
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-xs">
         <div>
-          <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+          <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2 flex-wrap">
             <Route className="text-[#7367f0]" size={24} />
             Lập Kế hoạch Chuyến &amp; Giám sát Vận chuyển
+            {isReadOnly && (
+              <Tag color="blue" className="text-xs font-semibold px-2.5 py-0.5 ml-1 border-blue-200">
+                Chế độ Chỉ xem (Read-only)
+              </Tag>
+            )}
           </h1>
           <p className="text-gray-500 text-xs mt-1">
             Điều phối phương tiện nội bộ &amp; nhà xe 3PL, theo dõi lộ trình thời gian thực, quản lý lệnh điều xe và xử lý sự cố hiện trường
@@ -314,6 +354,7 @@ export default function TripPlanningAndMonitoring() {
                 loading={loading}
                 setSelectedOrderForAssign={setSelectedOrderForAssign}
                 setSelectedOrderForCancel={setSelectedOrderForCancel}
+                isReadOnly={isReadOnly}
               />
             )
           },
@@ -345,6 +386,7 @@ export default function TripPlanningAndMonitoring() {
                 handleCancelTrip={handleCancelTrip}
                 leaveReassignments={leaveReassignments}
                 onOpenReassignModal={handleOpenReassignModal}
+                isReadOnly={isReadOnly}
               />
             )
           },
@@ -365,6 +407,7 @@ export default function TripPlanningAndMonitoring() {
                 trips={trips}
                 setActiveIncidentModal={setActiveIncidentModal}
                 onReportIncident={handleReportIncident}
+                isReadOnly={isReadOnly}
               />
             )
           }
@@ -385,6 +428,7 @@ export default function TripPlanningAndMonitoring() {
         incident={activeIncidentModal}
         onCancel={() => setActiveIncidentModal(null)}
         onResolveSuccess={handleResolveIncident}
+        isReadOnly={isReadOnly}
       />
 
       {/* Drawer & Modals xem thông tin phụ trợ */}

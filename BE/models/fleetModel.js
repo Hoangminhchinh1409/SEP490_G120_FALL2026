@@ -1,4 +1,4 @@
-const prisma = require('../config/prisma');
+const supabase = require('../config/supabase');
 
 const toPlainNumber = (val) => (val !== null && val !== undefined ? Number(val) : null);
 
@@ -33,60 +33,58 @@ const mapDriver = (d) => {
 };
 
 const findAllTrucks = async () => {
-  const trucks = await prisma.trucks.findMany({
-    orderBy: { id: 'asc' }
-  });
-  return trucks.map(mapTruck);
+  const { data, error } = await supabase
+    .from('trucks')
+    .select('*')
+    .order('id', { ascending: true });
+  if (error) throw error;
+  return (data || []).map(mapTruck);
 };
 
 const createTruck = async (truckData) => {
   const data = { ...truckData };
   delete data.id;
-  const created = await prisma.trucks.create({
-    data
-  });
+  const { data: created, error } = await supabase
+    .from('trucks')
+    .insert(data)
+    .select()
+    .single();
+  if (error) throw error;
   return mapTruck(created);
 };
 
 const updateTruck = async (id, updateData) => {
-  const numId = BigInt(id);
   const data = { ...updateData };
   delete data.id;
-  const updated = await prisma.trucks.update({
-    where: { id: numId },
-    data
-  });
+  const { data: updated, error } = await supabase
+    .from('trucks')
+    .update(data)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
   return mapTruck(updated);
 };
 
 const findAllDrivers = async () => {
-  const drivers = await prisma.driver_profiles.findMany({
-    include: {
-      users: {
-        select: {
-          id: true,
-          username: true,
-          full_name: true,
-          phone: true,
-          email: true,
-          status: true,
-          role_id: true
-        }
-      }
-    },
-    orderBy: { id: 'asc' }
-  });
-  return drivers.map(mapDriver);
+  const { data, error } = await supabase
+    .from('driver_profiles')
+    .select('*, users:user_account_id(id, username, full_name, phone, email, status, role_id)')
+    .order('id', { ascending: true });
+  if (error) throw error;
+  return (data || []).map(mapDriver);
 };
 
 const updateDriver = async (id, updateData) => {
-  const numId = BigInt(id);
   const data = { ...updateData };
   delete data.id;
-  const updated = await prisma.driver_profiles.update({
-    where: { id: numId },
-    data
-  });
+  const { data: updated, error } = await supabase
+    .from('driver_profiles')
+    .update(data)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
   return mapDriver(updated);
 };
 
@@ -100,10 +98,12 @@ const mapVendor = (v) => {
 };
 
 const findAllVendors = async () => {
-  const vendors = await prisma.vendors.findMany({
-    orderBy: { id: 'asc' }
-  });
-  return vendors.map(mapVendor);
+  const { data, error } = await supabase
+    .from('vendors')
+    .select('*')
+    .order('id', { ascending: true });
+  if (error) throw error;
+  return (data || []).map(mapVendor);
 };
 
 module.exports = {

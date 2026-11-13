@@ -35,7 +35,8 @@ export default function TripMonitoringTab({
   handleCompleteTrip,
   handleCancelTrip,
   leaveReassignments = [],
-  onOpenReassignModal
+  onOpenReassignModal,
+  isReadOnly = false
 }) {
   const filteredTrips = trips.filter(item => {
     const matchSearch = searchText === '' ||
@@ -218,7 +219,7 @@ export default function TripMonitoringTab({
                 onClick={() => setSelectedTripReplay(record)}
               />
             </Tooltip>
-            {record.status === 'IN_TRANSIT' && (
+            {!isReadOnly && record.status === 'IN_TRANSIT' && (
               <Tooltip title="Xác nhận hoàn tất giao hàng & trả xe">
                 <Button
                   size="small"
@@ -231,7 +232,7 @@ export default function TripMonitoringTab({
                 </Button>
               </Tooltip>
             )}
-            {record.status === 'IN_TRANSIT' && record.progress <= 50 && (
+            {!isReadOnly && record.status === 'IN_TRANSIT' && record.progress <= 50 && (
               <Tooltip title="Hủy chuyến">
                 <Button
                   size="small"
@@ -291,14 +292,20 @@ export default function TripMonitoringTab({
                     </div>
                   )}
                 </div>
-                <Button
-                  type="primary"
-                  size="small"
-                  onClick={() => onOpenReassignModal && onOpenReassignModal(item)}
-                  className="bg-orange-500 hover:bg-orange-600 border-orange-500 font-bold shrink-0 rounded-lg"
-                >
-                  Đổi tài xế
-                </Button>
+                {isReadOnly ? (
+                  <Tag color="orange" className="shrink-0 font-medium text-xs">
+                    Chỉ xem
+                  </Tag>
+                ) : (
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => onOpenReassignModal && onOpenReassignModal(item)}
+                    className="bg-orange-500 hover:bg-orange-600 border-orange-500 font-bold shrink-0 rounded-lg"
+                  >
+                    Đổi tài xế
+                  </Button>
+                )}
               </div>
             ))}
           </div>
@@ -321,15 +328,25 @@ export default function TripMonitoringTab({
               </p>
             </div>
           </div>
-          <Button
-            type="primary"
-            danger
-            icon={<AlertTriangle size={15} />}
-            className="font-bold shrink-0 shadow-sm"
-            onClick={() => setActiveIncidentModal(incidents[0])}
-          >
-            Xử lý sự cố ngay
-          </Button>
+          {isReadOnly ? (
+            <Button
+              icon={<Eye size={15} />}
+              className="font-bold shrink-0 shadow-sm text-gray-700 bg-white"
+              onClick={() => setActiveIncidentModal(incidents[0])}
+            >
+              Xem chi tiết sự cố
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              danger
+              icon={<AlertTriangle size={15} />}
+              className="font-bold shrink-0 shadow-sm"
+              onClick={() => setActiveIncidentModal(incidents[0])}
+            >
+              Xử lý sự cố ngay
+            </Button>
+          )}
         </div>
       )}
 

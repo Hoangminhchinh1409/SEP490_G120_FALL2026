@@ -38,7 +38,7 @@ const EXTRA_FEE_TYPES = [
   'Chi phí phát sinh khác'
 ];
 
-export default function OrderDetailsModal({ open, order, onCancel, onUpdateOrder }) {
+export default function OrderDetailsModal({ open, order, onCancel, onUpdateOrder, readOnly = false }) {
   if (!open || !order) return null;
 
   return (
@@ -48,11 +48,12 @@ export default function OrderDetailsModal({ open, order, onCancel, onUpdateOrder
       order={order}
       onCancel={onCancel}
       onUpdateOrder={onUpdateOrder}
+      readOnly={readOnly}
     />
   );
 }
 
-function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
+function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOnly = false }) {
   const router = useRouter();
   const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
   const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
@@ -955,7 +956,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder }) {
         onCancel={onCancel}
         width={980}
         footer={
-          isClosed ? [
+          (isClosed || readOnly) ? [
             <Button key="close" type="primary" onClick={onCancel}>Đóng</Button>
           ] : [
           <Button key="close" onClick={onCancel}>Đóng</Button>,

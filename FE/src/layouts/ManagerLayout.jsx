@@ -21,16 +21,25 @@ export default function ManagerLayout({ children }) {
     { href: '/manager/blogs', icon: 'newspaper', name: 'Tin tức', permission: 'NEWS_MANAGE' },
     { href: '/manager/accounts', icon: 'manage_accounts', name: 'Tài khoản nhân viên' },
     // Menu xem chéo được cấp quyền bởi Admin (Chỉ xem - Read-only)
-    { href: '/dispatcher/orders', icon: 'assignment', name: 'Đơn hàng ĐP (Chỉ xem)', permission: 'ORDER_MANAGE', isCrossRole: true },
-    { href: '/dispatcher/trips', icon: 'alt_route', name: 'Chuyến xe ĐP (Chỉ xem)', permission: 'TRIP_MONITOR', isCrossRole: true },
+    { href: '/manager/all-orders', icon: 'assignment', name: 'Đơn hàng ĐP (Chỉ xem)', permission: 'ORDER_MANAGE', isCrossRole: true },
+    { href: '/manager/trips', icon: 'alt_route', name: 'Kế hoạch chuyến xe (Chỉ xem)', permission: 'ORDER_ASSIGN', isCrossRole: true },
+    { href: '/manager/tracking', icon: 'explore', name: 'Bản đồ giám sát GPS (Chỉ xem)', permission: 'TRIP_MONITOR', isCrossRole: true },
+    { href: '/manager/contracts', icon: 'description', name: 'Hợp đồng Vận chuyển (Chỉ xem)', permission: 'CONTRACT_MANAGE', isCrossRole: true },
   ];
 
   const navItems = allNavItems.filter(item => {
     if (!item.permission) return true;
     if (item.isCrossRole) {
+      if (Number(user?.role_id) !== 2) return false;
+      if (Array.isArray(item.permission)) {
+        return item.permission.some(p => hasPermission && hasPermission(p));
+      }
       return hasPermission && hasPermission(item.permission);
     }
     if (Number(user?.role_id) === 1 || Number(user?.role_id) === 2) return true;
+    if (Array.isArray(item.permission)) {
+      return item.permission.some(p => hasPermission && hasPermission(p));
+    }
     return hasPermission ? hasPermission(item.permission) : true;
   });
 

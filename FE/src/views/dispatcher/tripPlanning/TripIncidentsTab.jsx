@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Table, Tag, Button, Modal, Select, Input, message } from 'antd';
-import { AlertTriangle, Truck, PlusCircle } from 'lucide-react';
+import { AlertTriangle, Truck, PlusCircle, Eye } from 'lucide-react';
 
 const { Option } = Select;
 
@@ -8,7 +8,8 @@ export default function TripIncidentsTab({
   incidents,
   trips = [],
   setActiveIncidentModal,
-  onReportIncident
+  onReportIncident,
+  isReadOnly = false
 }) {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedTripCode, setSelectedTripCode] = useState('');
@@ -104,20 +105,32 @@ export default function TripIncidentsTab({
             </Tag>
           </div>
           {r.status !== 'RESOLVED' ? (
-            <Button
-              type="primary"
-              danger
-              size="small"
-              className="font-bold text-xs shadow-sm"
-              icon={<AlertTriangle size={13} />}
-              onClick={() => setActiveIncidentModal(r)}
-            >
-              Phát lệnh Đổi xe &amp; Cấp lại Vận đơn
-            </Button>
+            isReadOnly ? (
+              <Button
+                size="small"
+                className="text-xs font-semibold text-gray-700 bg-white"
+                icon={<Eye size={13} />}
+                onClick={() => setActiveIncidentModal(r)}
+              >
+                Xem chi tiết sự cố
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                danger
+                size="small"
+                className="font-bold text-xs shadow-sm"
+                icon={<AlertTriangle size={13} />}
+                onClick={() => setActiveIncidentModal(r)}
+              >
+                Phát lệnh Đổi xe &amp; Cấp lại Vận đơn
+              </Button>
+            )
           ) : (
             <Button
               size="small"
               className="text-xs text-gray-600"
+              icon={<Eye size={13} />}
               onClick={() => setActiveIncidentModal(r)}
             >
               Xem biên bản giải quyết
@@ -135,16 +148,18 @@ export default function TripIncidentsTab({
           <h3 className="font-bold text-sm text-gray-800">Quản lý &amp; Xử lý Sự cố Hiện trường</h3>
           <p className="text-xs text-gray-500 mt-0.5">Tiếp nhận thông tin hỏng xe, tai nạn hoặc ùn tắc, phát lệnh điều xe thay thế và cấp lại vận đơn</p>
         </div>
-        <Button
-          danger
-          type="primary"
-          size="small"
-          icon={<PlusCircle size={14} />}
-          className="font-semibold text-xs"
-          onClick={handleOpenReport}
-        >
-          Ghi nhận sự cố hiện trường mới
-        </Button>
+        {!isReadOnly && (
+          <Button
+            danger
+            type="primary"
+            size="small"
+            icon={<PlusCircle size={14} />}
+            className="font-semibold text-xs"
+            onClick={handleOpenReport}
+          >
+            Ghi nhận sự cố hiện trường mới
+          </Button>
+        )}
       </div>
 
       <Card className="shadow-xs border-gray-100 rounded-xl overflow-hidden" styles={{ body: { padding: 0 } }}>

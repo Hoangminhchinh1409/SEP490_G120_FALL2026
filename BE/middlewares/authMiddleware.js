@@ -137,21 +137,21 @@ const requireRole = (roles, permissionKey = null) => {
         // Kiểm tra quyền xem chéo (Read-Only) đối với phương thức đọc (GET / HEAD)
         if (permissionKey && (req.method === 'GET' || req.method === 'HEAD')) {
             try {
-                const { data: perm } = await supabase
+                const keys = Array.isArray(permissionKey) ? permissionKey : [permissionKey];
+                const { data: perms } = await supabase
                     .from('permissions')
                     .select('id')
-                    .eq('key', permissionKey)
-                    .maybeSingle();
+                    .in('key', keys);
 
-                if (perm) {
-                    const { data: rolePerm } = await supabase
+                if (perms && perms.length > 0) {
+                    const permIds = perms.map(p => p.id);
+                    const { data: rolePerms } = await supabase
                         .from('role_permissions')
                         .select('permission_id')
                         .eq('role_id', userRoleId)
-                        .eq('permission_id', perm.id)
-                        .maybeSingle();
+                        .in('permission_id', permIds);
 
-                    if (rolePerm) {
+                    if (rolePerms && rolePerms.length > 0) {
                         req.isReadOnly = true;
                         return next();
                     }

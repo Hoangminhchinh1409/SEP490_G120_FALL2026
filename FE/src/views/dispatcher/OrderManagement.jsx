@@ -40,8 +40,9 @@ const statusLabels = {
 const OrderManagement = () => {
   const router = useRouter();
   const { user, isReadOnly, hasPermission } = useAuth();
-  const readOnly = isReadOnly('ORDER_MANAGE');
-  const allowed = !user || Number(user.role_id) === 1 || Number(user.role_id) === 3 || hasPermission('ORDER_MANAGE');
+  const isManager = Number(user?.role_id) === 2;
+  const readOnly = isReadOnly('ORDER_MANAGE') || isManager;
+  const allowed = !user || Number(user.role_id) === 1 || Number(user.role_id) === 3 || (hasPermission && hasPermission('ORDER_MANAGE'));
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState('');
@@ -55,6 +56,10 @@ const OrderManagement = () => {
 
   // Tải danh sách đơn hàng từ Backend Supabase (silent: true khi cập nhật nền không bật loading)
   const fetchOrders = useCallback(async (isSilent = false) => {
+    if (!allowed) {
+      setLoading(false);
+      return;
+    }
     try {
       if (!isSilent) setLoading(true);
       const data = await orderApi.getAllOrders();
@@ -65,12 +70,16 @@ const OrderManagement = () => {
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, []);
+  }, [allowed]);
 
   useEffect(() => {
     let isSubscribed = true;
 
     const loadInitialData = async () => {
+      if (!allowed) {
+        setLoading(false);
+        return;
+      }
       try {
         const data = await orderApi.getAllOrders();
         if (isSubscribed) {
@@ -379,30 +388,45 @@ const OrderManagement = () => {
       title: 'Thao tác', 
       key: 'action', 
       width: '14%',
-      render: (_, record) => (
-        <Space size="small" wrap>
-          {(record.status === 'NEGOTIATING' || record.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') ? (
-            <>
-              <Tooltip title="Xem yêu cầu thương lượng của khách & Chốt lại giá">
-                <Button 
-                  size="small" 
-                  type="primary"
-                  className="text-xs bg-amber-600 hover:bg-amber-700 border-amber-600 font-semibold"
-                  onClick={() => setSelectedOrderForDetails({...record, targetTab: '1' })}
-                >
-                  Chốt lại giá
-                </Button>
-              </Tooltip>
-              <Tooltip title="Hủy đơn (Miễn phí)">
-                <Button 
-                  size="small" 
-                  danger
-                  icon={<XCircle size={13} />}
-                  onClick={() => setSelectedOrderForCancel(record)}
-                />
-              </Tooltip>
-            </>
-          ): record.status === 'DRAFT' ? (
+      render: (_, record) => {
+        if (readOnly) {
+          return (
+            <Tooltip title="Xem chi tiết hồ sơ đơn hàng (Chỉ xem)">
+              <Button 
+                size="small" 
+                icon={<Eye size={14} />} 
+                className="text-gray-600 hover:text-[#7367f0]"
+                onClick={() => setSelectedOrderForDetails(record)}
+              >
+                Hồ sơ
+              </Button>
+            </Tooltip>
+          );
+        }
+        return (
+          <Space size="small" wrap>
+            {(record.status === 'NEGOTIATING' || record.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') ? (
+              <>
+                <Tooltip title="Xem yêu cầu thương lượng của khách & Chốt lại giá">
+                  <Button 
+                    size="small" 
+                    type="primary"
+                    className="text-xs bg-amber-600 hover:bg-amber-700 border-amber-600 font-semibold"
+                    onClick={() => setSelectedOrderForDetails({...record, targetTab: '1' })}
+                  >
+                    Chốt lại giá
+                  </Button>
+                </Tooltip>
+                <Tooltip title="Hủy đơn (Miễn phí)">
+                  <Button 
+                    size="small" 
+                    danger
+                    icon={<XCircle size={13} />}
+                    onClick={() => setSelectedOrderForCancel(record)}
+                  />
+                </Tooltip>
+              </>
+            ): record.status === 'DRAFT' ? (
             <>
               {record.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' ? (
                 <Tooltip title="Đã gửi báo giá qua email cho khách. Nhấn để xem chi tiết / điều chỉnh lại">
@@ -539,11 +563,21 @@ const OrderManagement = () => {
         </Space>
       )
     }
-  ], [router]);
+  }
+  ], [router, readOnly]);
+
+  if (!allowed) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <AccessDenied moduleName="Quản lý Đơn hàng (ORDER_MANAGE)" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 custom-scrollbar">
       <div className="max-w-[1600px] mx-auto">
+        {readOnly && <ReadOnlyBanner moduleName="Quản lý Đơn hàng (Chế độ Xem chéo)" />}
         
         {/* Header Action */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -574,14 +608,16 @@ const OrderManagement = () => {
               Làm mới
             </Button>
 
-            <Button 
-              type="primary" 
-              icon={<Plus size={16} />} 
-              className="bg-[#7367f0] hover:bg-[#5e50ee] h-10 px-4 font-semibold" 
-              onClick={() => setIsCreateModalOpen(true)}
-            >
-              Tạo đơn vận chuyển
-            </Button>
+            {!readOnly && (
+              <Button 
+                type="primary" 
+                icon={<Plus size={16} />} 
+                className="bg-[#7367f0] hover:bg-[#5e50ee] h-10 px-4 font-semibold" 
+                onClick={() => setIsCreateModalOpen(true)}
+              >
+                Tạo đơn vận chuyển
+              </Button>
+            )}
           </div>
         </div>
 
@@ -658,6 +694,7 @@ const OrderManagement = () => {
         order={selectedOrderForDetails}
         onCancel={() => setSelectedOrderForDetails(null)}
         onUpdateOrder={handleUpdateOrder}
+        readOnly={readOnly}
       />
 
       {/* Modal Hủy Đơn Hàng theo chuẩn */}

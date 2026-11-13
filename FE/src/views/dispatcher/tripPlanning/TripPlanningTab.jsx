@@ -8,7 +8,8 @@ export default function TripPlanningTab({
   drivers,
   loading,
   setSelectedOrderForAssign,
-  setSelectedOrderForCancel
+  setSelectedOrderForCancel,
+  isReadOnly = false
 }) {
   const pendingOrdersColumns = [
     {
@@ -77,26 +78,32 @@ export default function TripPlanningTab({
       key: 'actions',
       width: '16%',
       render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="primary"
-            size="small"
-            icon={<Truck size={14} />}
-            className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs shadow-sm"
-            onClick={() => setSelectedOrderForAssign(record)}
-          >
-            Phân bổ xe
-          </Button>
-          <Tooltip title="Hủy đơn">
+        isReadOnly ? (
+          <Tag color="blue" className="text-xs font-semibold px-2 py-0.5 m-0">
+            Chỉ xem (Read-only)
+          </Tag>
+        ) : (
+          <Space size="small">
             <Button
+              type="primary"
               size="small"
-              danger
-              icon={<XCircle size={14} />}
-              className="text-xs"
-              onClick={() => setSelectedOrderForCancel(record)}
-            />
-          </Tooltip>
-        </Space>
+              icon={<Truck size={14} />}
+              className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs shadow-sm"
+              onClick={() => setSelectedOrderForAssign(record)}
+            >
+              Phân bổ xe
+            </Button>
+            <Tooltip title="Hủy đơn">
+              <Button
+                size="small"
+                danger
+                icon={<XCircle size={14} />}
+                className="text-xs"
+                onClick={() => setSelectedOrderForCancel(record)}
+              />
+            </Tooltip>
+          </Space>
+        )
       )
     }
   ];

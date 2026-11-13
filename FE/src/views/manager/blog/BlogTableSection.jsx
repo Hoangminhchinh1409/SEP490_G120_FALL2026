@@ -18,7 +18,8 @@ export function BlogTableSection({
   setPageSize,
   currentPage,
   setCurrentPage,
-  totalPages
+  totalPages,
+  isReadOnly = false
 }) {
   return (
     <div className="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col border border-outline-variant/30">
@@ -151,38 +152,50 @@ export function BlogTableSection({
                   <td className="py-3 px-space-lg text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => handleOpenEditModal(item)}
+                        onClick={() => setPreviewArticle(item)}
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
-                        title="Chỉnh sửa bài viết"
+                        title="Xem chi tiết bài viết"
                       >
-                        <span className="material-symbols-outlined text-[16px]">edit</span>
+                        <span className="material-symbols-outlined text-[16px]">visibility</span>
                       </button>
 
-                      {item.status === 'PUBLISHED' ? (
-                        <button
-                          onClick={() => handleUnpublish(item.id)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
-                          title="Gỡ bài khỏi website"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">visibility_off</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handlePublishAgain(item.id)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
-                          title="Đăng xuất bản bài viết"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">publish</span>
-                        </button>
+                      {!isReadOnly && (
+                        <>
+                          <button
+                            onClick={() => handleOpenEditModal(item)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
+                            title="Chỉnh sửa bài viết"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">edit</span>
+                          </button>
+
+                          {item.status === 'PUBLISHED' ? (
+                            <button
+                              onClick={() => handleUnpublish(item.id)}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
+                              title="Gỡ bài khỏi website"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">visibility_off</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handlePublishAgain(item.id)}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                              title="Đăng xuất bản bài viết"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">publish</span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => setDeleteConfirmTarget({ type: 'single', article: item })}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                            title="Xoá bài viết"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        </>
                       )}
-
-                      <button
-                        onClick={() => setDeleteConfirmTarget({ type: 'single', article: item })}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                        title="Xoá bài viết"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">delete</span>
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -205,7 +218,7 @@ export function BlogTableSection({
             <span>Chọn tất cả ({selectedIds.length} đã chọn)</span>
           </label>
 
-          {selectedIds.length > 0 && (
+          {!isReadOnly && selectedIds.length > 0 && (
             <button
               onClick={() => setDeleteConfirmTarget({ type: 'bulk', count: selectedIds.length })}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200 text-xs font-bold hover:bg-red-100 transition-colors cursor-pointer"

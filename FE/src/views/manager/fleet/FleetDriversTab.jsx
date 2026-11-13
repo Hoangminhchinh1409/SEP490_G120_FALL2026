@@ -4,7 +4,8 @@ import { Spin } from 'antd';
 export default function FleetDriversTab({
   drivers,
   loading,
-  handleOpenEditDriver
+  handleOpenEditDriver,
+  isReadOnly = false
 }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -84,8 +85,8 @@ export default function FleetDriversTab({
                         onClick={() => handleOpenEditDriver(driver)}
                         className="px-3 py-1.5 rounded-lg text-blue-600 hover:bg-blue-50 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
                       >
-                        <span className="material-symbols-outlined text-[16px]">edit</span>
-                        <span>Chi tiết</span>
+                        <span className="material-symbols-outlined text-[16px]">{isReadOnly ? 'visibility' : 'edit'}</span>
+                        <span>{isReadOnly ? 'Xem' : 'Chi tiết'}</span>
                       </button>
                     </td>
                   </tr>

@@ -6,9 +6,11 @@ import { useAuth } from '../../providers/AuthProvider';
 import ReadOnlyBanner from '../../components/common/ReadOnlyBanner';
 import AccessDenied from '../../components/common/AccessDenied';
 
-export default function VendorsPage() {
+export default function VendorsPage({ readOnly = false, initialTab = 'VENDORS' }) {
+  const { user } = useAuth();
+  const isReadOnly = readOnly || (Number(user?.role_id) !== 1 && Number(user?.role_id) !== 2);
   const [loading, setLoading] = useState(true);
-  const [activeMainTab, setActiveMainTab] = useState('VENDORS'); // 'VENDORS', 'CONTRACTS', 'LOCATIONS'
+  const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'VENDORS', 'CONTRACTS', 'LOCATIONS'
 
   // Vendors state
   const [vendors, setVendors] = useState([]);
@@ -207,16 +209,18 @@ export default function VendorsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-space-sm shrink-0 z-10">
-          <button
-            onClick={handleOpenAddModal}
-            className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-secondary text-on-secondary font-label-lg text-sm font-bold hover:bg-secondary-container transition-all cursor-pointer shadow-sm"
-            type="button"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            <span>+ Thêm Nhà Xe Mới</span>
-          </button>
-        </div>
+        {!isReadOnly && (
+          <div className="flex items-center gap-space-sm shrink-0 z-10">
+            <button
+              onClick={handleOpenAddModal}
+              className="inline-flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-secondary text-on-secondary font-label-lg text-sm font-bold hover:bg-secondary-container transition-all cursor-pointer shadow-sm"
+              type="button"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              <span>+ Thêm Nhà Xe Mới</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 4 Summary Cards */}
@@ -439,29 +443,33 @@ export default function VendorsPage() {
                         </Tag>
                       </td>
                       <td className="py-3.5 px-space-md text-right">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            onClick={() => handleOpenEditModal(v)}
-                            className="px-2.5 py-1 rounded-lg bg-surface-container-low text-primary hover:bg-surface-container text-xs font-semibold cursor-pointer"
-                          >
-                            Sửa
-                          </button>
-                          {v.approval_status !== 'APPROVED' ? (
+                        {isReadOnly ? (
+                          <Tag color="blue" className="font-semibold text-xs m-0">Chỉ xem</Tag>
+                        ) : (
+                          <div className="inline-flex items-center gap-2">
                             <button
-                              onClick={() => handleUpdateStatus(v.id, 'APPROVED')}
-                              className="px-3 py-1 rounded-lg bg-secondary text-on-secondary hover:bg-secondary-container text-xs font-bold transition-all cursor-pointer shadow-sm"
+                              onClick={() => handleOpenEditModal(v)}
+                              className="px-2.5 py-1 rounded-lg bg-surface-container-low text-primary hover:bg-surface-container text-xs font-semibold cursor-pointer"
                             >
-                              Phê duyệt
+                              Sửa
                             </button>
-                          ): (
-                            <button
-                              onClick={() => handleUpdateStatus(v.id, 'SUSPENDED')}
-                              className="px-3 py-1 rounded-lg bg-error-container text-on-error-container hover:bg-error hover:text-white text-xs font-bold transition-all cursor-pointer"
-                            >
-                              Đình chỉ
-                            </button>
-                          )}
-                        </div>
+                            {v.approval_status !== 'APPROVED' ? (
+                              <button
+                                onClick={() => handleUpdateStatus(v.id, 'APPROVED')}
+                                className="px-3 py-1 rounded-lg bg-secondary text-on-secondary hover:bg-secondary-container text-xs font-bold transition-all cursor-pointer shadow-sm"
+                              >
+                                Phê duyệt
+                              </button>
+                            ): (
+                              <button
+                                onClick={() => handleUpdateStatus(v.id, 'SUSPENDED')}
+                                className="px-3 py-1 rounded-lg bg-error-container text-on-error-container hover:bg-error hover:text-white text-xs font-bold transition-all cursor-pointer"
+                              >
+                                Đình chỉ
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}

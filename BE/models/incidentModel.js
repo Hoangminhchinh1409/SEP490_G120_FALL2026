@@ -1,4 +1,4 @@
-const prisma = require('../config/prisma');
+const supabase = require('../config/supabase');
 
 const toPlainNumber = (val) => (val !== null && val !== undefined ? Number(val) : null);
 
@@ -45,34 +45,24 @@ const mapIncident = (inc) => {
 };
 
 const findAll = async () => {
-  const incidents = await prisma.incidents.findMany({
-    include: {
-      trips: {
-        select: {
-          id: true,
-          trip_code: true,
-          trip_trucks: {
-            include: {
-              trucks: { select: { id: true, plate_number: true } }
-            },
-            orderBy: { id: 'desc' }
-          },
-          trip_drivers: {
-            include: {
-              driver_profiles: {
-                include: {
-                  users: { select: { full_name: true, phone: true } }
-                }
-              }
-            },
-            orderBy: { id: 'desc' }
-          }
-        }
-      }
-    },
-    orderBy: { id: 'desc' }
-  });
-  return incidents.map(mapIncident);
+  const { data: incidents, error } = await supabase
+    .from('incidents')
+    .select(`
+      *,
+      trips(
+        id,
+        trip_code,
+        trip_trucks(id, truck_id, released_time, replacement_reason, trucks(id, plate_number)),
+        trip_drivers(id, driver_id, released_time, replacement_reason, driver_profiles(id, users:user_account_id(full_name, phone)))
+      )
+    `)
+    .order('id', { ascending: false });
+
+  if (error) {
+    console.error('incidentModel.findAll error:', error);
+    throw error;
+  }
+  return (incidents || []).map(mapIncident);
 };
 
 const findTripIdByCode = async (tripCode) => {

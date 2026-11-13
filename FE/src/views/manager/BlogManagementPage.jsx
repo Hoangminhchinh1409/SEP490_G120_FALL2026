@@ -2,11 +2,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { managerApi } from '../../api/managerApi';
+import { useAuth } from '../../providers/AuthProvider';
 import { BlogCreateEditModal } from './blog/BlogCreateEditModal';
 import { BlogPreviewModal, BlogDeleteModal } from './blog/BlogModals';
 import { BlogTableSection } from './blog/BlogTableSection';
 
-export default function BlogManagementPage() {
+export default function BlogManagementPage({ readOnly = false }) {
+  const { user } = useAuth();
+  const isReadOnly = readOnly || (Number(user?.role_id) !== 1 && Number(user?.role_id) !== 2);
   const [loading, setLoading] = useState(true);
   const [articles, setArticles] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -302,14 +305,16 @@ export default function BlogManagementPage() {
             <span className="material-symbols-outlined text-[18px]">open_in_new</span>
             <span>Xem trang Tin tức công khai</span>
           </Link>
-          <button
-            onClick={handleOpenCreateModal}
-            className="inline-flex items-center gap-space-xs px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label-lg text-sm font-bold hover:bg-primary-container active:scale-[0.99] transition-all shadow-sm cursor-pointer"
-            type="button"
-          >
-            <span className="material-symbols-outlined text-[20px]">add_circle</span>
-            <span>+ Viết bài mới</span>
-          </button>
+          {!isReadOnly && (
+            <button
+              onClick={handleOpenCreateModal}
+              className="inline-flex items-center gap-space-xs px-5 py-2.5 rounded-xl bg-primary text-on-primary font-label-lg text-sm font-bold hover:bg-primary-container active:scale-[0.99] transition-all shadow-sm cursor-pointer"
+              type="button"
+            >
+              <span className="material-symbols-outlined text-[20px]">add_circle</span>
+              <span>+ Viết bài mới</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -471,6 +476,7 @@ export default function BlogManagementPage() {
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
         totalPages={totalPages}
+        isReadOnly={isReadOnly}
       />
 
       {/* Modal: Write / Edit Article */}

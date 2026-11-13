@@ -7,7 +7,8 @@ export function FleetTruckModal({
   editingTruck,
   form,
   onFinish,
-  submitting
+  submitting,
+  isReadOnly = false
 }) {
   return (
     <Modal
@@ -25,7 +26,7 @@ export function FleetTruckModal({
       forceRender
       width={680}
     >
-      <Form form={form} layout="vertical" onFinish={onFinish} className="mt-4">
+      <Form form={form} layout="vertical" onFinish={onFinish} disabled={isReadOnly} className="mt-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Form.Item
             name="plate_number"
@@ -135,15 +136,17 @@ export function FleetTruckModal({
             onClick={onCancel}
             className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-semibold cursor-pointer"
           >
-            Hủy
+            Đóng
           </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 cursor-pointer shadow-sm"
-          >
-            {submitting ? 'Đang lưu...' : 'Lưu thông số xe'}
-          </button>
+          {!isReadOnly && (
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 cursor-pointer shadow-sm"
+            >
+              {submitting ? 'Đang lưu...' : 'Lưu thông số xe'}
+            </button>
+          )}
         </div>
       </Form>
     </Modal>
@@ -156,7 +159,8 @@ export function FleetDriverModal({
   editingDriver,
   form,
   onFinish,
-  submitting
+  submitting,
+  isReadOnly = false
 }) {
   return (
     <Modal
@@ -173,7 +177,7 @@ export function FleetDriverModal({
       footer={null}
       forceRender
     >
-      <Form form={form} layout="vertical" onFinish={onFinish} className="mt-4">
+      <Form form={form} layout="vertical" onFinish={onFinish} disabled={isReadOnly} className="mt-4">
         <Form.Item
           name="full_name"
           label={<span className="font-semibold text-slate-700">Họ và tên tài xế</span>}
@@ -253,15 +257,17 @@ export function FleetDriverModal({
             onClick={onCancel}
             className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm font-semibold cursor-pointer"
           >
-            Hủy
+            Đóng
           </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 cursor-pointer shadow-sm"
-          >
-            {submitting ? 'Đang lưu...' : 'Lưu hồ sơ tài xế'}
-          </button>
+          {!isReadOnly && (
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 cursor-pointer shadow-sm"
+            >
+              {submitting ? 'Đang lưu...' : 'Lưu hồ sơ tài xế'}
+            </button>
+          )}
         </div>
       </Form>
     </Modal>

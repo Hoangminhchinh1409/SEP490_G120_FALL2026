@@ -6,7 +6,9 @@ import { useAuth } from '../../providers/AuthProvider';
 import ReadOnlyBanner from '../../components/common/ReadOnlyBanner';
 import AccessDenied from '../../components/common/AccessDenied';
 
-export default function ApprovalsPage() {
+export default function ApprovalsPage({ readOnly = false }) {
+  const { user } = useAuth();
+  const isReadOnly = readOnly || (Number(user?.role_id) !== 1 && Number(user?.role_id) !== 2);
   const [loading, setLoading] = useState(true);
 
   // Claims list & summary
@@ -425,7 +427,7 @@ export default function ApprovalsPage() {
                         className="px-2.5 py-1.5 rounded-lg bg-surface-container-low group-hover:bg-primary group-hover:text-on-primary text-primary font-bold text-xs transition-colors cursor-pointer inline-flex items-center gap-1 border border-surface-container"
                       >
                         <span className="material-symbols-outlined text-[14px]">visibility</span>
-                        <span>{c.status === 'PENDING' ? 'Xét duyệt': 'Chi tiết'}</span>
+                        <span>{isReadOnly ? 'Chi tiết' : (c.status === 'PENDING' ? 'Xét duyệt': 'Chi tiết')}</span>
                       </button>
                     </td>
                   </tr>
@@ -622,8 +624,21 @@ export default function ApprovalsPage() {
               </div>
             )}
 
-            {/* Các nút bấm Duyệt / Từ chối (chỉ mở khi PENDING) */}
-            {selectedClaim.status === 'PENDING' ? (
+            {/* Các nút bấm Duyệt / Từ chối (chỉ mở cho Quản lý khi PENDING) */}
+            {isReadOnly ? (
+              <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200 text-xs flex items-center justify-between">
+                <span className="text-blue-900 font-medium">
+                  Yêu cầu bồi thường đang chờ Quản lý phê duyệt. Tài khoản Điều phối viên chỉ có quyền xem thông tin.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsClaimModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer transition-colors text-xs"
+                >
+                  Đóng
+                </button>
+              </div>
+            ) : selectedClaim.status === 'PENDING' ? (
               <div className="flex items-center gap-3 pt-2">
                 <button
                   type="button"

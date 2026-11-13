@@ -8,6 +8,8 @@ import { dispatcherApi } from '../../api/dispatcherApi';
 import IncidentDetailsModal from '../../components/dispatcher/IncidentDetailsModal';
 import { VIETMAP_TILE_URL, fetchShortestRoadRoute } from '../../utils/roadRouting';
 import { getCoordsFromAddress } from '../../data/dispatcherPresets';
+import { useAuth } from '../../providers/AuthProvider';
+import AccessDenied from '../../components/common/AccessDenied';
 
 const SAFE_VIETMAP_TILE_URL =
   VIETMAP_TILE_URL ||
@@ -116,14 +118,20 @@ const createCustomIcon = (truck) => {
 function MapController({ center }) {
   const map = useMap();
   useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
     if (center) {
       map.flyTo(center, 12, { duration: 1.5 });
     }
+    return () => clearTimeout(timer);
   }, [center, map]);
   return null;
 }
 
 const TrackingMap = () => {
+  const { user, hasPermission } = useAuth();
+  const allowed = !user || Number(user.role_id) === 1 || Number(user.role_id) === 3 || (hasPermission && hasPermission('TRIP_MONITOR'));
   const [mapCenter, setMapCenter] = useState([21.1285, 105.8542]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTrucks, setActiveTrucks] = useState(fallbackTrucks);
@@ -134,6 +142,10 @@ const TrackingMap = () => {
   const [loading, setLoading] = useState(false);
 
   const loadTrackingData = useCallback(async () => {
+    if (!allowed) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [tripsData, incidentsData] = await Promise.all([
@@ -258,8 +270,16 @@ const TrackingMap = () => {
     );
   });
 
+  if (!allowed) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <AccessDenied moduleName="Bản đồ Theo dõi &amp; Giám sát GPS (TRIP_MONITOR)" />
+      </div>
+    );
+  }
+
   return (
-    <div className="p-0 h-full flex flex-col md:flex-row overflow-hidden relative">
+    <div className="p-0 w-full h-full min-h-[640px] flex flex-col md:flex-row overflow-hidden relative">
       {/* Sidebar - Danh sách Xe */}
       <div className="w-full md:w-85 bg-white border-r border-gray-200 h-[35%] md:h-full flex flex-col flex-shrink-0 z-[1000] shadow-sm">
         <div className="p-4 border-b border-gray-100">
@@ -388,8 +408,8 @@ const TrackingMap = () => {
       </div>
 
       {/* Leaflet Map Integration với VietMap Tilemap & Traffic Polylines */}
-      <div className="flex-1 h-[65%] md:h-full relative z-[1]">
-        <MapContainer center={mapCenter} zoom={11} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+      <div className="flex-1 h-[65%] md:h-full min-h-[640px] relative z-[1]">
+        <MapContainer center={mapCenter} zoom={11} style={{ height: '100%', minHeight: '640px', width: '100%' }} zoomControl={false}>
           <TileLayer
             key="vietmap-live-tile"
             attribution='&copy; VietMap Tilemap'

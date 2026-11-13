@@ -10,7 +10,8 @@ export default function FleetTrucksTab({
   setSelectedTruckStatus,
   handleOpenEditTruck,
   handleQuickStatusChange,
-  handleDeleteTruck
+  handleDeleteTruck,
+  isReadOnly = false
 }) {
   const filteredTrucks = trucks.filter((truck) => {
     const matchSearch =
@@ -174,6 +175,7 @@ export default function FleetTrucksTab({
                             <Select
                               value={truck.status}
                               size="small"
+                              disabled={isReadOnly}
                               className="w-36 text-xs font-semibold"
                               onChange={(val) => handleQuickStatusChange(truck.id, val)}
                               options={[
@@ -195,26 +197,30 @@ export default function FleetTrucksTab({
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
-                        <div className="inline-flex items-center gap-1">
-                          <Tooltip title="Cập nhật chi tiết xe">
-                            <button
-                              onClick={() => handleOpenEditTruck(truck)}
-                              className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">edit_note</span>
-                            </button>
-                          </Tooltip>
+                        {isReadOnly ? (
+                          <span className="text-[11px] font-semibold text-slate-400 italic">Chỉ xem</span>
+                        ) : (
+                          <div className="inline-flex items-center gap-1">
+                            <Tooltip title="Cập nhật chi tiết xe">
+                              <button
+                                onClick={() => handleOpenEditTruck(truck)}
+                                className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                              </button>
+                            </Tooltip>
 
-                          <Popconfirm
-                            title="Ngưng hoạt động xe này?"
-                            description={`Chuyển xe ${truck.plate_number} sang trạng thái Inactive.`}
-                            onConfirm={() => handleDeleteTruck(truck.id)}
-                          >
-                            <button className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
-                              <span className="material-symbols-outlined text-[18px]">delete</span>
-                            </button>
-                          </Popconfirm>
-                        </div>
+                            <Popconfirm
+                              title="Ngưng hoạt động xe này?"
+                              description={`Chuyển xe ${truck.plate_number} sang trạng thái Inactive.`}
+                              onConfirm={() => handleDeleteTruck(truck.id)}
+                            >
+                              <button className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
+                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                              </button>
+                            </Popconfirm>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

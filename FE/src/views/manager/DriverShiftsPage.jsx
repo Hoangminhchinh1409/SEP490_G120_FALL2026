@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import dayjs from "dayjs";
 import { managerApi } from "../../api/managerApi";
+import { useAuth } from "../../providers/AuthProvider";
 
 const getMondayOfWeek = (d = dayjs()) => {
   const dow = d.day();
@@ -58,7 +59,10 @@ const isAutoAssignedManager = (sh) => {
   return (sh.note && sh.note.includes('[Hệ thống tự động xếp lịch]')) || sh.registered_by === null || sh.registered_by === undefined;
 };
 
-export default function DriverShiftsPage() {
+export default function DriverShiftsPage({ readOnly = false }) {
+  const { user } = useAuth();
+  const isReadOnly = readOnly || (Number(user?.role_id) !== 1 && Number(user?.role_id) !== 2);
+
   // State quản lý ngày tuần
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     return getMondayOfWeek(dayjs()); // Thứ Hai chuẩn bất kể locale
@@ -325,6 +329,7 @@ export default function DriverShiftsPage() {
 
   // Mở modal tạo ca mới (pre-fill tài xế và ngày nếu có)
   const handleOpenCreateShift = (driverId = null, dateMoment = null) => {
+    if (isReadOnly) return;
     setEditingShift(null);
     shiftForm.resetFields();
     const defaultDate = dateMoment || currentWeekStart;
@@ -339,6 +344,7 @@ export default function DriverShiftsPage() {
 
   // Mở modal sửa ca
   const handleOpenEditShift = (shift) => {
+    if (isReadOnly) return;
     setEditingShift(shift);
     shiftForm.resetFields();
     const shiftDate = dayjs(shift.date);
@@ -365,6 +371,10 @@ export default function DriverShiftsPage() {
 
   // Lưu ca làm việc (Tạo mới hoặc Cập nhật)
   const handleSaveShift = async (values) => {
+    if (isReadOnly) {
+      message.error("Tài khoản chỉ có quyền xem, không thể tạo hoặc chỉnh sửa ca làm việc.");
+      return;
+    }
     try {
       setSubmittingShift(true);
       const dateStr = values.date.format("YYYY-MM-DD");
@@ -479,14 +489,16 @@ export default function DriverShiftsPage() {
         </div>
 
         <div className="flex items-center flex-wrap gap-2.5">
-          <Button
-            type="primary"
-            icon={<Plus size={16} />}
-            onClick={() => handleOpenCreateShift()}
-            className="bg-primary hover:bg-primary/90 font-bold rounded-xl h-10 shadow-sm"
-          >
-            Xếp ca mới
-          </Button>
+          {!isReadOnly && (
+            <Button
+              type="primary"
+              icon={<Plus size={16} />}
+              onClick={() => handleOpenCreateShift()}
+              className="bg-primary hover:bg-primary/90 font-bold rounded-xl h-10 shadow-sm"
+            >
+              Xếp ca mới
+            </Button>
+          )}
           <Button
             icon={<RotateCcw size={15} />}
             onClick={loadData}
@@ -495,20 +507,24 @@ export default function DriverShiftsPage() {
           >
             Làm mới
           </Button>
-          <Button
-            onClick={handleAutoAssignNextWeek}
-            loading={autoAssigning}
-            className="rounded-xl h-10 font-semibold border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100"
-          >
-            Tự động xếp lịch tuần tới
-          </Button>
-          <Button
-            onClick={handleSendReminders21h}
-            loading={sendingReminders}
-            className="rounded-xl h-10 font-semibold border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100"
-          >
-            Gửi nhắc 21h
-          </Button>
+          {!isReadOnly && (
+            <>
+              <Button
+                onClick={handleAutoAssignNextWeek}
+                loading={autoAssigning}
+                className="rounded-xl h-10 font-semibold border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100"
+              >
+                Tự động xếp lịch tuần tới
+              </Button>
+              <Button
+                onClick={handleSendReminders21h}
+                loading={sendingReminders}
+                className="rounded-xl h-10 font-semibold border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100"
+              >
+                Gửi nhắc 21h
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -743,14 +759,16 @@ export default function DriverShiftsPage() {
                               </div>
 
                               {/* Nút bấm thêm ca nhanh */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenCreateShift(drv.id, d.dayMoment)}
-                                className="w-full py-1 text-center text-on-surface-variant/40 hover:text-primary hover:bg-surface-container rounded-lg transition-all text-xs cursor-pointer border border-dashed border-transparent hover:border-primary/40 mt-1"
-                                title={`Xếp thêm ca cho ${drv.name} ngày ${d.displayDate}`}
-                              >
-                                + Thêm ca
-                              </button>
+                              {!isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCreateShift(drv.id, d.dayMoment)}
+                                  className="w-full py-1 text-center text-on-surface-variant/40 hover:text-primary hover:bg-surface-container rounded-lg transition-all text-xs cursor-pointer border border-dashed border-transparent hover:border-primary/40 mt-1"
+                                  title={`Xếp thêm ca cho ${drv.name} ngày ${d.displayDate}`}
+                                >
+                                  + Thêm ca
+                                </button>
+                              )}
                             </div>
                           </td>
                         );
@@ -766,7 +784,11 @@ export default function DriverShiftsPage() {
         {/* Chú thích chân trang chuẩn  */}
         <div className="pt-2 text-xs text-on-surface-variant border-t border-surface-container/60">
           <div>
-            💡 <strong>Hướng dẫn:</strong> Bấm vào một ô hoặc nút <strong>&ldquo;+ Thêm ca&rdquo;</strong> để xếp ca trực mới (ca do Quản lý tạo tự động có hiệu lực). Bấm vào ca đã có để xem chi tiết, chỉnh sửa hoặc xóa ca.
+            {isReadOnly ? (
+              <span>💡 <strong>Hướng dẫn:</strong> Bạn đang ở chế độ xem chéo (Chỉ xem). Bấm vào ca đã có để xem chi tiết lịch trực của tài xế.</span>
+            ) : (
+              <span>💡 <strong>Hướng dẫn:</strong> Bấm vào một ô hoặc nút <strong>&ldquo;+ Thêm ca&rdquo;</strong> để xếp ca trực mới (ca do Quản lý tạo tự động có hiệu lực). Bấm vào ca đã có để xem chi tiết, chỉnh sửa hoặc xóa ca.</span>
+            )}
           </div>
         </div>
       </div>
@@ -866,7 +888,9 @@ export default function DriverShiftsPage() {
                       )}
                     </td>
                     <td className="py-3 px-3 text-right">
-                      {lr.status === "PENDING" ? (
+                      {isReadOnly ? (
+                        <Tag color="blue" className="font-semibold text-xs m-0">Chỉ xem</Tag>
+                      ) : lr.status === "PENDING" ? (
                         <div className="inline-flex items-center gap-1.5">
                           <Button
                             type="primary"
@@ -980,28 +1004,32 @@ export default function DriverShiftsPage() {
                         )}
                       </td>
                       <td className="py-3 px-3 text-right">
-                        <div className="inline-flex items-center flex-wrap justify-end gap-2">
-                          <Button
-                            size="small"
-                            loading={isSwitching}
-                            onClick={() => handleSwitchDriverWeek(drv.id, targetSwitchType, false)}
-                            className="rounded-lg font-semibold h-8 border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
-                          >
-                            {targetSwitchLabel}
-                          </Button>
-                          {row.hasPending && (
+                        {isReadOnly ? (
+                          <Tag color="blue" className="font-semibold text-xs m-0">Chỉ xem</Tag>
+                        ) : (
+                          <div className="inline-flex items-center flex-wrap justify-end gap-2">
                             <Button
-                              type="primary"
                               size="small"
-                              icon={<Check size={14} />}
-                              loading={isApproving}
-                              onClick={() => handleApproveDriverWeek(drv.id)}
-                              className="bg-emerald-600 hover:bg-emerald-700 font-bold rounded-lg h-8"
+                              loading={isSwitching}
+                              onClick={() => handleSwitchDriverWeek(drv.id, targetSwitchType, false)}
+                              className="rounded-lg font-semibold h-8 border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
                             >
-                              Duyệt cả tuần
+                              {targetSwitchLabel}
                             </Button>
-                          )}
-                        </div>
+                            {row.hasPending && (
+                              <Button
+                                type="primary"
+                                size="small"
+                                icon={<Check size={14} />}
+                                loading={isApproving}
+                                onClick={() => handleApproveDriverWeek(drv.id)}
+                                className="bg-emerald-600 hover:bg-emerald-700 font-bold rounded-lg h-8"
+                              >
+                                Duyệt cả tuần
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1075,26 +1103,30 @@ export default function DriverShiftsPage() {
                       {sh.note || <span className="text-on-surface-variant/40 italic">—</span>}
                     </td>
                     <td className="py-3 px-3 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <Button
-                          type="primary"
-                          size="small"
-                          icon={<Check size={14} />}
-                          onClick={() => handleApproveShift(sh)}
-                          className="bg-emerald-600 hover:bg-emerald-700 font-bold rounded-lg h-8 shadow-2xs"
-                        >
-                          Duyệt
-                        </Button>
-                        <Button
-                          danger
-                          size="small"
-                          icon={<X size={14} />}
-                          onClick={() => handleOpenRejectModal(sh)}
-                          className="font-bold rounded-lg h-8"
-                        >
-                          Từ chối
-                        </Button>
-                      </div>
+                      {isReadOnly ? (
+                        <Tag color="blue" className="font-semibold text-xs m-0">Chỉ xem</Tag>
+                      ) : (
+                        <div className="inline-flex items-center gap-2">
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<Check size={14} />}
+                            onClick={() => handleApproveShift(sh)}
+                            className="bg-emerald-600 hover:bg-emerald-700 font-bold rounded-lg h-8 shadow-2xs"
+                          >
+                            Duyệt
+                          </Button>
+                          <Button
+                            danger
+                            size="small"
+                            icon={<X size={14} />}
+                            onClick={() => handleOpenRejectModal(sh)}
+                            className="font-bold rounded-lg h-8"
+                          >
+                            Từ chối
+                          </Button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1184,7 +1216,7 @@ export default function DriverShiftsPage() {
             <span>{editingShift ? "Chỉnh sửa ca làm việc": "Xếp ca làm việc mới cho tài xế"}</span>
           </div>
         }
-        open={isShiftModalOpen}
+        open={!isReadOnly && isShiftModalOpen}
         onCancel={() => setIsShiftModalOpen(false)}
         footer={null}
         destroyOnHidden
@@ -1388,7 +1420,7 @@ export default function DriverShiftsPage() {
 
             {/* Các hành động thao tác */}
             <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-surface-container">
-              {detailModal.shift.status === "Requested" && (
+              {!isReadOnly && detailModal.shift.status === "Requested" && (
                 <>
                   <Button
                     type="primary"
@@ -1409,26 +1441,34 @@ export default function DriverShiftsPage() {
                 </>
               )}
 
-              <Button
-                icon={<Edit3 size={14} />}
-                onClick={() => handleOpenEditShift(detailModal.shift)}
-                className="font-medium rounded-xl"
-              >
-                Chỉnh sửa
-              </Button>
+              {!isReadOnly && (
+                <>
+                  <Button
+                    icon={<Edit3 size={14} />}
+                    onClick={() => handleOpenEditShift(detailModal.shift)}
+                    className="font-medium rounded-xl"
+                  >
+                    Chỉnh sửa
+                  </Button>
 
-              <Popconfirm
-                title="Xóa ca làm việc này?"
-                description="Bạn có chắc chắn muốn xóa ca làm việc này không?"
-                onConfirm={() => handleDeleteShift(detailModal.shift.id)}
-                okText="Xóa"
-                cancelText="Hủy"
-                okButtonProps={{ danger: true }}
-              >
-                <Button danger icon={<Trash2 size={14} />} className="rounded-xl">
-                  Xóa ca
-                </Button>
-              </Popconfirm>
+                  <Popconfirm
+                    title="Xóa ca làm việc này?"
+                    description="Bạn có chắc chắn muốn xóa ca làm việc này không?"
+                    onConfirm={() => handleDeleteShift(detailModal.shift.id)}
+                    okText="Xóa"
+                    cancelText="Hủy"
+                    okButtonProps={{ danger: true }}
+                  >
+                    <Button danger icon={<Trash2 size={14} />} className="rounded-xl">
+                      Xóa ca
+                    </Button>
+                  </Popconfirm>
+                </>
+              )}
+
+              <Button onClick={() => setDetailModal({ open: false, shift: null })} className="rounded-xl">
+                Đóng
+              </Button>
             </div>
           </div>
         )}

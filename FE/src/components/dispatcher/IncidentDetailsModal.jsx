@@ -5,7 +5,7 @@ import { dispatcherApi } from '../../api/dispatcherApi';
 
 const { Option } = Select;
 
-const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) => {
+const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, isReadOnly = false }) => {
   const [resolutionNote, setResolutionNote] = useState('');
   const [escalationReason, setEscalationReason] = useState('');
   const [mode, setMode] = useState('RESOLVE'); // 'RESOLVE' | 'REPLACE' | 'ESCALATE'
@@ -126,7 +126,9 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
       open={open}
       onCancel={onCancel}
       width={780}
-      footer={[
+      footer={isReadOnly ? [
+        <Button key="back" type="primary" onClick={onCancel}>Đóng</Button>
+      ] : [
         <Button key="back" onClick={onCancel}>Đóng</Button>,
         !isAlreadyResolved && mode !== 'ESCALATE' && (
           <Button
@@ -219,6 +221,16 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess }) =>
             <div className="text-emerald-900">
               <b>Biên bản / Phương án xử lý:</b> {incident.resolution_note || 'Đã điều xe thay thế và cấp lại Vận đơn phiên bản mới.'}
             </div>
+          </div>
+        ) : isReadOnly ? (
+          <div className="p-4 bg-blue-50/70 rounded-xl border border-blue-200 text-xs space-y-2">
+            <div className="font-bold text-blue-900 flex items-center gap-1.5">
+              <AlertTriangle size={15} className="text-blue-600" />
+              Chi tiết sự cố hiện trường (Chế độ Chỉ xem)
+            </div>
+            <p className="text-blue-800">
+              Chuyến xe đang chờ Điều phối viên phát lệnh điều xe cứu hộ hoặc xử lý tại hiện trường. Quản lý có quyền theo dõi chi tiết diễn biến sự cố.
+            </p>
           </div>
         ) : mode === 'REPLACE' ? (
           <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-300 space-y-3">

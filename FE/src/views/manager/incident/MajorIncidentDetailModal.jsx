@@ -7,7 +7,8 @@ export default function MajorIncidentDetailModal({
   open,
   incident,
   onClose,
-  onSuccess
+  onSuccess,
+  isReadOnly = false
 }) {
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(null);
@@ -256,88 +257,109 @@ export default function MajorIncidentDetailModal({
               </div>
 
               {!isResolved ? (
-                <>
-                  {/* Chọn bên có lỗi */}
-                  <div>
-                    <label className="block font-bold text-primary text-xs mb-1.5">
-                      Trách nhiệm lỗi thuộc về * :
-                    </label>
-                    <Radio.Group
-                      value={fault}
-                      onChange={(e) => setFault(e.target.value)}
-                      className="w-full grid grid-cols-1 sm:grid-cols-3 gap-2"
-                    >
-                      <Radio.Button value="COMPANY" className="text-center font-bold h-9 flex items-center justify-center rounded-xl">
-                        Công ty / Đội xe (ALS)
-                      </Radio.Button>
-                      <Radio.Button value="CUSTOMER" className="text-center font-bold h-9 flex items-center justify-center rounded-xl">
-                        Khách hàng
-                      </Radio.Button>
-                      <Radio.Button value="THIRD_PARTY" className="text-center font-bold h-9 flex items-center justify-center rounded-xl">
-                        Bên thứ ba / Khách quan
-                      </Radio.Button>
-                    </Radio.Group>
-                  </div>
-
-                  {/* Kết luận & Phương án xử lý */}
-                  <div>
-                    <label className="block font-bold text-primary text-xs mb-1">
-                      Kết luận &amp; Phương án giải quyết * (Tối đa 500 ký tự):
-                    </label>
-                    <Input.TextArea
-                      rows={3}
-                      maxLength={500}
-                      showCount
-                      value={resolutionNote}
-                      onChange={(e) => setResolutionNote(e.target.value)}
-                      placeholder="Ghi nhận phương án xử lý (ví dụ: Miễn phí chuyến, thay xe giao trễ 1h, bồi thường thiệt hại hàng hóa...)"
-                      className="rounded-xl text-xs"
-                    />
-                  </div>
-
-                  {/* Tùy chọn sinh yêu cầu bồi thường nếu có thiệt hại */}
-                  <div className="p-3 bg-surface-container-lowest rounded-xl border border-surface-container flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <span className="font-bold text-primary text-xs block">Thiệt hại hàng hóa &amp; Bồi thường:</span>
-                      <span className="text-[11px] text-on-surface-variant">
-                        Nhập số tiền (&gt; 0) sẽ tự động tạo Yêu cầu bồi thường (Claim) ở trạng thái Chờ duyệt.
-                      </span>
+                isReadOnly ? (
+                  <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2 text-blue-900 font-bold text-xs">
+                      <span className="material-symbols-outlined text-blue-600 text-[18px]">info</span>
+                      <span>Chế độ Xem thông tin (Read-only)</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <InputNumber
-                        min={0}
-                        step={100000}
-                        value={compensationAmount}
-                        onChange={(val) => setCompensationAmount(val || 0)}
-                        formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
-                        parser={(val) => val.replace(/\./g, '')}
-                        className="w-36 font-mono font-bold"
-                        addonAfter="đ"
+                    <p className="text-xs text-blue-800 leading-relaxed">
+                      Sự cố này đang ở trạng thái <b>Chờ Quản lý xử lý</b>. Tài khoản Điều phối viên được cấp quyền xem chéo chỉ có quyền theo dõi chi tiết hiện trường và lịch sử sự cố, không có thẩm quyền ban hành phán quyết.
+                    </p>
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-5 py-2 rounded-xl bg-blue-600 text-white font-bold cursor-pointer hover:bg-blue-700 transition-colors text-xs"
+                      >
+                        Đóng
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Chọn bên có lỗi */}
+                    <div>
+                      <label className="block font-bold text-primary text-xs mb-1.5">
+                        Trách nhiệm lỗi thuộc về * :
+                      </label>
+                      <Radio.Group
+                        value={fault}
+                        onChange={(e) => setFault(e.target.value)}
+                        className="w-full grid grid-cols-1 sm:grid-cols-3 gap-2"
+                      >
+                        <Radio.Button value="COMPANY" className="text-center font-bold h-9 flex items-center justify-center rounded-xl">
+                          Công ty / Đội xe (ALS)
+                        </Radio.Button>
+                        <Radio.Button value="CUSTOMER" className="text-center font-bold h-9 flex items-center justify-center rounded-xl">
+                          Khách hàng
+                        </Radio.Button>
+                        <Radio.Button value="THIRD_PARTY" className="text-center font-bold h-9 flex items-center justify-center rounded-xl">
+                          Bên thứ ba / Khách quan
+                        </Radio.Button>
+                      </Radio.Group>
+                    </div>
+
+                    {/* Kết luận & Phương án xử lý */}
+                    <div>
+                      <label className="block font-bold text-primary text-xs mb-1">
+                        Kết luận &amp; Phương án giải quyết * (Tối đa 500 ký tự):
+                      </label>
+                      <Input.TextArea
+                        rows={3}
+                        maxLength={500}
+                        showCount
+                        value={resolutionNote}
+                        onChange={(e) => setResolutionNote(e.target.value)}
+                        placeholder="Ghi nhận phương án xử lý (ví dụ: Miễn phí chuyến, thay xe giao trễ 1h, bồi thường thiệt hại hàng hóa...)"
+                        className="rounded-xl text-xs"
                       />
                     </div>
-                  </div>
 
-                  {/* Nút bấm Đóng sự cố */}
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      disabled={submitting}
-                      className="px-4 py-2 rounded-xl bg-surface-container text-primary font-bold hover:bg-surface-container-high transition-colors cursor-pointer text-xs"
-                    >
-                      Hủy bỏ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCloseIncident}
-                      disabled={submitting}
-                      className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1.5 text-xs"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">task_alt</span>
-                      <span>{submitting ? 'Đang xử lý...' : 'Đóng sự cố & Phán quyết'}</span>
-                    </button>
-                  </div>
-                </>
+                    {/* Tùy chọn sinh yêu cầu bồi thường nếu có thiệt hại */}
+                    <div className="p-3 bg-surface-container-lowest rounded-xl border border-surface-container flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-primary text-xs block">Thiệt hại hàng hóa &amp; Bồi thường:</span>
+                        <span className="text-[11px] text-on-surface-variant">
+                          Nhập số tiền (&gt; 0) sẽ tự động tạo Yêu cầu bồi thường (Claim) ở trạng thái Chờ duyệt.
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <InputNumber
+                          min={0}
+                          step={100000}
+                          value={compensationAmount}
+                          onChange={(val) => setCompensationAmount(val || 0)}
+                          formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
+                          parser={(val) => val.replace(/\./g, '')}
+                          className="w-36 font-mono font-bold"
+                          addonAfter="đ"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Nút bấm Đóng sự cố */}
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={submitting}
+                        className="px-4 py-2 rounded-xl bg-surface-container text-primary font-bold hover:bg-surface-container-high transition-colors cursor-pointer text-xs"
+                      >
+                        Hủy bỏ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCloseIncident}
+                        disabled={submitting}
+                        className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1.5 text-xs"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                        <span>{submitting ? 'Đang xử lý...' : 'Đóng sự cố & Phán quyết'}</span>
+                      </button>
+                    </div>
+                  </>
+                )
               ) : (
                 /* Đã xử lý (Read-only view) */
                 <div className="space-y-2.5">

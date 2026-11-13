@@ -3,11 +3,15 @@ import React, { useState, useEffect } from 'react';
 import { Form, message } from 'antd';
 import dayjs from 'dayjs';
 import { managerApi } from '../../api/managerApi';
+import { useAuth } from '../../providers/AuthProvider';
+import ReadOnlyBanner from '../../components/common/ReadOnlyBanner';
 import FleetTrucksTab from './fleet/FleetTrucksTab';
 import FleetDriversTab from './fleet/FleetDriversTab';
 import { FleetTruckModal, FleetDriverModal } from './fleet/FleetModals';
 
-export default function FleetPage() {
+export default function FleetPage({ readOnly = false }) {
+  const { user } = useAuth();
+  const isReadOnly = readOnly || (Number(user?.role_id) !== 1 && Number(user?.role_id) !== 2);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('TRUCKS'); // 'TRUCKS' | 'DRIVERS'
 
@@ -239,6 +243,7 @@ export default function FleetPage() {
 
   return (
     <div className="flex flex-col w-full space-y-6">
+      {isReadOnly && <ReadOnlyBanner moduleName="Quản lý Đội xe &amp; Tài xế (Chế độ xem chéo)" />}
       {/* Top Banner & Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <div>
@@ -275,27 +280,29 @@ export default function FleetPage() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {activeTab === 'TRUCKS' && (
-            <button
-              onClick={handleOpenCreateTruck}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow hover:bg-blue-700 active:scale-95 transition-all cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">add_circle</span>
-              <span>+ Khai báo xe mới</span>
-            </button>
-          )}
+        {!isReadOnly && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {activeTab === 'TRUCKS' && (
+              <button
+                onClick={handleOpenCreateTruck}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow hover:bg-blue-700 active:scale-95 transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                <span>+ Khai báo xe mới</span>
+              </button>
+            )}
 
-          {activeTab === 'DRIVERS' && (
-            <button
-              onClick={handleOpenCreateDriver}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold shadow hover:bg-emerald-700 active:scale-95 transition-all cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">person_add</span>
-              <span>+ Thêm hồ sơ tài xế</span>
-            </button>
-          )}
-        </div>
+            {activeTab === 'DRIVERS' && (
+              <button
+                onClick={handleOpenCreateDriver}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold shadow hover:bg-emerald-700 active:scale-95 transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">person_add</span>
+                <span>+ Thêm hồ sơ tài xế</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabs Chuyển đổi Modules: Đội xe & Tài xế */}
@@ -345,6 +352,7 @@ export default function FleetPage() {
           handleOpenEditTruck={handleOpenEditTruck}
           handleQuickStatusChange={handleQuickStatusChange}
           handleDeleteTruck={handleDeleteTruck}
+          isReadOnly={isReadOnly}
         />
       )}
 
@@ -354,6 +362,7 @@ export default function FleetPage() {
           drivers={drivers}
           loading={loading}
           handleOpenEditDriver={handleOpenEditDriver}
+          isReadOnly={isReadOnly}
         />
       )}
 
@@ -365,6 +374,7 @@ export default function FleetPage() {
         form={truckForm}
         onFinish={handleSaveTruck}
         submitting={submittingTruck}
+        isReadOnly={isReadOnly}
       />
 
       {/* MODAL 2: CHI TIẾT HỒ SƠ TÀI XẾ */}
@@ -375,6 +385,7 @@ export default function FleetPage() {
         form={driverForm}
         onFinish={handleSaveDriver}
         submitting={submittingDriver}
+        isReadOnly={isReadOnly}
       />
     </div>
   );

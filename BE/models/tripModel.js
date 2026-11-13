@@ -1,4 +1,4 @@
-const prisma = require('../config/prisma');
+const supabase = require('../config/supabase');
 
 const toPlainNumber = (val) => (val !== null && val !== undefined ? Number(val) : null);
 
@@ -137,67 +137,24 @@ const mapTrip = (t) => {
 };
 
 const findAllTrips = async () => {
-  const trips = await prisma.trips.findMany({
-    include: {
-      trip_trucks: {
-        include: {
-          trucks: {
-            select: {
-              id: true,
-              plate_number: true,
-              model: true,
-              allowed_payload: true,
-              box_length: true,
-              box_width: true,
-              box_height: true,
-              status: true,
-              last_lat: true,
-              last_lng: true
-            }
-          }
-        },
-        orderBy: { id: 'desc' }
-      },
-      trip_drivers: {
-        include: {
-          driver_profiles: {
-            include: {
-              users: { select: { id: true, full_name: true, phone: true } }
-            }
-          }
-        },
-        orderBy: { id: 'desc' }
-      },
-      trip_stops: {
-        include: {
-          locations: {
-            select: { id: true, name: true, address: true, latitude: true, longitude: true }
-          },
-          orders: {
-            include: {
-              customers: { select: { id: true, company_name: true, phone: true } },
-              order_cargos: true
-            }
-          },
-          delivery_evidences: true
-        },
-        orderBy: { sequence: 'asc' }
-      },
-      incidents: {
-        select: { id: true, type: true, status: true, description: true, reported_time: true, resolution_note: true },
-        orderBy: { id: 'desc' }
-      },
-      waybills: {
-        orderBy: { id: 'desc' }
-      },
-      trip_events: {
-        orderBy: { id: 'desc' },
-        take: 10
-      }
-    },
-    orderBy: { id: 'desc' }
-  });
-  return trips.map(mapTrip);
+  const { data: trips, error } = await supabase
+    .from('trips')
+    .select(`
+      *,
+      trip_trucks(id, trip_id, truck_id, incident_id, assignment_type, trucks(*)),
+      trip_drivers(id, trip_id, driver_id, incident_id, driver_role, assignment_type, driver_profiles(*, users:user_account_id(id, full_name, phone))),
+      trip_stops(*, locations(*), orders(*, customers(*), order_cargos(*)), delivery_evidences(*)),
+      incidents(id, type, status, description, reported_time, resolution_note),
+      waybills(*),
+      trip_events(*)
+    `)
+    .order('id', { ascending: false });
+
+  if (error) {
+    console.error('tripModel.findAllTrips error:', error);
+    throw error;
+  }
+  return (trips || []).map(mapTrip);
 };
 
 const findTruckByPlate = async (plate) => {

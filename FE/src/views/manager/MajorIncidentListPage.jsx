@@ -2,11 +2,14 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Tag, Input, Select, message, Spin, Tooltip } from 'antd';
 import { managerApi } from '../../api/managerApi';
+import { useAuth } from '../../providers/AuthProvider';
 import MajorIncidentDetailModal from './incident/MajorIncidentDetailModal';
 
 const { Option } = Select;
 
-export default function MajorIncidentListPage() {
+export default function MajorIncidentListPage({ readOnly = false }) {
+  const { user } = useAuth();
+  const isReadOnly = readOnly || (Number(user?.role_id) !== 1 && Number(user?.role_id) !== 2);
   const [loading, setLoading] = useState(true);
   const [incidents, setIncidents] = useState([]);
   const [summary, setSummary] = useState({ total: 0, pending: 0, escalated: 0, resolved: 0 });
@@ -161,7 +164,7 @@ export default function MajorIncidentListPage() {
           className="px-3 py-1.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-secondary text-xs font-bold inline-flex items-center gap-1 cursor-pointer border border-surface-container transition-colors shadow-2xs"
         >
           <span className="material-symbols-outlined text-[15px]">visibility</span>
-          <span>{r.status === 'RESOLVED' ? 'Xem' : 'Xử lý'}</span>
+          <span>{isReadOnly ? 'Xem' : (r.status === 'RESOLVED' ? 'Xem' : 'Xử lý')}</span>
         </button>
       )
     }
@@ -311,6 +314,7 @@ export default function MajorIncidentListPage() {
       <MajorIncidentDetailModal
         open={isDetailModalOpen}
         incident={selectedIncident}
+        isReadOnly={isReadOnly}
         onClose={() => {
           setIsDetailModalOpen(false);
           setSelectedIncident(null);
