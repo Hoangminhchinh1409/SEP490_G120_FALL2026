@@ -551,6 +551,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
 const reportIncident = async (userId, incidentData) => {
   const {
     trip_id,
+    trip_stop_id,
     type = "Other",
     description,
     photos = null
@@ -563,15 +564,60 @@ const reportIncident = async (userId, incidentData) => {
   }
 
   const profile = await getMyProfile(userId);
-  const realTripId = parseInt(trip_id) || 1;
+
+  // 1. Luôn xác định và gắn trực tiếp với chuyến xe hiện tại đang hoạt động của tài xế
+  let realTripId = null;
+  let realTripStopId = trip_stop_id ? parseInt(trip_stop_id, 10) : null;
+  let currentTrip = null;
+
+  // Lấy chuyến xe đang chạy hoặc đang được phân công của tài xế (In Progress, Accepted, Dispatched, Assigned)
+  const activeTripRes = await driverModel.getActiveTrip(profile.id);
+  currentTrip = activeTripRes?.activeTrip || (activeTripRes?.id ? activeTripRes : null) || activeTripRes?.upcomingTrips?.[0] || null;
+
+  if (currentTrip && currentTrip.id) {
+    // Ưu tiên cao nhất: Gắn vào chuyến xe đang chạy thực tế của chính tài xế này
+    realTripId = currentTrip.id;
+    if (!realTripStopId && currentTrip.stops && currentTrip.stops.length > 0) {
+      const activeStop = currentTrip.stops.find(s => s.status !== "Done") || currentTrip.stops[0];
+      if (activeStop?.id) realTripStopId = activeStop.id;
+    }
+  } else if (trip_id && !isNaN(parseInt(trip_id, 10)) && parseInt(trip_id, 10) > 0) {
+    // Nếu tài xế chưa có chuyến In Progress nhưng request truyền trip_id cụ thể hợp lệ
+    realTripId = parseInt(trip_id, 10);
+  } else {
+    // Fallback: Tìm chuyến được gán gần đây nhất của tài xế trong bảng trip_drivers
+    const { data: latestAssignment } = await supabase
+      .from("trip_drivers")
+      .select("trip_id, trips(id, trip_code, status)")
+      .eq("driver_id", profile.id)
+      .order("id", { ascending: false })
+      .limit(1);
+
+    if (latestAssignment && latestAssignment.length > 0 && latestAssignment[0].trip_id) {
+      realTripId = latestAssignment[0].trip_id;
+      currentTrip = latestAssignment[0].trips || null;
+    } else {
+      // Nếu tài xế chưa từng được phân công chuyến nào, lấy chuyến mới nhất trong hệ thống
+      const { data: fallbackTrip } = await supabase
+        .from("trips")
+        .select("id, trip_code, status")
+        .order("id", { ascending: false })
+        .limit(1);
+      realTripId = fallbackTrip?.[0]?.id || 1;
+      currentTrip = fallbackTrip?.[0] || null;
+    }
+  }
 
   const newIncident = await driverModel.createIncident({
     tripId: realTripId,
+    tripStopId: realTripStopId,
     reportedBy: profile.id,
     type,
     description: description.trim(),
     photos
   });
+
+  const tripCodeDisplay = currentTrip?.trip_code || `TRIP-${realTripId}`;
 
   await driverModel.logDriverActivity({
     actorId: userId,
@@ -579,13 +625,38 @@ const reportIncident = async (userId, incidentData) => {
     action: "REPORT_INCIDENT",
     targetType: "INCIDENT",
     targetId: newIncident?.id || 0,
-    reason: `Tài xế báo cáo sự cố [${type}]: ${description.trim()}`
+    reason: `Tài xế báo cáo sự cố [${type}] trên chuyến xe [${tripCodeDisplay}]: ${description.trim()}`
   });
+
+  // Bắn thông báo thời gian thực tới điều phối viên và quản trị viên
+  try {
+    const { data: dispatchers } = await supabase
+      .from("users")
+      .select("id")
+      .in("role_id", [1, 3]);
+
+    if (dispatchers && dispatchers.length > 0) {
+      for (const d of dispatchers) {
+        await driverModel.createNotification({
+          user_account_id: d.id,
+          target_type: "INCIDENT",
+          target_id: newIncident?.id,
+          message: `Cảnh báo sự cố: Tài xế báo cáo sự cố [${type}] trên chuyến xe [${tripCodeDisplay}]. Cần kiểm tra ngay!`
+        }).catch(() => {});
+      }
+    }
+  } catch (notifyErr) {
+    console.warn("Could not notify dispatchers about incident:", notifyErr.message);
+  }
 
   return {
     success: true,
-    message: "Đã báo sự cố. Điều phối viên đã được báo!",
-    incident: newIncident
+    message: `Đã báo sự cố trên chuyến ${tripCodeDisplay}. Điều phối viên đã được thông báo!`,
+    incident: {
+      ...newIncident,
+      trip_id: realTripId,
+      trip_code: tripCodeDisplay
+    }
   };
 };
 

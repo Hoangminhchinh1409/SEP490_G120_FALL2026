@@ -1395,17 +1395,40 @@ export default function DriverDashboard() {
                 <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Navigation2 className="w-3.5 h-3.5 text-indigo-400" /> Thao tác Chuyến xe
                 </span>
-                {/* Propose Fee Button (Screen 6.2 (10)) */}
+                {/* Actions: Propose Fee & Report Incident */}
                 {trip.status !== "Completed" && (
-                  <button
-                    onClick={() => {
-                      setActiveStopTarget(currentStop);
-                      setExtraFeeModalOpen(true);
-                    }}
-                    className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30 transition-colors shrink-0"
-                  >
-                    <DollarSign size={12} /> Đề xuất phí (BR-30)
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => {
+                        setActiveStopTarget(currentStop);
+                        setExtraFeeModalOpen(true);
+                      }}
+                      className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30 transition-colors shrink-0"
+                    >
+                      <DollarSign size={12} /> Đề xuất phí (BR-30)
+                    </button>
+                    <Link
+                      href={`/driver/incidents?trip_id=${trip.id}`}
+                      style={{
+                        backgroundColor: '#dc2626',
+                        color: '#ffffff',
+                        border: '1px solid #ef4444',
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '4px 10px',
+                        borderRadius: '8px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        boxShadow: '0 2px 8px rgba(220, 38, 38, 0.45)'
+                      }}
+                      className="shrink-0 transition-transform active:scale-95 cursor-pointer hover:opacity-90"
+                    >
+                      <AlertTriangle size={13} color="#ffffff" style={{ color: '#ffffff', stroke: '#ffffff' }} className="shrink-0" />
+                      <span style={{ color: '#ffffff', fontWeight: '700' }}>Báo sự cố</span>
+                    </Link>
+                  </div>
                 )}
               </div>
 
