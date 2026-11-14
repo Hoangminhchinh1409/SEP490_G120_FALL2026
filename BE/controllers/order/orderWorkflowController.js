@@ -14,7 +14,8 @@ const confirmOrder = async (req, res) => {
       status: 'READY_FOR_PLANNING',
       document_status: 'APPROVED',
       ready_for_planning_at: nowIso,
-      updated_at: nowIso
+      updated_at: nowIso,
+      waiting_too_long: false
     };
 
     if (agreed_price && parseInt(agreed_price) > 0) {

@@ -65,25 +65,25 @@ const runJob03_FlagOverdueOrders = async () => {
       // Fallback mặc định 60 phút
     }
 
-    // 2. Tìm các đơn ở trạng thái chờ và kiểm tra thời gian
+    // 2. Tìm các đơn ở trạng thái chờ và kiểm tra thời gian (chỉ áp dụng với Draft và Confirmed theo SRS 11.3)
     const { data: orders, error } = await supabase
       .from('orders')
       .select('id, order_code, status, document_status, created_at, ready_for_planning_at, waiting_too_long')
-      .in('status', ['DRAFT', 'CONFIRMED', 'READY_FOR_PLANNING']);
+      .in('status', ['DRAFT', 'CONFIRMED']);
 
     if (error) throw error;
 
     for (const o of orders || []) {
-      const startTime = new Date(o.ready_for_planning_at || o.created_at);
+      const startTime = new Date(o.created_at);
       const ageMinutes = (now - startTime) / (1000 * 60);
       const ageHours = ageMinutes / 60;
 
       let shouldFlag = false;
       // - Đơn DRAFT quá 4 giờ (240 phút) chưa gửi duyệt
-      // - Đơn CONFIRMED / READY_FOR_PLANNING chờ gán chuyến quá giới hạn cấu hình
+      // - Đơn CONFIRMED chờ gán chuyến quá giới hạn cấu hình
       if (o.status === 'DRAFT' && ageHours > 4) {
         shouldFlag = true;
-      } else if (['CONFIRMED', 'READY_FOR_PLANNING'].includes(o.status) && ageMinutes > limitMinutes) {
+      } else if (o.status === 'CONFIRMED' && ageMinutes > limitMinutes) {
         shouldFlag = true;
       }
 
@@ -97,15 +97,25 @@ const runJob03_FlagOverdueOrders = async () => {
           .eq('id', o.id);
 
         console.log(`[JOB-03] Đã gắn cờ đơn ách tắc ${o.order_code || o.id} (chờ ${Math.round(ageMinutes)} phút > giới hạn ${limitMinutes}p -).`);
+      } else if (!shouldFlag && o.waiting_too_long) {
+        await supabase
+          .from('orders')
+          .update({
+            waiting_too_long: false,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', o.id);
+
+        console.log(`[JOB-03] Đã gỡ cờ đơn ${o.order_code || o.id} do đã được xử lý / chưa quá hạn.`);
       }
     }
 
-    // 3. Gỡ cờ đối với các đơn đã rời khỏi nhóm trạng thái chờ (SRS 11.3 Step 3)
+    // 3. Gỡ cờ đối với các đơn đã rời khỏi nhóm trạng thái chờ (SRS 11.3 Step 3: đã sẵn sàng xếp xe hoặc đã gán chuyến)
     const { data: ordersToUnflag } = await supabase
       .from('orders')
       .select('id, order_code')
       .eq('waiting_too_long', true)
-      .not('status', 'in', '("DRAFT","CONFIRMED","READY_FOR_PLANNING")');
+      .not('status', 'in', '("DRAFT","CONFIRMED")');
 
     if (ordersToUnflag && ordersToUnflag.length > 0) {
       for (const lo of ordersToUnflag) {

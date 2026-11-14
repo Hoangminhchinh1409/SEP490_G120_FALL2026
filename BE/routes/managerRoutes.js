@@ -63,7 +63,9 @@ router.get('/drivers/performance', oversightController.getDriverPerformance);
 router.get('/incidents', incidentController.getIncidents);
 router.get('/incidents/:id', incidentController.getIncidentById);
 router.post('/incidents/:id/resolve', requireManagerOrAdmin, incidentController.resolveIncident);
-router.patch('/incidents/:id/close', requireManagerOrAdmin, incidentController.resolveIncident);
+router.post('/incidents/:id/decide', requireManagerOrAdmin, incidentController.decideIncidentCompensation);
+router.post('/incidents/:id/close', requireManagerOrAdmin, incidentController.closeIncidentCase);
+router.patch('/incidents/:id/close', requireManagerOrAdmin, incidentController.closeIncidentCase);
 
 router.get('/claims', incidentController.getClaims);
 router.post('/claims/:id/decide', requireManagerOrAdmin, incidentController.decideClaim);

@@ -28,20 +28,54 @@ export default function OrdersWorkloadPage() {
   // Modal Xác nhận điều chuyển
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
+  const processWorkloadPayload = (data) => {
+    const rawOrders = data.orders || [];
+    // Đơn READY_FOR_PLANNING là đơn đã được tiếp nhận, hoàn tất kiểm tra chứng từ, sẵn sàng xếp xe nên không bị gắn cờ
+    const cleanedOrders = rawOrders.map(o => {
+      const isReady = (o.status || '').toUpperCase() === 'READY_FOR_PLANNING';
+      if (isReady) {
+        return {
+          ...o,
+          waiting_too_long: false,
+          is_flagged: false,
+          flag_reason: 'Sẵn sàng xếp xe'
+        };
+      }
+      return o;
+    });
+
+    const flagged = (data.flagged_orders || []).filter(o => {
+      return (o.status || '').toUpperCase() !== 'READY_FOR_PLANNING';
+    });
+
+    const cleanDispatchers = (data.dispatchers || []).map(d => {
+      const dFlagged = flagged.filter(f => f.dispatcher_id === d.id || f.responsible_dispatcher_id === d.id).length;
+      return { ...d, flagged_orders: dFlagged };
+    });
+
+    return {
+      orders: cleanedOrders,
+      flaggedOrders: flagged,
+      dispatchers: cleanDispatchers,
+      summary: {
+        total_orders: cleanedOrders.length,
+        flagged_count: flagged.length,
+        active_dispatchers: cleanDispatchers.length
+      }
+    };
+  };
+
   const fetchWorkloadData = async () => {
     setLoading(true);
     try {
       const data = await managerApi.getOrders();
-      setOrders(data.orders || []);
-      setFlaggedOrders(data.flagged_orders || []);
-      setDispatchers(data.dispatchers || []);
-      setSummary(data.summary || {
-        total_orders: (data.orders || []).length,
-        flagged_count: (data.flagged_orders || []).length,
-        active_dispatchers: (data.dispatchers || []).length
-      });
-      if (data.dispatchers && data.dispatchers.length > 0 && !quickTargetDispatcherId) {
-        setQuickTargetDispatcherId(data.dispatchers[0].id);
+      const processed = processWorkloadPayload(data);
+      setOrders(processed.orders);
+      setFlaggedOrders(processed.flaggedOrders);
+      setDispatchers(processed.dispatchers);
+      setSummary(processed.summary);
+      if (processed.dispatchers.length > 0 && !quickTargetDispatcherId) {
+        setQuickTargetDispatcherId(processed.dispatchers[0].id);
       }
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu khối lượng đơn:', error);
@@ -57,16 +91,13 @@ export default function OrdersWorkloadPage() {
       try {
         const data = await managerApi.getOrders();
         if (!ignore) {
-          setOrders(data.orders || []);
-          setFlaggedOrders(data.flagged_orders || []);
-          setDispatchers(data.dispatchers || []);
-          setSummary(data.summary || {
-            total_orders: (data.orders || []).length,
-            flagged_count: (data.flagged_orders || []).length,
-            active_dispatchers: (data.dispatchers || []).length
-          });
-          if (data.dispatchers && data.dispatchers.length > 0) {
-            setQuickTargetDispatcherId(data.dispatchers[0].id);
+          const processed = processWorkloadPayload(data);
+          setOrders(processed.orders);
+          setFlaggedOrders(processed.flaggedOrders);
+          setDispatchers(processed.dispatchers);
+          setSummary(processed.summary);
+          if (processed.dispatchers.length > 0) {
+            setQuickTargetDispatcherId(processed.dispatchers[0].id);
           }
         }
       } catch (error) {
@@ -323,9 +354,9 @@ export default function OrdersWorkloadPage() {
                         <span className="inline-block px-2.5 py-1 rounded-md bg-error/10 text-error font-bold text-[11px]">
                           {o.flag_reason}
                         </span>
-                      ): (
-                        <span className="text-on-surface-variant text-[11px]">
-                          Bình thường ({o.status})
+                      ) : (
+                        <span className="inline-block px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-semibold text-[11px] border border-emerald-200">
+                          {o.status === 'READY_FOR_PLANNING' ? 'Sẵn sàng xếp xe' : `Bình thường (${o.status})`}
                         </span>
                       )}
                     </td>

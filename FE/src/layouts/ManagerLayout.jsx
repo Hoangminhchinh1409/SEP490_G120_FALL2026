@@ -13,8 +13,7 @@ export default function ManagerLayout({ children }) {
   const allNavItems = [
     { href: '/manager', icon: 'insights', name: 'Tổng quan' },
     { href: '/manager/orders', icon: 'package_2', name: 'Khối lượng đơn' },
-    { href: '/manager/incidents', icon: 'warning', name: 'Sự cố lớn', permission: 'INCIDENT_MANAGE' },
-    { href: '/manager/approvals', icon: 'gavel', name: 'Bồi thường', permission: 'INCIDENT_MANAGE' },
+    { href: '/manager/incidents', icon: 'gavel', name: 'Sự cố & Bồi thường', permission: 'INCIDENT_MANAGE' },
     { href: '/manager/fleet', icon: 'local_shipping', name: 'Đội xe', permission: 'FLEET_MANAGE' },
     { href: '/manager/shifts', icon: 'calendar_month', name: 'Lịch ca trực', permission: 'DRIVER_SHIFT_MANAGE' },
     { href: '/manager/vendors', icon: 'handshake', name: 'Nhà xe & Hợp đồng', permission: 'VENDOR_MANAGE' },
@@ -45,6 +44,9 @@ export default function ManagerLayout({ children }) {
 
   const isActive = (href) => {
     if (href === '/manager') return pathname === '/manager';
+    if (href === '/manager/incidents') {
+      return pathname?.startsWith('/manager/incidents') || pathname?.startsWith('/manager/approvals');
+    }
     return pathname?.startsWith(href);
   };
 

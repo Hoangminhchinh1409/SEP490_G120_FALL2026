@@ -40,6 +40,20 @@ const mapIncident = (inc) => {
     reported_by: toPlainNumber(inc.reported_by),
     escalated_by: toPlainNumber(inc.escalated_by),
     resolved_by: toPlainNumber(inc.resolved_by),
+    closed_by: toPlainNumber(inc.closed_by),
+    proposed_compensation_amount: toPlainNumber(inc.proposed_compensation_amount) || 0,
+    approved_compensation_amount: toPlainNumber(inc.approved_compensation_amount) || 0,
+    damage_percentage: toPlainNumber(inc.damage_percentage),
+    goods_handling_method: inc.goods_handling_method || null,
+    contract_clause_ref: inc.contract_clause_ref || null,
+    rejection_reason: inc.rejection_reason || null,
+    contact_hotline: inc.contact_hotline || '1900 1234',
+    payment_proof_url: inc.payment_proof_url || null,
+    incident_lat: inc.incident_lat ? Number(inc.incident_lat) : null,
+    incident_lng: inc.incident_lng ? Number(inc.incident_lng) : null,
+    is_on_route: inc.is_on_route !== false,
+    route_deviation_km: inc.route_deviation_km ? Number(inc.route_deviation_km) : 0,
+    closed_at: inc.closed_at,
     trip
   };
 };

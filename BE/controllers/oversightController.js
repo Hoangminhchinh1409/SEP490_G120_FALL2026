@@ -231,6 +231,7 @@ const getOrderWorkload = async (req, res) => {
           waiting_too_long,
           late_risk,
           created_at, 
+          ready_for_planning_at,
           updated_at,
           dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name)
         `)
@@ -245,40 +246,66 @@ const getOrderWorkload = async (req, res) => {
 
     const formattedOrders = (ordersData || []).map((o) => {
       const createdAt = new Date(o.created_at);
-      const ageHours = Math.max(0, (now - createdAt) / (1000 * 60 * 60));
+      const readyAt = o.ready_for_planning_at ? new Date(o.ready_for_planning_at) : null;
       const statusUpper = (o.status || '').toUpperCase();
 
-      let waitingTooLong = Boolean(o.waiting_too_long);
+      // Thời gian tính cho trạng thái hiện tại:
+      // - Với đơn READY_FOR_PLANNING: tính từ ready_for_planning_at (hoặc updated_at nếu có)
+      // - Với đơn DRAFT / CONFIRMED: tính từ created_at
+      let effectiveStartTime = createdAt;
+      if (statusUpper === 'READY_FOR_PLANNING') {
+        effectiveStartTime = readyAt || (o.updated_at ? new Date(o.updated_at) : createdAt);
+      } else if (['ASSIGNED', 'IN_TRANSIT', 'COMPLETED', 'DELIVERED'].includes(statusUpper)) {
+        effectiveStartTime = o.updated_at ? new Date(o.updated_at) : createdAt;
+      }
+
+      const ageHours = Math.max(0, (now - effectiveStartTime) / (1000 * 60 * 60));
+      const overallAgeHours = Math.max(0, (now - createdAt) / (1000 * 60 * 60));
+
+      let waitingTooLong = false;
       let overdueDocs = false;
       let lateRisk = Boolean(o.late_risk);
       let flagReason = null;
 
-      if (statusUpper === 'DRAFT' && ageHours > 4) {
-        waitingTooLong = true;
-        flagReason = 'Chờ quá lâu (Bản nháp > 4h)';
-      } else if (['CONFIRMED', 'READY_FOR_PLANNING'].includes(statusUpper) && ageHours > 8) {
-        waitingTooLong = true;
-        flagReason = 'Chờ quá lâu (Chưa gán chuyến > 8h)';
-      } else if (o.waiting_too_long) {
-        waitingTooLong = true;
-        flagReason = 'Chờ quá lâu';
+      if (statusUpper === 'DRAFT') {
+        if (ageHours > 4 || o.waiting_too_long) {
+          waitingTooLong = true;
+          flagReason = 'Chờ quá lâu (Bản nháp > 4h)';
+        }
+      } else if (statusUpper === 'CONFIRMED') {
+        if (ageHours > 8 || o.waiting_too_long) {
+          waitingTooLong = true;
+          flagReason = 'Chờ quá lâu (Chưa gán chuyến > 8h)';
+        }
+        if ((o.document_status || '').toUpperCase() !== 'APPROVED' && overallAgeHours > 12) {
+          overdueDocs = true;
+          flagReason = flagReason ? `${flagReason} & Quá hạn chứng từ` : 'Quá hạn chứng từ';
+        }
+      } else if (statusUpper === 'READY_FOR_PLANNING') {
+        // Đơn đã được Điều phối viên tiếp nhận và chuyển sang Sẵn sàng vận chuyển / Sẵn sàng xếp xe
+        // Đã hoàn tất tiếp nhận & chứng từ hợp lệ nên tuyệt đối không thuộc nhóm Đơn bị gắn cờ
+        waitingTooLong = false;
+        overdueDocs = false;
+        lateRisk = false;
+        flagReason = 'Sẵn sàng xếp xe';
+        if (o.waiting_too_long) {
+          supabase
+            .from('orders')
+            .update({ waiting_too_long: false })
+            .eq('id', o.id)
+            .then(() => {})
+            .catch(() => {});
+        }
+      } else if (statusUpper === 'IN_TRANSIT') {
+        if (ageHours > 24 || o.late_risk) {
+          lateRisk = true;
+          flagReason = 'Nguy cơ trễ chuyến';
+        }
       }
 
-      if (statusUpper === 'CONFIRMED' && (o.document_status || '').toUpperCase() !== 'APPROVED' && ageHours > 12) {
-        overdueDocs = true;
-        flagReason = flagReason ? `${flagReason} & Quá hạn chứng từ`: 'Quá hạn chứng từ';
-      }
-
-      if (statusUpper === 'IN_TRANSIT' && ageHours > 24) {
-        lateRisk = true;
-        flagReason = flagReason ? `${flagReason} & Nguy cơ trễ`: 'Nguy cơ trễ';
-      } else if (o.late_risk) {
-        lateRisk = true;
-        flagReason = flagReason ? `${flagReason} & Nguy cơ trễ`: 'Nguy cơ trễ';
-      }
-
-      const isFlagged = waitingTooLong || overdueDocs || lateRisk;
-      const timeInStatus = `${o.status || 'Đang xử lý'} ${Math.round(ageHours)}h`;
+      const isFlagged = statusUpper === 'READY_FOR_PLANNING' ? false : (waitingTooLong || overdueDocs || lateRisk);
+      const hoursRounded = Math.round(ageHours);
+      const timeInStatus = `${o.status || 'Đang xử lý'} ${hoursRounded > 0 ? `${hoursRounded}h` : `${Math.max(1, Math.round(ageHours * 60))}m`}`;
 
       return {
         id: o.id,

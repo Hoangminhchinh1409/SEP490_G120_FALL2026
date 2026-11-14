@@ -1,5 +1,5 @@
 "use client";
-import ApprovalsPage from '../../../src/views/manager/ApprovalsPage';
+import MajorIncidentListPage from '../../../src/views/manager/MajorIncidentListPage';
 import { useAuth } from '../../../src/providers/AuthProvider';
 import AccessDenied from '../../../src/components/common/AccessDenied';
 
@@ -13,5 +13,5 @@ export default function Page() {
     return <AccessDenied moduleName="Duyệt Khiếu nại & Bồi thường (INCIDENT_MANAGE)" />;
   }
 
-  return <ApprovalsPage />;
+  return <MajorIncidentListPage />;
 }

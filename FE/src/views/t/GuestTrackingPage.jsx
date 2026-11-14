@@ -29,7 +29,19 @@ export default function GuestTrackingPage() {
         vendorName: '',
         vendorTracking: '',
         sealImage: 'https://images.unsplash.com/photo-1586528116311-ad8ed7c50a41?q=80&w=2070',
-        podImage: 'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=2070'
+        podImage: 'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=2070',
+        // Dữ liệu sự cố & bồi thường minh bạch cho khách hàng
+        incident: {
+          has_incident: true,
+          code: 'INC-042',
+          type_display: 'Hàng hư hỏng do va chạm',
+          status: 'APPROVED', // 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'DONE'
+          compensation_amount: 15000000,
+          clause_ref: 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)',
+          rejection_reason: null,
+          hotline: '1900 1234',
+          payment_proof_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?q=80&w=800'
+        }
       });
     };
 
@@ -57,6 +69,81 @@ export default function GuestTrackingPage() {
           ]}
           className="mb-8"
         />
+
+        {/* THÔNG BÁO XỬ LÝ SỰ CỐ & BỒI THƯỜNG MINH BẠCH CHO KHÁCH HÀNG */}
+        {order.incident?.has_incident && (
+          <div className="mb-6">
+            {order.incident.status === 'PENDING_APPROVAL' && (
+              <Alert
+                title={<span className="font-bold text-amber-900">Đơn hàng đang phát sinh sự cố: {order.incident.type_display} ({order.incident.code})</span>}
+                description="Bộ phận Quản lý của ALS đang tiến hành thẩm định bằng chứng hiện trường và xem xét hồ sơ bồi thường theo hợp đồng. Chúng tôi sẽ cập nhật kết quả trong thời gian sớm nhất."
+                type="warning"
+                showIcon
+                className="rounded-xl border border-amber-300 bg-amber-50"
+              />
+            )}
+
+            {order.incident.status === 'APPROVED' && (
+              <Alert
+                title={<span className="font-bold text-blue-900">Thông báo Phê duyệt Bồi thường thiệt hại</span>}
+                description={
+                  <div className="space-y-1 mt-1 text-sm text-blue-950">
+                    <p>• Mã sự cố: <b>{order.incident.code}</b> ({order.incident.type_display})</p>
+                    <p>• Căn cứ: <b>{order.incident.clause_ref}</b></p>
+                    <p>• Số tiền được phê duyệt bồi thường: <b className="text-red-600 font-mono text-base">{order.incident.compensation_amount?.toLocaleString('vi-VN')} đ</b></p>
+                    <p className="text-xs text-gray-500 italic mt-1">* Bộ phận Tài chính của ALS đang thực hiện thủ tục chi trả/chuyển khoản đến tài khoản của Quý khách theo quy định.</p>
+                  </div>
+                }
+                type="info"
+                showIcon
+                className="rounded-xl border border-blue-300 bg-blue-50"
+              />
+            )}
+
+            {order.incident.status === 'REJECTED' && (
+              <Alert
+                title={<span className="font-bold text-red-900">Thông báo Kết quả Thẩm định Sự cố: Từ chối Bồi thường</span>}
+                description={
+                  <div className="space-y-1 mt-1 text-sm text-red-950">
+                    <p>• Viện dẫn hợp đồng: <b>{order.incident.clause_ref}</b></p>
+                    <p>• Lý do: {order.incident.rejection_reason || 'Hàng hóa bị biến dạng trước khi bàn giao cho đơn vị vận chuyển ALS.'}</p>
+                    <p>• Nếu Quý khách cần hỗ trợ thêm, vui lòng liên hệ Hotline Giải quyết Khiếu nại: <b className="font-mono">{order.incident.hotline || '1900 1234'}</b></p>
+                  </div>
+                }
+                type="error"
+                showIcon
+                className="rounded-xl border border-red-300 bg-red-50"
+              />
+            )}
+
+            {order.incident.status === 'DONE' && (
+              <Alert
+                title={<span className="font-bold text-green-900">Đã Hoàn tất Bồi thường &amp; Đóng hồ sơ</span>}
+                description={
+                  <div className="space-y-1 mt-1 text-sm text-green-950">
+                    <p>Đơn hàng đã được bồi thường số tiền: <b className="font-mono text-green-700">{order.incident.compensation_amount?.toLocaleString('vi-VN')} đ</b>.</p>
+                    {order.incident.payment_proof_url && (
+                      <div className="pt-2">
+                        <a
+                          href={order.incident.payment_proof_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white font-bold text-xs shadow-xs"
+                        >
+                          <ImageIcon size={14} />
+                          <span>Xem Biên lai Chuyển khoản Ngân hàng</span>
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                }
+                type="success"
+                showIcon
+                className="rounded-xl border border-green-300 bg-green-50"
+              />
+            )}
+          </div>
+        )}
 
         {order.status === 0 && (
           <Alert

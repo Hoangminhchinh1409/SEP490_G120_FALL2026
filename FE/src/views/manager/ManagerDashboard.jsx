@@ -402,7 +402,7 @@ export default function ManagerDashboard() {
         },
         events: {
           dataPointSelection: () => {
-            router.push('/manager/approvals?tab=incidents');
+            router.push('/manager/incidents');
           }
         }
       },
@@ -600,7 +600,7 @@ export default function ManagerDashboard() {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">query_stats</span>
-          <span>Tổng quan (Screen 16)</span>
+          <span>Tổng quan</span>
         </button>
 
         <button
@@ -612,7 +612,7 @@ export default function ManagerDashboard() {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">badge</span>
-          <span>Hiệu suất tài xế ({driversPerformance.length}) (Screen 41)</span>
+          <span>Hiệu suất tài xế ({driversPerformance.length})</span>
         </button>
       </div>
 
@@ -955,7 +955,7 @@ export default function ManagerDashboard() {
                         Sự cố theo loại (Incidents)
                       </h4>
                       <Link
-                        href="/manager/approvals?tab=incidents"
+                        href="/manager/incidents"
                         className="text-xs text-secondary font-bold hover:underline flex items-center gap-0.5"
                       >
                         <span>Chi tiết</span>
@@ -963,7 +963,7 @@ export default function ManagerDashboard() {
                       </Link>
                     </div>
                     <p className="text-[11px] text-on-surface-variant mb-2">
-                      Bấm lát cắt để lọc danh sách sự cố tại Screen 17.
+                      Bấm lát cắt để lọc danh sách sự cố.
                     </p>
 
                     {dashboardData.incidentsByTypeChart && dashboardData.incidentsByTypeChart.some((i) => i.count > 0) ? (
@@ -1030,7 +1030,7 @@ export default function ManagerDashboard() {
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h3 className="text-xl font-black text-primary tracking-tight">
-                  Bảng đánh giá hiệu suất tài xế (Screen 41)
+                  Bảng đánh giá hiệu suất tài xế
                 </h3>
                 <Tag color="blue" className="font-bold">
                   Tổng tài xế: {driverSummary.total_drivers}

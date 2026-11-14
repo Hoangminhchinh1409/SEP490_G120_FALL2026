@@ -190,7 +190,7 @@ model incidents {
   description                         String                @db.VarChar(500)
   photos                              String[]
   fault                               String?               @db.VarChar(50)
-  status                              String                @default("Reported") @db.VarChar(20)
+  status                              String                @default("Reported") @db.VarChar(30)
   reported_by                         BigInt?
   reported_time                       DateTime              @default(now()) @db.Timestamptz(6)
   escalated_by                        BigInt?
@@ -201,6 +201,20 @@ model incidents {
   resolved_time                       DateTime?             @db.Timestamptz(6)
   created_at                          DateTime              @default(now()) @db.Timestamptz(6)
   updated_at                          DateTime              @default(now()) @db.Timestamptz(6)
+  damage_percentage                   Int?
+  goods_handling_method               String?               @db.VarChar(50)
+  contract_clause_ref                 String?               @db.VarChar(255)
+  proposed_compensation_amount        BigInt?               @default(0)
+  approved_compensation_amount        BigInt?               @default(0)
+  rejection_reason                    String?
+  contact_hotline                     String?               @default("1900 1234") @db.VarChar(20)
+  payment_proof_url                   String?               @db.VarChar(500)
+  incident_lat                        Decimal?              @db.Decimal(9, 6)
+  incident_lng                        Decimal?              @db.Decimal(9, 6)
+  is_on_route                         Boolean?              @default(true)
+  route_deviation_km                  Decimal?              @db.Decimal(5, 2)
+  closed_by                           BigInt?
+  closed_at                           DateTime?             @db.Timestamptz(6)
   compensation_claims                 compensation_claims[]
   users_incidents_escalated_byTousers users?                @relation("incidents_escalated_byTousers", fields: [escalated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   driver_profiles                     driver_profiles?      @relation(fields: [reported_by], references: [id], onDelete: NoAction, onUpdate: NoAction)

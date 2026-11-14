@@ -219,11 +219,37 @@ export const managerApi = {
     }
   },
 
+  decideIncidentCompensation: async (id, payload) => {
+    try {
+      const data = await fetchWithAuth(`/manager/incidents/${id}/decide`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.decideIncidentCompensation Error:', error);
+      throw error;
+    }
+  },
+
+  closeIncidentCase: async (id, payload) => {
+    try {
+      const data = await fetchWithAuth(`/manager/incidents/${id}/close`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.closeIncidentCase Error:', error);
+      throw error;
+    }
+  },
+
   closeIncident: async (id, payload) => {
     try {
-      // Gọi endpoint chuẩn PATCH close hoặc POST resolve
+      // Gọi endpoint chuẩn POST close
       const data = await fetchWithAuth(`/manager/incidents/${id}/close`, {
-        method: 'PATCH',
+        method: 'POST',
         body: JSON.stringify(payload)
       });
       return data;

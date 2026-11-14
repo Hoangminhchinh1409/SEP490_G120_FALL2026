@@ -515,6 +515,7 @@ const approveWebOrderDocuments = async (req, res) => {
     if (meta.contract_uploaded) {
       updateFields.status = 'READY_FOR_PLANNING';
       updateFields.ready_for_planning_at = nowIso;
+      updateFields.waiting_too_long = false;
     }
 
     await supabase
@@ -603,6 +604,7 @@ const uploadContractFile = async (req, res) => {
       updatePayload.status = 'READY_FOR_PLANNING';
       updatePayload.document_status = 'APPROVED';
       updatePayload.ready_for_planning_at = nowIso;
+      updatePayload.waiting_too_long = false;
     }
 
     const { data: updatedOrders, error: updateError } = await supabase

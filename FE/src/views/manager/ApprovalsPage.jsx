@@ -5,6 +5,7 @@ import { managerApi } from '../../api/managerApi';
 import { useAuth } from '../../providers/AuthProvider';
 import ReadOnlyBanner from '../../components/common/ReadOnlyBanner';
 import AccessDenied from '../../components/common/AccessDenied';
+import TripReplayModal from '../../components/common/TripReplayModal';
 
 export default function ApprovalsPage({ readOnly = false }) {
   const { user } = useAuth();
@@ -26,8 +27,6 @@ export default function ApprovalsPage({ readOnly = false }) {
 
   // Modal Trip Replay (GPS)
   const [isReplayModalOpen, setIsReplayModalOpen] = useState(false);
-  const [replayLoading, setReplayLoading] = useState(false);
-  const [replayData, setReplayData] = useState(null);
 
   // Tải dữ liệu Yêu cầu bồi thường từ Database
   const fetchData = async () => {
@@ -103,23 +102,12 @@ export default function ApprovalsPage({ readOnly = false }) {
   };
 
   // Mở tua lại hành trình GPS
-  const handleOpenTripReplay = async (tripId) => {
+  const handleOpenTripReplay = (tripId) => {
     if (!tripId) {
       message.warning('Yêu cầu bồi thường này không gắn với chuyến xe cụ thể.');
       return;
     }
     setIsReplayModalOpen(true);
-    setReplayLoading(true);
-    try {
-      const data = await managerApi.getTripReplay(tripId);
-      setReplayData(data);
-    } catch (error) {
-      console.error('Lỗi tải dữ liệu tua lại chuyến:', error);
-      message.error('Không thể tải dữ liệu GPS tua lại chuyến.');
-      setIsReplayModalOpen(false);
-    } finally {
-      setReplayLoading(false);
-    }
   };
 
   // Lọc danh sách yêu cầu bồi thường
@@ -674,38 +662,12 @@ export default function ApprovalsPage({ readOnly = false }) {
         )}
       </Modal>
 
-      {/* MODAL TUA LẠI HÀNH TRÌNH GPS */}
-      <Modal
-        title={
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-secondary">play_circle</span>
-            <span className="font-bold text-base text-primary">
-              Tua lại hành trình GPS – Chuyến xe
-            </span>
-          </div>
-        }
+      {/* MODAL TUA LẠI HÀNH TRÌNH GPS (VIETMAP REPLAY) */}
+      <TripReplayModal
         open={isReplayModalOpen}
-        onCancel={() => setIsReplayModalOpen(false)}
-        footer={null}
-        width={700}
-      >
-        {replayLoading ? (
-          <div className="py-12 flex justify-center"><Spin /></div>
-        ): (
-          <div className="space-y-4 pt-2 text-xs">
-            <div className="p-4 bg-surface-container-low rounded-xl text-on-surface-variant">
-              Mô phỏng lộ trình xe chạy qua định vị GPS hộp đen &amp; phát hiện vi phạm bán kính Geofence tại thời điểm xảy ra sự cố.
-            </div>
-            <div className="h-64 bg-surface-container rounded-2xl flex items-center justify-center text-on-surface-variant border border-surface-container-high">
-              <div className="text-center">
-                <span className="material-symbols-outlined text-4xl text-secondary mb-1">map</span>
-                <p className="font-bold">Bản đồ lộ trình GPS xe</p>
-                <p className="text-[11px] text-outline">Chưa phát hiện vi phạm bán kính dừng đỗ trên chuyến xe này.</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
+        onClose={() => setIsReplayModalOpen(false)}
+        tripId={selectedClaim?.trip_id}
+      />
     </div>
   );
 }

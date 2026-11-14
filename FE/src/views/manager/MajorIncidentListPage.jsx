@@ -123,7 +123,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
     {
       title: 'Thời điểm chuyển lên',
       key: 'escalated_time',
-      width: 160,
+      width: 150,
       render: (_, r) => (
         <div className="text-xs">
           <span className="font-mono text-primary font-medium">
@@ -135,17 +135,45 @@ export default function MajorIncidentListPage({ readOnly = false }) {
       )
     },
     {
+      title: 'Tiền bồi thường',
+      key: 'compensation',
+      width: 150,
+      align: 'right',
+      render: (_, r) => {
+        const amt = Number(r.approved_compensation_amount || r.claim_amount || r.proposed_compensation_amount || 0);
+        return amt > 0 ? (
+          <span className="font-mono font-bold text-error text-xs block text-right">
+            {amt.toLocaleString('vi-VN')} đ
+          </span>
+        ) : (
+          <span className="text-outline text-xs italic block text-right">Không phát sinh</span>
+        );
+      }
+    },
+    {
       title: 'Trạng thái',
       key: 'status',
-      width: 140,
+      width: 150,
+      align: 'center',
       render: (_, r) => {
-        const isResolved = r.status === 'RESOLVED';
+        const s = (r.status || '').toUpperCase();
+        if (s === 'DONE' || s === 'RESOLVED') {
+          return (
+            <Tag color="green" className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
+              Đã hoàn tất (Đóng)
+            </Tag>
+          );
+        }
+        if (s === 'APPROVED') {
+          return (
+            <Tag color="cyan" className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
+              Đã duyệt · Chờ chi trả
+            </Tag>
+          );
+        }
         return (
-          <Tag
-            color={isResolved ? 'green' : 'orange'}
-            className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase"
-          >
-            {isResolved ? 'Đã xử lý' : 'Chờ xử lý'}
+          <Tag color="orange" className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
+            Chờ xét duyệt
           </Tag>
         );
       }
@@ -153,7 +181,8 @@ export default function MajorIncidentListPage({ readOnly = false }) {
     {
       title: 'Thao tác',
       key: 'actions',
-      width: 110,
+      width: 120,
+      align: 'center',
       render: (_, r) => (
         <button
           type="button"
@@ -161,10 +190,10 @@ export default function MajorIncidentListPage({ readOnly = false }) {
             e.stopPropagation();
             handleOpenDetail(r);
           }}
-          className="px-3 py-1.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-secondary text-xs font-bold inline-flex items-center gap-1 cursor-pointer border border-surface-container transition-colors shadow-2xs"
+          className="px-3.5 py-1.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-secondary text-xs font-bold inline-flex items-center gap-1 cursor-pointer border border-surface-container transition-all shadow-2xs hover:scale-102"
         >
-          <span className="material-symbols-outlined text-[15px]">visibility</span>
-          <span>{isReadOnly ? 'Xem' : (r.status === 'RESOLVED' ? 'Xem' : 'Xử lý')}</span>
+          <span className="material-symbols-outlined text-[16px]">visibility</span>
+          <span>{isReadOnly || r.status === 'DONE' || r.status === 'RESOLVED' ? 'Xem lại' : 'Xét duyệt'}</span>
         </button>
       )
     }
@@ -177,7 +206,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl lg:text-3xl font-black text-primary tracking-tight">
-              Sự cố lớn (Major Incidents)
+              Sự cố &amp; Bồi thường (Incidents &amp; Compensation)
             </h1>
             {summary.escalated > 0 ? (
               <Tag color="error" className="font-bold text-xs px-2.5 py-0.5 rounded-full">
@@ -190,7 +219,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
             )}
           </div>
           <p className="text-xs text-on-surface-variant mt-1.5 max-w-3xl">
-            Tiếp nhận, kiểm tra bằng chứng GPS hiện trường và ban hành phán quyết đối với các sự cố vận tải nghiêm trọng (BR-16, UC-25).
+            Thẩm định hồ sơ bằng chứng đối chiếu 3 góc nhìn (Pickup - Sự cố - Delivery), căn cứ Hợp đồng vận chuyển và phê duyệt bồi thường thiệt hại hàng hóa (BR-16, UC-25).
           </p>
         </div>
 
@@ -251,8 +280,9 @@ export default function MajorIncidentListPage({ readOnly = false }) {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="h-9 px-3 bg-surface-container-low border border-surface-container rounded-xl text-xs font-bold text-primary focus:outline-none cursor-pointer"
               >
-                <option value="ESCALATED">Chờ xử lý (Escalated)</option>
-                <option value="RESOLVED">Đã xử lý (Resolved)</option>
+                <option value="ESCALATED">Chờ xét duyệt (Escalated)</option>
+                <option value="APPROVED">Đã duyệt (Chờ chi trả)</option>
+                <option value="RESOLVED">Đã hoàn tất (Đóng)</option>
                 <option value="ALL">Tất cả ({summary.total})</option>
               </select>
             </div>
@@ -298,7 +328,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
             showSizeChanger: false,
             showTotal: (total, range) => (
               <span className="text-xs text-on-surface-variant">
-                Hiển thị {range[0]}-{range[1]} / {total} sự cố · Bấm vào dòng để mở Chi tiết sự cố &amp; Trip Replay
+                Hiển thị {range[0]}-{range[1]} / {total} sự cố · Bấm vào dòng để mở Chi tiết sự cố &amp; Xét duyệt bồi thường
               </span>
             )
           }}
