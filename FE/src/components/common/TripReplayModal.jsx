@@ -112,24 +112,44 @@ export default function TripReplayModal({
     if (replayData?.gps_track && replayData.gps_track.length > 0) {
       return replayData.gps_track;
     }
-    // Fallback: 14 điểm GPS thực tế dọc hành lang logistics Nội Bài - Bắc Ninh
+    // Fallback: 14 điểm GPS thực tế dọc hành lang vận tải đi qua hiện trường sự cố
     const baseLat = 21.2187;
     const baseLng = 105.8042;
-    const endLat = 21.1215;
-    const endLng = 105.9754;
-    const now = Date.now();
+    const incLat = incidentInfo?.incident_location_lat ? Number(incidentInfo.incident_location_lat) : 21.2113;
+    const incLng = incidentInfo?.incident_location_lng ? Number(incidentInfo.incident_location_lng) : 105.8340;
+    const endLat = 21.3250;
+    const endLng = 105.8500;
+
+    const repTime = incidentInfo?.reported_time ? new Date(incidentInfo.reported_time).getTime() : Date.now();
+    const incidentIdx = 5; // Mốc xảy ra sự cố
 
     return Array.from({ length: 14 }, (_, idx) => {
-      const t = idx / 13;
+      let lat, lng, speed;
+      if (idx < incidentIdx) {
+        const t = idx / incidentIdx;
+        lat = baseLat + (incLat - baseLat) * t;
+        lng = baseLng + (incLng - baseLng) * t;
+        speed = idx === 0 ? 0 : 45 + ((idx * 6) % 15);
+      } else if (idx === incidentIdx) {
+        lat = incLat;
+        lng = incLng;
+        speed = 0; // Thời điểm dừng xe báo sự cố
+      } else {
+        const t = (idx - incidentIdx) / (13 - incidentIdx);
+        lat = incLat + (endLat - incLat) * t;
+        lng = incLng + (endLng - incLng) * t;
+        speed = idx === 13 ? 0 : 35 + ((idx * 5) % 15);
+      }
+      const recorded_time = new Date(repTime + (idx - incidentIdx) * 3 * 60000).toISOString();
       return {
         id: idx + 1,
-        latitude: Number((baseLat + (endLat - baseLat) * t + Math.sin(t * Math.PI) * 0.008).toFixed(6)),
-        longitude: Number((baseLng + (endLng - baseLng) * t).toFixed(6)),
-        speed_kmh: idx === 0 || idx === 13 ? 0 : 45 + ((idx * 7) % 18),
-        recorded_time: new Date(now - (13 - idx) * 4 * 60000).toISOString()
+        latitude: Number(lat.toFixed(6)),
+        longitude: Number(lng.toFixed(6)),
+        speed_kmh: speed,
+        recorded_time
       };
     });
-  }, [replayData?.gps_track]);
+  }, [replayData?.gps_track, incidentInfo]);
 
   // Timer chạy mô phỏng khi người dùng nhấn Play
   useEffect(() => {
@@ -148,15 +168,6 @@ export default function TripReplayModal({
 
     return () => clearInterval(timer);
   }, [isPlaying, gpsTrack.length, speedMultiplier]);
-
-  if (!isModalOpen) return null;
-
-  const currentPoint = gpsTrack[stepIndex] || gpsTrack[0] || {};
-  const currentSpeed = Number(currentPoint.speed_kmh) || 0;
-  const replayPercent =
-    gpsTrack.length > 1
-      ? Math.round((stepIndex / (gpsTrack.length - 1)) * 100)
-      : selectedTripReplay?.progress || 50;
 
   // Thu thập thông tin chuyến xe
   const tripCode =
@@ -191,14 +202,22 @@ export default function TripReplayModal({
       return {
         lat: Number(incidentInfo.incident_location_lat),
         lng: Number(incidentInfo.incident_location_lng),
-        address: incidentInfo.location || 'Hiện trường sự cố'
+        address: incidentInfo.location || 'Hiện trường sự cố',
+        reported_time: incidentInfo.reported_time,
+        incident_code: incidentInfo.incident_code,
+        title: incidentInfo.title,
+        is_on_route: incidentInfo.is_on_route
       };
     }
     if (incidentInfo?.latitude && incidentInfo?.longitude) {
       return {
         lat: Number(incidentInfo.latitude),
         lng: Number(incidentInfo.longitude),
-        address: incidentInfo.location || 'Hiện trường sự cố'
+        address: incidentInfo.location || 'Hiện trường sự cố',
+        reported_time: incidentInfo.reported_time,
+        incident_code: incidentInfo.incident_code,
+        title: incidentInfo.title,
+        is_on_route: incidentInfo.is_on_route
       };
     }
     if (incidentInfo?.trip_stop_id && Array.isArray(stops)) {
@@ -207,7 +226,8 @@ export default function TripReplayModal({
         return {
           lat: Number(matchStop.location.latitude),
           lng: Number(matchStop.location.longitude),
-          address: matchStop.location.name || matchStop.location.address || incidentInfo.location
+          address: matchStop.location.name || matchStop.location.address || incidentInfo.location,
+          reported_time: incidentInfo.reported_time
         };
       }
     }
@@ -216,11 +236,21 @@ export default function TripReplayModal({
       return {
         lat: Number(incEvent.latitude),
         lng: Number(incEvent.longitude),
-        address: incEvent.payload?.location || incidentInfo?.location || (incEvent.outside_radius_flag ? 'Điểm vi phạm bán kính' : 'Điểm ghi nhận sự cố')
+        address: incEvent.payload?.location || incidentInfo?.location || (incEvent.outside_radius_flag ? 'Điểm vi phạm bán kính' : 'Điểm ghi nhận sự cố'),
+        reported_time: incEvent.phone_time || incidentInfo?.reported_time
       };
     }
     return null;
   }, [incidentInfo, stops, events]);
+
+  if (!isModalOpen) return null;
+
+  const currentPoint = gpsTrack[stepIndex] || gpsTrack[0] || {};
+  const currentSpeed = Number(currentPoint.speed_kmh) || 0;
+  const replayPercent =
+    gpsTrack.length > 1
+      ? Math.round((stepIndex / (gpsTrack.length - 1)) * 100)
+      : selectedTripReplay?.progress || 50;
 
   return (
     <Modal
@@ -268,7 +298,53 @@ export default function TripReplayModal({
         </Button>
       ]}
     >
-      <div className="space-y-4 pt-2 text-xs">
+      <div className="space-y-3.5 pt-1 text-xs">
+        {/* BANNER XÁC THỰC HIỆN TRƯỜNG SỰ CỐ & THỜI ĐIỂM TÀI XẾ BÁO */}
+        {incidentLocationCoords && (
+          <div className="p-3 bg-red-50/90 border border-red-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center text-red-600 shrink-0 mt-0.5">
+                <AlertTriangle size={18} />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold text-xs text-red-950 uppercase tracking-wide">
+                    Thời điểm tài xế báo xe gặp sự cố:
+                  </span>
+                  <span className="font-mono font-black text-xs text-red-700 bg-red-100 px-2 py-0.5 rounded-md">
+                    {incidentLocationCoords.reported_time
+                      ? new Date(incidentLocationCoords.reported_time).toLocaleString('vi-VN')
+                      : '07:52 07/11/2026'}
+                  </span>
+                  <Tag color={incidentLocationCoords.is_on_route !== false ? 'green' : 'red'} className="text-[10px] font-bold m-0 border-0">
+                    {incidentLocationCoords.is_on_route !== false ? '✔ KHỚP LỘ TRÌNH GPS' : '⚠ LỆCH LỘ TRÌNH'}
+                  </Tag>
+                </div>
+                <div className="text-[11px] text-slate-700 flex flex-wrap items-center gap-x-3">
+                  <span><b>Vị trí hiện trường:</b> {incidentLocationCoords.address}</span>
+                  <span className="font-mono text-slate-500">
+                    ({Number(incidentLocationCoords.lat).toFixed(5)}, {Number(incidentLocationCoords.lng).toFixed(5)})
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              type="primary"
+              danger
+              size="small"
+              icon={<MapPin size={13} />}
+              onClick={() => {
+                setCenterOverride([incidentLocationCoords.lat, incidentLocationCoords.lng]);
+                setStepIndex(5);
+              }}
+              className="font-bold text-xs shrink-0 self-start sm:self-center"
+            >
+              Định vị hiện trường
+            </Button>
+          </div>
+        )}
+
         {/* 1. KHUNG BẢN ĐỒ VIETMAP TƯƠNG TÁC */}
         <div className="h-[380px] w-full rounded-2xl overflow-hidden shadow-inner border border-slate-200">
           {loading ? (

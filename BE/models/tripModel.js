@@ -1,4 +1,5 @@
 const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
 
 const toPlainNumber = (val) => (val !== null && val !== undefined ? Number(val) : null);
 
@@ -160,92 +161,80 @@ const findAllTrips = async () => {
 const findTruckByPlate = async (plate) => {
   if (!plate) return null;
   const cleanPlate = String(plate).split(' ')[0].trim();
-  const truck = await prisma.trucks.findFirst({
-    where: {
-      deleted_at: null,
-      plate_number: { contains: cleanPlate, mode: 'insensitive' }
-    },
-    select: { id: true }
-  });
-  return truck ? toPlainNumber(truck.id) : null;
+  const { data } = await supabase
+    .from('trucks')
+    .select('id')
+    .is('deleted_at', null)
+    .ilike('plate_number', `%${cleanPlate}%`)
+    .limit(1);
+  return data?.[0] ? Number(data[0].id) : null;
 };
 
 const findFirstTruck = async () => {
-  const truck = await prisma.trucks.findFirst({
-    where: {
-      deleted_at: null,
-      status: { in: ['Available', 'AVAILABLE'] }
-    },
-    select: { id: true }
-  });
-  if (truck) return toPlainNumber(truck.id);
-  const anyTruck = await prisma.trucks.findFirst({
-    where: { deleted_at: null },
-    select: { id: true }
-  });
-  return anyTruck ? toPlainNumber(anyTruck.id) : 14;
+  const { data } = await supabase
+    .from('trucks')
+    .select('id')
+    .is('deleted_at', null)
+    .in('status', ['Available', 'AVAILABLE', 'Active'])
+    .limit(1);
+  if (data?.[0]) return Number(data[0].id);
+  const { data: anyTruck } = await supabase
+    .from('trucks')
+    .select('id')
+    .is('deleted_at', null)
+    .limit(1);
+  return anyTruck?.[0] ? Number(anyTruck[0].id) : 14;
 };
 
 const findDriverByName = async (name) => {
   if (!name) return null;
   const cleanName = String(name).split('·')[0].split('-')[0].trim();
-  const profile = await prisma.driver_profiles.findFirst({
-    where: {
-      users: {
-        full_name: { contains: cleanName, mode: 'insensitive' }
-      }
-    },
-    select: { id: true }
-  });
-  return profile ? toPlainNumber(profile.id) : null;
+  const { data } = await supabase
+    .from('driver_profiles')
+    .select('id, users:user_account_id(full_name)')
+    .limit(100);
+  if (data) {
+    const match = data.find(d => (d.users?.full_name || '').toLowerCase().includes(cleanName.toLowerCase()));
+    if (match) return Number(match.id);
+  }
+  return null;
 };
 
 const findFirstDriver = async () => {
-  const driver = await prisma.driver_profiles.findFirst({
-    select: { id: true }
-  });
-  return driver ? toPlainNumber(driver.id) : 6;
+  const { data } = await supabase
+    .from('driver_profiles')
+    .select('id')
+    .limit(1);
+  return data?.[0] ? Number(data[0].id) : 6;
 };
 
 const findOrderByCodeOrId = async (orderIdOrCode) => {
   if (!orderIdOrCode) return null;
   const strVal = String(orderIdOrCode).trim();
-  const where = /^\d+$/.test(strVal)
-    ? { id: BigInt(strVal) }
-    : { order_code: strVal };
-
-  const order = await prisma.orders.findFirst({
-    where,
-    include: {
-      customers: true,
-      order_cargos: true,
-      locations_orders_pickup_location_idTolocations: true,
-      locations_orders_delivery_location_idTolocations: true
-    }
-  });
-  if (!order) return null;
-  return {
-    ...order,
-    id: toPlainNumber(order.id),
-    customer_id: toPlainNumber(order.customer_id),
-    pickup_location_id: toPlainNumber(order.pickup_location_id),
-    delivery_location_id: toPlainNumber(order.delivery_location_id)
-  };
+  const query = supabase
+    .from('orders')
+    .select('*, customers(*), order_cargos(*)');
+  if (/^\d+$/.test(strVal)) {
+    query.eq('id', Number(strVal));
+  } else {
+    query.eq('order_code', strVal);
+  }
+  const { data } = await query.limit(1);
+  if (!data || data.length === 0) return null;
+  return data[0];
 };
 
 const findVendorByNameOrId = async (vendorNameOrId) => {
   if (!vendorNameOrId) return null;
   const strVal = String(vendorNameOrId).trim();
   if (/^\d+$/.test(strVal)) {
-    const v = await prisma.vendors.findUnique({ where: { id: BigInt(strVal) } });
-    if (v) return { ...v, id: toPlainNumber(v.id) };
+    const { data } = await supabase.from('vendors').select('*').eq('id', Number(strVal)).limit(1);
+    if (data?.[0]) return data[0];
   }
-  const v = await prisma.vendors.findFirst({
-    where: { company_name: { contains: strVal, mode: 'insensitive' } }
-  });
-  if (v) return { ...v, id: toPlainNumber(v.id) };
-  const firstVendor = await prisma.vendors.findFirst();
-  return firstVendor ? { ...firstVendor, id: toPlainNumber(firstVendor.id) } : null;
+  const { data } = await supabase.from('vendors').select('*').ilike('company_name', `%${strVal}%`).limit(1);
+  if (data?.[0]) return data[0];
+  const { data: firstVendor } = await supabase.from('vendors').select('*').limit(1);
+  return firstVendor?.[0] || null;
 };
 
 const createTripWithRelations = async ({
@@ -257,151 +246,142 @@ const createTripWithRelations = async ({
   orderId,
   waybillSnapshot = {}
 }) => {
-  const numOrderId = orderId ? BigInt(orderId) : null;
-  const numTruckId = BigInt(truckId);
-  const numDriverId = BigInt(driverId);
-  const numDriver2Id = secondaryDriverId ? BigInt(secondaryDriverId) : null;
+  const numOrderId = orderId ? Number(orderId) : null;
+  const numTruckId = Number(truckId);
+  const numDriverId = Number(driverId);
+  const numDriver2Id = secondaryDriverId ? Number(secondaryDriverId) : null;
 
-  return await prisma.$transaction(async (tx) => {
-    // 1. Tạo Trip
-    const newTrip = await tx.trips.create({
-      data: {
-        trip_code: tripData.trip_code,
-        status: tripData.status || 'Assigned',
-        planned_start: tripData.planned_start ? new Date(tripData.planned_start) : new Date(),
-        planned_distance: tripData.planned_distance ? parseFloat(tripData.planned_distance) : 50.0,
-        planned_duration: tripData.planned_duration ? parseInt(tripData.planned_duration, 10) : 60,
-        created_by: tripData.created_by ? BigInt(tripData.created_by) : BigInt(1)
-      }
-    });
+  // 1. Tạo Trip
+  const { data: newTripArr, error: tripErr } = await supabase
+    .from('trips')
+    .insert([{
+      trip_code: tripData.trip_code,
+      status: tripData.status || 'Assigned',
+      planned_start: tripData.planned_start ? new Date(tripData.planned_start).toISOString() : new Date().toISOString(),
+      planned_distance: tripData.planned_distance ? parseFloat(tripData.planned_distance) : 50.0,
+      planned_duration: tripData.planned_duration ? parseInt(tripData.planned_duration, 10) : 60,
+      created_by: tripData.created_by ? Number(tripData.created_by) : 1
+    }])
+    .select();
 
-    const tripId = newTrip.id;
+  if (tripErr || !newTripArr || newTripArr.length === 0) {
+    console.error('createTrip error in supabase:', tripErr);
+    throw tripErr || new Error('Không thể tạo chuyến xe');
+  }
 
-    // 2. Gán xe (trip_trucks)
-    await tx.trip_trucks.create({
-      data: {
+  const newTrip = newTripArr[0];
+  const tripId = newTrip.id;
+
+  // 2. Gán xe (trip_trucks)
+  await supabase.from('trip_trucks').insert([{
+    trip_id: tripId,
+    truck_id: numTruckId,
+    assignment_type: 'Original'
+  }]);
+
+  // 3. Gán tài xế chính (trip_drivers)
+  await supabase.from('trip_drivers').insert([{
+    trip_id: tripId,
+    driver_id: numDriverId,
+    driver_role: 'Primary',
+    assignment_type: 'Original'
+  }]);
+
+  // 3b. Gán tài xế phụ nếu có
+  if (numDriver2Id && numDriver2Id !== numDriverId) {
+    await supabase.from('trip_drivers').insert([{
+      trip_id: tripId,
+      driver_id: numDriver2Id,
+      driver_role: 'Secondary',
+      assignment_type: 'Original'
+    }]);
+  }
+
+  // 4. Tạo các trạm dừng (trip_stops)
+  if (Array.isArray(stopsData) && stopsData.length > 0) {
+    const stopsToInsert = stopsData.map((s, i) => {
+      let normalizedStopType = 'Drop-off';
+      const rawType = String(s.type || s.stop_type || '').toUpperCase();
+      if (rawType === 'PICKUP') normalizedStopType = 'Pickup';
+      else if (rawType === 'REST') normalizedStopType = 'Rest';
+      else if (rawType === 'TRANSIT') normalizedStopType = 'Transit';
+
+      return {
         trip_id: tripId,
-        truck_id: numTruckId,
-        assignment_type: 'Original'
-      }
+        order_id: s.order_id ? Number(s.order_id) : numOrderId,
+        sequence: i + 1,
+        stop_type: normalizedStopType,
+        location_id: s.location_id ? Number(s.location_id) : 1,
+        planned_arrival: s.planned_arrival ? new Date(s.planned_arrival).toISOString() : null,
+        distance_from_previous_stop: s.distance_from_previous_stop ? parseFloat(s.distance_from_previous_stop) : null,
+        status: s.status || 'Pending'
+      };
     });
+    await supabase.from('trip_stops').insert(stopsToInsert);
+  }
 
-    // 3. Gán tài xế chính (trip_drivers)
-    await tx.trip_drivers.create({
-      data: {
-        trip_id: tripId,
-        driver_id: numDriverId,
-        driver_role: 'Primary',
-        assignment_type: 'Original'
-      }
-    });
-
-    // 3b. Gán tài xế phụ nếu có (2 tài xế)
-    if (numDriver2Id && numDriver2Id !== numDriverId) {
-      await tx.trip_drivers.create({
-        data: {
-          trip_id: tripId,
-          driver_id: numDriver2Id,
-          driver_role: 'Secondary',
-          assignment_type: 'Original'
-        }
-      });
+  // 5. Tạo Vận đơn (Waybill V1)
+  const waybillNum = `WB-${tripData.trip_code.replace(/^TRIP-/i, '')}-V1`.slice(0, 20);
+  await supabase.from('waybills').insert([{
+    trip_id: tripId,
+    waybill_number: waybillNum,
+    issued_by: tripData.created_by ? Number(tripData.created_by) : 1,
+    status: 'Valid',
+    trip_data_snapshot: {
+      version: 1,
+      trip_code: tripData.trip_code,
+      ...waybillSnapshot
     }
+  }]);
 
-    // 4. Tạo các trạm dừng (trip_stops) với stop_type chuẩn Driver PWA ("Pickup", "Drop-off", "Rest")
-    if (Array.isArray(stopsData) && stopsData.length > 0) {
-      for (let i = 0; i < stopsData.length; i++) {
-        const s = stopsData[i];
-        let normalizedStopType = 'Drop-off';
-        const rawType = String(s.type || s.stop_type || '').toUpperCase();
-        if (rawType === 'PICKUP') normalizedStopType = 'Pickup';
-        else if (rawType === 'REST') normalizedStopType = 'Rest';
-        else if (rawType === 'TRANSIT') normalizedStopType = 'Transit';
-        else normalizedStopType = 'Drop-off';
+  // 6. Ghi lịch sử trạng thái chuyến (trip_status_history)
+  await supabase.from('trip_status_history').insert([{
+    trip_id: tripId,
+    status: 'Assigned',
+    changed_by: tripData.created_by ? Number(tripData.created_by) : 1
+  }]);
 
-        await tx.trip_stops.create({
-          data: {
-            trip_id: tripId,
-            order_id: s.order_id ? BigInt(s.order_id) : numOrderId,
-            sequence: i + 1,
-            stop_type: normalizedStopType,
-            location_id: s.location_id ? BigInt(s.location_id) : BigInt(1),
-            planned_arrival: s.planned_arrival ? new Date(s.planned_arrival) : null,
-            distance_from_previous_stop: s.distance_from_previous_stop ? parseFloat(s.distance_from_previous_stop) : null,
-            status: s.status || 'Pending'
-          }
-        });
-      }
-    }
+  // 7. Cập nhật trạng thái xe thành 'On Trip'
+  await supabase.from('trucks').update({
+    status: 'On Trip',
+    updated_at: new Date().toISOString()
+  }).eq('id', numTruckId);
 
-    // 5. Tạo Vận đơn (Waybill V1)
-    const waybillNum = `WB-${tripData.trip_code.replace(/^TRIP-/i, '')}-V1`.slice(0, 20);
-    await tx.waybills.create({
-      data: {
-        trip_id: tripId,
-        waybill_number: waybillNum,
-        issued_by: tripData.created_by ? BigInt(tripData.created_by) : BigInt(1),
-        status: 'Valid',
-        trip_data_snapshot: {
-          version: 1,
-          trip_code: tripData.trip_code,
-          ...waybillSnapshot
-        }
-      }
-    });
+  // 8. Cập nhật đơn hàng thành ASSIGNED & ghi order_status_history
+  if (numOrderId) {
+    await supabase.from('orders').update({
+      status: 'ASSIGNED',
+      updated_at: new Date().toISOString()
+    }).eq('id', numOrderId);
 
-    // 6. Ghi lịch sử trạng thái chuyến (trip_status_history)
-    await tx.trip_status_history.create({
-      data: {
-        trip_id: tripId,
-        status: 'Assigned',
-        changed_by: tripData.created_by ? BigInt(tripData.created_by) : BigInt(1)
-      }
-    });
+    await supabase.from('order_status_history').insert([{
+      order_id: numOrderId,
+      status: 'Assigned',
+      changed_by: tripData.created_by ? Number(tripData.created_by) : 1
+    }]);
+  }
 
-    // 7. Cập nhật trạng thái xe thành 'On Trip'
-    await tx.trucks.update({
-      where: { id: numTruckId },
-      data: { status: 'On Trip', updated_at: new Date() }
-    });
+  // 9. Gửi thông báo cho tài xế
+  try {
+    const { data: driverProfile } = await supabase
+      .from('driver_profiles')
+      .select('user_account_id')
+      .eq('id', numDriverId)
+      .single();
 
-    // 8. Cập nhật đơn hàng thành ASSIGNED & ghi order_status_history
-    if (numOrderId) {
-      await tx.orders.update({
-        where: { id: numOrderId },
-        data: {
-          status: 'ASSIGNED',
-          updated_at: new Date()
-        }
-      });
-
-      await tx.order_status_history.create({
-        data: {
-          order_id: numOrderId,
-          status: 'Assigned',
-          changed_by: tripData.created_by ? BigInt(tripData.created_by) : BigInt(1)
-        }
-      });
-    }
-
-    // 9. Gửi thông báo cho tài xế
-    const driverProfile = await tx.driver_profiles.findUnique({
-      where: { id: numDriverId },
-      select: { user_account_id: true }
-    });
     if (driverProfile?.user_account_id) {
-      await tx.notifications.create({
-        data: {
-          user_account_id: driverProfile.user_account_id,
-          target_type: 'TRIP',
-          target_id: tripId,
-          message: `Bạn vừa được phân công chuyến xe mới ${tripData.trip_code}. Vui lòng kiểm tra lộ trình và nhận chuyến.`
-        }
-      });
+      await supabase.from('notifications').insert([{
+        user_account_id: driverProfile.user_account_id,
+        target_type: 'TRIP',
+        target_id: tripId,
+        message: `Bạn vừa được phân công chuyến xe mới ${tripData.trip_code}. Vui lòng kiểm tra lộ trình và nhận chuyến.`
+      }]);
     }
+  } catch (notifErr) {
+    console.warn('Driver notification warning:', notifErr.message);
+  }
 
-    return mapTrip(newTrip);
-  });
+  return mapTrip(newTrip);
 };
 
 const assignOrderToVendor = async ({
@@ -413,164 +393,119 @@ const assignOrderToVendor = async ({
   vendorVehicleCount,
   userId = 1
 }) => {
-  const numOrderId = BigInt(orderId);
-  const numVendorId = vendorId ? BigInt(vendorId) : null;
-  const now = new Date();
+  const numOrderId = Number(orderId);
+  const now = new Date().toISOString();
 
-  return await prisma.$transaction(async (tx) => {
-    const updatedOrder = await tx.orders.update({
-      where: { id: numOrderId },
-      data: {
-        vendor_id: numVendorId,
-        vendor_tracking_code: vendorTrackingCode ? String(vendorTrackingCode).slice(0, 50) : null,
-        status: 'HANDED_OVER_TO_VENDOR',
-        is_closed: true,
-        updated_at: now
-      }
-    });
+  const { data: updatedOrder } = await supabase
+    .from('orders')
+    .update({
+      vendor_id: vendorId ? Number(vendorId) : null,
+      vendor_tracking_code: vendorTrackingCode ? String(vendorTrackingCode).slice(0, 50) : null,
+      status: 'HANDED_OVER_TO_VENDOR',
+      is_closed: true,
+      updated_at: now
+    })
+    .eq('id', numOrderId)
+    .select();
 
-    await tx.order_status_history.create({
-      data: {
-        order_id: numOrderId,
-        status: 'Handed Over to Vendor',
-        changed_by: userId ? BigInt(userId) : BigInt(1)
-      }
-    });
+  await supabase.from('order_status_history').insert([{
+    order_id: numOrderId,
+    status: 'Handed Over to Vendor',
+    changed_by: userId ? Number(userId) : 1
+  }]);
 
-    await tx.order_notes.create({
-      data: {
-        order_id: numOrderId,
-        created_by: userId ? BigInt(userId) : BigInt(1),
-        content: `[Bàn giao Nhà xe 3PL]: ${vendorName || 'Đối tác'} - Mã vận đơn: ${vendorTrackingCode} - Số xe: ${vendorVehicleCount || 1} - Chi phí: ${vendorCost || 'Theo HĐ'}`
-      }
-    });
+  await supabase.from('order_notes').insert([{
+    order_id: numOrderId,
+    created_by: userId ? Number(userId) : 1,
+    content: `[Bàn giao Nhà xe 3PL]: ${vendorName || 'Đối tác'} - Mã vận đơn: ${vendorTrackingCode} - Số xe: ${vendorVehicleCount || 1} - Chi phí: ${vendorCost || 'Theo HĐ'}`
+  }]);
 
-    return {
-      ...updatedOrder,
-      id: toPlainNumber(updatedOrder.id)
-    };
-  });
+  return updatedOrder?.[0] || { id: numOrderId };
 };
 
 const updateTripStatus = async (id, status, userId = 1) => {
   const strId = String(id).trim();
-  const existingTrip = /^\d+$/.test(strId)
-    ? await prisma.trips.findUnique({
-        where: { id: BigInt(strId) },
-        include: { trip_trucks: true, trip_drivers: true, trip_stops: true }
-      })
-    : await prisma.trips.findFirst({
-        where: { trip_code: strId },
-        include: { trip_trucks: true, trip_drivers: true, trip_stops: true }
-      });
+  let existingTrip = null;
+  if (/^\d+$/.test(strId)) {
+    const { data } = await supabase.from('trips').select('*, trip_trucks(*), trip_drivers(*), trip_stops(*)').eq('id', Number(strId)).limit(1);
+    existingTrip = data?.[0];
+  } else {
+    const { data } = await supabase.from('trips').select('*, trip_trucks(*), trip_drivers(*), trip_stops(*)').eq('trip_code', strId).limit(1);
+    existingTrip = data?.[0];
+  }
 
   if (!existingTrip) {
     throw new Error('Không tìm thấy chuyến xe');
   }
 
   const tripId = existingTrip.id;
-  const now = new Date();
+  const now = new Date().toISOString();
+  const updateData = {
+    status,
+    updated_at: now
+  };
+  if (status === 'Completed' || status === 'COMPLETED') {
+    updateData.actual_distance = existingTrip.planned_distance || 50;
+    updateData.actual_duration = existingTrip.planned_duration || 60;
+  }
 
-  return await prisma.$transaction(async (tx) => {
-    const updated = await tx.trips.update({
-      where: { id: tripId },
-      data: {
-        status,
-        updated_at: now,
-        ...(status === 'Completed' ? {
-          actual_distance: existingTrip.planned_distance || 50,
-          actual_duration: existingTrip.planned_duration || 60
-        } : {})
-      }
-    });
+  const { data: updated, error } = await supabase
+    .from('trips')
+    .update(updateData)
+    .eq('id', tripId)
+    .select();
 
-    await tx.trip_status_history.create({
-      data: {
-        trip_id: tripId,
-        status,
-        changed_by: userId ? BigInt(userId) : BigInt(1)
-      }
-    });
+  if (error) throw error;
 
-    // Nếu Hoàn thành hoặc Hủy chuyến -> giải phóng xe & tài xế, đồng bộ trạng thái đơn hàng
-    if (status === 'Completed' || status === 'Cancelled') {
-      // Giải phóng trip_trucks & đặt lại trucks.status = 'AVAILABLE'
-      const activeTrucks = (existingTrip.trip_trucks || []).filter(tt => !tt.released_time);
-      for (const tt of activeTrucks) {
-        await tx.trip_trucks.update({
-          where: { id: tt.id },
-          data: { released_time: now }
-        });
-        await tx.trucks.update({
-          where: { id: tt.truck_id },
-          data: { status: 'AVAILABLE', updated_at: now }
-        });
-      }
+  await supabase.from('trip_status_history').insert([{
+    trip_id: tripId,
+    status,
+    changed_by: userId ? Number(userId) : 1
+  }]);
 
-      // Giải phóng trip_drivers & đặt lại driver_profiles.status = 'Active'
-      const activeDrivers = (existingTrip.trip_drivers || []).filter(td => !td.released_time);
-      for (const td of activeDrivers) {
-        await tx.trip_drivers.update({
-          where: { id: td.id },
-          data: { released_time: now }
-        });
-        await tx.driver_profiles.update({
-          where: { id: td.driver_id },
-          data: {
-            status: 'Active',
-            ...(status === 'Completed' ? { last_trip_ended_at: now } : {}),
-            updated_at: now
-          }
-        });
-      }
-
-      // Cập nhật các điểm dừng & đơn hàng liên kết
-      const orderIds = [...new Set((existingTrip.trip_stops || []).map(s => s.order_id).filter(Boolean))];
-
-      if (status === 'Completed') {
-        await tx.trip_stops.updateMany({
-          where: { trip_id: tripId },
-          data: { status: 'Done', actual_arrival: now }
-        });
-
-        for (const ordId of orderIds) {
-          await tx.orders.update({
-            where: { id: ordId },
-            data: { status: 'DELIVERED', is_closed: true, updated_at: now }
-          });
-          await tx.order_status_history.create({
-            data: {
-              order_id: ordId,
-              status: 'Delivered',
-              changed_by: userId ? BigInt(userId) : BigInt(1)
-            }
-          });
-        }
-      } else if (status === 'Cancelled') {
-        await tx.trip_stops.updateMany({
-          where: { trip_id: tripId },
-          data: { status: 'Skipped' }
-        });
-
-        // Trả đơn hàng về trạng thái READY_FOR_PLANNING để Điều phối có thể phân bổ xe lại
-        for (const ordId of orderIds) {
-          await tx.orders.update({
-            where: { id: ordId },
-            data: { status: 'READY_FOR_PLANNING', updated_at: now }
-          });
-          await tx.order_status_history.create({
-            data: {
-              order_id: ordId,
-              status: 'Ready for Planning',
-              changed_by: userId ? BigInt(userId) : BigInt(1)
-            }
-          });
-        }
-      }
+  if (status === 'Completed' || status === 'Cancelled') {
+    const activeTrucks = (existingTrip.trip_trucks || []).filter(tt => !tt.released_time);
+    for (const tt of activeTrucks) {
+      await supabase.from('trip_trucks').update({ released_time: now }).eq('id', tt.id);
+      await supabase.from('trucks').update({ status: 'AVAILABLE', updated_at: now }).eq('id', tt.truck_id);
     }
 
-    return mapTrip(updated);
-  });
+    const activeDrivers = (existingTrip.trip_drivers || []).filter(td => !td.released_time);
+    for (const td of activeDrivers) {
+      await supabase.from('trip_drivers').update({ released_time: now }).eq('id', td.id);
+      await supabase.from('driver_profiles').update({
+        status: 'Active',
+        ...(status === 'Completed' ? { last_trip_ended_at: now } : {}),
+        updated_at: now
+      }).eq('id', td.driver_id);
+    }
+
+    const orderIds = [...new Set((existingTrip.trip_stops || []).map(s => s.order_id).filter(Boolean))];
+
+    if (status === 'Completed') {
+      await supabase.from('trip_stops').update({ status: 'Done', actual_arrival: now }).eq('trip_id', tripId);
+      for (const ordId of orderIds) {
+        await supabase.from('orders').update({ status: 'DELIVERED', is_closed: true, updated_at: now }).eq('id', ordId);
+        await supabase.from('order_status_history').insert([{
+          order_id: ordId,
+          status: 'Delivered',
+          changed_by: userId ? Number(userId) : 1
+        }]);
+      }
+    } else if (status === 'Cancelled') {
+      await supabase.from('trip_stops').update({ status: 'Skipped' }).eq('trip_id', tripId);
+      for (const ordId of orderIds) {
+        await supabase.from('orders').update({ status: 'READY_FOR_PLANNING', updated_at: now }).eq('id', ordId);
+        await supabase.from('order_status_history').insert([{
+          order_id: ordId,
+          status: 'Ready for Planning',
+          changed_by: userId ? Number(userId) : 1
+        }]);
+      }
+    }
+  }
+
+  return mapTrip(updated?.[0] || existingTrip);
 };
 
 module.exports = {

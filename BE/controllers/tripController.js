@@ -21,7 +21,7 @@ const getAllTrips = async (req, res) => {
 // 2. Tạo chuyến xe mới & Phân bổ xe / tài xế / nhà xe
 const createTrip = async (req, res) => {
   try {
-    const userId = req.user?.id || 3;
+    const userId = req.user?.id || 1;
     const result = await tripService.createTrip(req.body, userId);
     return res.status(201).json({
       message: 'Lập chuyến và phân bổ xe thành công!',
@@ -38,7 +38,7 @@ const updateTripStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const userId = req.user?.id || 3;
+    const userId = req.user?.id || 1;
     const updated = await tripService.updateTripStatus(id, status, userId);
     return res.json({ message: 'Cập nhật trạng thái chuyến thành công', trip: updated });
   } catch (err) {

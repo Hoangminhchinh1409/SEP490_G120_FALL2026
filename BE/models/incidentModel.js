@@ -81,71 +81,60 @@ const findAll = async () => {
 
 const findTripIdByCode = async (tripCode) => {
   if (!tripCode) return null;
-  const trip = await prisma.trips.findFirst({
-    where: { trip_code: String(tripCode).trim() },
-    select: { id: true }
-  });
-  return trip ? toPlainNumber(trip.id) : null;
+  const { data } = await supabase
+    .from('trips')
+    .select('id')
+    .eq('trip_code', String(tripCode).trim())
+    .limit(1);
+  return data?.[0] ? toPlainNumber(data[0].id) : null;
 };
 
 const findFirstTripId = async () => {
-  const trip = await prisma.trips.findFirst({
-    orderBy: { id: 'desc' },
-    select: { id: true }
-  });
-  return trip ? toPlainNumber(trip.id) : 9;
+  const { data } = await supabase
+    .from('trips')
+    .select('id')
+    .order('id', { ascending: false })
+    .limit(1);
+  return data?.[0] ? toPlainNumber(data[0].id) : 9;
 };
 
 const create = async (incidentData) => {
   const data = {
-    trip_id: BigInt(incidentData.trip_id),
-    trip_stop_id: incidentData.trip_stop_id ? BigInt(incidentData.trip_stop_id) : null,
+    trip_id: Number(incidentData.trip_id),
+    trip_stop_id: incidentData.trip_stop_id ? Number(incidentData.trip_stop_id) : null,
     type: incidentData.type || 'BREAKDOWN',
     description: String(incidentData.description || 'Sự cố phát sinh trên đường vận chuyển').slice(0, 500),
     photos: Array.isArray(incidentData.photos) ? incidentData.photos : [],
     fault: incidentData.fault || null,
     status: incidentData.status || 'Reported',
-    reported_time: incidentData.reported_time ? new Date(incidentData.reported_time) : new Date()
+    reported_time: incidentData.reported_time ? new Date(incidentData.reported_time).toISOString() : new Date().toISOString()
   };
 
-  // Kiểm tra reported_by có phải là driver_profiles.id hợp lệ không (FK incidents_reported_by_fkey)
   if (incidentData.reported_by) {
-    const dp = await prisma.driver_profiles.findFirst({
-      where: {
-        OR: [
-          { id: BigInt(incidentData.reported_by) },
-          { user_account_id: BigInt(incidentData.reported_by) }
-        ]
-      },
-      select: { id: true }
-    });
-    if (dp) {
-      data.reported_by = dp.id;
+    const { data: dp } = await supabase
+      .from('driver_profiles')
+      .select('id')
+      .or(`id.eq.${incidentData.reported_by},user_account_id.eq.${incidentData.reported_by}`)
+      .limit(1);
+    if (dp?.[0]) {
+      data.reported_by = Number(dp[0].id);
     }
   }
 
-  const created = await prisma.incidents.create({
-    data,
-    include: {
-      trips: {
-        select: {
-          id: true,
-          trip_code: true,
-          trip_trucks: { include: { trucks: { select: { id: true, plate_number: true } } } },
-          trip_drivers: {
-            include: {
-              driver_profiles: { include: { users: { select: { full_name: true, phone: true } } } }
-            }
-          }
-        }
-      }
-    }
-  });
-  return mapIncident(created);
+  const { data: createdArr, error } = await supabase
+    .from('incidents')
+    .insert([data])
+    .select(`
+      *,
+      trips(id, trip_code, trip_trucks(id, truck_id, trucks(id, plate_number)), trip_drivers(id, driver_id, driver_profiles(id, users(full_name, phone))))
+    `);
+
+  if (error) throw error;
+  return mapIncident(createdArr?.[0]);
 };
 
 const update = async (id, updateData) => {
-  const numId = BigInt(id);
+  const numId = Number(id);
   const allowedFields = [
     'type',
     'description',
@@ -161,36 +150,33 @@ const update = async (id, updateData) => {
     'updated_at'
   ];
 
-  const data = { updated_at: new Date() };
+  const data = { updated_at: new Date().toISOString() };
   for (const key of allowedFields) {
     if (updateData[key] !== undefined) {
       if ((key === 'escalated_by' || key === 'resolved_by') && updateData[key] !== null) {
-        data[key] = BigInt(updateData[key]);
+        data[key] = Number(updateData[key]);
+      } else if (key.endsWith('_time') && updateData[key] instanceof Date) {
+        data[key] = updateData[key].toISOString();
       } else {
         data[key] = updateData[key];
       }
     }
   }
 
-  const updated = await prisma.incidents.update({
-    where: { id: numId },
-    data,
-    include: {
-      trips: {
-        select: {
-          id: true,
-          trip_code: true,
-          trip_trucks: { include: { trucks: { select: { id: true, plate_number: true } } } },
-          trip_drivers: {
-            include: {
-              driver_profiles: { include: { users: { select: { full_name: true, phone: true } } } }
-            }
-          }
-        }
-      }
-    }
-  });
-  return mapIncident(updated);
+  const { data: updatedArr, error } = await supabase
+    .from('incidents')
+    .update(data)
+    .eq('id', numId)
+    .select(`
+      *,
+      trips(id, trip_code, trip_trucks(id, truck_id, trucks(id, plate_number)), trip_drivers(id, driver_id, driver_profiles(id, users(full_name, phone))))
+    `);
+
+  if (error) {
+    console.error('incidentModel.update error in supabase:', error);
+    throw error;
+  }
+  return mapIncident(updatedArr?.[0] || { id: numId, ...data });
 };
 
 /**
@@ -203,258 +189,210 @@ const dispatchReplacementWithTransaction = async ({
   replacementReason,
   userId = 1
 }) => {
-  const numIncId = BigInt(incidentId);
-  const now = new Date();
+  const numIncId = Number(incidentId);
+  const now = new Date().toISOString();
 
-  return await prisma.$transaction(async (tx) => {
-    const incident = await tx.incidents.findUnique({
-      where: { id: numIncId },
-      include: {
-        trips: {
-          include: {
-            trip_trucks: true,
-            trip_drivers: true,
-            waybills: { orderBy: { id: 'desc' } }
-          }
-        }
-      }
-    });
+  const { data: incArr, error: incErr } = await supabase
+    .from('incidents')
+    .select(`
+      *,
+      trips(
+        id, trip_code,
+        trip_trucks(*),
+        trip_drivers(*),
+        waybills(*)
+      )
+    `)
+    .eq('id', numIncId)
+    .limit(1);
 
-    if (!incident) {
-      throw new Error('Không tìm thấy sự cố cần xử lý');
+  if (incErr || !incArr?.[0]) {
+    throw new Error('Không tìm thấy sự cố cần xử lý');
+  }
+
+  const incident = incArr[0];
+  const trip = incident.trips;
+  const tripId = Number(incident.trip_id);
+  const reasonText = String(replacementReason || 'Điều xe thay thế do sự cố hiện trường').slice(0, 255);
+
+  // 1. Tìm xe thay thế
+  let newTruck = null;
+  if (newTruckPlate) {
+    const cleanPlate = String(newTruckPlate).split(' ')[0].trim();
+    const { data: trucks } = await supabase
+      .from('trucks')
+      .select('id, plate_number')
+      .is('deleted_at', null)
+      .ilike('plate_number', `%${cleanPlate}%`)
+      .limit(1);
+    newTruck = trucks?.[0] || null;
+  }
+  if (!newTruck) {
+    const { data: trucks } = await supabase
+      .from('trucks')
+      .select('id, plate_number')
+      .is('deleted_at', null)
+      .in('status', ['Available', 'AVAILABLE'])
+      .limit(1);
+    newTruck = trucks?.[0] || null;
+  }
+  if (!newTruck) {
+    const { data: trucks } = await supabase
+      .from('trucks')
+      .select('id, plate_number')
+      .is('deleted_at', null)
+      .limit(1);
+    newTruck = trucks?.[0] || null;
+  }
+
+  // 2. Tìm tài xế thay thế
+  let newDriver = null;
+  if (newDriverName) {
+    const cleanDriver = String(newDriverName).split('-')[0].split('·')[0].trim();
+    const { data: drivers } = await supabase
+      .from('driver_profiles')
+      .select('id, users:user_account_id(full_name)')
+      .limit(100);
+    newDriver = drivers?.find(d => (d.users?.full_name || '').toLowerCase().includes(cleanDriver.toLowerCase())) || null;
+  }
+  if (!newDriver) {
+    const { data: drivers } = await supabase
+      .from('driver_profiles')
+      .select('id, users:user_account_id(full_name)')
+      .limit(1);
+    newDriver = drivers?.[0] || null;
+  }
+
+  // 3. Giải phóng xe cũ & gán xe mới
+  if (newTruck && tripId) {
+    const activeTrucks = (trip?.trip_trucks || []).filter(tt => !tt.released_time);
+    for (const tt of activeTrucks) {
+      await supabase
+        .from('trip_trucks')
+        .update({ released_time: now, replacement_reason: reasonText })
+        .eq('id', tt.id);
+
+      await supabase
+        .from('trucks')
+        .update({ status: 'MAINTENANCE', updated_at: now })
+        .eq('id', tt.truck_id);
     }
 
-    const trip = incident.trips;
-    const tripId = incident.trip_id;
-    const reasonText = String(replacementReason || 'Điều xe thay thế do sự cố hiện trường').slice(0, 255);
-
-    // 1. Tìm xe thay thế trong DB
-    let newTruck = null;
-    if (newTruckPlate) {
-      const cleanPlate = String(newTruckPlate).split(' ')[0].trim();
-      newTruck = await tx.trucks.findFirst({
-        where: {
-          deleted_at: null,
-          plate_number: { contains: cleanPlate, mode: 'insensitive' }
-        }
-      });
-    }
-    if (!newTruck) {
-      newTruck = await tx.trucks.findFirst({
-        where: { deleted_at: null, status: { in: ['Available', 'AVAILABLE'] } }
-      });
-    }
-    if (!newTruck) {
-      newTruck = await tx.trucks.findFirst({ where: { deleted_at: null } });
-    }
-
-    // 2. Tìm tài xế thay thế trong DB
-    let newDriver = null;
-    if (newDriverName) {
-      const cleanDriver = String(newDriverName).split('-')[0].split('·')[0].trim();
-      newDriver = await tx.driver_profiles.findFirst({
-        where: {
-          users: { full_name: { contains: cleanDriver, mode: 'insensitive' } }
-        },
-        include: { users: true }
-      });
-    }
-    if (!newDriver) {
-      newDriver = await tx.driver_profiles.findFirst({ include: { users: true } });
-    }
-
-    // 3. Giải phóng xe cũ & gán xe thay thế mới (trip_trucks)
-    if (newTruck && tripId) {
-      const activeTrucks = (trip?.trip_trucks || []).filter(tt => !tt.released_time);
-      for (const tt of activeTrucks) {
-        await tx.trip_trucks.update({
-          where: { id: tt.id },
-          data: {
-            released_time: now,
-            replacement_reason: reasonText
-          }
-        });
-        await tx.trucks.update({
-          where: { id: tt.truck_id },
-          data: { status: 'MAINTENANCE', updated_at: now }
-        });
-      }
-
-      await tx.trip_trucks.create({
-        data: {
-          trip_id: tripId,
-          truck_id: newTruck.id,
-          assignment_type: 'Replacement',
-          incident_id: numIncId,
-          assigned_time: now,
-          replacement_reason: reasonText
-        }
-      });
-
-      await tx.trucks.update({
-        where: { id: newTruck.id },
-        data: { status: 'On Trip', updated_at: now }
-      });
-    }
-
-    // 4. Giải phóng tài xế cũ & gán tài xế thay thế mới (trip_drivers)
-    if (newDriver && tripId) {
-      const activeDrivers = (trip?.trip_drivers || []).filter(td => !td.released_time);
-      for (const td of activeDrivers) {
-        await tx.trip_drivers.update({
-          where: { id: td.id },
-          data: {
-            released_time: now,
-            replacement_reason: reasonText
-          }
-        });
-      }
-
-      await tx.trip_drivers.create({
-        data: {
-          trip_id: tripId,
-          driver_id: newDriver.id,
-          driver_role: 'Primary',
-          assignment_type: 'Replacement',
-          incident_id: numIncId,
-          assigned_time: now,
-          replacement_reason: reasonText
-        }
-      });
-    }
-
-    // 5. Đánh dấu Vận đơn cũ là Superseded và cấp lại Vận đơn phiên bản mới (Waybill V2+)
-    const prevWaybills = trip?.waybills || [];
-    const nextVersion = prevWaybills.length + 1;
-    if (prevWaybills.length > 0) {
-      await tx.waybills.updateMany({
-        where: { trip_id: tripId, status: 'Valid' },
-        data: { status: 'Superseded' }
-      });
-    }
-
-    const tripCodeShort = (trip?.trip_code || `T${tripId}`).replace(/^TRIP-/i, '');
-    const newWaybillNo = `WB-${tripCodeShort}-V${nextVersion}`.slice(0, 20);
-    await tx.waybills.create({
-      data: {
+    await supabase
+      .from('trip_trucks')
+      .insert([{
         trip_id: tripId,
-        waybill_number: newWaybillNo,
-        issued_by: userId ? BigInt(userId) : BigInt(1),
-        status: 'Valid',
-        trip_data_snapshot: {
-          version: nextVersion,
-          trip_code: trip?.trip_code,
-          replaced_due_to_incident: Number(numIncId),
-          new_truck_plate: newTruck?.plate_number || newTruckPlate,
-          new_driver_name: newDriver?.users?.full_name || newDriverName,
-          replacement_reason: reasonText
-        }
-      }
-    });
+        truck_id: Number(newTruck.id),
+        assignment_type: 'Replacement',
+        incident_id: numIncId,
+        assigned_time: now,
+        replacement_reason: reasonText
+      }]);
 
-    // 6. Cập nhật trạng thái sự cố thành RESOLVED
-    const updatedIncident = await tx.incidents.update({
-      where: { id: numIncId },
-      data: {
-        status: 'RESOLVED',
-        resolution_note: `[Điều xe thay thế ${newTruck?.plate_number || newTruckPlate} - Tài xế ${newDriver?.users?.full_name || newDriverName}]: ${reasonText}`.slice(0, 500),
-        resolved_time: now,
-        updated_at: now
-      },
-      include: {
-        trips: {
-          select: {
-            id: true,
-            trip_code: true,
-            trip_trucks: { include: { trucks: { select: { id: true, plate_number: true } } }, orderBy: { id: 'desc' } },
-            trip_drivers: {
-              include: {
-                driver_profiles: { include: { users: { select: { full_name: true, phone: true } } } }
-              },
-              orderBy: { id: 'desc' }
-            }
-          }
-        }
-      }
-    });
+    await supabase
+      .from('trucks')
+      .update({ status: 'On Trip', updated_at: now })
+      .eq('id', Number(newTruck.id));
+  }
 
-    // BUG-ADM-12: Save reason and truck/driver replacement to activity_logs (SRS line 1681, 5317, 7801)
-
-
-    try {
-
-
-      const supabase = require('../config/supabase');
-
-
-      await supabase.from('activity_logs').insert({
-
-
-        actor_id: userId ? Number(userId) : null,
-
-
-        actor_type: 'DISPATCHER',
-
-
-        action: 'REPLACE_TRUCK_DRIVER',
-
-
-        target_type: 'TRIP',
-
-
-        target_id: Number(tripId),
-
-
-        changes: {
-
-
-          incident_id: Number(numIncId),
-
-
-          trip_code: trip?.trip_code,
-
-
-          waybill_version: nextVersion,
-
-
-          waybill_number: newWaybillNo,
-
-
-          new_truck: newTruck?.plate_number || newTruckPlate,
-
-
-          new_driver: newDriver?.users?.full_name || newDriverName
-
-
-        },
-
-
-        reason: reasonText,
-
-
-        created_time: now.toISOString()
-
-
-      });
-
-
-    } catch (logErr) {
-
-
-      console.warn('[IncidentModel] activity_logs replacement error:', logErr.message);
-
-
+  // 4. Giải phóng tài xế cũ & gán tài xế mới
+  if (newDriver && tripId) {
+    const activeDrivers = (trip?.trip_drivers || []).filter(td => !td.released_time);
+    for (const td of activeDrivers) {
+      await supabase
+        .from('trip_drivers')
+        .update({ released_time: now, replacement_reason: reasonText })
+        .eq('id', td.id);
     }
 
+    await supabase
+      .from('trip_drivers')
+      .insert([{
+        trip_id: tripId,
+        driver_id: Number(newDriver.id),
+        driver_role: 'Primary',
+        assignment_type: 'Replacement',
+        incident_id: numIncId,
+        assigned_time: now,
+        replacement_reason: reasonText
+      }]);
+  }
 
-    return {
-      ...mapIncident(updatedIncident),
-      new_waybill_version: nextVersion,
-      new_waybill_number: newWaybillNo,
-      new_truck_plate: newTruck?.plate_number || newTruckPlate,
-      new_driver_name: newDriver?.users?.full_name || newDriverName
-    };
-  });
+  // 5. Cấp lại Vận đơn Waybill mới
+  const prevWaybills = trip?.waybills || [];
+  const nextVersion = prevWaybills.length + 1;
+  if (prevWaybills.length > 0) {
+    await supabase
+      .from('waybills')
+      .update({ status: 'Superseded' })
+      .eq('trip_id', tripId)
+      .eq('status', 'Valid');
+  }
+
+  const tripCodeShort = (trip?.trip_code || `T${tripId}`).replace(/^TRIP-/i, '');
+  const newWaybillNo = `WB-${tripCodeShort}-V${nextVersion}`.slice(0, 20);
+  await supabase
+    .from('waybills')
+    .insert([{
+      trip_id: tripId,
+      waybill_number: newWaybillNo,
+      issued_by: userId ? Number(userId) : 1,
+      status: 'Valid',
+      trip_data_snapshot: {
+        version: nextVersion,
+        trip_code: trip?.trip_code,
+        replaced_due_to_incident: numIncId,
+        new_truck_plate: newTruck?.plate_number || newTruckPlate,
+        new_driver_name: newDriver?.users?.full_name || newDriverName,
+        replacement_reason: reasonText
+      }
+    }]);
+
+  // 6. Cập nhật trạng thái sự cố thành RESOLVED
+  const { data: updatedIncArr } = await supabase
+    .from('incidents')
+    .update({
+      status: 'RESOLVED',
+      resolution_note: `[Điều xe thay thế ${newTruck?.plate_number || newTruckPlate} - Tài xế ${newDriver?.users?.full_name || newDriverName}]: ${reasonText}`.slice(0, 500),
+      resolved_time: now,
+      updated_at: now
+    })
+    .eq('id', numIncId)
+    .select(`
+      *,
+      trips(id, trip_code, trip_trucks(id, truck_id, trucks(id, plate_number)), trip_drivers(id, driver_id, driver_profiles(id, users(full_name, phone))))
+    `);
+
+  // 7. Ghi activity log
+  try {
+    await supabase.from('activity_logs').insert([{
+      actor_id: userId ? Number(userId) : 1,
+      actor_type: 'DISPATCHER',
+      action: 'REPLACE_TRUCK_DRIVER',
+      target_type: 'TRIP',
+      target_id: tripId,
+      changes: {
+        incident_id: numIncId,
+        trip_code: trip?.trip_code,
+        waybill_version: nextVersion,
+        waybill_number: newWaybillNo,
+        new_truck: newTruck?.plate_number || newTruckPlate,
+        new_driver: newDriver?.users?.full_name || newDriverName
+      },
+      reason: reasonText,
+      created_time: now
+    }]);
+  } catch (logErr) {
+    console.warn('[IncidentModel] activity_logs replacement error:', logErr.message);
+  }
+
+  return {
+    ...mapIncident(updatedIncArr?.[0] || incident),
+    new_waybill_version: nextVersion,
+    new_waybill_number: newWaybillNo,
+    new_truck_plate: newTruck?.plate_number || newTruckPlate,
+    new_driver_name: newDriver?.users?.full_name || newDriverName
+  };
 };
 
 module.exports = {

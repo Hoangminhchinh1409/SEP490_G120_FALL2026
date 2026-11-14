@@ -157,14 +157,16 @@ export default function MajorIncidentListPage({ readOnly = false }) {
       align: 'center',
       render: (_, r) => {
         const s = (r.status || '').toUpperCase();
-        if (s === 'DONE' || s === 'RESOLVED') {
+        const isDone = s === 'DONE' || s === 'CLOSED' || Boolean(r.closed_at) || Boolean(r.rejection_reason);
+        const isApproved = !isDone && (s === 'APPROVED' || Number(r.approved_compensation_amount) > 0);
+        if (isDone) {
           return (
-            <Tag color="green" className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
-              Đã hoàn tất (Đóng)
+            <Tag color={r.rejection_reason ? "red" : "green"} className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
+              {r.rejection_reason ? "Đã từ chối" : "Đã hoàn tất (Đóng)"}
             </Tag>
           );
         }
-        if (s === 'APPROVED') {
+        if (isApproved) {
           return (
             <Tag color="cyan" className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
               Đã duyệt · Chờ chi trả
@@ -183,19 +185,28 @@ export default function MajorIncidentListPage({ readOnly = false }) {
       key: 'actions',
       width: 120,
       align: 'center',
-      render: (_, r) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenDetail(r);
-          }}
-          className="px-3.5 py-1.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-secondary text-xs font-bold inline-flex items-center gap-1 cursor-pointer border border-surface-container transition-all shadow-2xs hover:scale-102"
-        >
-          <span className="material-symbols-outlined text-[16px]">visibility</span>
-          <span>{isReadOnly || r.status === 'DONE' || r.status === 'RESOLVED' ? 'Xem lại' : 'Xét duyệt'}</span>
-        </button>
-      )
+      render: (_, r) => {
+        const s = (r.status || '').toUpperCase();
+        const isDone = s === 'DONE' || s === 'CLOSED' || Boolean(r.closed_at) || Boolean(r.rejection_reason);
+        const isApproved = !isDone && (s === 'APPROVED' || Number(r.approved_compensation_amount) > 0);
+        let btnText = 'Xét duyệt';
+        if (isReadOnly || isDone) btnText = 'Xem lại';
+        else if (isApproved) btnText = 'Chi tiền';
+
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenDetail(r);
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-secondary text-xs font-bold inline-flex items-center gap-1 cursor-pointer border border-surface-container transition-all shadow-2xs hover:scale-102"
+          >
+            <span className="material-symbols-outlined text-[16px]">visibility</span>
+            <span>{btnText}</span>
+          </button>
+        );
+      }
     }
   ];
 

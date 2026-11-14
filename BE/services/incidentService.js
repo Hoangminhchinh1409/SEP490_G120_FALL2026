@@ -65,7 +65,7 @@ const getAllIncidents = async () => {
   return (incidents || []).map(inc => formatIncident(inc));
 };
 
-const createIncident = async (payload, userId = 3) => {
+const createIncident = async (payload, userId = 1) => {
   let realTripId = parseInt(payload.trip_id, 10) || null;
   if (typeof payload.trip_id === 'string' && payload.trip_id.toUpperCase().includes('TRIP-')) {
     const foundId = await incidentModel.findTripIdByCode(payload.trip_id);
@@ -89,7 +89,7 @@ const createIncident = async (payload, userId = 3) => {
   return formatIncident(created);
 };
 
-const updateIncidentStatus = async (id, payload = {}, userId = 3) => {
+const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
   const realId = parseInt(String(id).replace(/^INC-/i, ''), 10) || parseInt(id, 10);
   const rawAction = String(payload.status || payload.action || 'RESOLVED').toUpperCase();
 

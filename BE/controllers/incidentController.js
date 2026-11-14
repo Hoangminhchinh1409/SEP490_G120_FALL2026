@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const incidentService = require('../services/incidentService');
+const { parseOrderMeta } = require('../services/orderHelperService');
 
 /**
  * Incident Controller — Nhóm chức năng Quản lý Sự cố & Yêu cầu Bồi thường
@@ -22,7 +23,7 @@ const getAllIncidents = async (req, res) => {
 
 const createIncident = async (req, res) => {
   try {
-    const userId = req.user?.id || 3;
+    const userId = req.user?.id || 1;
     const newInc = await incidentService.createIncident(req.body, userId);
     return res.status(201).json({ message: 'Đã báo cáo sự cố thành công', incident: newInc });
   } catch (err) {
@@ -34,7 +35,7 @@ const createIncident = async (req, res) => {
 const updateIncidentStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await incidentService.updateIncidentStatus(id, req.body, req.user?.id || 3);
+    const updated = await incidentService.updateIncidentStatus(id, req.body, req.user?.id || 1);
     return res.json({ message: 'Đã cập nhật sự cố thành công', incident: updated });
   } catch (err) {
     console.error('updateIncidentStatus error:', err);
@@ -89,8 +90,10 @@ const getIncidents = async (req, res) => {
       const s = status.toUpperCase();
       if (s === 'ESCALATED') {
         query = query.in('status', ['ESCALATED', 'Escalated']);
+      } else if (s === 'APPROVED') {
+        query = query.in('status', ['APPROVED', 'Approved']);
       } else if (s === 'RESOLVED') {
-        query = query.in('status', ['RESOLVED', 'Resolved']);
+        query = query.in('status', ['RESOLVED', 'Resolved', 'DONE', 'Done', 'CLOSED', 'Closed']);
       } else if (s === 'REPORTED') {
         query = query.in('status', ['REPORTED', 'Reported']);
       } else {
@@ -169,7 +172,10 @@ const getIncidents = async (req, res) => {
       if (rawStatus === 'ESCALATED') {
         normStatus = 'ESCALATED';
         statusDisplay = 'Chờ Quản lý xử lý';
-      } else if (rawStatus === 'RESOLVED' || rawStatus === 'CLOSED') {
+      } else if (rawStatus === 'APPROVED') {
+        normStatus = 'APPROVED';
+        statusDisplay = 'Đã duyệt · Chờ chi trả';
+      } else if (rawStatus === 'RESOLVED' || rawStatus === 'CLOSED' || rawStatus === 'DONE') {
         normStatus = 'RESOLVED';
         statusDisplay = 'Đã xử lý';
       }
@@ -219,12 +225,14 @@ const getIncidents = async (req, res) => {
 
     const pendingCount = formatted.filter((x) => x.status === 'ESCALATED' || x.status === 'REPORTED').length;
     const resolvedCount = formatted.filter((x) => x.status === 'RESOLVED').length;
+    const approvedCount = formatted.filter((x) => x.status === 'APPROVED').length;
 
     return res.json({
       incidents: formatted,
       summary: {
         total: formatted.length,
         escalated: formatted.filter((x) => x.status === 'ESCALATED').length,
+        approved: approvedCount,
         pending: pendingCount,
         resolved: resolvedCount
       }
@@ -276,6 +284,12 @@ const getIncidentById = async (req, res) => {
             order_type, 
             agreed_price, 
             contract_id,
+            signed_order_contract_file,
+            ai_input_text,
+            pickup_address,
+            delivery_address,
+            declared_value,
+            order_notes(*),
             customer:customers(id, company_name, phone, email, tax_code),
             order_cargos(cargo_name, package_count, weight_kg, volume_cbm)
           )
@@ -285,6 +299,21 @@ const getIncidentById = async (req, res) => {
 
       if (stops && stops.length > 0 && stops[0].order) {
         orderInfo = stops[0].order;
+        try {
+          const meta = parseOrderMeta(orderInfo);
+          orderInfo.order_contract = {
+            contract_file: meta.contract_file || orderInfo.signed_order_contract_file || null,
+            contract_file_data: meta.contract_file_data || null,
+            contract_details: meta.contract_details || {},
+            contract_custom_terms: meta.contract_custom_terms || [],
+            contract_uploaded_at: meta.contract_uploaded_at || null,
+            signed_contract: meta.web_workflow?.signed_contract || null,
+            contract_hardcopy_received: Boolean(meta.contract_hardcopy_received),
+            contract_postal_code: meta.contract_postal_code || null
+          };
+        } catch (mErr) {
+          console.warn('parseOrderMeta for incident order warning:', mErr.message);
+        }
       }
     }
 
@@ -376,15 +405,27 @@ const getIncidentById = async (req, res) => {
       ];
     }
 
+    const claim = Array.isArray(incident.compensation_claims)
+      ? incident.compensation_claims[0]
+      : incident.compensation_claims;
+
     const proposedAmount = Number(
       incident.proposed_compensation_amount ||
-      incident.compensation_claims?.[0]?.amount ||
+      claim?.amount ||
       15000000
     );
     const approvedAmount = Number(
       incident.approved_compensation_amount ||
+      (claim?.status === 'APPROVED' || claim?.status === 'PAID' ? claim.amount : 0) ||
       (incident.status === 'APPROVED' ? proposedAmount : 0)
     );
+
+    const isRejected = claim?.status === 'REJECTED' || (incident.resolution_note && incident.resolution_note.includes('Từ chối bồi thường'));
+    const rejectionReason = isRejected ? (claim?.review_comment || incident.resolution_note || 'Không đủ điều kiện theo hợp đồng vận chuyển') : null;
+
+    const paymentProofUrl = claim?.evidence || incident.payment_proof_url || null;
+    const isDone = incident.status === 'DONE' || isRejected || Boolean(paymentProofUrl);
+    const closedAt = isDone ? (claim?.updated_at || incident.resolved_time || incident.updated_at) : null;
 
     const enriched = {
       ...incident,
@@ -417,11 +458,11 @@ const getIncidentById = async (req, res) => {
       contract_clause_ref: incident.contract_clause_ref || 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)',
       proposed_compensation_amount: proposedAmount,
       approved_compensation_amount: approvedAmount,
-      rejection_reason: incident.rejection_reason || null,
+      rejection_reason: rejectionReason,
       contact_hotline: incident.contact_hotline || '1900 1234',
-      payment_proof_url: incident.payment_proof_url || null,
-      closed_by: incident.closed_by || null,
-      closed_at: incident.closed_at || null
+      payment_proof_url: paymentProofUrl,
+      closed_by: incident.resolved_by || null,
+      closed_at: closedAt
     };
 
     return res.json({ incident: enriched });
@@ -559,11 +600,15 @@ const decideIncidentCompensation = async (req, res) => {
     } = req.body;
     const managerId = req.user?.id || 1;
 
+    const isRequestMoreInfo = action === 'REQUEST_MORE_INFO';
     const isApprove = action === 'APPROVE' || action === 'Approve';
     // Nếu từ chối: Đơn phương dứt điểm theo căn cứ hợp đồng -> đóng ngay (DONE)
-    const targetStatus = isApprove ? 'APPROVED' : 'DONE';
+    // Nếu yêu cầu bổ sung hồ sơ: Chuyển IN_PROGRESS để ĐPV/Tài xế/Khách hàng tải thêm ảnh/chứng từ
+    let targetStatus = 'DONE';
+    if (isApprove) targetStatus = 'APPROVED';
+    if (isRequestMoreInfo) targetStatus = 'IN_PROGRESS';
 
-    if (!isApprove) {
+    if (!isApprove && !isRequestMoreInfo) {
       if (!rejection_reason || !rejection_reason.trim()) {
         return res.status(400).json({ message: 'Bắt buộc nhập lý do chi tiết khi từ chối bồi thường.' });
       }
@@ -573,26 +618,22 @@ const decideIncidentCompensation = async (req, res) => {
     }
 
     const now = new Date().toISOString();
+    const resolutionNoteFull = resolution_note || (
+      isApprove
+        ? `Quản lý đã phê duyệt bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ theo ${contract_clause_ref || 'Hợp đồng vận tải'}. (Hư hỏng: ${damage_percentage || 0}%, xử lý: ${goods_handling_method || 'Khách giữ'})`
+        : isRequestMoreInfo
+        ? 'Quản lý yêu cầu bổ sung thêm hồ sơ / biên bản giám định hiện trường.'
+        : `Từ chối bồi thường theo ${contract_clause_ref || 'Hợp đồng'}. Lý do: ${rejection_reason}`
+    );
+
     const updatePayload = {
-      fault: fault || (isApprove ? 'COMPANY' : 'CUSTOMER'),
-      resolution_note: resolution_note || (isApprove ? 'Quản lý đã phê duyệt bồi thường theo hợp đồng.' : `Từ chối bồi thường theo ${contract_clause_ref}. Lý do: ${rejection_reason}`),
+      fault: fault || (isApprove ? 'Công ty' : 'Khách hàng'),
+      resolution_note: resolutionNoteFull,
       status: targetStatus,
-      damage_percentage: damage_percentage ? Number(damage_percentage) : null,
-      goods_handling_method: goods_handling_method || null,
-      contract_clause_ref: contract_clause_ref || null,
-      approved_compensation_amount: isApprove ? (Number(approved_amount) || 0) : 0,
-      rejection_reason: !isApprove ? rejection_reason.trim() : null,
-      contact_hotline: contact_hotline || '1900 1234',
+      resolved_by: managerId,
+      resolved_time: now,
       updated_at: now
     };
-
-    if (!isApprove) {
-      updatePayload.closed_by = managerId;
-      updatePayload.closed_at = now;
-    } else {
-      updatePayload.resolved_by = managerId;
-      updatePayload.resolved_time = now;
-    }
 
     const { data: updatedInc, error: incErr } = await supabase
       .from('incidents')
@@ -605,29 +646,62 @@ const decideIncidentCompensation = async (req, res) => {
       console.warn('Cập nhật incidents qua supabase warning:', incErr.message);
     }
 
-    // Đồng bộ sang bảng compensation_claims nếu có
-    const claimStatus = isApprove ? 'APPROVED' : 'REJECTED';
-    await supabase
+    // Đồng bộ hoặc tạo mới bản ghi trong bảng compensation_claims
+    const claimStatus = isApprove ? 'APPROVED' : isRequestMoreInfo ? 'PENDING' : 'REJECTED';
+    const { data: existingClaims } = await supabase
       .from('compensation_claims')
-      .update({
-        status: claimStatus,
-        amount: isApprove ? (Number(approved_amount) || 0) : 0,
-        reviewed_by: managerId,
-        reviewed_time: now,
-        review_comment: isApprove ? resolution_note : rejection_reason,
-        updated_at: now
-      })
+      .select('id')
       .eq('incident_id', id);
+
+    if (existingClaims && existingClaims.length > 0) {
+      await supabase
+        .from('compensation_claims')
+        .update({
+          status: claimStatus,
+          amount: isApprove ? (Number(approved_amount) || 0) : 0,
+          reviewed_by: managerId,
+          reviewed_time: now,
+          review_comment: resolutionNoteFull,
+          updated_at: now
+        })
+        .eq('incident_id', id);
+    } else {
+      // Tìm order_id của chuyến xe
+      let orderId = 37;
+      if (updatedInc?.trip_id) {
+        const { data: stops } = await supabase
+          .from('trip_stops')
+          .select('order_id')
+          .eq('trip_id', updatedInc.trip_id)
+          .limit(1);
+        if (stops?.[0]?.order_id) orderId = stops[0].order_id;
+      }
+
+      await supabase
+        .from('compensation_claims')
+        .insert({
+          incident_id: id,
+          order_id: orderId,
+          source: 'INCIDENT',
+          amount: isApprove ? (Number(approved_amount) || 0) : 0,
+          reason: resolutionNoteFull,
+          status: claimStatus,
+          created_by: managerId,
+          reviewed_by: managerId,
+          reviewed_time: now,
+          review_comment: resolutionNoteFull
+        });
+    }
 
     try {
       await supabase.from('activity_logs').insert({
         actor_id: managerId,
         actor_type: 'MANAGER',
-        action: isApprove ? 'APPROVE_INCIDENT_COMPENSATION' : 'REJECT_INCIDENT_COMPENSATION',
+        action: isApprove ? 'APPROVE_INCIDENT_COMPENSATION' : isRequestMoreInfo ? 'REQUEST_MORE_INFO_INCIDENT' : 'REJECT_INCIDENT_COMPENSATION',
         target_type: 'INCIDENT',
         target_id: String(id),
         changes: updatePayload,
-        reason: isApprove ? resolution_note : rejection_reason,
+        reason: isApprove ? resolution_note : isRequestMoreInfo ? resolution_note : rejection_reason,
         created_time: now
       });
     } catch (logErr) {
@@ -636,6 +710,8 @@ const decideIncidentCompensation = async (req, res) => {
 
     const msg = isApprove
       ? `Đã phê duyệt mức bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ (Trạng thái: Chờ hoàn tất chi trả).`
+      : isRequestMoreInfo
+      ? 'Đã gửi yêu cầu bổ sung hồ sơ tới Điều phối viên & Khách hàng thành công.'
       : 'Đã từ chối bồi thường và hoàn tất đóng hồ sơ sự cố thành công (DONE).';
 
     return res.json({
@@ -664,10 +740,9 @@ const closeIncidentCase = async (req, res) => {
     const now = new Date().toISOString();
     const updatePayload = {
       status: 'DONE',
-      payment_proof_url: payment_proof_url.trim(),
-      resolution_note: close_note || 'Đã hoàn tất chi trả bồi thường và lưu chứng từ chuyển khoản.',
-      closed_by: managerId,
-      closed_at: now,
+      resolution_note: close_note || `Đã hoàn tất chi trả bồi thường và lưu chứng từ chuyển khoản UNC: ${payment_proof_url.trim()}`,
+      resolved_by: managerId,
+      resolved_time: now,
       updated_at: now
     };
 
@@ -687,6 +762,8 @@ const closeIncidentCase = async (req, res) => {
       .from('compensation_claims')
       .update({
         status: 'PAID',
+        evidence: payment_proof_url.trim(),
+        review_comment: close_note || 'Đã hoàn tất chi trả bồi thường cho khách hàng.',
         updated_at: now
       })
       .eq('incident_id', id);

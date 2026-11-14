@@ -78,6 +78,15 @@ export default function InnerReplayMap({
       .map((p) => [Number(p.latitude), Number(p.longitude)]);
   }, [gpsTrack]);
 
+  // Danh sách tọa độ bao gồm cả điểm sự cố để đảm bảo khung nhìn bản đồ bao trùm toàn bộ
+  const boundsPositions = useMemo(() => {
+    const list = [...fullPolyline];
+    if (incidentLocation?.lat && incidentLocation?.lng && !isNaN(Number(incidentLocation.lat)) && !isNaN(Number(incidentLocation.lng))) {
+      list.push([Number(incidentLocation.lat), Number(incidentLocation.lng)]);
+    }
+    return list;
+  }, [fullPolyline, incidentLocation]);
+
   // Quãng đường đã đi qua tính đến mốc thời gian tua hiện tại
   const traveledPolyline = useMemo(() => {
     if (!Array.isArray(gpsTrack) || gpsTrack.length === 0) return [];
@@ -196,7 +205,7 @@ export default function InnerReplayMap({
         />
 
         <MapReplayController
-          boundsPositions={fullPolyline}
+          boundsPositions={boundsPositions}
           centerOverride={centerOverride}
           currentPoint={currentPoint}
         />
@@ -286,15 +295,40 @@ export default function InnerReplayMap({
           })}
 
         {/* 5. Vị trí Sự cố cụ thể truyền từ màn hình sự cố lớn của Manager */}
-        {incidentLocation?.lat && incidentLocation?.lng && (
-          <Marker position={[Number(incidentLocation.lat), Number(incidentLocation.lng)]} icon={incidentIcon}>
+        {incidentLocation?.lat && incidentLocation?.lng && !isNaN(Number(incidentLocation.lat)) && !isNaN(Number(incidentLocation.lng)) && (
+          <Marker position={[Number(incidentLocation.lat), Number(incidentLocation.lng)]} icon={incidentIcon} zIndexOffset={1200}>
             <Tooltip permanent direction="top" offset={[0, -18]}>
-              <span className="text-[10px] font-bold text-red-600">Hiện trường sự cố</span>
+              <span className="text-[10px] font-bold text-red-600 bg-white/90 px-1.5 py-0.5 rounded shadow-xs border border-red-200">
+                ⚠️ Hiện trường sự cố {incidentLocation.reported_time ? `(${new Date(incidentLocation.reported_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})` : ''}
+              </span>
             </Tooltip>
             <Popup>
-              <div className="text-xs">
-                <b className="text-red-600">Tọa độ hiện trường sự cố:</b>
-                <div className="mt-1">{incidentLocation.address || `${incidentLocation.lat}, ${incidentLocation.lng}`}</div>
+              <div className="text-xs p-1 space-y-1.5 font-sans min-w-[200px]">
+                <div className="flex items-center gap-1.5 font-bold text-red-600 border-b border-red-100 pb-1">
+                  <span>⚠️ HIỆN TRƯỜNG SỰ CỐ</span>
+                  {incidentLocation.incident_code && (
+                    <span className="font-mono text-[11px] bg-red-100 px-1 rounded text-red-800">
+                      {incidentLocation.incident_code}
+                    </span>
+                  )}
+                </div>
+                {incidentLocation.title && (
+                  <div className="font-bold text-slate-800 text-[11px]">{incidentLocation.title}</div>
+                )}
+                <div className="text-slate-600 text-[11px]">
+                  <b>Địa điểm:</b> {incidentLocation.address || `${incidentLocation.lat}, ${incidentLocation.lng}`}
+                </div>
+                {incidentLocation.reported_time && (
+                  <div className="text-slate-700 bg-red-50 p-1.5 rounded-lg border border-red-200 text-[11px]">
+                    <div className="text-[10px] text-red-600 font-semibold uppercase">Thời điểm tài xế báo:</div>
+                    <div className="font-mono font-bold text-red-800">
+                      {new Date(incidentLocation.reported_time).toLocaleString('vi-VN')}
+                    </div>
+                  </div>
+                )}
+                <div className="text-[10px] text-slate-400 font-mono">
+                  Tọa độ GPS: {Number(incidentLocation.lat).toFixed(5)}, {Number(incidentLocation.lng).toFixed(5)}
+                </div>
               </div>
             </Popup>
           </Marker>
