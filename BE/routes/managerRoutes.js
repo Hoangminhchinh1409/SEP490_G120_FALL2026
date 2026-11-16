@@ -11,11 +11,11 @@ const blogController = require('../controllers/blogController');
 
 const router = express.Router();
 
-const MANAGER_CROSS_ROLE_PERMS = ['FLEET_MANAGE', 'DRIVER_SHIFT_MANAGE', 'VENDOR_MANAGE', 'INCIDENT_MANAGE', 'NEWS_MANAGE'];
+const MANAGER_CROSS_ROLE_PERMS = ['FLEET_MANAGE', 'DRIVER_SHIFT_MANAGE', 'VENDOR_MANAGE', 'INCIDENT_MANAGE', 'NEWS_MANAGE', 'TRIP_MONITOR', 'ORDER_ASSIGN'];
 
-// Tất cả các route trong file này đều yêu cầu đăng nhập và có quyền MANAGER, ADMIN hoặc các role được cấp quyền xem chéo
+// Tất cả các route trong file này đều yêu cầu đăng nhập và có quyền MANAGER, ADMIN hoặc các role được cấp quyền xem chéo (hoặc Dispatcher)
 router.use(requireAuth);
-router.use(requireRole(['MANAGER', 'ADMINISTRATOR', 'ADMIN', 1, 2], MANAGER_CROSS_ROLE_PERMS));
+router.use(requireRole(['MANAGER', 'ADMINISTRATOR', 'ADMIN', 1, 2, 'DISPATCHER', 3], MANAGER_CROSS_ROLE_PERMS));
 
 const requireManagerOrAdmin = requireRole(['MANAGER', 'ADMINISTRATOR', 'ADMIN', 1, 2]);
 

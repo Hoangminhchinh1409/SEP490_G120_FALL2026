@@ -8,6 +8,7 @@ const {
   assignTrip,
   cancelOrder,
   closeOrder,
+  splitOrder,
   getOrderByToken,
   customerAgreeOrderPrice,
   customerNegotiateOrder,
@@ -89,6 +90,9 @@ router.post('/:id/assign', ...requireDispatcherOrAdmin, assignTrip);
 
 // 12. Hủy đơn hàng (chuyển sang CANCELLED)
 router.post('/:id/cancel', ...requireDispatcherOrAdmin, cancelOrder);
+
+// 13b. Tách đơn hàng lớn thành nhiều đơn con cho các xe nhỏ
+router.post('/:id/split', ...requireDispatcherOrAdmin, splitOrder);
 
 // 13. Đóng đơn hàng (chuyển sang CLOSED)
 router.post('/:id/close', ...requireDispatcherOrAdmin, closeOrder);

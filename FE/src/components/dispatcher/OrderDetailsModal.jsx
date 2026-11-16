@@ -9,6 +9,7 @@ import {
 import CancelOrderModal from './CancelOrderModal';
 import DocumentAssistantDrawer from './DocumentAssistantDrawer';
 import LoadPlan3DModal from './LoadPlan3DModal';
+import SplitOrderModal from './SplitOrderModal';
 import { 
   SPECIALIZED_CARGO_CATEGORIES, 
   getRecommendedDocsByCargo,
@@ -66,6 +67,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
 
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [savingPrice, setSavingPrice] = useState(false);
   const [confirmingDocs, setConfirmingDocs] = useState(false);
   const [scanningCustoms, setScanningCustoms] = useState(false);
@@ -819,6 +821,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
             setSelected3DVehicleType(vType || proposedVehicleType);
             setIs3DModalOpen(true);
           }}
+          onOpenSplitModal={() => setSplitModalOpen(true)}
         />
       )
     }
@@ -1081,6 +1084,19 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
         order={order}
         onCancel={() => setCancelModalOpen(false)}
         onConfirmCancel={handleExecuteCancel}
+      />
+
+      {/* Modal Tách đơn sang nhiều xe nhỏ theo chuẩn BR-29 */}
+      <SplitOrderModal
+        open={splitModalOpen}
+        order={order}
+        onCancel={() => setSplitModalOpen(false)}
+        onSuccess={(result) => {
+          onCancel?.();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('nexlog_orders_updated'));
+          }
+        }}
       />
 
       <DocumentAssistantDrawer

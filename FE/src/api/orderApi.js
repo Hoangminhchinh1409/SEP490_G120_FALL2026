@@ -253,6 +253,20 @@ export const orderApi = {
     }
   },
 
+  // 17. Tách đơn hàng lớn sang nhiều xe nhỏ
+  splitOrder: async (orderId, splitData) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/${orderId}/split`, {
+        method: 'POST',
+        body: JSON.stringify(splitData)
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.splitOrder Error:', error);
+      throw error;
+    }
+  },
+
   // 16. Xuất hóa đơn GTGT điện tử bàn giao cho Kế toán thu nợ
   issueInvoice: async (orderId, invoiceData) => {
     try {

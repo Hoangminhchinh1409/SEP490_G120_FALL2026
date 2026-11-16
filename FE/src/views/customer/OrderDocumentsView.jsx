@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
 import { getRecommendedDocsByCargo } from '../../../src/data/dispatcherPresets';
+import { CheckCircle2 } from 'lucide-react';
 
 export default function OrderDocumentsView() {
   const params = useParams();
