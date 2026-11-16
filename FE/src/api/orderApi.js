@@ -238,11 +238,13 @@ export const orderApi = {
   },
 
   // 15. Điều phối viên: Lưu danh mục chứng từ vào hồ sơ đơn hàng
-  uploadOrderDocuments: async (orderId, documents) => {
+  uploadOrderDocuments: async (orderId, documents, stage = null) => {
     try {
+      const payload = { documents };
+      if (stage) payload.stage = stage;
       const data = await fetchWithoutAuth(`/orders/${orderId}/documents`, {
         method: 'POST',
-        body: JSON.stringify({ documents })
+        body: JSON.stringify(payload)
       });
       return data;
     } catch (error) {
@@ -262,6 +264,16 @@ export const orderApi = {
     } catch (error) {
       console.error('orderApi.issueInvoice Error:', error);
       throw error;
+    }
+  },
+
+  // 17. Khách hàng: Lấy danh sách điểm kho bãi công khai (Public)
+  getPublicLocations: async () => {
+    try {
+      const data = await fetchWithoutAuth('/orders/public-locations');
+      return data.locations || [];
+    } catch (error) {
+      return [];
     }
   }
 };

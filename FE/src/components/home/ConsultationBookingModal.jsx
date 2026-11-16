@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect } from 'react';
 import { Modal, Form, Input, Checkbox, Button, message, Result } from 'antd';
 import { Send, User, ShieldCheck } from 'lucide-react';
 import { orderApi } from '../../api/orderApi';
-import { dispatcherApi } from '../../api/dispatcherApi';
 import { 
   calculateRouteEstimate, 
   calculateAlsPricing, 
@@ -32,13 +31,13 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
   const [pickupCoords, setPickupCoords] = useState({ lat: 21.2187, lng: 105.8042 });
   const [deliveryCoords, setDeliveryCoords] = useState(null);
 
-  // Tải danh sách điểm giao nhận từ database
+  // Tải danh sách điểm giao nhận công khai (không cần đăng nhập tài khoản nhân viên)
   useEffect(() => {
     let active = true;
     const fetchLocations = async () => {
       try {
-        const locs = await dispatcherApi.getLocations();
-        if (active && Array.isArray(locs)) {
+        const locs = await orderApi.getPublicLocations();
+        if (active && Array.isArray(locs) && locs.length > 0) {
           setDbLocations(locs);
           const firstAls = locs.find(l => l.is_als_hub || l.raw_id === 1 || l.id === 1);
           if (firstAls) {
@@ -50,7 +49,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
           }
         }
       } catch (err) {
-        console.error('Không tải được danh sách điểm giao nhận:', err);
+        console.warn('Không tải được danh sách điểm giao nhận công khai:', err);
       }
     };
     if (open) {
