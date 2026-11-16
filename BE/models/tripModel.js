@@ -361,26 +361,6 @@ const createTripWithRelations = async ({
     }]);
   }
 
-  // 9. Gửi thông báo cho tài xế
-  try {
-    const { data: driverProfile } = await supabase
-      .from('driver_profiles')
-      .select('user_account_id')
-      .eq('id', numDriverId)
-      .single();
-
-    if (driverProfile?.user_account_id) {
-      await supabase.from('notifications').insert([{
-        user_account_id: driverProfile.user_account_id,
-        target_type: 'TRIP',
-        target_id: tripId,
-        message: `Bạn vừa được phân công chuyến xe mới ${tripData.trip_code}. Vui lòng kiểm tra lộ trình và nhận chuyến.`
-      }]);
-    }
-  } catch (notifErr) {
-    console.warn('Driver notification warning:', notifErr.message);
-  }
-
   return mapTrip(newTrip);
 };
 

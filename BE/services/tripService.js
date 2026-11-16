@@ -404,22 +404,25 @@ const createTrip = async (payload, userId = 1) => {
   });
 
   // 7. Thông báo cho tài xế về chuyến xe mới (UC-14, UC-29, MSG17)
-  if (driverId && allocation_type !== 'VENDOR') {
+  const targetDriverIds = [driverId, secondaryDriverId].filter(Boolean);
+  if (targetDriverIds.length > 0 && allocation_type !== 'VENDOR') {
     try {
       const driverModel = require('../models/driverModel');
       const supabase = require('../config/supabase');
-      const { data: driverProf } = await supabase
-        .from('driver_profiles')
-        .select('user_account_id')
-        .eq('id', driverId)
-        .single();
-      if (driverProf?.user_account_id) {
-        await driverModel.createSystemNotification({
-          userAccountId: driverProf.user_account_id,
-          targetType: 'TRIP',
-          targetId: tripRecord?.id,
-          message: `Bạn được điều phối chuyến xe mới ${tripCode} (${cleanPlate || 'Xe tải'}). Hãy kiểm tra lộ trình và sẵn sàng nhận chuyến! (MSG17)`
-        });
+      for (const dId of targetDriverIds) {
+        const { data: driverProf } = await supabase
+          .from('driver_profiles')
+          .select('user_account_id')
+          .eq('id', dId)
+          .single();
+        if (driverProf?.user_account_id) {
+          await driverModel.createSystemNotification({
+            userAccountId: driverProf.user_account_id,
+            targetType: 'TRIP',
+            targetId: tripRecord?.id,
+            message: `Bạn được điều phối chuyến xe mới ${tripCode} (${cleanPlate || 'Xe tải'}). Hãy kiểm tra lộ trình và sẵn sàng nhận chuyến! (MSG17)`
+          });
+        }
       }
     } catch (notifErr) {
       console.warn('Trip assignment notification warning:', notifErr.message);

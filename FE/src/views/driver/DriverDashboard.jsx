@@ -47,7 +47,9 @@ import {
 // Helper nhận diện điểm lấy hàng (Pickup) hay điểm giao hàng (Drop-off) chuẩn nghiệp vụ ALS
 const isPickupStop = (stop) => {
   if (!stop) return false;
-  const raw = String(stop.stop_type || stop.type || "").trim().toUpperCase();
+  const raw = String(stop.stop_type || stop.type || "")
+    .trim()
+    .toUpperCase();
   if (raw === "PICKUP" || raw === "LẤY HÀNG" || raw === "LAY HANG") return true;
   if (
     raw === "DROPOFF" ||
@@ -194,7 +196,6 @@ export default function DriverDashboard() {
     "https://cdn.nexlog.vn/fee-receipt.jpg",
   );
 
-
   const formatTripDateTime = (dateStr) => {
     if (!dateStr) return null;
     const d = new Date(dateStr);
@@ -204,7 +205,7 @@ export default function DriverDashboard() {
       minute: "2-digit",
       day: "2-digit",
       month: "2-digit",
-      year: "numeric"
+      year: "numeric",
     });
   };
 
@@ -326,8 +327,13 @@ export default function DriverDashboard() {
   };
 
   const getActiveDisplayedTrip = () => {
-    const list = tripData?.upcomingTrips || (tripData?.trip ? [tripData.trip] : []);
-    return (selectedTripId ? list.find((t) => t.id === selectedTripId) : null) || tripData?.trip || null;
+    const list =
+      tripData?.upcomingTrips || (tripData?.trip ? [tripData.trip] : []);
+    return (
+      (selectedTripId ? list.find((t) => t.id === selectedTripId) : null) ||
+      tripData?.trip ||
+      null
+    );
   };
 
   const patchTripState = (targetTripId, tripUpdater, stopUpdater) => {
@@ -337,7 +343,9 @@ export default function DriverDashboard() {
         t.id === targetTripId ? tripUpdater(t) : t,
       );
       const nextMainTrip =
-        prev.trip && prev.trip.id === targetTripId ? tripUpdater(prev.trip) : prev.trip;
+        prev.trip && prev.trip.id === targetTripId
+          ? tripUpdater(prev.trip)
+          : prev.trip;
       const nextStop =
         typeof stopUpdater === "function"
           ? stopUpdater(prev, nextMainTrip)
@@ -423,7 +431,9 @@ export default function DriverDashboard() {
             ...t,
             status: "In Progress",
             stops: (t.stops || []).map((s) =>
-              s.id === stopId ? { ...s, status: "Arrived", actual_arrival: nowIso } : s,
+              s.id === stopId
+                ? { ...s, status: "Arrived", actual_arrival: nowIso }
+                : s,
             ),
           }),
           (prev) => ({
@@ -557,7 +567,8 @@ export default function DriverDashboard() {
               stops: updatedStops,
             };
           },
-          (_prev, nextMain) => (nextMain?.stops || []).find((s) => s.status !== "Done") || null,
+          (_prev, nextMain) =>
+            (nextMain?.stops || []).find((s) => s.status !== "Done") || null,
         );
       } else {
         await driverApi.recordStopEvent(tripId, stopId, {
@@ -728,7 +739,9 @@ export default function DriverDashboard() {
             };
           },
           (_prev, nextMain) => {
-            const nextUndone = (nextMain?.stops || []).find((s) => s.status !== "Done");
+            const nextUndone = (nextMain?.stops || []).find(
+              (s) => s.status !== "Done",
+            );
             return nextUndone || { ...activeStopTarget, status: "Done" };
           },
         );
@@ -924,9 +937,17 @@ export default function DriverDashboard() {
     );
   }
 
-  const upcomingTrips = tripData?.upcomingTrips || (tripData?.trip ? [tripData.trip] : []);
-  const trip = (selectedTripId ? upcomingTrips.find((t) => t.id === selectedTripId) : null) || tripData?.trip || null;
-  const currentStop = (trip?.stops && trip.stops.find((s) => s.status !== "Done")) || tripData?.currentStop;
+  const upcomingTrips =
+    tripData?.upcomingTrips || (tripData?.trip ? [tripData.trip] : []);
+  const trip =
+    (selectedTripId
+      ? upcomingTrips.find((t) => t.id === selectedTripId)
+      : null) ||
+    tripData?.trip ||
+    null;
+  const currentStop =
+    (trip?.stops && trip.stops.find((s) => s.status !== "Done")) ||
+    tripData?.currentStop;
   const stops = trip?.stops || [];
   const truck = trip?.truck;
   const drivingHours = tripData?.drivingHours || profile?.drivingHours;
@@ -936,7 +957,10 @@ export default function DriverDashboard() {
     const diff = day === 0 ? -6 : 1 - day;
     return d.startOf("day").add(diff, "day");
   };
-  const selectedWeekMonday = getMondayOfWeek(dayjs()).add(tripWeekOffset, "week");
+  const selectedWeekMonday = getMondayOfWeek(dayjs()).add(
+    tripWeekOffset,
+    "week",
+  );
   const selectedWeekSunday = selectedWeekMonday.add(6, "day");
   const weekStartStr = selectedWeekMonday.format("YYYY-MM-DD");
   const weekEndStr = selectedWeekSunday.format("YYYY-MM-DD");
@@ -998,7 +1022,9 @@ export default function DriverDashboard() {
               </div>
               <p className="text-blue-100 text-xs font-semibold truncate">
                 Xin chào,{" "}
-                {profile?.user?.full_name || profile?.user?.username || "Tài xế"}
+                {profile?.user?.full_name ||
+                  profile?.user?.username ||
+                  "Tài xế"}
               </p>
               {profile?.license_number && (
                 <span className="text-[10px] text-blue-200/90 font-mono block mt-0.5">
@@ -1055,7 +1081,8 @@ export default function DriverDashboard() {
           <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 mb-3 shadow-xl">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <Clock size={13} className="text-blue-400" /> Giờ lái liên tục còn lại (BR-34)
+                <Clock size={13} className="text-blue-400" /> Giờ lái liên tục
+                còn lại (BR-34)
               </span>
               <span className="text-[9px] text-slate-400 bg-slate-900/60 px-2 py-0.5 rounded-md border border-slate-700/60">
                 Luật ATGT • Tối đa 4h
@@ -1070,29 +1097,49 @@ export default function DriverDashboard() {
                 </span>
                 <span
                   className={`text-base font-black ${
-                    drivingHours.continuous_hours_left < 1 ? "text-amber-400" : "text-emerald-400"
+                    drivingHours.continuous_hours_left < 1
+                      ? "text-amber-400"
+                      : "text-emerald-400"
                   }`}
                 >
                   {drivingHours.continuous_hours_left}h
-                  <span className="text-xs text-slate-400 font-normal ml-1">/ 4h</span>
+                  <span className="text-xs text-slate-400 font-normal ml-1">
+                    / 4h
+                  </span>
                 </span>
               </div>
               <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden my-2 border border-slate-700/80">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
-                    drivingHours.continuous_hours_left < 1 ? "bg-amber-400" : "bg-emerald-500"
+                    drivingHours.continuous_hours_left < 1
+                      ? "bg-amber-400"
+                      : "bg-emerald-500"
                   }`}
                   style={{
                     width: `${Math.min(
                       100,
-                      Math.max(0, Math.round(((4 - drivingHours.continuous_hours_left) / 4) * 100))
-                    )}%`
+                      Math.max(
+                        0,
+                        Math.round(
+                          ((4 - drivingHours.continuous_hours_left) / 4) * 100,
+                        ),
+                      ),
+                    )}%`,
                   }}
                 />
               </div>
               <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
-                <span>Đã chạy: {Math.max(0, 4 - drivingHours.continuous_hours_left).toFixed(1)}h</span>
-                <span>Còn lại: {drivingHours.continuous_hours_left}h (nghỉ tối thiểu 15 phút)</span>
+                <span>
+                  Đã chạy:{" "}
+                  {Math.max(0, 4 - drivingHours.continuous_hours_left).toFixed(
+                    1,
+                  )}
+                  h
+                </span>
+                <span>
+                  Còn lại: {drivingHours.continuous_hours_left}h (nghỉ tối thiểu
+                  15 phút)
+                </span>
               </div>
             </div>
           </div>
@@ -1160,7 +1207,8 @@ export default function DriverDashboard() {
                   >
                     <span>{weekTitleLabel}</span>{" "}
                     <span className="font-mono text-slate-400 text-[10px]">
-                      ({selectedWeekMonday.format("DD/MM")} – {selectedWeekSunday.format("DD/MM")})
+                      ({selectedWeekMonday.format("DD/MM")} –{" "}
+                      {selectedWeekSunday.format("DD/MM")})
                     </span>{" "}
                     <span className="ml-1 inline-block px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-bold">
                       {filteredWeekTrips.length}
@@ -1178,21 +1226,33 @@ export default function DriverDashboard() {
 
                 {filteredWeekTrips.length === 0 ? (
                   <div className="py-3 text-center text-[11px] text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/70">
-                    Không có chuyến xe nào trong tuần {selectedWeekMonday.format("DD/MM")} – {selectedWeekSunday.format("DD/MM")}.
+                    Không có chuyến xe nào trong tuần{" "}
+                    {selectedWeekMonday.format("DD/MM")} –{" "}
+                    {selectedWeekSunday.format("DD/MM")}.
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-1.5">
                     {filteredWeekTrips.map((t, idx) => {
                       const isSelected = t.id === trip?.id;
-                      const tripDate = t.planned_start ? dayjs(t.planned_start) : null;
-                      const isToday = tripDate ? tripDate.isSame(dayjs(), "day") : false;
-                      const isTomorrow = tripDate ? tripDate.isSame(dayjs().add(1, "day"), "day") : false;
-                      const timeStr = tripDate ? tripDate.format("HH:mm") : "Chờ xếp";
+                      const tripDate = t.planned_start
+                        ? dayjs(t.planned_start)
+                        : null;
+                      const isToday = tripDate
+                        ? tripDate.isSame(dayjs(), "day")
+                        : false;
+                      const isTomorrow = tripDate
+                        ? tripDate.isSame(dayjs().add(1, "day"), "day")
+                        : false;
+                      const timeStr = tripDate
+                        ? tripDate.format("HH:mm")
+                        : "Chờ xếp";
                       const dateBadge = isToday
                         ? "Hôm nay"
                         : isTomorrow
-                        ? "Ngày mai"
-                        : tripDate ? tripDate.format("DD/MM") : "";
+                          ? "Ngày mai"
+                          : tripDate
+                            ? tripDate.format("DD/MM")
+                            : "";
 
                       return (
                         <button
@@ -1206,7 +1266,9 @@ export default function DriverDashboard() {
                           }`}
                         >
                           <div className="flex items-center justify-between mb-0.5">
-                            <span className={`text-[10px] font-bold ${isSelected ? "text-white" : "text-slate-400"}`}>
+                            <span
+                              className={`text-[10px] font-bold ${isSelected ? "text-white" : "text-slate-400"}`}
+                            >
                               #{idx + 1}
                             </span>
                             <span
@@ -1214,21 +1276,27 @@ export default function DriverDashboard() {
                                 t.status === "In Progress"
                                   ? "bg-amber-400 animate-pulse"
                                   : t.status === "Accepted"
-                                  ? "bg-emerald-400"
-                                  : "bg-blue-400"
+                                    ? "bg-emerald-400"
+                                    : "bg-blue-400"
                               }`}
                             />
                           </div>
-                          <p className={`text-[11px] font-extrabold truncate ${isSelected ? "text-blue-200" : "text-slate-200"}`}>
+                          <p
+                            className={`text-[11px] font-extrabold truncate ${isSelected ? "text-blue-200" : "text-slate-200"}`}
+                          >
                             {t.trip_code}
                           </p>
                           <div className="flex items-center justify-between mt-1 text-[9px]">
-                            <span className="font-mono text-slate-300 font-semibold">{timeStr}</span>
-                            <span className={`px-1 py-0.2 rounded font-medium ${
-                              isToday
-                                ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20"
-                                : "bg-slate-800 text-slate-400"
-                            }`}>
+                            <span className="font-mono text-slate-300 font-semibold">
+                              {timeStr}
+                            </span>
+                            <span
+                              className={`px-1 py-0.2 rounded font-medium ${
+                                isToday
+                                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20"
+                                  : "bg-slate-800 text-slate-400"
+                              }`}
+                            >
                               {dateBadge}
                             </span>
                           </div>
@@ -1287,7 +1355,11 @@ export default function DriverDashboard() {
                         <Truck size={12} /> Xe: {truck.plate_number}
                       </span>
                       <span className="text-blue-300/70 text-[10px]">
-                        ({truck.model} • {truck.allowed_payload ? `${truck.allowed_payload}kg` : ''})
+                        ({truck.model} •{" "}
+                        {truck.allowed_payload
+                          ? `${truck.allowed_payload}kg`
+                          : ""}
+                        )
                       </span>
                     </div>
                   )}
@@ -1296,24 +1368,39 @@ export default function DriverDashboard() {
                   {(trip.planned_start || trip.created_at) && (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-blue-100 font-medium mt-2 pt-2 border-t border-white/10">
                       <span className="flex items-center gap-1.5 text-[11px] text-blue-100 bg-white/10 px-2 py-0.5 rounded-md">
-                        <Calendar size={12} className="text-blue-300 shrink-0" />
-                        <span>Khởi hành: <b className="text-white">{formatTripDateTime(trip.planned_start || trip.created_at)}</b></span>
+                        <Calendar
+                          size={12}
+                          className="text-blue-300 shrink-0"
+                        />
+                        <span>
+                          Khởi hành:{" "}
+                          <b className="text-white">
+                            {formatTripDateTime(
+                              trip.planned_start || trip.created_at,
+                            )}
+                          </b>
+                        </span>
                       </span>
                       {trip.planned_duration && (
                         <span className="flex items-center gap-1 text-[11px] text-blue-200/90">
                           <Clock size={12} className="text-blue-300 shrink-0" />
-                          <span>Dự kiến: {formatDuration(trip.planned_duration)}</span>
+                          <span>
+                            Dự kiến: {formatDuration(trip.planned_duration)}
+                          </span>
                         </span>
                       )}
                       {trip.planned_distance && (
                         <span className="flex items-center gap-1 text-[11px] text-blue-200/90">
-                          <Navigation2 size={12} className="text-blue-300 shrink-0" />
+                          <Navigation2
+                            size={12}
+                            className="text-blue-300 shrink-0"
+                          />
                           <span>{trip.planned_distance} km</span>
                         </span>
                       )}
                     </div>
                   )}
-                  </div>
+                </div>
                 <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-xl text-white font-semibold text-[11px] shrink-0">
                   <Package size={12} />
                   <span>{stops.length} Điểm dừng</span>
@@ -1355,13 +1442,17 @@ export default function DriverDashboard() {
                               isDone
                                 ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                                 : isArrived
-                                ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                                : stop.status === "Loading Started" || stop.status === "Loading Done"
-                                ? "bg-blue-500/15 text-blue-300 border-blue-500/30"
-                                : "bg-slate-800 text-slate-300 border-slate-700"
+                                  ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                  : stop.status === "Loading Started" ||
+                                      stop.status === "Loading Done"
+                                    ? "bg-blue-500/15 text-blue-300 border-blue-500/30"
+                                    : "bg-slate-800 text-slate-300 border-slate-700"
                             }`}
                           >
-                            {formatStopStatus(stop.status, isPickup ? "Pickup" : "Drop-off")}
+                            {formatStopStatus(
+                              stop.status,
+                              isPickup ? "Pickup" : "Drop-off",
+                            )}
                           </span>
                         </div>
                         <p className="font-semibold text-white leading-tight text-xs mt-0.5">
@@ -1393,7 +1484,8 @@ export default function DriverDashboard() {
             <div className="bg-slate-800/90 backdrop-blur-md border border-slate-700/60 rounded-2xl p-3 mb-4 shadow-2xl">
               <div className="mb-2.5 flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Navigation2 className="w-3.5 h-3.5 text-indigo-400" /> Thao tác Chuyến xe
+                  <Navigation2 className="w-3.5 h-3.5 text-indigo-400" /> Thao
+                  tác Chuyến xe
                 </span>
                 {/* Actions: Propose Fee & Report Incident */}
                 {trip.status !== "Completed" && (
@@ -1410,23 +1502,30 @@ export default function DriverDashboard() {
                     <Link
                       href={`/driver/incidents?trip_id=${trip.id}`}
                       style={{
-                        backgroundColor: '#dc2626',
-                        color: '#ffffff',
-                        border: '1px solid #ef4444',
-                        textDecoration: 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        padding: '4px 10px',
-                        borderRadius: '8px',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        boxShadow: '0 2px 8px rgba(220, 38, 38, 0.45)'
+                        backgroundColor: "#dc2626",
+                        color: "#ffffff",
+                        border: "1px solid #ef4444",
+                        textDecoration: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "4px 10px",
+                        borderRadius: "8px",
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        boxShadow: "0 2px 8px rgba(220, 38, 38, 0.45)",
                       }}
                       className="shrink-0 transition-transform active:scale-95 cursor-pointer hover:opacity-90"
                     >
-                      <AlertTriangle size={13} color="#ffffff" style={{ color: '#ffffff', stroke: '#ffffff' }} className="shrink-0" />
-                      <span style={{ color: '#ffffff', fontWeight: '700' }}>Báo sự cố</span>
+                      <AlertTriangle
+                        size={13}
+                        color="#ffffff"
+                        style={{ color: "#ffffff", stroke: "#ffffff" }}
+                        className="shrink-0"
+                      />
+                      <span style={{ color: "#ffffff", fontWeight: "700" }}>
+                        Báo sự cố
+                      </span>
                     </Link>
                   </div>
                 )}
@@ -1434,247 +1533,238 @@ export default function DriverDashboard() {
 
               {/* Auto vào thực hiện chuỗi 4 bước cho chuyến xe được điều phối */}
               {trip.status !== "Completed" && currentStop && (
-                  <div className="space-y-3">
-                    <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700 flex justify-between items-center">
-                      <div>
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className="text-[10px] text-slate-400 font-bold uppercase">
-                            Điểm dừng tiếp theo
-                          </span>
-                          <Tag
-                            color="processing"
-                            className="font-bold text-[10px] m-0 py-0"
-                          >
-                            #{currentStop.sequence}
-                          </Tag>
-                        </div>
-                        <p className="text-white font-bold text-xs">
-                          {currentStop.location?.name ||
-                            currentStop.location?.address}
-                        </p>
+                <div className="space-y-3">
+                  <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700 flex justify-between items-center">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase">
+                          Điểm dừng tiếp theo
+                        </span>
+                        <Tag
+                          color="processing"
+                          className="font-bold text-[10px] m-0 py-0"
+                        >
+                          #{currentStop.sequence}
+                        </Tag>
                       </div>
-                      <button
-                        onClick={() =>
-                          handleOpenNavigation(
-                            currentStop.location?.address,
-                            currentStop.location?.latitude,
-                            currentStop.location?.longitude,
+                      <p className="text-white font-bold text-xs">
+                        {currentStop.location?.name ||
+                          currentStop.location?.address}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() =>
+                        handleOpenNavigation(
+                          currentStop.location?.address,
+                          currentStop.location?.latitude,
+                          currentStop.location?.longitude,
+                        )
+                      }
+                      className="p-2.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 rounded-xl border border-blue-500/40"
+                      title="Mở Google Maps"
+                    >
+                      <MapPin size={18} />
+                    </button>
+                  </div>
+
+                  {/* 4-Step Progress Stepper (BR-36, Workflow Spec Giai đoạn 3) */}
+                  <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-700/80 mb-2">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
+                      <span>
+                        Tiến trình điểm dừng #{currentStop.sequence} (Chuỗi 4
+                        bước)
+                      </span>
+                      <span className="text-blue-300 font-mono">
+                        {formatStopStatus(
+                          currentStop.status,
+                          isPickupStop(currentStop) ? "Pickup" : "Drop-off",
+                        )}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
+                      {/* Step 1: Arrived */}
+                      <div
+                        className={`p-2 rounded-xl border transition-all ${
+                          currentStop.status !== "Pending"
+                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                            : "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
+                        }`}
+                      >
+                        <span className="block text-xs mb-0.5">
+                          {currentStop.status !== "Pending" ? "✓" : "1"}
+                        </span>
+                        <span>Đã đến</span>
+                      </div>
+
+                      {/* Step 2: Loading Started */}
+                      <div
+                        className={`p-2 rounded-xl border transition-all ${
+                          ["Loading Started", "Loading Done", "Done"].includes(
+                            currentStop.status,
                           )
-                        }
-                        className="p-2.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 rounded-xl border border-blue-500/40"
-                        title="Mở Google Maps"
+                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                            : currentStop.status === "Arrived"
+                              ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
+                              : "bg-slate-800 border-slate-700 text-slate-500"
+                        }`}
                       >
-                        <MapPin size={18} />
-                      </button>
-                    </div>
+                        <span className="block text-xs mb-0.5">
+                          {["Loading Started", "Loading Done", "Done"].includes(
+                            currentStop.status,
+                          )
+                            ? "✓"
+                            : "2"}
+                        </span>
+                        <span>Bắt đầu</span>
+                      </div>
 
-                    {/* 4-Step Progress Stepper (BR-36, Workflow Spec Giai đoạn 3) */}
-                    <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-700/80 mb-2">
-                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
+                      {/* Step 3: Loading Done */}
+                      <div
+                        className={`p-2 rounded-xl border transition-all ${
+                          ["Loading Done", "Done"].includes(currentStop.status)
+                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                            : currentStop.status === "Loading Started"
+                              ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
+                              : "bg-slate-800 border-slate-700 text-slate-500"
+                        }`}
+                      >
+                        <span className="block text-xs mb-0.5">
+                          {["Loading Done", "Done"].includes(currentStop.status)
+                            ? "✓"
+                            : "3"}
+                        </span>
                         <span>
-                          Tiến trình điểm dừng #{currentStop.sequence} (Chuỗi 4
-                          bước)
-                        </span>
-                        <span className="text-blue-300 font-mono">
-                          {formatStopStatus(currentStop.status, isPickupStop(currentStop) ? "Pickup" : "Drop-off")}
+                          {isPickupStop(currentStop) ? "Bốc/Chì" : "Dỡ/POD"}
                         </span>
                       </div>
-                      <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
-                        {/* Step 1: Arrived */}
-                        <div
-                          className={`p-2 rounded-xl border transition-all ${
-                            currentStop.status !== "Pending"
-                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                              : "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
-                          }`}
-                        >
-                          <span className="block text-xs mb-0.5">
-                            {currentStop.status !== "Pending" ? "✓" : "1"}
-                          </span>
-                          <span>Đã đến</span>
-                        </div>
 
-                        {/* Step 2: Loading Started */}
-                        <div
-                          className={`p-2 rounded-xl border transition-all ${
-                            [
-                              "Loading Started",
-                              "Loading Done",
-                              "Done",
-                            ].includes(currentStop.status)
-                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                              : currentStop.status === "Arrived"
-                                ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
-                                : "bg-slate-800 border-slate-700 text-slate-500"
-                          }`}
-                        >
-                          <span className="block text-xs mb-0.5">
-                            {[
-                              "Loading Started",
-                              "Loading Done",
-                              "Done",
-                            ].includes(currentStop.status)
-                              ? "✓"
-                              : "2"}
-                          </span>
-                          <span>Bắt đầu</span>
-                        </div>
-
-                        {/* Step 3: Loading Done */}
-                        <div
-                          className={`p-2 rounded-xl border transition-all ${
-                            ["Loading Done", "Done"].includes(
-                              currentStop.status,
-                            )
-                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                              : currentStop.status === "Loading Started"
-                                ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
-                                : "bg-slate-800 border-slate-700 text-slate-500"
-                          }`}
-                        >
-                          <span className="block text-xs mb-0.5">
-                            {["Loading Done", "Done"].includes(
-                              currentStop.status,
-                            )
-                              ? "✓"
-                              : "3"}
-                          </span>
-                          <span>
-                            {isPickupStop(currentStop)
-                              ? "Bốc/Chì"
-                              : "Dỡ/POD"}
-                          </span>
-                        </div>
-
-                        {/* Step 4: Left */}
-                        <div
-                          className={`p-2 rounded-xl border transition-all ${
-                            currentStop.status === "Done"
-                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                              : currentStop.status === "Loading Done"
-                                ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
-                                : "bg-slate-800 border-slate-700 text-slate-500"
-                          }`}
-                        >
-                          <span className="block text-xs mb-0.5">
-                            {currentStop.status === "Done" ? "✓" : "4"}
-                          </span>
-                          <span>Rời đi</span>
-                        </div>
+                      {/* Step 4: Left */}
+                      <div
+                        className={`p-2 rounded-xl border transition-all ${
+                          currentStop.status === "Done"
+                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                            : currentStop.status === "Loading Done"
+                              ? "bg-blue-600/30 border-blue-500 text-blue-200 animate-pulse"
+                              : "bg-slate-800 border-slate-700 text-slate-500"
+                        }`}
+                      >
+                        <span className="block text-xs mb-0.5">
+                          {currentStop.status === "Done" ? "✓" : "4"}
+                        </span>
+                        <span>Rời đi</span>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Step 1: If Pending -> Arrive Button */}
-                    {currentStop.status === "Pending" && (
+                  {/* Step 1: If Pending -> Arrive Button */}
+                  {currentStop.status === "Pending" && (
+                    <Button
+                      type="primary"
+                      size="large"
+                      loading={actionLoading}
+                      onClick={() => handleArriveStop(trip.id, currentStop.id)}
+                      className="w-full bg-blue-600 hover:bg-blue-500 border-none font-bold rounded-xl h-auto py-2.5 shadow-lg shadow-blue-600/30 flex items-center justify-center text-center text-white"
+                    >
+                      <div className="flex flex-col items-center justify-center w-full leading-tight">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <MapPin size={15} /> BƯỚC 1: ĐÃ ĐẾN NƠI (ARRIVED)
+                        </span>
+                        <span className="text-[10px] font-normal opacity-85">
+                          Ghi nhận mốc giờ thực tế
+                        </span>
+                      </div>
+                    </Button>
+                  )}
+
+                  {/* Step 2: If Arrived -> Bắt đầu bốc / dỡ (Loading Started - BR-30) */}
+                  {currentStop.status === "Arrived" && (
+                    <Button
+                      type="primary"
+                      size="large"
+                      loading={actionLoading}
+                      onClick={() =>
+                        handleStartLoading(trip.id, currentStop.id)
+                      }
+                      className="w-full bg-amber-600 hover:bg-amber-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-amber-600/30 flex items-center justify-center text-center text-white"
+                    >
+                      <div className="flex flex-col items-center justify-center w-full leading-tight">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <Clock size={15} /> BƯỚC 2: BẮT ĐẦU BỐC / DỠ
+                        </span>
+                        <span className="text-[10px] font-normal opacity-85">
+                          (Loading Started - BR-30)
+                        </span>
+                      </div>
+                    </Button>
+                  )}
+
+                  {/* Step 3: If Loading Started & Pickup -> Bốc hàng & Niêm chì Modal (BR-11) */}
+                  {currentStop.status === "Loading Started" &&
+                    isPickupStop(currentStop) && (
                       <Button
                         type="primary"
                         size="large"
-                        loading={actionLoading}
-                        onClick={() =>
-                          handleArriveStop(trip.id, currentStop.id)
-                        }
-                        className="w-full bg-blue-600 hover:bg-blue-500 border-none font-bold rounded-xl h-auto py-2.5 shadow-lg shadow-blue-600/30 flex items-center justify-center text-center text-white"
+                        onClick={() => {
+                          setActiveStopTarget(currentStop);
+                          setSealModalOpen(true);
+                        }}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-indigo-600/30 flex items-center justify-center text-center text-white"
                       >
                         <div className="flex flex-col items-center justify-center w-full leading-tight">
                           <span className="text-xs font-black flex items-center gap-1.5">
-                            <MapPin size={15} /> BƯỚC 1: ĐÃ ĐẾN NƠI (ARRIVED)
+                            <Camera size={15} /> BƯỚC 3: BỐC HÀNG & ẢNH CHÌ
                           </span>
                           <span className="text-[10px] font-normal opacity-85">
-                            Ghi nhận mốc giờ thực tế
+                            (Record Cargo Pickup - BR-11)
                           </span>
                         </div>
                       </Button>
                     )}
 
-                    {/* Step 2: If Arrived -> Bắt đầu bốc / dỡ (Loading Started - BR-30) */}
-                    {currentStop.status === "Arrived" && (
+                  {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal (BR-12) */}
+                  {currentStop.status === "Loading Started" &&
+                    isDropoffStop(currentStop) && (
                       <Button
                         type="primary"
                         size="large"
-                        loading={actionLoading}
-                        onClick={() =>
-                          handleStartLoading(trip.id, currentStop.id)
-                        }
-                        className="w-full bg-amber-600 hover:bg-amber-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-amber-600/30 flex items-center justify-center text-center text-white"
-                      >
-                        <div className="flex flex-col items-center justify-center w-full leading-tight">
-                          <span className="text-xs font-black flex items-center gap-1.5">
-                            <Clock size={15} /> BƯỚC 2: BẮT ĐẦU BỐC / DỠ
-                          </span>
-                          <span className="text-[10px] font-normal opacity-85">
-                            (Loading Started - BR-30)
-                          </span>
-                        </div>
-                      </Button>
-                    )}
-
-                    {/* Step 3: If Loading Started & Pickup -> Bốc hàng & Niêm chì Modal (BR-11) */}
-                    {currentStop.status === "Loading Started" &&
-                      isPickupStop(currentStop) && (
-                        <Button
-                          type="primary"
-                          size="large"
-                          onClick={() => {
-                            setActiveStopTarget(currentStop);
-                            setSealModalOpen(true);
-                          }}
-                          className="w-full bg-indigo-600 hover:bg-indigo-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-indigo-600/30 flex items-center justify-center text-center text-white"
-                        >
-                          <div className="flex flex-col items-center justify-center w-full leading-tight">
-                            <span className="text-xs font-black flex items-center gap-1.5">
-                              <Camera size={15} /> BƯỚC 3: BỐC HÀNG & ẢNH CHÌ
-                            </span>
-                            <span className="text-[10px] font-normal opacity-85">
-                              (Record Cargo Pickup - BR-11)
-                            </span>
-                          </div>
-                        </Button>
-                      )}
-
-                    {/* Step 3: If Loading Started & Drop-off -> Giao hàng & POD Modal (BR-12) */}
-                    {currentStop.status === "Loading Started" &&
-                      isDropoffStop(currentStop) && (
-                        <Button
-                          type="primary"
-                          size="large"
-                          onClick={() => {
-                            setActiveStopTarget(currentStop);
-                            setPodModalOpen(true);
-                          }}
-                          className="w-full bg-emerald-600 hover:bg-emerald-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-emerald-600/30 flex items-center justify-center text-center text-white"
-                        >
-                          <div className="flex flex-col items-center justify-center w-full leading-tight">
-                            <span className="text-xs font-black flex items-center gap-1.5">
-                              <Camera size={15} /> BƯỚC 3: GIAO HÀNG & POD
-                            </span>
-                            <span className="text-[10px] font-normal opacity-85">
-                              (Record Cargo Delivery & POD - BR-12)
-                            </span>
-                          </div>
-                        </Button>
-                      )}
-
-                    {/* Step 4: If Loading Done -> Rời khỏi điểm dừng (Left - BR-36) */}
-                    {currentStop.status === "Loading Done" && (
-                      <Button
-                        type="primary"
-                        size="large"
-                        loading={actionLoading}
-                        onClick={() => handleLeftStop(trip.id, currentStop.id)}
+                        onClick={() => {
+                          setActiveStopTarget(currentStop);
+                          setPodModalOpen(true);
+                        }}
                         className="w-full bg-emerald-600 hover:bg-emerald-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-emerald-600/30 flex items-center justify-center text-center text-white"
                       >
                         <div className="flex flex-col items-center justify-center w-full leading-tight">
                           <span className="text-xs font-black flex items-center gap-1.5">
-                            <CheckCircle size={15} /> BƯỚC 4: RỜI ĐI (LEFT)
+                            <Camera size={15} /> BƯỚC 3: GIAO HÀNG & POD
                           </span>
                           <span className="text-[10px] font-normal opacity-85">
-                            Tiếp tục lộ trình
+                            (Record Cargo Delivery & POD - BR-12)
                           </span>
                         </div>
                       </Button>
                     )}
-                  </div>
-                )}
+
+                  {/* Step 4: If Loading Done -> Rời khỏi điểm dừng (Left - BR-36) */}
+                  {currentStop.status === "Loading Done" && (
+                    <Button
+                      type="primary"
+                      size="large"
+                      loading={actionLoading}
+                      onClick={() => handleLeftStop(trip.id, currentStop.id)}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 border-none rounded-xl h-auto py-2.5 shadow-lg shadow-emerald-600/30 flex items-center justify-center text-center text-white"
+                    >
+                      <div className="flex flex-col items-center justify-center w-full leading-tight">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <CheckCircle size={15} /> BƯỚC 4: RỜI ĐI (LEFT)
+                        </span>
+                        <span className="text-[10px] font-normal opacity-85">
+                          Tiếp tục lộ trình
+                        </span>
+                      </div>
+                    </Button>
+                  )}
+                </div>
+              )}
 
               {/* Case 3: Completed */}
               {trip.status === "Completed" && (
@@ -1705,7 +1795,7 @@ export default function DriverDashboard() {
         )}
       </div>
 
-<DriverDashboardModals
+      <DriverDashboardModals
         trip={trip}
         tripData={tripData}
         stops={stops}
@@ -1781,19 +1871,23 @@ export default function DriverDashboard() {
             border: "1px solid #334155",
             borderRadius: "1.5rem",
             padding: "1.5rem",
-            color: "#f8fafc"
-          }
+            color: "#f8fafc",
+          },
         }}
       >
         <div className="text-center">
           <div className="w-14 h-14 bg-red-500/15 border border-red-500/30 text-red-400 rounded-2xl flex items-center justify-center mx-auto mb-3.5 shadow-lg shadow-red-500/10">
             <LogOut size={26} />
           </div>
-          <h3 className="text-lg font-bold text-white mb-1.5">Xác nhận đăng xuất</h3>
+          <h3 className="text-lg font-bold text-white mb-1.5">
+            Xác nhận đăng xuất
+          </h3>
           <p className="text-slate-300 text-xs leading-relaxed mb-4">
             Bạn có chắc chắn muốn đăng xuất khỏi phiên làm việc tài xế{" "}
             {profile?.user?.full_name ? (
-              <span className="font-semibold text-blue-400">{profile.user.full_name}</span>
+              <span className="font-semibold text-blue-400">
+                {profile.user.full_name}
+              </span>
             ) : null}
             ?
           </p>
@@ -1804,7 +1898,10 @@ export default function DriverDashboard() {
                 <AlertTriangle size={14} /> Chú ý: Chưa đồng bộ hết dữ liệu
               </p>
               <p className="text-[11px] leading-relaxed text-amber-200/90">
-                Bạn đang có <b>{pendingOfflineCount} thao tác ngoại tuyến</b> chưa gửi lên máy chủ. Bạn nên bấm <b>&quot;Đồng bộ ngay&quot;</b> trước khi đăng xuất để tránh mất hoặc chậm trễ cập nhật chuyến xe.
+                Bạn đang có <b>{pendingOfflineCount} thao tác ngoại tuyến</b>{" "}
+                chưa gửi lên máy chủ. Bạn nên bấm{" "}
+                <b>&quot;Đồng bộ ngay&quot;</b> trước khi đăng xuất để tránh mất
+                hoặc chậm trễ cập nhật chuyến xe.
               </p>
             </div>
           )}
