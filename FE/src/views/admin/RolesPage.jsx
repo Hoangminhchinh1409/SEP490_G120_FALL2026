@@ -158,8 +158,8 @@ export default function RolesPage() {
       title: 'Nhóm chức năng',
       dataIndex: 'module',
       key: 'module',
-      width: 170,
-      render: (text) => <span className="font-semibold text-slate-700">{text}</span>
+      width: 130,
+      render: (text) => <span className="font-semibold text-slate-700 text-xs">{text}</span>
     },
     {
       title: 'Quyền hạn (Chức năng hệ thống)',
@@ -167,15 +167,15 @@ export default function RolesPage() {
       key: 'name',
       render: (text, record) => (
         <div>
-          <div className="font-medium text-slate-900">{text}</div>
-          <div className="text-xs font-mono text-slate-400 mt-0.5">{record.key}</div>
+          <div className="font-medium text-slate-900 text-xs sm:text-sm">{text}</div>
+          <div className="text-[10px] font-mono text-slate-400 mt-0.5">{record.key}</div>
         </div>
       )
     },
     ...roles.map(r => ({
       title: (
         <div className="text-center py-1">
-          <Tag color={ROLE_COLORS[r.id]?.tag || 'default'} className="font-bold uppercase tracking-wider text-xs px-2.5 py-0.5 rounded-full">
+          <Tag color={ROLE_COLORS[r.id]?.tag || 'default'} className="font-bold uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-full m-0">
             {r.name}
           </Tag>
         </div>
@@ -183,7 +183,7 @@ export default function RolesPage() {
       dataIndex: `role_${r.id}`,
       key: `role_${r.id}`,
       align: 'center',
-      width: 190,
+      width: 125,
       render: (_, record) => {
         const meta = PERMISSION_METADATA[record.key] || {};
         const isDefaultOwner = Number(r.id) === 1 || Number(r.id) === meta.defaultOwner;
@@ -191,15 +191,15 @@ export default function RolesPage() {
         // 1. Chức năng mặc định của Role (hoặc Administrator) -> Bất biến: Toàn quyền (Admin không thể khóa)
         if (isDefaultOwner) {
           return (
-            <div className="flex flex-col items-center justify-center gap-0.5 py-1">
+            <div className="flex flex-col items-center justify-center gap-0.5 py-0.5">
               <Tag
                 color="green"
-                className="font-bold text-[11px] px-2.5 py-0.5 rounded-full border-emerald-500/40 text-emerald-700 bg-emerald-50 m-0 flex items-center gap-1 shadow-xs"
+                className="font-bold text-[10px] px-2 py-0.5 rounded-full border-emerald-500/40 text-emerald-700 bg-emerald-50 m-0 flex items-center gap-1 shadow-xs"
               >
-                <CheckCircle size={11} className="text-emerald-600" />
-                <span>Toàn quyền (Mặc định)</span>
+                <CheckCircle size={10} className="text-emerald-600 shrink-0" />
+                <span>Toàn quyền</span>
               </Tag>
-              <span className="text-[9px] text-slate-400 font-medium">Cố định - Không thể khóa</span>
+              <span className="text-[9px] text-slate-400 font-medium">Mặc định</span>
             </div>
           );
         }
@@ -215,7 +215,7 @@ export default function RolesPage() {
                 : `Bị chặn: ${r.name} không được phép truy cập chức năng này.`
             }
           >
-            <div className="flex flex-col items-center justify-center gap-1 cursor-pointer py-1">
+            <div className="flex flex-col items-center justify-center gap-0.5 cursor-pointer py-0.5">
               <Checkbox
                 checked={isChecked}
                 onChange={() => handleToggle(r.id, record.id)}
@@ -223,13 +223,13 @@ export default function RolesPage() {
               {isChecked ? (
                 <Tag
                   color="blue"
-                  className="font-semibold text-[10px] px-2 py-0.5 rounded text-blue-700 bg-blue-50 border-blue-200 m-0 flex items-center gap-1 shadow-xs"
+                  className="font-semibold text-[9px] px-1.5 py-0.2 rounded text-blue-700 bg-blue-50 border-blue-200 m-0 flex items-center gap-0.5 shadow-xs"
                 >
-                  <Eye size={10} className="text-blue-600" />
-                  <span>Chỉ xem (Read-only)</span>
+                  <Eye size={9} className="text-blue-600 shrink-0" />
+                  <span>Chỉ xem</span>
                 </Tag>
               ) : (
-                <span className="text-[10px] text-slate-400 font-medium">
+                <span className="text-[9px] text-slate-400 font-medium">
                   Bị chặn
                 </span>
               )}
@@ -251,7 +251,7 @@ export default function RolesPage() {
   });
 
   return (
-    <div className="p-6 max-w-6xl space-y-6">
+    <div className="p-4 sm:p-6 w-full max-w-[1600px] mx-auto space-y-6">
       {/* Header */}
       <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -292,7 +292,7 @@ export default function RolesPage() {
       </div>
 
       {/* Main Table */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden p-6 space-y-4">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 sm:p-6 space-y-4">
         {/* Banner Hướng Dẫn Nguyên Tắc Phân Quyền Mới */}
         <div className="p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-100 rounded-xl text-xs text-slate-700 leading-relaxed space-y-1">
           <div className="flex items-center gap-2 font-bold text-blue-900 text-sm">
@@ -315,14 +315,16 @@ export default function RolesPage() {
           </div>
         </div>
 
-        <Table
-          columns={columns}
-          dataSource={dataSource}
-          pagination={false}
-          loading={loading}
-          bordered
-          rowClassName="hover:bg-slate-50/60 transition-colors"
-        />
+        <div className="overflow-x-auto w-full">
+          <Table
+            columns={columns}
+            dataSource={dataSource}
+            pagination={false}
+            loading={loading}
+            bordered
+            rowClassName="hover:bg-slate-50/60 transition-colors"
+          />
+        </div>
 
         <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-500">
           <span>Hệ thống phân quyền thời gian thực: Thay đổi được áp dụng ngay cho các phiên làm việc tiếp theo của người dùng.</span>
