@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
 import { getRecommendedDocsByCargo } from '../../../src/data/dispatcherPresets';
+import { CheckCircle2 } from 'lucide-react';
 
 export default function OrderDocumentsView() {
   const params = useParams();
@@ -57,12 +58,18 @@ export default function OrderDocumentsView() {
           if (hasAnyRejected) {
             // Nếu có chứng từ bị từ chối -> Mở khóa để khách hàng upload lại
             setSubmitted(false);
-          } else if (
-            data.web_workflow?.stage === 'DOCS_UPLOADED' ||
-            data.web_workflow?.stage === 'DOCS_APPROVED' ||
-            data.web_workflow?.stage === 'CONTRACT_SIGNED'
-          ) {
-            setSubmitted(true);
+          } else {
+            // Nếu không có chứng từ nào bị từ chối và đã có file tải lên -> Đã nộp thành công, chờ hoặc đã duyệt
+            const hasUploadedFile = existingDocs.some(d => d.file && d.file !== 'Chờ tải lên');
+            if (
+              hasUploadedFile ||
+              data.web_workflow?.stage === 'DOCS_UPLOADED' ||
+              data.web_workflow?.stage === 'DOCS_APPROVED' ||
+              data.web_workflow?.stage === 'CONTRACT_SENT' ||
+              data.web_workflow?.stage === 'CONTRACT_SIGNED'
+            ) {
+              setSubmitted(true);
+            }
           }
         } else {
           const recDocs = getRecommendedDocsByCargo(
@@ -98,10 +105,25 @@ export default function OrderDocumentsView() {
             setDocuments(latestDocs);
             setSubmitted(false);
             message.warning('Điều phối viên vừa yêu cầu tải lại một số chứng từ chưa hợp lệ!');
-          } else if (nextStage === 'DOCS_APPROVED' && prevStage !== 'DOCS_APPROVED') {
+          } else if (hasAnyRejected) {
             setDocuments(latestDocs);
-            setSubmitted(true);
-            message.success('Hồ sơ chứng từ đã được chấp nhận! Điều phối viên sẽ sớm liên hệ với Quý khách để tiến hành ký kết hợp đồng.');
+            setSubmitted(false);
+          } else {
+            // Không có chứng từ nào bị từ chối
+            const hasUploadedFile = latestDocs.some(d => d.file && d.file !== 'Chờ tải lên');
+            if (
+              hasUploadedFile ||
+              nextStage === 'DOCS_UPLOADED' ||
+              nextStage === 'DOCS_APPROVED' ||
+              nextStage === 'CONTRACT_SENT' ||
+              nextStage === 'CONTRACT_SIGNED'
+            ) {
+              setSubmitted(true);
+            }
+            if (nextStage === 'DOCS_APPROVED' && prevStage !== 'DOCS_APPROVED') {
+              setDocuments(latestDocs);
+              message.success('Hồ sơ chứng từ đã được chấp nhận! Điều phối viên sẽ sớm liên hệ với Quý khách để tiến hành ký kết hợp đồng.');
+            }
           }
           return latestData;
         });
@@ -599,21 +621,29 @@ export default function OrderDocumentsView() {
                     <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">1</span>
                     Ký &amp; Tải lên bản Scan (PDF / Ảnh)
                   </div>
-                  <p className="text-xs text-slate-600 leading-relaxed m-0">
-                    Bấm <b>&ldquo;Xem &amp; In hợp đồng mẫu&rdquo;</b> bên dưới hoặc tải tệp gửi kèm trong Email, in ra giấy, ký tên đóng dấu tròn công ty và scan tải lại tại đây để Điều phối viên xác nhận xếp xe ngay.
-                  </p>
-                  
-                  {/* Nút xem & in hợp đồng mẫu chuẩn NĐ 158/2024/NĐ-CP */}
-                  <div className="pt-2.5">
-                    <Button
-                      type="default"
-                      icon={<Eye size={13} className="text-indigo-600" />}
-                      onClick={() => setContractModalOpen(true)}
-                      className="w-full text-xs font-bold border-indigo-200 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 flex items-center justify-center gap-1.5 h-9 rounded-xl"
-                    >
-                      📄 Xem, Tải Về &amp; In Hợp Đồng Mẫu Đã Lập
-                    </Button>
-                  </div>
+                  {!(order?.contract_file || order?.contract_uploaded) ? (
+                    <>
+                      <p className="text-xs text-slate-600 leading-relaxed m-0">
+                        Bấm <b>&ldquo;Xem &amp; In hợp đồng mẫu&rdquo;</b> bên dưới hoặc tải tệp gửi kèm trong Email, in ra giấy, ký tên đóng dấu tròn công ty và scan tải lại tại đây để Điều phối viên xác nhận xếp xe ngay.
+                      </p>
+                      
+                      {/* Nút xem & in hợp đồng mẫu chuẩn NĐ 158/2024/NĐ-CP (chỉ hiển thị khi chưa đính kèm tệp hợp đồng) */}
+                      <div className="pt-2.5">
+                        <Button
+                          type="default"
+                          icon={<Eye size={13} className="text-indigo-600" />}
+                          onClick={() => setContractModalOpen(true)}
+                          className="w-full text-xs font-bold border-indigo-200 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 flex items-center justify-center gap-1.5 h-9 rounded-xl"
+                        >
+                          📄 Xem, Tải Về &amp; In Hợp Đồng Mẫu Đã Lập
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-emerald-800 leading-relaxed m-0">
+                      Hợp đồng vận chuyển bản scan PDF đã được tải lên và lưu vào hồ sơ đơn hàng. Quý khách có thể đổi sang tệp khác nếu cần chỉnh sửa trước khi xe lăn bánh.
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-2">

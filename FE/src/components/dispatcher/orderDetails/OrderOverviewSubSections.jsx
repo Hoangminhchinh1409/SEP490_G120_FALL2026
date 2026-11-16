@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tag, Button, Input, Select, Popover, message } from 'antd';
-import { Sparkles, Trash2, Plus, PhoneCall, MessageCircle, Mail, DollarSign, Calculator, Box } from 'lucide-react';
+import { Sparkles, Trash2, Plus, PhoneCall, MessageCircle, Mail, DollarSign, Calculator, Box, Split } from 'lucide-react';
 import { SPECIALIZED_CARGO_CATEGORIES, getVehicleSpecByKey } from '../../../data/dispatcherPresets';
 
 export function OrderVehicleRecommendationBox({
@@ -16,7 +16,8 @@ export function OrderVehicleRecommendationBox({
   aiVehicleInsight,
   vehicleAnalysisNote,
   setVehicleAnalysisNote,
-  onOpen3DModal
+  onOpen3DModal,
+  onOpenSplitModal
 }) {
   return (
     <div className="bg-gradient-to-r from-emerald-50/70 via-teal-50/50 to-indigo-50/60 p-4 rounded-xl border border-emerald-200/80 space-y-3">
@@ -30,7 +31,18 @@ export function OrderVehicleRecommendationBox({
             Dựa trên tải trọng thực tế, kích thước hàng (D×R×C) và yêu cầu bảo quản để chọn xe phù hợp nhất.
           </span>
         </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {onOpenSplitModal && (
+            <Button
+              type="default"
+              size="small"
+              icon={<Split size={13} className="text-indigo-600" />}
+              onClick={onOpenSplitModal}
+              className="bg-white border-indigo-300 text-indigo-700 hover:border-indigo-500 font-bold text-xs shadow-xs"
+            >
+              Tách sang nhiều xe nhỏ
+            </Button>
+          )}
           {onOpen3DModal && (
             <Button
               type="primary"

@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { dispatcherApi } from '../../api/dispatcherApi';
 import { managerApi } from '../../api/managerApi';
+import { useAuth } from '../../providers/AuthProvider';
 
 // Dynamic import component bản đồ VietMap để tránh lỗi SSR trong Next.js App Router
 const InnerReplayMap = dynamic(
@@ -48,6 +49,7 @@ export default function TripReplayModal({
   incidentInfo,
   onClose
 }) {
+  const { user } = useAuth() || {};
   const isModalOpen = Boolean(open !== undefined ? open : selectedTripReplay);
   const [loading, setLoading] = useState(false);
   const [replayData, setReplayData] = useState(null);
@@ -79,10 +81,19 @@ export default function TripReplayModal({
     const fetchData = async () => {
       try {
         let res = null;
-        try {
-          res = await managerApi.getTripReplay(effectiveTripId);
-        } catch (err) {
-          res = await dispatcherApi.getTripReplay(effectiveTripId);
+        const isManager = Number(user?.role_id) === 2 || user?.role === 'MANAGER';
+        if (isManager) {
+          try {
+            res = await managerApi.getTripReplay(effectiveTripId);
+          } catch (err) {
+            res = await dispatcherApi.getTripReplay(effectiveTripId);
+          }
+        } else {
+          try {
+            res = await dispatcherApi.getTripReplay(effectiveTripId);
+          } catch (err) {
+            res = await managerApi.getTripReplay(effectiveTripId);
+          }
         }
 
         if (!active) return;
@@ -105,7 +116,7 @@ export default function TripReplayModal({
     return () => {
       active = false;
     };
-  }, [isModalOpen, effectiveTripId]);
+  }, [isModalOpen, effectiveTripId, user]);
 
   // Chuỗi tọa độ GPS vệt chạy (nếu DB chưa có thì dùng bộ nội suy mẫu an toàn)
   const gpsTrack = useMemo(() => {

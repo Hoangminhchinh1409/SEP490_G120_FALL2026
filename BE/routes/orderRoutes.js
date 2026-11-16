@@ -8,6 +8,7 @@ const {
   assignTrip,
   cancelOrder,
   closeOrder,
+  splitOrder,
   getOrderByToken,
   customerAgreeOrderPrice,
   customerNegotiateOrder,
@@ -27,6 +28,17 @@ const requireDispatcherOrAdmin = [requireAuth, requireRole(['DISPATCHER', 3, 'AD
 
 // 1. Lấy danh sách đơn hàng
 router.get('/', getAllOrders);
+
+// 1b. Khách hàng: Lấy danh sách địa điểm kho bãi công khai (Public)
+router.get('/public-locations', async (req, res) => {
+  try {
+    const locationService = require('../services/locationService');
+    const formattedLocations = await locationService.getAllLocations();
+    return res.json({ locations: formattedLocations });
+  } catch (err) {
+    return res.status(500).json({ message: 'Lỗi tải danh sách địa điểm công khai', error: err.message });
+  }
+});
 
 // 2. Khách hàng gửi tư vấn từ Homepage (Public)
 router.post('/consultation', createConsultationOrder);
@@ -78,6 +90,9 @@ router.post('/:id/assign', ...requireDispatcherOrAdmin, assignTrip);
 
 // 12. Hủy đơn hàng (chuyển sang CANCELLED)
 router.post('/:id/cancel', ...requireDispatcherOrAdmin, cancelOrder);
+
+// 13b. Tách đơn hàng lớn thành nhiều đơn con cho các xe nhỏ
+router.post('/:id/split', ...requireDispatcherOrAdmin, splitOrder);
 
 // 13. Đóng đơn hàng (chuyển sang CLOSED)
 router.post('/:id/close', ...requireDispatcherOrAdmin, closeOrder);

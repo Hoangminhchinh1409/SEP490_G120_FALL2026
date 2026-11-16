@@ -9,6 +9,7 @@ import {
 import CancelOrderModal from './CancelOrderModal';
 import DocumentAssistantDrawer from './DocumentAssistantDrawer';
 import LoadPlan3DModal from './LoadPlan3DModal';
+import SplitOrderModal from './SplitOrderModal';
 import { 
   SPECIALIZED_CARGO_CATEGORIES, 
   getRecommendedDocsByCargo,
@@ -66,6 +67,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
 
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [savingPrice, setSavingPrice] = useState(false);
   const [confirmingDocs, setConfirmingDocs] = useState(false);
   const [scanningCustoms, setScanningCustoms] = useState(false);
@@ -496,20 +498,40 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
   const handleApproveDoc = async (docKey) => {
     const updated = documents.map(d => d.key === docKey ? { ...d, status: 'APPROVED', reject_reason: null } : d);
     setDocuments(updated);
+
+    const nonCustomsDocs = updated.filter(
+      d => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'))
+    );
+    const stillHasRejected = updated.some(d => d.status === 'REJECTED');
+    const allApproved = nonCustomsDocs.length > 0 && nonCustomsDocs.every(d => d.status === 'APPROVED');
+    const nextStage = stillHasRejected ? 'DOCS_REJECTED' : allApproved ? 'DOCS_APPROVED' : 'DOCS_UPLOADED';
+
     try {
-      await orderApi.uploadOrderDocuments(order.id || order.order_id, updated);
-      const stillHasRejected = updated.some(d => d.status === 'REJECTED');
+      const res = await orderApi.uploadOrderDocuments(order.id || order.order_id, updated, nextStage);
       onUpdateOrder?.({
         ...order,
+        status: allApproved && (order.contract_uploaded || res?.order?.status === 'READY_FOR_PLANNING') ? 'READY_FOR_PLANNING' : 'CONFIRMED',
+        documents: updated,
+        web_workflow: res?.web_workflow || {
+          ...(order.web_workflow || {}),
+          stage: nextStage,
+          documents: updated,
+          approved_documents: allApproved ? updated.filter(d => d.status === 'APPROVED') : (order.web_workflow?.approved_documents || null)
+        }
+      });
+      message.success(allApproved ? 'Đã duyệt toàn bộ chứng từ thành công!' : 'Đã duyệt tính hợp lệ của chứng từ!');
+    } catch (e) {
+      console.error('handleApproveDoc error:', e);
+      onUpdateOrder?.({
+        ...order,
+        status: 'CONFIRMED',
         documents: updated,
         web_workflow: {
           ...(order.web_workflow || {}),
-          stage: stillHasRejected ? 'DOCS_REJECTED' : 'DOCS_UPLOADED',
+          stage: nextStage,
           documents: updated
         }
       });
-      message.success('Đã duyệt tính hợp lệ của chứng từ!');
-    } catch (e) {
       message.success('Đã duyệt tính hợp lệ của chứng từ!');
     }
   };
@@ -799,6 +821,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
             setSelected3DVehicleType(vType || proposedVehicleType);
             setIs3DModalOpen(true);
           }}
+          onOpenSplitModal={() => setSplitModalOpen(true)}
         />
       )
     }
@@ -1061,6 +1084,19 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
         order={order}
         onCancel={() => setCancelModalOpen(false)}
         onConfirmCancel={handleExecuteCancel}
+      />
+
+      {/* Modal Tách đơn sang nhiều xe nhỏ theo chuẩn BR-29 */}
+      <SplitOrderModal
+        open={splitModalOpen}
+        order={order}
+        onCancel={() => setSplitModalOpen(false)}
+        onSuccess={(result) => {
+          onCancel?.();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('nexlog_orders_updated'));
+          }
+        }}
       />
 
       <DocumentAssistantDrawer

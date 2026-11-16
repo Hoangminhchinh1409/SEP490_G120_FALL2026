@@ -47,6 +47,37 @@ export const VIETNAM_PROVINCES_2026 = [
 // Cache danh sách Phường/Xã theo mã Tỉnh/Thành phố để tăng tốc độ phản hồi
 const provinceWardsCache = new Map();
 
+// Cache cityId của VietMap theo tên tỉnh/thành phố để lọc chuẩn xác không cần gọi lại nhiều lần
+const vietmapCityIdCache = new Map();
+
+async function resolveVietmapCityId(provName, signal) {
+  if (!provName) return null;
+  const cleanName = provName.trim();
+  if (vietmapCityIdCache.has(cleanName)) {
+    return vietmapCityIdCache.get(cleanName);
+  }
+
+  try {
+    const url = `https://maps.vietmap.vn/api/autocomplete/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(cleanName)}`;
+    const res = await fetch(url, { signal });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          const b0 = item.boundaries?.find((b) => b.type === 0);
+          if (b0 && b0.id) {
+            vietmapCityIdCache.set(cleanName, b0.id);
+            return b0.id;
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore fetch error
+  }
+  return null;
+}
+
 function normalizeVi(str = '') {
   return (str || '')
     .normalize('NFD')
@@ -342,27 +373,96 @@ const LocationSearchInput = ({
     const apiTimer = setTimeout(async () => {
       try {
         setIsLoading(true);
-        // Tìm kiếm tự do theo từ khóa người dùng gõ trên toàn quốc, không bó hẹp cứng theo tỉnh/xã đã chọn trước đó
-        const vietmapUrl = `https://maps.vietmap.vn/api/autocomplete/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(query)}`;
-        const res = await fetch(vietmapUrl, { signal: controller.signal });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (!isCancelled && Array.isArray(data) && data.length > 0) {
-            const mapped = data.slice(0, 6).map((item) => {
-              const mainName = item.name || item.display?.split(',')[0] || query;
-              const boundaryText = Array.isArray(item.boundaries) && item.boundaries.length > 0
-                ? item.boundaries.map((b) => b.full_name || b.name).filter(Boolean).join(', ')
-                : item.address || '';
-              return {
-                ref_id: item.ref_id,
-                main: mainName,
-                sub: boundaryText || item.address || 'Việt Nam',
-                boundaries: item.boundaries || []
-              };
-            });
-            setApiSuggestions(mapped);
+        const normQuery = normalizeVi(query);
+        let effectiveProvName = selectedProvinceName;
+        let cleanQuery = query;
+
+        // Tự động nhận diện Tỉnh/Thành phố nếu người dùng gõ trực tiếp tên tỉnh vào ô tìm kiếm
+        if (!effectiveProvName) {
+          for (const p of VIETNAM_PROVINCES_2026) {
+            const pNorm = normalizeVi(p.name).replace(/^(thanh pho|tinh)\s+/i, '').trim();
+            if (pNorm && normQuery.includes(pNorm)) {
+              effectiveProvName = p.name;
+              // Bóc tách tên tỉnh ra khỏi chuỗi để tìm kiếm địa chỉ cụ thể chính xác hơn
+              const regex = new RegExp(`[,\\s]*(thành phố|thanh pho|tp\\.?|tp|tỉnh|tinh)?\\s*${pNorm}`, 'gi');
+              cleanQuery = cleanQuery.replace(regex, '').trim();
+              break;
+            }
           }
+        }
+
+        // Nếu đã có Tỉnh/Thành phố (từ dropdown hoặc bóc tách từ chuỗi gõ), lấy mã cityId chuẩn từ VietMap
+        let cityId = null;
+        if (effectiveProvName) {
+          cityId = await resolveVietmapCityId(effectiveProvName, controller.signal);
+        }
+
+        const fetchAutocomplete = async (searchTxt, cId) => {
+          if (!searchTxt) return [];
+          const cParam = cId ? `&cityId=${cId}` : '';
+          const url = `https://maps.vietmap.vn/api/autocomplete/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(searchTxt)}${cParam}`;
+          const r = await fetch(url, { signal: controller.signal });
+          return r.ok ? await r.json() : [];
+        };
+
+        const fetchTasks = [];
+
+        // 1. Luôn truy vấn nguyên văn chuỗi người dùng gõ
+        fetchTasks.push(fetchAutocomplete(query, cityId));
+
+        // 2. Nếu chuỗi có bóc tách tên tỉnh (VD: '1 tôn thất thuyết, hà nội' -> '1 tôn thất thuyết' + cityId)
+        if (cleanQuery && cleanQuery !== query && cityId) {
+          fetchTasks.push(fetchAutocomplete(cleanQuery, cityId));
+        }
+
+        // 3. Nếu người dùng gõ kèm số nhà (VD: '1 tôn thất thuyết') mà chưa có kết quả tốt, tìm thêm theo tên đường ('tôn thất thuyết')
+        const withoutHouseNum = (cleanQuery || query).replace(/^\d+[\w\/-]*\s+/i, '').trim();
+        if (withoutHouseNum && withoutHouseNum !== (cleanQuery || query)) {
+          fetchTasks.push(fetchAutocomplete(withoutHouseNum, cityId));
+        }
+
+        const resArrays = await Promise.all(fetchTasks);
+        const combined = resArrays.flat().filter(Boolean);
+
+        if (!isCancelled && combined.length > 0) {
+          // Khử trùng lặp theo ref_id hoặc display
+          const seenKeys = new Set();
+          const uniqueList = [];
+          for (const item of combined) {
+            const k = item.ref_id || item.display || item.name;
+            if (k && !seenKeys.has(k)) {
+              seenKeys.add(k);
+              uniqueList.push(item);
+            }
+          }
+
+          // Sắp xếp ưu tiên hiển thị các kết quả trùng với Tỉnh/Thành phố đang được chọn hoặc vừa nhận diện
+          const sortedData = uniqueList.sort((a, b) => {
+            if (effectiveProvName) {
+              const normProv = normalizeVi(effectiveProvName).replace(/^(thanh pho|tinh)\s+/i, '').trim();
+              const aMatch = normalizeVi(a.display || a.address || '').includes(normProv) ? 1 : 0;
+              const bMatch = normalizeVi(b.display || b.address || '').includes(normProv) ? 1 : 0;
+              if (aMatch !== bMatch) return bMatch - aMatch;
+            }
+            return 0;
+          });
+
+          const mapped = sortedData.slice(0, 10).map((item) => {
+            const mainName = item.name || item.display?.split(',')[0] || query;
+            const boundaryText = Array.isArray(item.boundaries) && item.boundaries.length > 0
+              ? item.boundaries.map((b) => b.full_name || b.name).filter(Boolean).join(', ')
+              : item.address || '';
+            return {
+              ref_id: item.ref_id,
+              main: mainName,
+              sub: boundaryText || item.address || 'Việt Nam',
+              boundaries: item.boundaries || []
+            };
+          });
+          setApiSuggestions(mapped);
+        } else if (!isCancelled) {
+          setApiSuggestions([]);
         }
       } catch {
         // Ignore
@@ -457,9 +557,7 @@ const LocationSearchInput = ({
       setSelectedWardName(undefined);
     }
 
-    const nextProvName = matchedProv?.name || selectedProvinceName;
-    const fullAddr = buildFullAddress(item.main, nextWard, nextProvName);
-    if (onChange) onChange(fullAddr);
+    let nextProvName = matchedProv?.name || selectedProvinceName;
 
     if (item.ref_id) {
       try {
@@ -468,11 +566,31 @@ const LocationSearchInput = ({
         const placeRes = await fetch(placeUrl);
         if (placeRes.ok) {
           const placeData = await placeRes.json();
-          if (typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number' && nextWard && nextProvName) {
+
+          // Nếu autocomplete chưa có phường/xã hoặc tỉnh, bổ sung trực tiếp từ chi tiết placeData của VietMap
+          if (!nextWard && placeData?.ward) {
+            nextWard = placeData.ward;
+            setSelectedWardName(nextWard);
+          }
+          if ((!matchedProv || !nextProvName) && placeData?.city) {
+            const cNorm = normalizeVi(placeData.city);
+            const foundP = VIETNAM_PROVINCES_2026.find((p) => normalizeVi(p.name).includes(cNorm) || cNorm.includes(normalizeVi(p.name).replace(/^(tinh|thanh pho)\s+/i, '')));
+            if (foundP) {
+              matchedProv = foundP;
+              nextProvName = foundP.name;
+              setSelectedProvinceCode(foundP.code);
+              setSelectedProvinceName(foundP.name);
+            }
+          }
+
+          const resolvedFullAddr = buildFullAddress(item.main, nextWard, nextProvName);
+          if (onChange) onChange(resolvedFullAddr);
+
+          if (typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
             setIsVerifiedCoords(true);
             if (onSelectLocation) {
               onSelectLocation({
-                address: fullAddr,
+                address: resolvedFullAddr,
                 mainName: item.main,
                 ward: nextWard,
                 province: nextProvName,
@@ -482,6 +600,7 @@ const LocationSearchInput = ({
               });
             }
           }
+          return;
         }
       } catch {
         // Ignore
@@ -489,6 +608,9 @@ const LocationSearchInput = ({
         setResolvingCoords(false);
       }
     }
+
+    const fallbackFullAddr = buildFullAddress(item.main, nextWard, nextProvName);
+    if (onChange) onChange(fallbackFullAddr);
   };
 
   const handleClearDetail = () => {

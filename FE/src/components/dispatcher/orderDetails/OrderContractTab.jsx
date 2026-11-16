@@ -59,7 +59,7 @@ export default function OrderContractTab({
 
       customer_name: saved.customer_name || order.customer || order.customer_name || '',
       customer_tax_code: saved.customer_tax_code || order.customer_tax_code || order.customer_cid || '',
-      customer_address: saved.customer_address || order.customer_address || order.pickup || order.pickup_address || '',
+      customer_address: saved.customer_address || order.customer_address || (order.shipping_direction === 'IMPORT' ? (order.dropoff || order.delivery_address) : (order.pickup || order.pickup_address)) || order.customer?.registered_address || '',
       customer_phone: saved.customer_phone || order.customer_phone || '',
       customer_email: saved.customer_email || order.customer_email || '',
 

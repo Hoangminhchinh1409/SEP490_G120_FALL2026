@@ -5,6 +5,7 @@ const {
   sendContractToCustomerEmail
 } = require('../../services/emailService');
 const { parseOrderMeta, saveOrderMeta } = require('../../services/orderHelperService');
+const { generateContractPdfBuffer } = require('../../services/pdfService');
 
 // Helper tìm đơn hàng theo id hoặc order_code hoặc tracking_token
 const findOrderByIdentifier = async (identifier, includeRelations = false) => {
@@ -428,7 +429,10 @@ const rejectOrderDocument = async (req, res) => {
     await saveOrderMeta(currentOrder.id, meta);
     await supabase
       .from('orders')
-      .update({ updated_at: new Date().toISOString() })
+      .update({
+        status: 'CONFIRMED',
+        updated_at: new Date().toISOString()
+      })
       .eq('id', currentOrder.id);
 
     // Gửi email yêu cầu khách hàng tải lại đúng giấy tờ bị từ chối
@@ -508,12 +512,12 @@ const approveWebOrderDocuments = async (req, res) => {
     await saveOrderMeta(currentOrder.id, meta);
 
     const updateFields = {
+      status: meta.contract_uploaded ? 'READY_FOR_PLANNING' : 'CONFIRMED',
       document_status: 'APPROVED',
       updated_at: nowIso
     };
 
     if (meta.contract_uploaded) {
-      updateFields.status = 'READY_FOR_PLANNING';
       updateFields.ready_for_planning_at = nowIso;
       updateFields.waiting_too_long = false;
     }
@@ -678,6 +682,8 @@ const sendContractToCustomer = async (req, res) => {
     // Đường link tra cứu và nộp hợp đồng chuẩn của khách hàng: /customer/order-documents/[token]
     const trackingUrl = `${clientOrigin}/customer/order-documents/${(currentOrder.tracking_token || currentOrder.order_code || '').trim()}`;
 
+    const contractInfo = meta.contract_details || {};
+
     let pdfAttachment = null;
     if (pdf_base64) {
       const base64Data = pdf_base64.replace(/^data:application\/pdf;base64,/, '');
@@ -685,9 +691,41 @@ const sendContractToCustomer = async (req, res) => {
         filename: `HopDongVanTai_ALS_${currentOrder.order_code}.pdf`,
         content: Buffer.from(base64Data, 'base64')
       };
+    } else {
+      // Tự động sinh file PDF Hợp đồng thật với đầy đủ thông tin thực tế của khách hàng và đơn hàng
+      try {
+        const generatedBuffer = await generateContractPdfBuffer({
+          orderCode: currentOrder.order_code,
+          contractDetails: {
+            ...contractInfo,
+            customer_name: contractInfo.customer_name || currentOrder.customer?.company_name || currentOrder.receiver_name || 'Khách hàng',
+            customer_tax_code: contractInfo.customer_tax_code || currentOrder.customer?.tax_code || '',
+            customer_address: contractInfo.customer_address || currentOrder.customer?.registered_address || (currentOrder.shipping_direction === 'IMPORT' ? (currentOrder.delivery_location?.address || meta.delivery_address) : (currentOrder.pickup_location?.address || meta.pickup_address)) || '',
+            customer_phone: contractInfo.customer_phone || currentOrder.customer?.phone || currentOrder.receiver_phone || '',
+            customer_email: targetEmail,
+            pickup_address: contractInfo.pickup_address || currentOrder.pickup_location?.address || meta.pickup_address || '',
+            delivery_address: contractInfo.delivery_address || currentOrder.delivery_location?.address || meta.delivery_address || '',
+            cargo_name: contractInfo.cargo_name || meta.cargo_name || 'Hàng hóa thông thường',
+            package_info: contractInfo.package_info || (meta.package_count ? `${meta.package_count} kiện` : 'Kiện hàng chuẩn'),
+            weight: contractInfo.weight || meta.weight || 0,
+            chargeable_weight: contractInfo.chargeable_weight || meta.chargeable || meta.weight || 0,
+            truck_model: contractInfo.truck_model || meta.agreed_vehicle_type || meta.proposed_vehicle_type || 'Xe tải chuyên dụng ALS',
+            price_amount: contractInfo.price_amount || currentOrder.agreed_price || meta.agreed_price || 0,
+            distance_km: contractInfo.distance_km || meta.distance_km || 35.5
+          },
+          customTerms: termsArray,
+          customer: currentOrder.customer || {}
+        });
+
+        pdfAttachment = {
+          filename: `HopDongVanTai_ALS_${currentOrder.order_code}.pdf`,
+          content: generatedBuffer
+        };
+      } catch (pdfErr) {
+        console.error('[sendContractToCustomer] Error generating PDF:', pdfErr);
+      }
     }
 
-    const contractInfo = meta.contract_details || {};
     const emailRes = await sendContractToCustomerEmail({
       customerEmail: targetEmail,
       customerName: contractInfo.customer_name || currentOrder.customer?.company_name || currentOrder.receiver_name || 'Quý khách',
@@ -798,7 +836,7 @@ const confirmHardcopyContractReceived = async (req, res) => {
 const uploadOrderDocuments = async (req, res) => {
   try {
     const { id } = req.params;
-    const { documents } = req.body;
+    const { documents, stage } = req.body;
 
     if (!Array.isArray(documents)) {
       return res.status(400).json({ message: 'Danh mục chứng từ không hợp lệ' });
@@ -812,15 +850,59 @@ const uploadOrderDocuments = async (req, res) => {
     const meta = parseOrderMeta(currentOrder);
     const nowIso = new Date().toISOString();
     if (!meta.web_workflow) meta.web_workflow = {};
+
+    // 1. Phân tích trạng thái danh mục chứng từ để tự động suy luận stage chuẩn xác
+    const customerRequiredDocs = documents.filter(
+      (d) => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'))
+    );
+    const hasRejected = documents.some((d) => d.status === 'REJECTED');
+    const allApproved =
+      customerRequiredDocs.length > 0 &&
+      customerRequiredDocs.every((d) => d.status === 'APPROVED');
+
+    let resolvedStage = stage || meta.web_workflow.stage;
+    if (hasRejected) {
+      resolvedStage = 'DOCS_REJECTED';
+    } else if (allApproved) {
+      resolvedStage = meta.contract_uploaded ? 'CONTRACT_SIGNED' : 'DOCS_APPROVED';
+    } else if (
+      !resolvedStage ||
+      resolvedStage === 'CUSTOMER_NEGOTIATING' ||
+      resolvedStage === 'PRICE_AGREED_BY_DISPATCHER' ||
+      resolvedStage === 'CUSTOMER_CONFIRMED'
+    ) {
+      const hasUploadedFile = documents.some((d) => d.file && d.file !== 'Chờ tải lên');
+      if (hasUploadedFile) {
+        resolvedStage = 'DOCS_UPLOADED';
+      }
+    }
+
+    meta.web_workflow.stage = resolvedStage;
     meta.web_workflow.documents = documents;
-    meta.web_workflow.approved_documents = null;
+    if (resolvedStage === 'DOCS_APPROVED' || allApproved) {
+      meta.web_workflow.approved_documents = documents.filter((d) => d.status === 'APPROVED');
+      meta.web_workflow.docs_approved_at = meta.web_workflow.docs_approved_at || nowIso;
+    }
     meta.documents = documents;
 
     await saveOrderMeta(currentOrder.id, meta);
 
+    // 2. Bảo đảm orders.status không bao giờ bị rơi về Draft một khi đã có hồ sơ chứng từ
+    const updatePayload = { updated_at: nowIso };
+    if (['Draft', 'DRAFT', 'WAITING_FOR_DOCUMENTS', 'PENDING_DOCUMENTS'].includes(currentOrder.status)) {
+      updatePayload.status = 'CONFIRMED';
+    }
+    if (allApproved && meta.contract_uploaded) {
+      updatePayload.status = 'READY_FOR_PLANNING';
+      updatePayload.ready_for_planning_at = nowIso;
+      updatePayload.document_status = 'APPROVED';
+    } else if (allApproved) {
+      updatePayload.document_status = 'APPROVED';
+    }
+
     const { data: updatedOrders, error: updateError } = await supabase
       .from('orders')
-      .update({ updated_at: nowIso })
+      .update(updatePayload)
       .eq('id', currentOrder.id)
       .select();
 
@@ -832,6 +914,8 @@ const uploadOrderDocuments = async (req, res) => {
     return res.json({
       message: 'Đã lưu danh mục chứng từ vào hồ sơ đơn hàng thành công!',
       documents,
+      stage: resolvedStage,
+      web_workflow: meta.web_workflow,
       order: updatedOrders?.[0]
     });
   } catch (err) {

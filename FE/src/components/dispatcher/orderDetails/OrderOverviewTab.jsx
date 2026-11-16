@@ -41,7 +41,8 @@ export default function OrderOverviewTab({
   documents = [],
   setDocuments,
   onOpenAssistant,
-  onOpen3DModal
+  onOpen3DModal,
+  onOpenSplitModal
 }) {
   const cleanPhone = (order.customer_phone || '').replace(/[^0-9]/g, '');
   const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
@@ -249,6 +250,7 @@ export default function OrderOverviewTab({
         vehicleAnalysisNote={vehicleAnalysisNote}
         setVehicleAnalysisNote={setVehicleAnalysisNote}
         onOpen3DModal={onOpen3DModal}
+        onOpenSplitModal={onOpenSplitModal}
       />
 
       {/* 3. Box Liên hệ khách hàng & Chốt giá cước thỏa thuận */}

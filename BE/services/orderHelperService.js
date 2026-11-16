@@ -163,17 +163,19 @@ const mapDbStatusToFe = (dbStatus, order, meta = null) => {
       }
       return 'CONFIRMED';
     default:
-      if (resolvedMeta?.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' && order?.agreed_price > 0) {
-        return 'DRAFT';
-      }
       if (
         resolvedMeta?.web_workflow?.stage === 'CUSTOMER_CONFIRMED' ||
         resolvedMeta?.web_workflow?.stage === 'DOCS_UPLOADED' ||
         resolvedMeta?.web_workflow?.stage === 'DOCS_REJECTED' ||
         resolvedMeta?.web_workflow?.stage === 'DOCS_APPROVED' ||
-        resolvedMeta?.web_workflow?.stage === 'CONTRACT_SENT'
+        resolvedMeta?.web_workflow?.stage === 'CONTRACT_SENT' ||
+        (Array.isArray(resolvedMeta?.web_workflow?.documents) &&
+          resolvedMeta.web_workflow.documents.some((d) => d.file && d.file !== 'Chờ tải lên'))
       ) {
         return 'CONFIRMED';
+      }
+      if (resolvedMeta?.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' && order?.agreed_price > 0) {
+        return 'DRAFT';
       }
       return 'DRAFT';
   }
