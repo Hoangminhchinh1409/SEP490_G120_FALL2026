@@ -1,6 +1,6 @@
 import React from 'react';
-import { Form, Input, Select, Button } from 'antd';
-import { Truck } from 'lucide-react';
+import { Form, Input, Select, Button, Checkbox } from 'antd';
+import { Truck, Split, Info } from 'lucide-react';
 
 const { Option } = Select;
 
@@ -109,6 +109,92 @@ export default function OrderFormVehicleSection({
             )}
           </div>
         )}
+
+        {/* TUỲ CHỌN TÁCH SANG NHIỀU XE TẢI NHỎ KHI TẠO ĐƠN TRỰC TIẾP */}
+        <div className="mt-3 p-3 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 rounded-xl border border-indigo-200 space-y-2.5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <Form.Item name="request_split_trucks" valuePropName="checked" className="mb-0">
+              <Checkbox className="text-xs font-bold text-indigo-950">
+                <span className="flex items-center gap-1.5">
+                  <Split size={14} className="text-indigo-600 inline" />
+                  Yêu cầu chia đi nhiều xe tải nhỏ (Đường/kho khách hẹp, cấm xe tải lớn)
+                </span>
+              </Checkbox>
+            </Form.Item>
+          </div>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, cur) => prev.request_split_trucks !== cur.request_split_trucks}
+          >
+            {({ getFieldValue }) => {
+              const isSplitting = getFieldValue('request_split_trucks');
+              if (!isSplitting) return null;
+
+              return (
+                <div className="pt-2 border-t border-indigo-150 space-y-2.5 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <Form.Item
+                      label={<span className="text-xs font-semibold">Loại xe tải nhỏ dự kiến:</span>}
+                      name="split_target_vehicle"
+                      initialValue="TRUCK_2.5T"
+                      className="mb-0"
+                    >
+                      <Select className="text-xs w-full">
+                        <Option value="TRUCK_1.25T">🚐 Xe tải 1.25 tấn</Option>
+                        <Option value="TRUCK_1.5T">🚐 Xe tải 1.5 tấn</Option>
+                        <Option value="TRUCK_2.5T">🚛 Xe tải 2.5 tấn</Option>
+                        <Option value="TRUCK_3.5T">🚛 Xe tải 3.5 tấn</Option>
+                      </Select>
+                    </Form.Item>
+
+                    <Form.Item
+                      label={<span className="text-xs font-semibold">Số lượng xe dự kiến:</span>}
+                      name="split_truck_count"
+                      initialValue={2}
+                      className="mb-0"
+                    >
+                      <Select className="text-xs w-full">
+                        <Option value={2}>2 xe nhỏ</Option>
+                        <Option value={3}>3 xe nhỏ</Option>
+                        <Option value={4}>4 xe nhỏ</Option>
+                      </Select>
+                    </Form.Item>
+                  </div>
+
+                  <Form.Item
+                    label={<span className="text-xs font-semibold">Lý do chia nhiều xe nhỏ:</span>}
+                    name="split_reason"
+                    initialValue="Cổng kho / cung đường vào kho hẹp, xe to không vào được"
+                    className="mb-0"
+                  >
+                    <Select className="text-xs w-full">
+                      <Option value="Cổng kho / cung đường vào kho hẹp, xe to không vào được">
+                        Đường/cổng kho hẹp, cấm xe to
+                      </Option>
+                      <Option value="Tuyến đường có biển giới hạn tải trọng xe trên 2.5T - 5T">
+                        Tuyến đường giới hạn tải trọng
+                      </Option>
+                      <Option value="Quy định khung giờ cấm xe tải trọng lớn vào khu vực nội thành">
+                        Khung giờ cấm xe tải trọng lớn
+                      </Option>
+                      <Option value="Khách hàng yêu cầu giao chia nhỏ về các địa điểm kho khác nhau">
+                        Giao chia nhỏ về các kho nhánh
+                      </Option>
+                    </Select>
+                  </Form.Item>
+
+                  <div className="p-2 bg-indigo-100/70 rounded-lg text-[11px] text-indigo-900 flex items-start gap-1.5">
+                    <Info size={14} className="text-indigo-600 shrink-0 mt-0.5" />
+                    <span>
+                      Sau khi tạo đơn, hệ thống sẽ tự động ghi nhận cấu hình chia xe này và hiển thị nút <b>&quot;Mở chia tách xe ngay&quot;</b> trong hồ sơ chi tiết để Điều phối viên phân bổ hàng hóa cho từng xe.
+                    </span>
+                  </div>
+                </div>
+              );
+            }}
+          </Form.Item>
+        </div>
 
         {/* Bảng chi tiết tính giá cước theo Biểu giá chuẩn ALS */}
         {estimatedPricing.totalRate > 0 && (

@@ -454,7 +454,14 @@ const createDirectOrder = async (req, res) => {
       accounting_email: accounting_email || customer_email || null,
       authorized_bank: authorized_bank || 'Vietcombank',
       items: req.body.items || null,
-      documents: req.body.documents || null
+      documents: req.body.documents || null,
+      request_split_trucks: Boolean(req.body.request_split_trucks),
+      split_details: req.body.split_details || null,
+      web_workflow: {
+        stage: 'CREATED',
+        request_split_trucks: Boolean(req.body.request_split_trucks),
+        split_details: req.body.split_details || null
+      }
     };
 
     const hasUploadedDocs = Array.isArray(req.body.documents) && req.body.documents.some(d => d.file && d.file !== 'Chờ tải lên');
@@ -525,6 +532,9 @@ const createDirectOrder = async (req, res) => {
 
     const noteParts = [
       order_notes,
+      req.body.request_split_trucks && req.body.split_details
+        ? `[ĐIỀU PHỐI YÊU CẦU TÁCH ${req.body.split_details.split_count || 2} XE NHỎ]: Xe ${req.body.split_details.vehicle_target_label || req.body.split_details.vehicle_target}. Lý do: ${req.body.split_details.reason || 'Kho hẹp'}`
+        : '',
       pickup_address ? `Điểm lấy hàng: ${pickup_address}` : '',
       customer_address ? `Địa chỉ KH: ${customer_address}` : '',
       cargo_type ? `Loại hàng: ${cargo_type}` : '',

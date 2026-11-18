@@ -511,6 +511,13 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         estimated_duration_mins: routeInfo.durationMins,
         estimated_baseline_rate: estimatedBaselineRate,
         documents: documents,
+        request_split_trucks: Boolean(fieldValues.request_split_trucks),
+        split_details: fieldValues.request_split_trucks ? {
+          split_count: fieldValues.split_truck_count || 2,
+          vehicle_target: fieldValues.split_target_vehicle || 'TRUCK_2.5T',
+          vehicle_target_label: getVehicleSpecByKey(fieldValues.split_target_vehicle || 'TRUCK_2.5T').label,
+          reason: fieldValues.split_reason || 'Đường kho hẹp/cấm xe tải lớn'
+        } : null,
         created_at: new Date().toISOString()
       });
       handleReset();
