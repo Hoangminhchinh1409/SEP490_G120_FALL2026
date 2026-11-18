@@ -210,7 +210,14 @@ const createConsultationOrder = async (req, res) => {
       accounting_email: accounting_email || customer_email || null,
       authorized_bank: authorized_bank || 'Vietcombank',
       items: items || null,
-      user_note: notes || null
+      user_note: notes || null,
+      request_split_trucks: Boolean(req.body.request_split_trucks),
+      split_details: req.body.split_details || null,
+      web_workflow: {
+        stage: 'CREATED',
+        request_split_trucks: Boolean(req.body.request_split_trucks),
+        split_details: req.body.split_details || null
+      }
     };
 
     // 4. Tìm điều phối viên nhận đơn Web xoay vòng (Least Loaded Round-Robin)
@@ -277,11 +284,17 @@ const createConsultationOrder = async (req, res) => {
       console.error('createConsultationOrder Cargo Insert Error:', cargoErr);
     }
 
-    // 6. Thêm ghi chú vào bảng order_notes nếu có
-    if (notes && notes.trim().length > 0) {
+    // 6. Thêm ghi chú vào bảng order_notes nếu có hoặc nếu khách yêu cầu chia xe
+    let initialNoteContent = notes ? notes.trim() : '';
+    if (req.body.request_split_trucks && req.body.split_details) {
+      const splitInfo = `[KHÁCH YÊU CẦU TÁCH ${req.body.split_details.split_count || 2} XE NHỎ KHI TẠO ĐƠN]: Loại xe mong muốn: ${req.body.split_details.vehicle_target_label || req.body.split_details.vehicle_target}. Lý do: ${req.body.split_details.reason || 'Đường kho hẹp'}.`;
+      initialNoteContent = initialNoteContent ? `${splitInfo} Ghi chú khách: ${initialNoteContent}` : splitInfo;
+    }
+
+    if (initialNoteContent.length > 0) {
       await supabase.from('order_notes').insert([{
         order_id: createdOrder.id,
-        content: notes.trim(),
+        content: initialNoteContent.slice(0, 480),
         created_by: 1
       }]);
     }

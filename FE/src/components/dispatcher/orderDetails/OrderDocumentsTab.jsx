@@ -40,6 +40,8 @@ export default function OrderDocumentsTab({
     !hasRejectedDocs &&
     (order.web_workflow?.stage === 'DOCS_APPROVED' || order.web_workflow?.stage === 'CONTRACT_SIGNED');
   const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
+  // Khi đơn đã hoàn tất ký HĐ/sẵn sàng xếp xe, gán xe, vận chuyển, đã giao hoặc đã đóng: khóa toàn bộ thao tác duyệt/từ chối/thêm/xóa chứng từ
+  const isLocked = isClosed || isDocsApprovedStage || ['READY_FOR_PLANNING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(order.status);
 
   const docColumns = [
     { 
@@ -166,41 +168,50 @@ export default function OrderDocumentsTab({
       title: 'Thao tác', 
       key: 'action',
       width: '16%',
-      render: (_, record) => (
-        <Space size="small">
-          <Button 
-            size="small" 
-            type="primary" 
-            ghost 
-            className="text-xs"
-            onClick={() => handleApproveDoc(record.key)}
-            disabled={isClosed || record.status === 'APPROVED' || record.file === 'Chờ tải lên'}
-          >
-            Duyệt
-          </Button>
-          <Button 
-            size="small" 
-            danger 
-            ghost 
-            className="text-xs"
-            onClick={() => handleRejectDoc(record.key)}
-            disabled={isClosed || record.status === 'REJECTED' || record.file === 'Chờ tải lên'}
-          >
-            Từ chối
-          </Button>
-          {record.isCustom && !isClosed && (
-            <Tooltip title="Xóa chứng từ bổ sung">
-              <Button 
-                size="small" 
-                type="text" 
-                danger 
-                icon={<Trash2 size={13} />} 
-                onClick={() => handleDeleteCustomDoc(record.key)}
-              />
-            </Tooltip>
-          )}
-        </Space>
-      )
+      render: (_, record) => {
+        if (isLocked) {
+          return (
+            <span className="text-gray-400 text-xs italic">
+              {record.status === 'APPROVED' ? 'Đã duyệt cố định' : 'Đã khóa'}
+            </span>
+          );
+        }
+        return (
+          <Space size="small">
+            <Button 
+              size="small" 
+              type="primary" 
+              ghost 
+              className="text-xs"
+              onClick={() => handleApproveDoc(record.key)}
+              disabled={isLocked || record.status === 'APPROVED' || record.file === 'Chờ tải lên'}
+            >
+              Duyệt
+            </Button>
+            <Button 
+              size="small" 
+              danger 
+              ghost 
+              className="text-xs"
+              onClick={() => handleRejectDoc(record.key)}
+              disabled={isLocked || record.status === 'REJECTED' || record.file === 'Chờ tải lên'}
+            >
+              Từ chối
+            </Button>
+            {record.isCustom && !isLocked && (
+              <Tooltip title="Xóa chứng từ bổ sung">
+                <Button 
+                  size="small" 
+                  type="text" 
+                  danger 
+                  icon={<Trash2 size={13} />} 
+                  onClick={() => handleDeleteCustomDoc(record.key)}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      }
     }
   ];
 
@@ -293,7 +304,7 @@ export default function OrderDocumentsTab({
       </div>
 
       {/* Box bổ sung chứng từ chuyên ngành / tùy biến */}
-      {!isClosed && (
+      {!isLocked && (
         <div className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-200 space-y-2.5">
           <div className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
             <Plus size={14} className="text-indigo-600" /> Bổ sung thêm loại chứng từ cho đơn hàng này:

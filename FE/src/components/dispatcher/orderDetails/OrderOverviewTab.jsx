@@ -46,7 +46,9 @@ export default function OrderOverviewTab({
 }) {
   const cleanPhone = (order.customer_phone || '').replace(/[^0-9]/g, '');
   const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
-  const canEditPrice = order.status === 'DRAFT' || isNegotiating;
+  const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
+  const isLocked = isClosed || ['READY_FOR_PLANNING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(order.status);
+  const canEditPrice = (order.status === 'DRAFT' || isNegotiating) && !isClosed && !isLocked;
   const negotiation = order.web_workflow?.negotiation;
   const negotiationHistory = Array.isArray(order.web_workflow?.negotiation_history)
     ? order.web_workflow.negotiation_history
@@ -148,6 +150,29 @@ export default function OrderOverviewTab({
             <div>
               • Lý do khách yêu cầu: <b className="text-amber-950">{negotiation.feedback_reason || 'Giá cước vượt ngân sách'}</b>
             </div>
+            {negotiation.request_split_trucks && negotiation.split_details && (
+              <div className="sm:col-span-2 p-2.5 bg-indigo-50/90 rounded-lg border border-indigo-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-indigo-950 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-indigo-600">call_split</span>
+                    Khách yêu cầu tách thành {negotiation.split_details.split_count || 2} xe {negotiation.split_details.vehicle_target_label || '2.5T'}
+                  </span>
+                  <span className="text-[11px] text-indigo-800 block">
+                    Lý do: <b>{negotiation.split_details.reason || 'Đường kho hẹp/cấm xe to'}</b> · Ước tính ~{negotiation.split_details.est_weight_per_truck} kg/xe
+                  </span>
+                </div>
+                {onOpenSplitModal && (
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={onOpenSplitModal}
+                    className="bg-indigo-600 hover:bg-indigo-700 font-bold text-xs"
+                  >
+                    Mở chia tách xe ngay
+                  </Button>
+                )}
+              </div>
+            )}
             {negotiation.proposed_price ? (
               <div className="flex items-center flex-wrap gap-1.5">
                 <span>• Giá khách mong muốn:</span>
@@ -222,15 +247,44 @@ export default function OrderOverviewTab({
 
       {/* Banner hướng dẫn luồng xử lý đối với đơn DRAFT */}
       {order.status === 'DRAFT' && !isNegotiating && (
-        <div className="p-3.5 bg-gradient-to-r from-amber-50 to-indigo-50 rounded-xl border border-amber-200">
-          <div className="flex items-center gap-2 font-bold text-amber-900 text-xs mb-1">
-            <AlertTriangle size={15} className="text-amber-600" />
-            <span>Quy trình xử lý đơn hàng nháp (Phân tích phương án xe &amp; Chốt cước):</span>
-          </div>
-          <div className="text-xs text-gray-700 space-y-0.5">
-            <p>1. Kiểm tra <b>Gợi ý xếp xe &amp; Phân tích tải trọng/kích thước</b> bên dưới để chọn loại xe phù hợp nhất cho lô hàng.</p>
-            <p>2. <b>Gọi điện / nhắn Zalo</b> trao đổi với khách hàng về phương án xe và thống nhất mức giá cước.</p>
-            <p>3. Chọn phương án xe, nhập giá đã chốt và bấm <b>&quot;Chốt phương án xe &amp; Giá cước&quot;</b> để gửi báo giá cho khách đồng ý xác nhận.</p>
+        <div className="space-y-2">
+          {/* Thông báo nếu khách yêu cầu chia xe ngay từ lúc tạo đơn */}
+          {(order.request_split_trucks || order.web_workflow?.request_split_trucks || order.split_details || order.web_workflow?.split_details) && (
+            <div className="p-3.5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border-2 border-indigo-300 text-xs flex flex-wrap items-center justify-between gap-2 shadow-xs">
+              <div className="space-y-1">
+                <span className="font-bold text-indigo-950 text-sm flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[18px] text-indigo-600">call_split</span>
+                  Khách hàng đã tích chọn &quot;Yêu cầu chia đi nhiều xe tải nhỏ&quot; khi tạo đơn:
+                </span>
+                <div className="text-indigo-900 text-xs">
+                  • Mong muốn chia thành: <b>{(order.split_details || order.web_workflow?.split_details)?.split_count || 2} xe {(order.split_details || order.web_workflow?.split_details)?.vehicle_target_label || '2.5 tấn'}</b>
+                </div>
+                <div className="text-gray-600 text-[11px]">
+                  • Lý do: <i>&ldquo;{(order.split_details || order.web_workflow?.split_details)?.reason || 'Đường kho hẹp / cấm xe to'}&rdquo;</i>
+                </div>
+              </div>
+              {onOpenSplitModal && (
+                <Button
+                  type="primary"
+                  onClick={onOpenSplitModal}
+                  className="bg-indigo-600 hover:bg-indigo-700 font-bold text-xs"
+                >
+                  Mở chia tách xe ngay
+                </Button>
+              )}
+            </div>
+          )}
+
+          <div className="p-3.5 bg-gradient-to-r from-amber-50 to-indigo-50 rounded-xl border border-amber-200">
+            <div className="flex items-center gap-2 font-bold text-amber-900 text-xs mb-1">
+              <AlertTriangle size={15} className="text-amber-600" />
+              <span>Quy trình xử lý đơn hàng nháp (Phân tích phương án xe &amp; Chốt cước):</span>
+            </div>
+            <div className="text-xs text-gray-700 space-y-0.5">
+              <p>1. Kiểm tra <b>Gợi ý xếp xe &amp; Phân tích tải trọng/kích thước</b> bên dưới để chọn loại xe phù hợp nhất cho lô hàng.</p>
+              <p>2. <b>Gọi điện / nhắn Zalo</b> trao đổi với khách hàng về phương án xe và thống nhất mức giá cước.</p>
+              <p>3. Chọn phương án xe, nhập giá đã chốt và bấm <b>&quot;Chốt phương án xe &amp; Giá cước&quot;</b> để gửi báo giá cho khách đồng ý xác nhận.</p>
+            </div>
           </div>
         </div>
       )}
@@ -251,6 +305,8 @@ export default function OrderOverviewTab({
         setVehicleAnalysisNote={setVehicleAnalysisNote}
         onOpen3DModal={onOpen3DModal}
         onOpenSplitModal={onOpenSplitModal}
+        isClosed={isClosed}
+        isLocked={isLocked}
       />
 
       {/* 3. Box Liên hệ khách hàng & Chốt giá cước thỏa thuận */}

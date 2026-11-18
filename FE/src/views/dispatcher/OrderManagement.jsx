@@ -498,20 +498,12 @@ const OrderManagement = () => {
                 <Button 
                   size="small" 
                   type="primary" 
-                  icon={<ArrowUpRight size={14} />}
+                  icon={<ArrowUpRight size={14} />} 
                   className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs"
                   onClick={() => router.push('/dispatcher/trips')}
                 >
                   Xếp chuyến
                 </Button>
-              </Tooltip>
-              <Tooltip title="Hủy đơn">
-                <Button 
-                  size="small" 
-                  danger
-                  icon={<XCircle size={13} />}
-                  onClick={() => setSelectedOrderForCancel(record)}
-                />
               </Tooltip>
             </>
           ): (record.status === 'CANCELLED' || record.status === 'DELIVERED' || record.status === 'CLOSED') ? (

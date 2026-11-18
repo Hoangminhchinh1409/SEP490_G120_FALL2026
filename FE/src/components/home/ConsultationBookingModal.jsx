@@ -353,7 +353,14 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
         pickup_coords: pickupCoords,
         delivery_coords: deliveryCoords,
         estimated_distance_km: routeInfo.distanceKm,
-        estimated_duration_mins: routeInfo.durationMins
+        estimated_duration_mins: routeInfo.durationMins,
+        request_split_trucks: Boolean(formValues.request_split_trucks),
+        split_details: formValues.request_split_trucks ? {
+          split_count: formValues.split_truck_count || 2,
+          vehicle_target: formValues.split_target_vehicle || 'TRUCK_2.5T',
+          vehicle_target_label: getVehicleSpecByKey(formValues.split_target_vehicle || 'TRUCK_2.5T').label,
+          reason: formValues.split_reason || 'Đường kho hẹp/cấm xe tải trọng lớn'
+        } : null
       };
 
       const newOrder = await orderApi.createConsultationOrder(payload);

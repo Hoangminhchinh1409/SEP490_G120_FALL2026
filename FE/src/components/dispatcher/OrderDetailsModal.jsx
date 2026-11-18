@@ -58,6 +58,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
   const router = useRouter();
   const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
   const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
+  const isLocked = isClosed || ['READY_FOR_PLANNING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(order.status);
 
   // Xác định tab mặc định dựa trên trạng thái đơn hàng
   const defaultTab = order.targetTab || (
@@ -821,7 +822,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
             setSelected3DVehicleType(vType || proposedVehicleType);
             setIs3DModalOpen(true);
           }}
-          onOpenSplitModal={() => setSplitModalOpen(true)}
+          onOpenSplitModal={(!isLocked && !isClosed && (order.status === 'DRAFT' || isNegotiating)) ? () => setSplitModalOpen(true) : null}
         />
       )
     }
@@ -1049,7 +1050,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
               Chuyển sang Xếp chuyến &amp; Điều xe
             </Button>
           ),
-          ['DRAFT', 'NEGOTIATING', 'CONFIRMED', 'READY_FOR_PLANNING', 'ASSIGNED'].includes(order.status) && (
+          ['DRAFT', 'NEGOTIATING', 'CONFIRMED'].includes(order.status) && (
             <Button key="cancel" danger onClick={() => setCancelModalOpen(true)}>
               Hủy đơn
             </Button>

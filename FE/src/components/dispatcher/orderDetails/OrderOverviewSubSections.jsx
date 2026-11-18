@@ -17,7 +17,9 @@ export function OrderVehicleRecommendationBox({
   vehicleAnalysisNote,
   setVehicleAnalysisNote,
   onOpen3DModal,
-  onOpenSplitModal
+  onOpenSplitModal,
+  isClosed,
+  isLocked
 }) {
   return (
     <div className="bg-gradient-to-r from-emerald-50/70 via-teal-50/50 to-indigo-50/60 p-4 rounded-xl border border-emerald-200/80 space-y-3">
@@ -32,7 +34,7 @@ export function OrderVehicleRecommendationBox({
           </span>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          {onOpenSplitModal && (
+          {onOpenSplitModal && canEditPrice && !isClosed && !isLocked && (
             <Button
               type="default"
               size="small"

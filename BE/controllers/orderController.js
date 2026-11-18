@@ -77,5 +77,6 @@ module.exports = {
   confirmOrder,
   assignTrip,
   cancelOrder,
-  closeOrder
+  closeOrder,
+  splitOrder
 };

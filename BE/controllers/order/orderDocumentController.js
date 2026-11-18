@@ -274,11 +274,19 @@ const customerAgreeOrderPrice = async (req, res) => {
 };
 
 
-// 4.3. API CHO KHÁCH HÀNG: YÊU CẦU ĐIỀU CHỈNH GIÁ / LOẠI XE / LỊCH TRÌNH (CÓ THỂ DEAL LẠI NHIỀU LẦN)
+// 4.3. API CHO KHÁCH HÀNG: YÊU CẦU ĐIỀU CHỈNH GIÁ / LOẠI XE / LỊCH TRÌNH / TÁCH NHIỀU XE NHỎ (CÓ THỂ DEAL LẠI NHIỀU LẦN)
 const customerNegotiateOrder = async (req, res) => {
   try {
     const { token } = req.params;
-    const { proposed_price, proposed_vehicle_type, proposed_pickup_date, feedback_reason, customer_note } = req.body;
+    const { 
+      proposed_price, 
+      proposed_vehicle_type, 
+      proposed_pickup_date, 
+      feedback_reason, 
+      customer_note,
+      request_split_trucks,
+      split_details
+    } = req.body;
 
     const order = await findOrderByIdentifier(token, false);
     if (!order) {
@@ -298,11 +306,27 @@ const customerNegotiateOrder = async (req, res) => {
       proposed_pickup_date: proposed_pickup_date || null,
       feedback_reason: feedback_reason || 'Giá cước chưa phù hợp',
       customer_note: customer_note || '',
+      request_split_trucks: Boolean(request_split_trucks),
+      split_details: split_details || null,
       submitted_at: new Date().toISOString()
     };
 
-    // Lưu vào bảng order_notes (giới hạn <= 450 ký tự)
-    const noteContent = `[Khách hàng phản hồi đàm phán] Lý do: ${feedback_reason || 'Cần điều chỉnh'}. ${proposed_price ? `Giá khách đề xuất: ${parseInt(proposed_price, 10).toLocaleString('vi-VN')} đ.` : ''} ${proposed_vehicle_type ? `Xe đề xuất: ${proposed_vehicle_type}.` : ''} Ghi chú: ${customer_note || 'Không có'}`.slice(0, 480);
+    // Lưu vào bảng order_notes (giới hạn <= 480 ký tự)
+    let noteContent = `[Khách hàng phản hồi đàm phán] Lý do: ${feedback_reason || 'Cần điều chỉnh'}.`;
+    if (request_split_trucks && split_details) {
+      noteContent += ` [YÊU CẦU TÁCH ${split_details.split_count || 2} XE NHỎ]: ${split_details.vehicle_target_label || split_details.vehicle_target}. Lý do tách: ${split_details.reason || 'Kho/đường hẹp'}.`;
+    }
+    if (proposed_price) {
+      noteContent += ` Giá khách đề xuất: ${parseInt(proposed_price, 10).toLocaleString('vi-VN')} đ.`;
+    }
+    if (proposed_vehicle_type) {
+      noteContent += ` Xe đề xuất: ${proposed_vehicle_type}.`;
+    }
+    if (customer_note) {
+      noteContent += ` Ghi chú: ${customer_note}`;
+    }
+    noteContent = noteContent.slice(0, 480);
+
     await supabase.from('order_notes').insert([{
       order_id: order.id,
       content: noteContent,
@@ -320,7 +344,9 @@ const customerNegotiateOrder = async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'Đã gửi yêu cầu thương lượng giá thành công! Điều phối viên NEXLOG sẽ xem xét và phản hồi tới Quý khách sớm nhất.',
+      message: request_split_trucks 
+        ? 'Đã gửi yêu cầu tách sang nhiều xe nhỏ tới Điều phối viên NEXLOG! Chúng tôi sẽ liên hệ & cập nhật phương án xe sớm nhất.'
+        : 'Đã gửi yêu cầu thương lượng giá thành công! Điều phối viên NEXLOG sẽ xem xét và phản hồi tới Quý khách sớm nhất.',
       negotiation: meta.web_workflow.negotiation
     });
   } catch (err) {
