@@ -1,4 +1,9 @@
-const PDFDocument = require('pdfkit');
+let PDFDocument;
+try {
+  PDFDocument = require('pdfkit');
+} catch (e) {
+  PDFDocument = null;
+}
 const fs = require('fs');
 
 /**

@@ -49,7 +49,14 @@ export function TripDetailsDrawer({ selectedTripDetails, onClose }) {
             <div>Số niêm phong chì (Seal): <b className="font-mono text-emerald-700">{selectedTripDetails.seal_number}</b></div>
             <div>Xe phụ trách: <b>{selectedTripDetails.truck_model}</b></div>
             <div>Phiên bản vận đơn: <b className="font-mono">V{selectedTripDetails.waybill_version || 1}</b></div>
-            <div>Tiến độ hành trình: <b className="text-[#7367f0]">{selectedTripDetails.progress}%</b></div>
+            <div>Tiến độ hành trình: <b className="text-[#7367f0] font-mono">{selectedTripDetails.progress}%</b></div>
+            <div className="col-span-2 flex items-center gap-1.5 pt-1 border-t border-dashed border-gray-100">
+              <span>Trạng thái tài xế:</span>
+              <AntTag color={selectedTripDetails.driver_status_color || 'blue'} className="m-0 font-semibold text-xs">
+                {selectedTripDetails.driver_status_label || 'Đang vận hành'}
+                {selectedTripDetails.driver_current_step && selectedTripDetails.driver_current_step !== '0/4' ? ` (${selectedTripDetails.driver_current_step})` : ''}
+              </AntTag>
+            </div>
           </div>
         </div>
 

@@ -3,6 +3,198 @@ const fleetService = require('./fleetService');
 const leaveModel = require('../models/leaveModel');
 const { getOrCreateLocation } = require('./orderHelperService');
 
+/**
+ * Tính toán trạng thái thực tế của tài xế và % tiến độ chuẩn xác của chuyến xe
+ * Dựa trên trạng thái từng điểm dừng và chuỗi 4 bước sự kiện (Arrived -> Loading Started -> Loading Done -> Left)
+ */
+const calculateDriverStatusAndProgress = (trip, sortedStops) => {
+  const upperStatus = (trip.status || '').toUpperCase().replace(/\s+/g, '_');
+  const nStops = sortedStops.length;
+
+  // 1. Trường hợp đặc biệt: Hủy chuyến hoặc Hoàn thành chuyến
+  if (upperStatus === 'CANCELLED') {
+    return {
+      progress: 0,
+      driver_status_code: 'CANCELLED',
+      driver_status_label: 'Chuyến xe đã hủy',
+      driver_status_color: 'default',
+      driver_current_step: null,
+      current_stop_info: null
+    };
+  }
+
+  if (upperStatus === 'COMPLETED') {
+    return {
+      progress: 100,
+      driver_status_code: 'COMPLETED',
+      driver_status_label: 'Chuyến xe hoàn tất',
+      driver_status_color: 'success',
+      driver_current_step: '4/4',
+      current_stop_info: null
+    };
+  }
+
+  // 2. Nếu chuyến chưa có điểm dừng cấu hình
+  if (nStops === 0) {
+    if (upperStatus === 'ASSIGNED') {
+      return {
+        progress: 10,
+        driver_status_code: 'ASSIGNED',
+        driver_status_label: 'Chờ tài xế nhận chuyến',
+        driver_status_color: 'blue',
+        driver_current_step: null,
+        current_stop_info: null
+      };
+    }
+    return {
+      progress: 50,
+      driver_status_code: 'IN_TRANSIT',
+      driver_status_label: 'Đang vận hành lộ trình',
+      driver_status_color: 'processing',
+      driver_current_step: null,
+      current_stop_info: null
+    };
+  }
+
+  // 3. Tìm điểm dừng hiện tại (điểm dừng đầu tiên chưa Done/Completed/Skipped)
+  const currentStopIndex = sortedStops.findIndex(s => {
+    const st = String(s.status || '').toLowerCase().trim();
+    return st !== 'done' && st !== 'completed' && st !== 'skipped';
+  });
+
+  // Nếu tất cả các điểm dừng đã Done nhưng chuyến chưa bấm hoàn thành
+  if (currentStopIndex === -1) {
+    return {
+      progress: 95,
+      driver_status_code: 'ALL_STOPS_DONE',
+      driver_status_label: 'Đã hoàn thành các điểm dừng (Chờ đóng chuyến)',
+      driver_status_color: 'success',
+      driver_current_step: '4/4',
+      current_stop_info: null
+    };
+  }
+
+  const currentStop = sortedStops[currentStopIndex];
+  const stopSeq = currentStop.sequence || (currentStopIndex + 1);
+  const rawType = String(currentStop.stop_type || '').toUpperCase();
+  const isPickup = rawType === 'PICKUP' || stopSeq === 1;
+  const isDropoff = !isPickup && (rawType === 'DROPOFF' || rawType === 'DELIVERY' || stopSeq === nStops);
+  const stopTypeName = isPickup ? 'Lấy hàng' : (isDropoff ? 'Giao hàng' : 'Điểm dừng');
+  const stopLocName = currentStop.location?.name || currentStop.location?.address || `Điểm #${stopSeq}`;
+
+  // Chuẩn hóa trạng thái của stop (kết hợp với trip_events mới nhất nếu có)
+  let stopStatus = String(currentStop.status || 'Pending').trim();
+  if (trip.events && trip.events.length > 0) {
+    const stopEvents = trip.events
+      .filter(e => Number(e.trip_stop_id) === Number(currentStop.id))
+      .sort((a, b) => new Date(b.created_at || b.phone_time || 0) - new Date(a.created_at || a.phone_time || 0));
+    if (stopEvents.length > 0) {
+      const latestEvType = stopEvents[0].event_type;
+      if (latestEvType === 'Left') {
+        stopStatus = 'Done';
+      } else if (latestEvType === 'Loading Done' && stopStatus !== 'Done') {
+        stopStatus = 'Loading Done';
+      } else if (latestEvType === 'Loading Started' && stopStatus !== 'Done' && stopStatus !== 'Loading Done') {
+        stopStatus = 'Loading Started';
+      } else if (latestEvType === 'Arrived' && stopStatus === 'Pending') {
+        stopStatus = 'Arrived';
+      }
+    }
+  }
+
+  // Chia đều dải tiến độ từ 10% đến 95% (tổng 85%) cho nStops điểm dừng
+  const slice = 85 / nStops;
+  const baseProgress = 10 + currentStopIndex * slice;
+
+  // Nếu là điểm đầu tiên và chuyến xe mới chỉ ở trạng thái ASSIGNED (chưa nhận chuyến)
+  if (currentStopIndex === 0 && stopStatus === 'Pending' && upperStatus === 'ASSIGNED') {
+    return {
+      progress: 10,
+      driver_status_code: 'WAITING_ACCEPT',
+      driver_status_label: 'Chờ tài xế xác nhận nhận chuyến',
+      driver_status_color: 'gold',
+      driver_current_step: '0/4',
+      current_stop_info: {
+        sequence: stopSeq,
+        name: stopLocName,
+        type: stopTypeName,
+        status: 'Chờ nhận'
+      }
+    };
+  }
+
+  let stopFraction = 0.15;
+  let statusCode = 'MOVING_TO_STOP';
+  let statusLabel = currentStopIndex === 0
+    ? `Đang di chuyển tới Điểm #1 (Kho lấy hàng)`
+    : `Đang di chuyển tới Điểm #${stopSeq} (Điểm giao)`;
+  let statusColor = 'blue';
+  let stepLabel = '0/4';
+
+  switch (stopStatus) {
+    case 'Arrived':
+      stopFraction = 0.40;
+      statusCode = 'ARRIVED';
+      statusLabel = isPickup
+        ? `Đã đến Điểm #${stopSeq} (Chờ bốc hàng)`
+        : `Đã đến Điểm #${stopSeq} (Chờ dỡ hàng)`;
+      statusColor = 'cyan';
+      stepLabel = '1/4';
+      break;
+
+    case 'Loading Started':
+      stopFraction = 0.65;
+      statusCode = 'LOADING_STARTED';
+      statusLabel = isPickup
+        ? `Đang bốc hàng tại Điểm #${stopSeq}`
+        : `Đang dỡ hàng tại Điểm #${stopSeq}`;
+      statusColor = 'orange';
+      stepLabel = '2/4';
+      break;
+
+    case 'Loading Done':
+      stopFraction = 0.85;
+      statusCode = 'LOADING_DONE';
+      statusLabel = isPickup
+        ? `Đã bốc xong Điểm #${stopSeq} (Chờ rời đi)`
+        : `Đã dỡ hàng & ký POD (Chờ rời đi)`;
+      statusColor = 'purple';
+      stepLabel = '3/4';
+      break;
+
+    case 'Done':
+      stopFraction = 1.0;
+      statusCode = 'STOP_DONE';
+      statusLabel = `Đã hoàn thành Điểm #${stopSeq}`;
+      statusColor = 'success';
+      stepLabel = '4/4';
+      break;
+
+    case 'Pending':
+    default:
+      stopFraction = 0.15;
+      statusCode = 'MOVING_TO_STOP';
+      stepLabel = '0/4';
+      break;
+  }
+
+  const computedProgress = Math.min(95, Math.max(10, Math.round(baseProgress + stopFraction * slice)));
+
+  return {
+    progress: computedProgress,
+    driver_status_code: statusCode,
+    driver_status_label: statusLabel,
+    driver_status_color: statusColor,
+    driver_current_step: stepLabel,
+    current_stop_info: {
+      sequence: stopSeq,
+      name: stopLocName,
+      type: stopTypeName,
+      status: stopStatus
+    }
+  };
+};
+
 const formatTrip = (trip) => {
   // Ưu tiên xe/tài xế đang hoạt động (chưa có released_time), hoặc lấy bản ghi mới nhất
   const activeTruckAssign =
@@ -66,32 +258,17 @@ const formatTrip = (trip) => {
 
   const upperStatus = (trip.status || '').toUpperCase().replace(/\s+/g, '_');
   let feStatus = 'IN_TRANSIT';
-  let progress = 35;
-
-  const doneStopsCount = sortedStops.filter(s => s.status === 'Done' || s.status === 'Completed').length;
-  const arrivedStopsCount = sortedStops.filter(s => s.status === 'Arrived').length;
-
   if (upperStatus === 'COMPLETED') {
     feStatus = 'COMPLETED';
-    progress = 100;
   } else if (upperStatus === 'CANCELLED') {
     feStatus = 'CANCELLED';
-    progress = 0;
-  } else if (upperStatus === 'IN_PROGRESS' || upperStatus === 'IN_TRANSIT') {
-    feStatus = 'IN_TRANSIT';
-    if (sortedStops.length > 0 && doneStopsCount > 0) {
-      progress = Math.min(95, Math.max(45, Math.round((doneStopsCount / sortedStops.length) * 90)));
-    } else {
-      progress = 65;
-    }
-  } else if (upperStatus === 'ACCEPTED' || upperStatus === 'DISPATCHED') {
-    feStatus = 'IN_TRANSIT';
-    progress = arrivedStopsCount > 0 ? 40 : 30;
   } else {
-    // ASSIGNED -> Hiển thị trong tab Giám sát chuyến xe như chuyến đang vận hành (mới khởi tạo 20%)
     feStatus = 'IN_TRANSIT';
-    progress = 20;
   }
+
+  // TÍNH TOÁN TIẾN ĐỘ THỰC TẾ & TRẠNG THÁI TÀI XẾ
+  const driverState = calculateDriverStatusAndProgress(trip, sortedStops);
+  const progress = driverState.progress;
 
   // Lấy thông tin seal & POD từ trip_events hoặc delivery_evidences
   let sealNumber = `SEAL-VN-${trip.id * 1111}`;
@@ -181,6 +358,11 @@ const formatTrip = (trip) => {
     has_incident: hasIncident,
     incident_id: latestIncident ? `INC-${latestIncident.id}` : null,
     progress,
+    driver_status_code: driverState.driver_status_code,
+    driver_status_label: driverState.driver_status_label,
+    driver_status_color: driverState.driver_status_color,
+    driver_current_step: driverState.driver_current_step,
+    current_stop_info: driverState.current_stop_info,
     total_weight: cargoWeight,
     orders_count: cargoPackages,
     seal_number: sealNumber,
@@ -198,6 +380,38 @@ const formatTrip = (trip) => {
 
       const isDone = s.status === 'Done' || s.status === 'Completed';
       const isArrived = s.status === 'Arrived';
+      const isLoadingStarted = s.status === 'Loading Started';
+      const isLoadingDone = s.status === 'Loading Done';
+
+      let actualText = 'Đang di chuyển';
+      if (s.actual_arrival) {
+        actualText = new Date(s.actual_arrival).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      } else if (isDone) {
+        actualText = 'Đã hoàn thành';
+      } else if (isLoadingDone) {
+        actualText = displayType === 'PICKUP' ? 'Đã bốc xong' : 'Đã dỡ xong';
+      } else if (isLoadingStarted) {
+        actualText = displayType === 'PICKUP' ? 'Đang bốc hàng' : 'Đang dỡ hàng';
+      } else if (isArrived) {
+        actualText = 'Đã đến nơi';
+      }
+
+      let eventText = 'Đang thực hiện lộ trình';
+      if (isDone) {
+        eventText = 'Đã hoàn thành điểm dừng (Rời đi)';
+      } else if (isLoadingDone) {
+        eventText = displayType === 'PICKUP' ? 'Đã bốc hàng xong & kẹp chì' : 'Đã dỡ hàng & ký biên bản POD';
+      } else if (isLoadingStarted) {
+        eventText = displayType === 'PICKUP' ? 'Đang bốc hàng lên xe' : 'Đang dỡ hàng xuống kho';
+      } else if (isArrived) {
+        eventText = 'Tài xế đã đến điểm dừng';
+      }
+
+      let noteText = displayType === 'PICKUP'
+        ? (isDone ? `Đã bốc hàng & kẹp chì ${sealNumber}` : isLoadingDone ? `Đã niêm chì ${sealNumber} (Chờ rời đi)` : 'Bốc hàng & niêm phong chì tại kho')
+        : displayType === 'REST'
+          ? 'Điểm dừng nghỉ 15 phút trên tuyến'
+          : (isDone ? 'Đã giao hàng & thu nhận biên bản POD' : isLoadingDone ? 'Đã nhận đủ chữ ký POD (Chờ rời đi)' : 'Chờ giao hàng và ký biên bản POD');
 
       return {
         id: s.id,
@@ -214,19 +428,9 @@ const formatTrip = (trip) => {
         planned: s.planned_arrival
           ? new Date(s.planned_arrival).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
           : '08:30',
-        actual: s.actual_arrival
-          ? new Date(s.actual_arrival).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-          : (isDone ? 'Đã hoàn thành' : isArrived ? 'Đã đến điểm dừng' : 'Đang di chuyển'),
-        event: isDone
-          ? 'Đã hoàn thành'
-          : isArrived
-            ? 'Tài xế đã đến kho'
-            : 'Đang thực hiện lộ trình',
-        note: displayType === 'PICKUP'
-          ? (isDone ? `Đã bốc hàng & kẹp chì ${sealNumber}` : 'Bốc hàng & niêm phong chì tại kho')
-          : displayType === 'REST'
-            ? 'Điểm dừng nghỉ 15 phút trên tuyến'
-            : (isDone ? 'Đã giao hàng & thu nhận biên bản POD' : 'Chờ giao hàng và ký biên bản POD')
+        actual: actualText,
+        event: eventText,
+        note: noteText
       };
     }) : [
       { id: 1, name: 'Nhà Ga Hàng Hóa ALS Nội Bài', type: 'PICKUP', planned: '08:00', actual: '08:10', event: 'Đã xuất phát', note: 'Niêm phong chì nguyên vẹn' },

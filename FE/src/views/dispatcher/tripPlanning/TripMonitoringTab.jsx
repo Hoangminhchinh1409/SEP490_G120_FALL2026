@@ -13,6 +13,7 @@ import {
   MapPin, 
   ArrowRight, 
   User, 
+  Truck,
   XCircle 
 } from 'lucide-react';
 
@@ -53,7 +54,7 @@ export default function TripMonitoringTab({
     {
       title: 'Mã chuyến & Đội xe',
       key: 'trip_truck',
-      width: '26%',
+      width: '24%',
       render: (_, r) => (
         <div>
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -124,20 +125,41 @@ export default function TripMonitoringTab({
     {
       title: 'Tiến độ & Thời gian',
       key: 'timeline',
-      width: '22%',
+      width: '24%',
       render: (_, r) => (
-        <div className="text-xs space-y-1">
+        <div className="text-xs space-y-1.5">
           <div className="flex justify-between items-center text-[11px]">
-            <span className="text-gray-500">Kế hoạch: {r.planned_start} - {r.planned_finish}</span>
-            <span className="font-bold text-[#7367f0]">{r.progress}%</span>
+            <span className="text-gray-500 font-medium">Kế hoạch: {r.planned_start} - {r.planned_finish}</span>
+            <span className="font-bold text-[#7367f0] text-xs font-mono">{r.progress}%</span>
           </div>
-          <Progress percent={r.progress} size="small" status={r.has_incident ? 'exception' : r.is_late_risk ? 'exception' : 'active'} />
+          <Progress 
+            percent={r.progress} 
+            size="small" 
+            strokeColor={r.status === 'COMPLETED' ? '#10b981' : '#7367f0'}
+            status={r.has_incident ? 'exception' : r.is_late_risk ? 'exception' : r.status === 'COMPLETED' ? 'success' : 'active'} 
+          />
+          {/* Trạng thái tài xế theo chuỗi sự kiện vận hành */}
+          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+            <span className="text-[10px] text-gray-500 font-semibold uppercase flex items-center gap-1 shrink-0">
+              <Truck size={12} className="text-[#7367f0]" />
+              Tài xế:
+            </span>
+            <Tag 
+              color={r.driver_status_color || (r.status === 'COMPLETED' ? 'green' : 'blue')} 
+              className="m-0 text-[11px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 border-none shadow-2xs"
+            >
+              <span>{r.driver_status_label || (r.status === 'COMPLETED' ? 'Chuyến xe hoàn tất' : 'Đang vận hành')}</span>
+              {r.driver_current_step && r.driver_current_step !== '0/4' && (
+                <span className="font-mono text-[10px] opacity-80 font-normal">({r.driver_current_step})</span>
+              )}
+            </Tag>
+          </div>
           {r.has_incident ? (
-            <div className="text-[11px] text-red-600 font-bold flex items-center gap-1">
-              <AlertTriangle size={11} /> {r.late_reason || 'Đang phát sinh sự cố hiện trường'}
+            <div className="text-[11px] text-red-600 font-bold flex items-center gap-1 pt-0.5">
+              <AlertTriangle size={11} className="shrink-0" /> {r.late_reason || 'Đang phát sinh sự cố hiện trường'}
             </div>
           ) : r.is_late_risk && (
-            <div className="text-[11px] text-amber-600 font-medium">
+            <div className="text-[11px] text-amber-600 font-medium pt-0.5">
               Cảnh báo: {r.late_reason}
             </div>
           )}
