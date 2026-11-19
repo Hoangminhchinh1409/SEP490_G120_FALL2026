@@ -507,27 +507,63 @@ const createDirectOrder = async (req, res) => {
     const createdOrder = newOrder[0];
     await saveOrderMeta(createdOrder.id, directMeta);
 
-    // Insert cargo
-    const { error: cargoErr } = await supabase
-      .from('order_cargos')
-      .insert([{
-        order_id: createdOrder.id,
-        cargo_type: isBulk ? 'Bulk' : (cargo_type === 'PALLET' ? 'Pallet' : 'General'),
-        cargo_name: cargo_name || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
-        quantity: parseInt(package_count, 10) || 1,
-        unit: package_unit || (isBulk ? 'Chuyến' : 'Kiện'),
-        actual_weight_kg: actualWeight,
-        length_cm: l,
-        width_cm: w,
-        height_cm: h,
-        stackable: true,
-        chargeable_weight_kg: parseFloat(finalChargeable.toFixed(2)),
-        declared_value: declared_value_usd ? parseFloat(declared_value_usd) * 25000 : 0,
-        special_request_note: order_notes || null
-      }]);
+    // Insert cargo - LƯU TỪNG MẶT HÀNG RIÊNG BIỆT (BR-02, BR-40, IT-ORD-003)
+    if (Array.isArray(req.body.items) && req.body.items.length > 0) {
+      const cargoInserts = req.body.items.map((it, idx) => {
+        const itemBulk = it.cargo_type === 'BULK';
+        const itemUnitWeight = parseFloat(it.weight) || 0;
+        const itemQty = parseInt(it.package_count || it.quantity, 10) || 1;
+        const itemTotalWeight = itemUnitWeight * (it.package_count ? itemQty : 1);
+        const itemL = itemBulk ? 0 : (parseFloat(it.length_cm) || 0);
+        const itemW = itemBulk ? 0 : (parseFloat(it.width_cm) || 0);
+        const itemH = itemBulk ? 0 : (parseFloat(it.height_cm) || 0);
+        const itemVolWeight = itemBulk ? itemTotalWeight : ((itemL * itemW * itemH) / 5000) * (it.package_count ? itemQty : 1);
+        const itemChargeable = Math.max(itemTotalWeight, itemVolWeight);
 
-    if (cargoErr) {
-      console.error('createDirectOrder Cargo Error:', cargoErr);
+        return {
+          order_id: createdOrder.id,
+          cargo_type: itemBulk ? 'Bulk' : (it.cargo_type === 'PALLET' ? 'Pallet' : 'General'),
+          cargo_name: it.cargo_name || `Mặt hàng #${idx + 1}`,
+          quantity: itemQty,
+          unit: it.package_unit || (itemBulk ? 'Chuyến' : 'Kiện'),
+          actual_weight_kg: itemTotalWeight,
+          length_cm: itemL,
+          width_cm: itemW,
+          height_cm: itemH,
+          stackable: it.stackable !== false,
+          chargeable_weight_kg: parseFloat(itemChargeable.toFixed(2)),
+          declared_value: declared_value_usd ? Math.round((parseFloat(declared_value_usd) * 25000) / req.body.items.length) : 0,
+          special_request_note: it.special_request_note || order_notes || null
+        };
+      });
+
+      const { error: cargoErr } = await supabase.from('order_cargos').insert(cargoInserts);
+      if (cargoErr) {
+        console.error('createDirectOrder Multiple Cargos Error:', cargoErr);
+      }
+    } else {
+      // Đơn có 1 dòng mặt hàng duy nhất
+      const { error: cargoErr } = await supabase
+        .from('order_cargos')
+        .insert([{
+          order_id: createdOrder.id,
+          cargo_type: isBulk ? 'Bulk' : (cargo_type === 'PALLET' ? 'Pallet' : 'General'),
+          cargo_name: cargo_name || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
+          quantity: parseInt(package_count, 10) || 1,
+          unit: package_unit || (isBulk ? 'Chuyến' : 'Kiện'),
+          actual_weight_kg: actualWeight,
+          length_cm: l,
+          width_cm: w,
+          height_cm: h,
+          stackable: true,
+          chargeable_weight_kg: parseFloat(finalChargeable.toFixed(2)),
+          declared_value: declared_value_usd ? parseFloat(declared_value_usd) * 25000 : 0,
+          special_request_note: order_notes || null
+        }]);
+
+      if (cargoErr) {
+        console.error('createDirectOrder Cargo Error:', cargoErr);
+      }
     }
 
     const noteParts = [

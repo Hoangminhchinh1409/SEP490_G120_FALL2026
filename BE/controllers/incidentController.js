@@ -28,7 +28,7 @@ const createIncident = async (req, res) => {
     return res.status(201).json({ message: 'Đã báo cáo sự cố thành công', incident: newInc });
   } catch (err) {
     console.error('createIncident error:', err);
-    return res.status(500).json({ message: 'Internal Server Error', error: err.message });
+    return res.status(err.statusCode || 400).json({ message: err.message || 'Lỗi tạo sự cố', error: err.message });
   }
 };
 
@@ -39,7 +39,7 @@ const updateIncidentStatus = async (req, res) => {
     return res.json({ message: 'Đã cập nhật sự cố thành công', incident: updated });
   } catch (err) {
     console.error('updateIncidentStatus error:', err);
-    return res.status(500).json({ message: 'Internal Server Error', error: err.message });
+    return res.status(err.statusCode || 400).json({ message: err.message || 'Lỗi cập nhật sự cố', error: err.message });
   }
 };
 

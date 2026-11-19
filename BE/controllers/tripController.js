@@ -29,7 +29,11 @@ const createTrip = async (req, res) => {
     });
   } catch (err) {
     console.error('createTrip error:', err);
-    return res.status(500).json({ message: 'Internal Server Error', error: err.message });
+    const status = err.statusCode || (err.name === 'Error' && !err.statusCode && !err.message?.includes('validation') ? 500 : 400);
+    if (status === 500) {
+      return res.status(500).json({ message: 'Internal Server Error' });
+    }
+    return res.status(status).json({ message: err.message || 'Lỗi lập chuyến và phân bổ xe', error: err.message });
   }
 };
 
@@ -73,8 +77,8 @@ const calculateRoadRoute = async (req, res) => {
       return res.status(400).json({ message: 'Thiếu tham số tọa độ điểm đầu hoặc điểm cuối' });
     }
 
-    const vietmapKey = process.env.VIETMAP_API_KEY || '35a2d42231542a9bd918f8fd7c97a5021cbf67d145a74e47';
-    const geoapifyKey = process.env.GEOAPIFY_API_KEY || '5a7ccf56c9694e229e9621648227937a';
+    const vietmapKey = process.env.VIETMAP_API_KEY;
+    const geoapifyKey = process.env.GEOAPIFY_API_KEY;
 
     const fetchJson = (url) => {
       return new Promise((resolve, reject) => {
@@ -460,7 +464,8 @@ const getTripReplay = async (req, res) => {
           latitude: Number((startLat + (endLat - startLat) * t).toFixed(6)),
           longitude: Number((startLng + (endLng - startLng) * t).toFixed(6)),
           speed_kmh: idx === 0 || idx === totalSteps ? 0 : 48 + (idx % 3) * 5,
-          recorded_time: new Date(baseTime + idx * 5 * 60000).toISOString()
+          recorded_time: new Date(baseTime + idx * 5 * 60000).toISOString(),
+          is_simulated: true
         };
       });
     }

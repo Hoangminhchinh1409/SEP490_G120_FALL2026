@@ -108,7 +108,13 @@ const getOrderDocumentsBundle = async (req, res) => {
 };
 
 const createContract = async (req, res) => {
-  return res.status(403).json({ message: 'Điều phối viên không được phép tạo hoặc sửa hợp đồng vận tải (Chế độ chỉ xem)' });
+  try {
+    const newContract = await customerService.createContract(req.body);
+    return res.status(201).json({ message: 'Tạo hợp đồng thành công', contract: newContract });
+  } catch (err) {
+    console.error('createContract error:', err);
+    return res.status(err.statusCode || 400).json({ message: err.message || 'Lỗi tạo hợp đồng', error: err.message });
+  }
 };
 
 const getAllCustomers = async (req, res) => {

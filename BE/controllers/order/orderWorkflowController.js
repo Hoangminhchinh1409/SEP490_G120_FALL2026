@@ -9,6 +9,24 @@ const confirmOrder = async (req, res) => {
     const { id } = req.params;
     const { agreed_price } = req.body || {};
 
+    // 1. Kiểm tra đơn hàng hiện tại
+    let findQuery = supabase.from('orders').select('*').limit(1);
+    if (/^\d+$/.test(id)) {
+      findQuery = findQuery.eq('id', parseInt(id, 10));
+    } else {
+      findQuery = findQuery.eq('order_code', id);
+    }
+    const { data: foundOrders, error: findErr } = await findQuery;
+    if (findErr || !foundOrders || foundOrders.length === 0) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    }
+
+    const currentOrder = foundOrders[0];
+    const upperSt = (currentOrder.status || '').toUpperCase();
+    if (upperSt === 'CANCELLED' || upperSt === 'CLOSED') {
+      return res.status(400).json({ message: 'Không thể xác nhận đơn hàng đã bị hủy hoặc đã đóng' });
+    }
+
     const nowIso = new Date().toISOString();
     const updates = {
       status: 'READY_FOR_PLANNING',
@@ -28,6 +46,7 @@ const confirmOrder = async (req, res) => {
     } else {
       query = query.eq('order_code', id);
     }
+    query = query.neq('status', 'CANCELLED').neq('status', 'CLOSED');
 
     const { data, error } = await query.select();
 
@@ -70,6 +89,7 @@ const assignTrip = async (req, res) => {
     } else {
       query = query.eq('order_code', id);
     }
+    query = query.eq('status', 'READY_FOR_PLANNING');
 
     const { data, error } = await query.select();
 
@@ -86,48 +106,120 @@ const assignTrip = async (req, res) => {
 };
 
 
-// 7. HỦY ĐƠN HÀNG (CHUYỂN SANG CANCELLED)
+// 7. HỦY ĐƠN HÀNG (CHUYỂN SANG CANCELLED, BR-17, BR-43, IT-ORD-008, IT-ORD-009)
 const cancelOrder = async (req, res) => {
   try {
     const { id } = req.params;
     const { cancellation_reason, cancellation_fee } = req.body || {};
 
+    if (!cancellation_reason || !String(cancellation_reason).trim()) {
+      return res.status(400).json({ message: 'Lý do hủy đơn hàng là bắt buộc' });
+    }
+
+    if (cancellation_fee !== undefined && cancellation_fee !== null) {
+      const fee = parseInt(cancellation_fee, 10);
+      if (isNaN(fee) || fee < 0) {
+        return res.status(400).json({ message: 'Phí hủy không hợp lệ (phải >= 0)' });
+      }
+    }
+
+    // 1. Tìm đơn hàng hiện tại để kiểm tra trạng thái hủy
+    let findQuery = supabase.from('orders').select('*').limit(1);
+    if (/^\d+$/.test(id)) {
+      findQuery = findQuery.eq('id', parseInt(id, 10));
+    } else {
+      findQuery = findQuery.eq('order_code', id);
+    }
+    const { data: foundOrders, error: findErr } = await findQuery;
+    if (findErr || !foundOrders || foundOrders.length === 0) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng cần hủy' });
+    }
+
+    const currentOrder = foundOrders[0];
+    const upperSt = (currentOrder.status || '').toUpperCase();
+
+    // BR-17: Chỉ được hủy đơn trước khi hàng được bốc lên xe. Sau khi đã lấy hàng (Picked Up / In Transit / Delivered) cấm hủy!
+    if (['PICKED_UP', 'IN_TRANSIT', 'IN_PROGRESS', 'DELIVERED', 'CLOSED'].includes(upperSt)) {
+      return res.status(400).json({
+        message: 'Không thể hủy đơn hàng sau khi hàng đã được bốc xếp hoặc đang trên đường vận chuyển (BR-17)!'
+      });
+    }
+
     const nowIso = new Date().toISOString();
+    const feeVal = cancellation_fee !== undefined && cancellation_fee !== null ? parseInt(cancellation_fee, 10) : 0;
     const updates = {
       status: 'CANCELLED',
+      cancellation_reason: cancellation_reason.trim(),
+      cancellation_fee: feeVal,
       updated_at: nowIso
     };
 
-    let query = supabase.from('orders').update(updates);
+    let updateQuery = supabase.from('orders').update(updates);
     if (/^\d+$/.test(id)) {
-      query = query.eq('id', parseInt(id));
+      updateQuery = updateQuery.eq('id', parseInt(id, 10));
     } else {
-      query = query.eq('order_code', id);
+      updateQuery = updateQuery.eq('order_code', id);
+    }
+    updateQuery = updateQuery.not('status', 'in', '("PICKED_UP","IN_TRANSIT","IN_PROGRESS","DELIVERED","CLOSED")');
+
+    const { data: updatedData, error: updateErr } = await updateQuery.select();
+    if (updateErr) {
+      console.error('cancelOrder Supabase Error:', updateErr);
+      return res.status(500).json({ message: updateErr.message || 'Không thể hủy đơn hàng trên hệ thống' });
     }
 
-    const { data, error } = await query.select();
+    const updatedOrder = updatedData?.[0] || currentOrder;
 
-    if (error) {
-      console.error('cancelOrder Supabase Error:', error);
-      return res.status(500).json({ message: error.message || 'Không thể hủy đơn hàng trên hệ thống' });
-    }
+    // Lưu metadata
+    await saveOrderMeta(currentOrder.id, {
+      cancel_reason: cancellation_reason.trim(),
+      cancel_fee: feeVal,
+      cancelled_at: nowIso
+    }, req.user?.id || 3);
 
-    const updatedOrder = data?.[0];
-    if (updatedOrder?.id) {
-      await saveOrderMeta(updatedOrder.id, {
-        cancel_reason: cancellation_reason || null,
-        cancel_fee: cancellation_fee ? parseInt(cancellation_fee) : 0,
-        cancelled_at: nowIso
-      }, req.user?.id || 3);
+    // Ghi order_notes
+    await supabase.from('order_notes').insert([{
+      order_id: currentOrder.id,
+      content: `[ĐƠN HÀNG ĐÃ HỦY] Lý do: ${cancellation_reason.trim()}. Phí hủy: ${feeVal.toLocaleString('vi-VN')} VNĐ.`,
+      created_by: req.user?.id || 3
+    }]);
+
+    // BR-43 / IT-ORD-008: Nếu đơn đã được gán chuyến (ASSIGNED) -> Hủy chuyến liên quan và giải phóng xe về AVAILABLE
+    const { data: relatedStops } = await supabase
+      .from('trip_stops')
+      .select('trip_id')
+      .eq('order_id', currentOrder.id);
+
+    const tripIds = [...new Set((relatedStops || []).map(s => s.trip_id).filter(Boolean))];
+    for (const tId of tripIds) {
+      // Cập nhật trip sang CANCELLED
+      await supabase
+        .from('trips')
+        .update({ status: 'CANCELLED', updated_at: nowIso })
+        .eq('id', tId);
+
+      // Tìm xe của trip này để trả về AVAILABLE
+      const { data: tripTrucks } = await supabase
+        .from('trip_trucks')
+        .select('truck_id')
+        .eq('trip_id', tId);
+
+      const truckIds = (tripTrucks || []).map(tt => tt.truck_id).filter(Boolean);
+      if (truckIds.length > 0) {
+        await supabase
+          .from('trucks')
+          .update({ status: 'AVAILABLE', updated_at: nowIso })
+          .in('id', truckIds);
+      }
     }
 
     return res.json({
       message: 'Đã hủy đơn hàng thành công!',
       order: {
-        ...(updatedOrder || { id }),
+        ...updatedOrder,
         status: 'CANCELLED',
-        cancellation_reason,
-        cancellation_fee
+        cancellation_reason: cancellation_reason.trim(),
+        cancellation_fee: feeVal
       }
     });
   } catch (err) {
@@ -142,6 +234,24 @@ const closeOrder = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // 1. Kiểm tra đơn hàng hiện tại
+    let findQuery = supabase.from('orders').select('*').limit(1);
+    if (/^\d+$/.test(id)) {
+      findQuery = findQuery.eq('id', parseInt(id, 10));
+    } else {
+      findQuery = findQuery.eq('order_code', id);
+    }
+    const { data: foundOrders, error: findErr } = await findQuery;
+    if (findErr || !foundOrders || foundOrders.length === 0) {
+      return res.status(404).json({ message: 'Không tìm thấy đơn hàng cần đóng' });
+    }
+
+    const currentOrder = foundOrders[0];
+    const upperSt = (currentOrder.status || '').toUpperCase();
+    if (upperSt !== 'DELIVERED') {
+      return res.status(400).json({ message: 'Chỉ có thể đóng đơn hàng sau khi đã giao hàng thành công (DELIVERED)' });
+    }
+
     const nowIso = new Date().toISOString();
     const updates = {
       status: 'CLOSED',
@@ -154,11 +264,13 @@ const closeOrder = async (req, res) => {
     } else {
       query = query.eq('order_code', id);
     }
+    query = query.eq('status', 'DELIVERED');
 
     const { data, error } = await query.select();
 
     if (error) {
-      console.warn('closeOrder note (will fallback):', error.message);
+      console.error('closeOrder Error:', error);
+      return res.status(500).json({ message: 'Không thể đóng đơn hàng trên hệ thống', error: error.message });
     }
 
     const updatedOrder = data?.[0];
@@ -170,10 +282,7 @@ const closeOrder = async (req, res) => {
 
     return res.json({
       message: 'Đã đóng đơn hàng thành công!',
-      order: {
-        ...(updatedOrder || { id }),
-        status: 'CLOSED'
-      }
+      order: updatedOrder || { id, status: 'CLOSED' }
     });
   } catch (err) {
     console.error('closeOrder Exception:', err);

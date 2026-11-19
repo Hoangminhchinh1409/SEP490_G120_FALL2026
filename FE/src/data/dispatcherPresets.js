@@ -539,14 +539,23 @@ export const getVehicleSpecByKey = (vehicleKey) => {
   const directMatch = VEHICLE_SPECS.find(v => v.key.toUpperCase() === normalized);
   if (directMatch) return directMatch;
 
-  // Hỗ trợ cả các dạng key như '1.25T', '2.5T', '3.5T', '5T', '8T', '15T'
+  // Hỗ trợ các dạng key như '1.25T', '2.5T', '3.5T', '5T', '8T', '15T'
   const keyWithPrefix = `TRUCK_${normalized}`;
   const prefixMatch = VEHICLE_SPECS.find(v => v.key.toUpperCase() === keyWithPrefix);
   if (prefixMatch) return prefixMatch;
 
-  // Hỗ trợ tìm kiếm theo số tấn trong chuỗi: '3.5', '1.25', '2.5'
-  const numericMatch = VEHICLE_SPECS.find(v => v.key.includes(normalized) || v.label.includes(normalized));
-  return numericMatch || VEHICLE_SPECS[1];
+  // Hỗ trợ tìm kiếm theo số tấn cụ thể (e.g. "5" -> TRUCK_5T, "1.25" -> TRUCK_1.25T)
+  const exactTonMatch = VEHICLE_SPECS.find(v => v.key === `TRUCK_${normalized}T`);
+  if (exactTonMatch) return exactTonMatch;
+
+  // Nếu chuỗi là '8T', '15T' hoặc >= 8 tấn không được hỗ trợ trong specs
+  if (normalized === '8T' || normalized === '15T' || normalized === '8' || normalized === '15') {
+    return null;
+  }
+
+  // Hỗ trợ tìm kiếm theo số tấn trong chuỗi
+  const numericMatch = VEHICLE_SPECS.find(v => v.key === normalized || v.shortLabel.includes(normalized));
+  return numericMatch || null;
 };
 
 /**
@@ -642,10 +651,17 @@ export const analyzeVehicleRecommendation = ({
   const recIdx = VEHICLE_SPECS.findIndex(v => v.key === recommendedSpec.key);
   const custIdx = VEHICLE_SPECS.findIndex(v => v.key === customerSpec.key);
 
-  let status = 'OPTIMAL'; // 'OPTIMAL' | 'UNDER_CAPACITY' | 'OVER_CAPACITY'
-  let reason = `Loại xe ${customerSpec.label} (${customerSpec.boxDimText}, tải ${customerSpec.maxPayloadKg.toLocaleString('vi-VN')} kg) hoàn toàn phù hợp với lô hàng (${effectiveWeight.toLocaleString('vi-VN')} kg${totalVolM3 > 0 ? `, ~${totalVolM3} m³`: ''}).`;
+  let status = 'OPTIMAL'; // 'OPTIMAL' | 'UNDER_CAPACITY' | 'OVER_CAPACITY' | 'EXCEEDS_FLEET'
+  let reason = `Loại xe ${customerSpec?.label || 'được chọn'} (${customerSpec?.boxDimText || ''}, tải ${customerSpec?.maxPayloadKg?.toLocaleString('vi-VN') || 0} kg) hoàn toàn phù hợp với lô hàng (${effectiveWeight.toLocaleString('vi-VN')} kg${totalVolM3 > 0 ? `, ~${totalVolM3} m³`: ''}).`;
 
-  if (custIdx < recIdx) {
+  const maxFleetPayload = Math.max(...VEHICLE_SPECS.map(s => s.maxPayloadKg));
+  if (effectiveWeight > maxFleetPayload) {
+    status = 'EXCEEDS_FLEET';
+    reason = `Khối lượng hàng hóa (${effectiveWeight.toLocaleString('vi-VN')} kg) vượt quá năng lực chuyên chở tối đa của toàn bộ đội xe (${maxFleetPayload.toLocaleString('vi-VN')} kg). Vui lòng chia tách chuyến hoặc liên hệ bộ phận vận tải đặc biệt.`;
+  } else if (!customerSpec) {
+    status = 'UNSUPPORTED';
+    reason = 'Loại xe khách yêu cầu không nằm trong danh mục phương tiện phục vụ tiêu chuẩn của ALS.';
+  } else if (custIdx < recIdx) {
     status = 'UNDER_CAPACITY';
     const reasons = [];
     if (effectiveWeight > customerSpec.maxPayloadKg) {

@@ -417,14 +417,13 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   };
 
   const handleOk = () => {
-    for (let i = 0; i < cargoItems.length; i++) {
-      const it = cargoItems[i];
-      if (!it.cargo_name?.trim()) { message.error(`Vui lòng nhập tên hàng cho mặt hàng #${i + 1}`); return; }
-      if (!it.cargo_type) { message.error(`Vui lòng chọn loại hàng cho mặt hàng #${i + 1}`); return; }
-      if (!it.weight || Number(it.weight) <= 0) { message.error(`Vui lòng nhập trọng lượng hợp lệ (> 0 kg) cho mặt hàng #${i + 1}`); return; }
-    }
-
     form.validateFields().then((fieldValues) => {
+      for (let i = 0; i < cargoItems.length; i++) {
+        const it = cargoItems[i];
+        if (!it.cargo_name?.trim()) { message.error(`Vui lòng nhập tên hàng cho mặt hàng #${i + 1}`); return; }
+        if (!it.cargo_type) { message.error(`Vui lòng chọn loại hàng cho mặt hàng #${i + 1}`); return; }
+        if (!it.weight || Number(it.weight) <= 0) { message.error(`Vui lòng nhập trọng lượng hợp lệ (> 0 kg) cho mặt hàng #${i + 1}`); return; }
+      }
       // Validate tải trọng: Tổng tải trọng thực tế hoặc tải trọng quy đổi tính cước không được vượt quá tải trọng xe
       const selectedVehicleKey = fieldValues.vehicle_type_required || 'TRUCK_2.5T';
       const vehicleSpec = getVehicleSpecByKey(selectedVehicleKey);

@@ -6,7 +6,8 @@ const getTruckModelName = (payloadKg) => {
   const p = Number(payloadKg) || 1250;
   if (p <= 1500) return 'Thaco Frontier 1.25T';
   if (p <= 2500) return 'Thaco Ollin 2.5T';
-  if (p <= 5000) return 'Thaco Auman 4.0T';
+  if (p <= 3500) return 'Thaco Ollin 3.5T';
+  if (p <= 5000) return 'Thaco Auman 5.0T';
   if (p <= 8000) return 'Hino 500 Series 8T';
   return 'Đầu kéo Container Dongfeng';
 };
@@ -37,37 +38,52 @@ const getAllTrucks = async () => {
     }
 
     // 1. Phân loại hạn đăng kiểm đa tầng theo Thông tư 02/2023/TT-BGTVT
-    const inspectionDate = t.inspection_expiry ? new Date(t.inspection_expiry): new Date(now.getTime() + 60 * 86400000);
-    const daysUntilInspection = Math.ceil((inspectionDate - now) / (1000 * 60 * 60 * 24));
-    let inspectionAlertLevel = 'SAFE'; // > 30 ngày (An toàn)
-    if (daysUntilInspection <= 0) {
-      inspectionAlertLevel = 'EXPIRED'; // Đã hết hạn (Khóa xe)
-    } else if (daysUntilInspection <= 14) {
-      inspectionAlertLevel = 'URGENT'; // Dưới 14 ngày (Nguy cấp)
-    } else if (daysUntilInspection <= 30) {
-      inspectionAlertLevel = 'WARNING'; // 15 - 30 ngày (Sắp đến hạn)
+    let daysUntilInspection = null;
+    let inspectionAlertLevel = 'UNKNOWN';
+    if (t.inspection_expiry) {
+      const inspectionDate = new Date(t.inspection_expiry);
+      daysUntilInspection = Math.ceil((inspectionDate - now) / (1000 * 60 * 60 * 24));
+      if (daysUntilInspection <= 0) {
+        inspectionAlertLevel = 'EXPIRED'; // Đã hết hạn (Khóa xe)
+      } else if (daysUntilInspection <= 14) {
+        inspectionAlertLevel = 'URGENT'; // Dưới 14 ngày (Nguy cấp)
+      } else if (daysUntilInspection <= 30) {
+        inspectionAlertLevel = 'WARNING'; // 15 - 30 ngày (Sắp đến hạn)
+      } else {
+        inspectionAlertLevel = 'SAFE'; // > 30 ngày (An toàn)
+      }
     }
 
     // 2. Quản lý chu kỳ bảo dưỡng định kỳ (Dual-trigger ODO & Thời gian - 5.000 km / cấp 1)
-    const currentOdo = t.current_odometer_km || (24500 + (t.id * 8320) % 75000);
-    const lastMaintenanceKm = Math.floor(currentOdo / 5000) * 5000;
-    const nextMaintenanceKm = lastMaintenanceKm + 5000;
-    const kmUntilMaintenance = nextMaintenanceKm - currentOdo;
-    const maintenanceIntervalKm = 5000;
-    const kmTraveledInCycle = currentOdo - lastMaintenanceKm;
-    const maintenanceProgressPct = Math.min(Math.round((kmTraveledInCycle / maintenanceIntervalKm) * 100), 100);
+    let currentOdo = null;
+    let lastMaintenanceKm = null;
+    let nextMaintenanceKm = null;
+    let kmUntilMaintenance = null;
+    let maintenanceProgressPct = null;
+    let maintenanceStatus = 'UNKNOWN';
 
-    let maintenanceStatus = 'GOOD';
-    if (kmUntilMaintenance <= 0) {
-      maintenanceStatus = 'OVERDUE';
-    } else if (kmUntilMaintenance <= 500) {
-      maintenanceStatus = 'DUE_SOON';
+    if (t.current_odometer_km !== undefined && t.current_odometer_km !== null) {
+      currentOdo = Number(t.current_odometer_km);
+      lastMaintenanceKm = Math.floor(currentOdo / 5000) * 5000;
+      nextMaintenanceKm = lastMaintenanceKm + 5000;
+      kmUntilMaintenance = nextMaintenanceKm - currentOdo;
+      maintenanceProgressPct = Math.min(Math.round(((currentOdo - lastMaintenanceKm) / 5000) * 100), 100);
+
+      // Nếu odo đạt đúng mốc bảo dưỡng (ví dụ 15,000 km) hoặc vượt quá
+      if (currentOdo % 5000 === 0 || kmUntilMaintenance <= 0) {
+        maintenanceStatus = 'OVERDUE';
+      } else if (kmUntilMaintenance <= 500) {
+        maintenanceStatus = 'DUE_SOON';
+      } else {
+        maintenanceStatus = 'GOOD';
+      }
     }
 
     // 3. Quản lý thời gian sửa chữa & Downtime gián đoạn hoạt động
-    const isMaintenance = t.status === 'MAINTENANCE';
-    const downtimeHours = isMaintenance ? (12 + (t.id * 7) % 36): 0;
-    const garageName = isMaintenance ? 'Xưởng Dịch vụ Ô tô Tải Thaco Long Biên': 'Gara Kỹ thuật NEXLOG Depot';
+    const rawStatus = String(t.status || 'AVAILABLE').toUpperCase();
+    const isMaintenance = rawStatus === 'MAINTENANCE';
+    const downtimeHours = isMaintenance ? (t.downtime_hours !== undefined ? Number(t.downtime_hours) : 0) : 0;
+    const garageName = isMaintenance ? (t.service_garage || 'Xưởng Dịch vụ Ô tô Tải Thaco Long Biên') : null;
 
     return {
       key: t.id.toString(),
@@ -84,20 +100,20 @@ const getAllTrucks = async () => {
       box_height_cm: t.box_height_cm,
       cargo_type: payload > 10000 ? 'Moóc xương Container': 'Thùng kín inox',
       equipment: 'Kẹp chì niêm phong, GPS, Cảm biến hành trình',
-      assigned_driver: 'Nguyễn Văn Tài',
-      driver_phone: '0901234567',
-      location: 'Depot Cảng HKQT Nội Bài',
-      registration_exp: t.inspection_expiry || '2027-05-15',
-      inspection_expiry: t.inspection_expiry,
-      insurance_exp: t.insurance_expiry || '2027-06-01',
-      insurance_expiry: t.insurance_expiry,
-      status: t.status || 'AVAILABLE',
+      assigned_driver: t.assigned_driver || null,
+      driver_phone: t.driver_phone || null,
+      location: t.location || null,
+      registration_exp: t.inspection_expiry || null,
+      inspection_expiry: t.inspection_expiry || null,
+      insurance_exp: t.insurance_expiry || null,
+      insurance_expiry: t.insurance_expiry || null,
+      status: rawStatus,
       license_class_required: t.license_class_required || 'B2',
       required_license_class: t.license_class_required || 'B2',
       // Chỉ số Đăng kiểm & Pháp lý
       days_until_inspection: daysUntilInspection,
       inspection_alert_level: inspectionAlertLevel,
-      is_inspection_expired: daysUntilInspection <= 0,
+      is_inspection_expired: daysUntilInspection !== null ? daysUntilInspection <= 0 : false,
       // Chỉ số Bảo dưỡng định kỳ
       current_odometer_km: currentOdo,
       last_maintenance_km: lastMaintenanceKm,
@@ -144,34 +160,39 @@ const updateTruck = async (id, payload) => {
 
 const getAllDrivers = async () => {
   const profiles = await fleetModel.findAllDrivers();
-  return (profiles || []).map((d, index) => {
+  return (profiles || []).map((d) => {
     const u = d.user || {};
-    const statusMap = {
-      Active: 'AVAILABLE',
-      ACTIVE: 'AVAILABLE',
-      ON_TRIP: 'ON_DUTY',
-      RESTING: 'RESTING',
-      INACTIVE: 'RESTING'
-    };
+    const rawSt = String(d.status || '').toUpperCase();
+    let status = 'AVAILABLE';
+    if (rawSt === 'ACTIVE') status = 'AVAILABLE';
+    else if (rawSt === 'ON_TRIP' || rawSt === 'ON TRIP') status = 'ON_DUTY';
+    else if (rawSt === 'RESTING' || rawSt === 'INACTIVE') status = 'RESTING';
+    else if (rawSt === 'SUSPENDED') status = 'SUSPENDED';
+    else if (rawSt === 'LEAVE') status = 'LEAVE';
+    else status = rawSt || 'AVAILABLE';
+
+    const expYears = d.experience_years !== undefined && d.experience_years !== null
+      ? `${d.experience_years} năm kinh nghiệm`
+      : null;
 
     return {
       key: `D${d.id}`,
       id: d.id,
       user_id: d.user_account_id,
-      name: u.full_name || `Tài xế ${d.id}`,
-      phone: u.phone || '0901234567',
+      name: u.full_name || (u.username ? `Tài xế ${u.username}` : `Tài xế ${d.id}`),
+      phone: u.phone || null,
       email: u.email || '',
       id_card: u.username?.includes('driver_') ? `0385722${d.id}9`: (u.username || '0385722949'),
       license_type: `Hạng ${d.license_class || 'C'}`,
       license_class: d.license_class || 'C',
       license_number: d.license_number,
       license_expiry: d.license_expiry,
-      experience_years: `${3 + d.id * 2} năm kinh nghiệm`,
-      shift_hours_today: index === 0 ? 3.5: 2.0,
+      experience_years: expYears,
+      shift_hours_today: d.shift_hours_today || 0,
       max_shift_hours: 8.0,
-      assigned_truck: index === 0 ? '29H-123.45': '29H-543.21',
+      assigned_truck: d.assigned_truck || null,
       current_trip: null,
-      status: statusMap[d.status] || 'AVAILABLE',
+      status: status,
       raw_status: d.status
     };
   });
@@ -188,16 +209,24 @@ const updateDriver = async (id, payload) => {
 
 const getAllVendors = async () => {
   const vendors = await fleetModel.findAllVendors();
-  return (vendors || []).map(v => ({
-    id: v.id.toString(),
-    key: v.id.toString(),
-    name: v.company_name,
-    contact_person: v.contact_person,
-    phone: v.phone,
-    truck_types: v.truck_types,
-    status: v.approval_status === 'APPROVED' ? 'APPROVED': 'PENDING',
-    rating: 4.8
-  }));
+  return (vendors || []).map(v => {
+    const rawStatus = String(v.approval_status || '').toUpperCase();
+    let status = 'PENDING';
+    if (rawStatus === 'APPROVED') status = 'APPROVED';
+    else if (rawStatus === 'REJECTED') status = 'REJECTED';
+    else status = 'PENDING';
+
+    return {
+      id: v.id.toString(),
+      key: v.id.toString(),
+      name: v.company_name,
+      contact_person: v.contact_person,
+      phone: v.phone,
+      truck_types: v.truck_types,
+      status: status,
+      rating: v.rating !== undefined && v.rating !== null ? Number(v.rating) : null
+    };
+  });
 };
 
 

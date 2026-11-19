@@ -99,6 +99,28 @@ const reassignOrdersToDefaultLocation = async (locationId, defaultLocationId = 1
   });
 };
 
+const findRelatedTrips = async (locationId) => {
+  const locId = BigInt(locationId);
+  const trips = await prisma.trips.findMany({
+    where: {
+      OR: [
+        { pickup_location_id: locId },
+        { delivery_location_id: locId }
+      ]
+    },
+    select: {
+      id: true,
+      trip_code: true,
+      status: true
+    }
+  });
+  return trips.map(t => ({
+    id: toPlainNumber(t.id),
+    trip_code: t.trip_code,
+    status: t.status
+  }));
+};
+
 const deleteById = async (id) => {
   const numId = BigInt(id);
   await reassignOrdersToDefaultLocation(id);
@@ -107,11 +129,17 @@ const deleteById = async (id) => {
   });
 };
 
+const deleteLocationModel = async (id) => {
+  return await deleteById(id);
+};
+
 module.exports = {
   findAll,
   create,
   update,
   findRelatedOrders,
   reassignOrdersToDefaultLocation,
-  deleteById
+  findRelatedTrips,
+  deleteById,
+  delete: deleteLocationModel
 };

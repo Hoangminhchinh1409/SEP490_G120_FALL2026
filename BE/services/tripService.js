@@ -62,7 +62,7 @@ const formatTrip = (trip) => {
     return st !== 'RESOLVED' && st !== 'CLOSED';
   });
   const hasIncident = pendingIncidents.length > 0;
-  const latestIncident = pendingIncidents[0] || (trip.incidents?.[0] || null);
+  const latestIncident = pendingIncidents[0] || null;
 
   const upperStatus = (trip.status || '').toUpperCase().replace(/\s+/g, '_');
   let feStatus = 'IN_TRANSIT';
@@ -121,8 +121,12 @@ const formatTrip = (trip) => {
   const durationMins = trip.planned_duration || 120;
   const plannedFinishObj = new Date(plannedStartObj.getTime() + durationMins * 60000);
 
-  const cargoWeight = uniqueOrders.reduce((acc, o) => acc + (o.cargo?.actual_weight_kg || 0), 0) || 1200;
-  const cargoPackages = uniqueOrders.reduce((acc, o) => acc + (o.cargo?.quantity || 1), 0) || 1;
+  const cargoWeight = uniqueOrders.length > 0
+    ? uniqueOrders.reduce((acc, o) => acc + (o.cargo?.actual_weight_kg || 0), 0)
+    : 0;
+  const cargoPackages = uniqueOrders.length > 0
+    ? uniqueOrders.reduce((acc, o) => acc + (o.cargo?.quantity || 1), 0)
+    : 0;
 
   // Tọa độ hiện tại để hiển thị bản đồ trực tuyến
   const pickupLat = pickupStop.location?.latitude || 21.2187;
@@ -137,11 +141,11 @@ const formatTrip = (trip) => {
     id: trip.trip_code,
     raw_id: trip.id,
     trip_code: trip.trip_code,
-    plate: truckObj.plate_number || '29C-888.99',
-    truck_model: truckObj.model || fleetService.getTruckModelName(truckObj.allowed_payload || 3500),
-    max_payload: truckObj.allowed_payload || 3500,
-    driver_name: needsDriverReassign ? 'Chờ điều phối tài xế mới' : (driverObj.full_name || 'Nguyễn Văn Lái'),
-    driver_phone: needsDriverReassign ? '' : (driverObj.phone || '0912345678'),
+    plate: truckObj.plate_number || null,
+    truck_model: truckObj.model || (truckObj.allowed_payload ? fleetService.getTruckModelName(truckObj.allowed_payload) : null),
+    max_payload: truckObj.allowed_payload || null,
+    driver_name: needsDriverReassign ? 'Chờ điều phối tài xế mới' : (driverObj.full_name || null),
+    driver_phone: needsDriverReassign ? '' : (driverObj.phone || null),
     needs_driver_reassign: needsDriverReassign,
     previous_driver_name: latestReleasedAssign?.driver?.user?.full_name || null,
     leave_reason: latestReleasedAssign?.replacement_reason || null,
@@ -265,6 +269,12 @@ const createTrip = async (payload, userId = 1) => {
   // TRƯỜNG HỢP 1: BÀN GIAO NHÀ XE ĐỐI TÁC 3PL (UC-10, BR-13)
   const mode = String(allocation_type || transport_mode || 'INTERNAL').toUpperCase();
   if (mode === 'VENDOR' || Boolean(vendor_tracking_code)) {
+    if (!vendor_tracking_code || !String(vendor_tracking_code).trim()) {
+      const err = new Error('Thiếu mã vận đơn của nhà xe đối tác (vendor_tracking_code) khi bàn giao 3PL!');
+      err.statusCode = 400;
+      throw err;
+    }
+
     const matchedVendor = await tripModel.findVendorByNameOrId(vendor_id || vendor_name);
     if (resolvedOrderId) {
       await tripModel.assignOrderToVendor({
@@ -291,21 +301,100 @@ const createTrip = async (payload, userId = 1) => {
   }
 
   // TRƯỜNG HỢP 2: PHÂN BỔ XE NỘI BỘ & TÀI XẾ (UC-06, UC-09, UC-41)
+  if (!resolvedOrderId) {
+    const err = new Error('Không tìm thấy đơn hàng hợp lệ để lập chuyến xe!');
+    err.statusCode = 404;
+    throw err;
+  }
+
   let truckId = truck_id ? Number(truck_id) : null;
   if (!truckId && truck_plate) {
     truckId = await tripModel.findTruckByPlate(truck_plate);
+    if (!truckId) {
+      const err = new Error(`Không tìm thấy xe tải với biển số: ${truck_plate}`);
+      err.statusCode = 404;
+      throw err;
+    }
   }
   if (!truckId) {
-    truckId = await tripModel.findFirstTruck();
+    const err = new Error('Thiếu thông tin xe tải cho chuyến xe');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // --- KIỂM TRA RÀNG BUỘC XE (BR-23, BR-32, IT-TD-001, IT-TD-002) ---
+  if (truckId) {
+    const { data: truckData } = await supabase
+      .from('trucks')
+      .select('id, plate_number, status, allowed_payload')
+      .eq('id', truckId)
+      .single();
+
+    if (truckData) {
+      // BR-23 / IT-TD-001: Xe đang chạy chuyến khác (On Trip / in_transit / assigned) không được gán tiếp
+      const truckStatus = (truckData.status || '').toUpperCase();
+      if (truckStatus === 'ON TRIP' || truckStatus === 'ON_TRIP' || truckStatus === 'IN_TRANSIT' || truckStatus === 'MAINTENANCE') {
+        const err = new Error(`Xe ${truckData.plate_number} hiện đang trong chuyến vận chuyển khác (${truckData.status}) hoặc đang bảo trì, không thể phân bổ (BR-23)!`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // BR-32 / IT-TD-002: Tải trọng xe phải chở được toàn bộ trọng lượng hàng của đơn
+      let totalOrderWeight = 0;
+      if (matchedOrder?.id) {
+        const { data: cargos } = await supabase
+          .from('order_cargos')
+          .select('actual_weight_kg, chargeable_weight_kg')
+          .eq('order_id', matchedOrder.id);
+
+        if (cargos && cargos.length > 0) {
+          totalOrderWeight = cargos.reduce((acc, c) => acc + (Number(c.actual_weight_kg) || 0), 0);
+        } else {
+          totalOrderWeight = Number(matchedOrder.weight) || 0;
+        }
+      }
+
+      const truckMaxPayload = Number(truckData.allowed_payload) || 1250;
+      if (totalOrderWeight > truckMaxPayload) {
+        const err = new Error(`Khối lượng hàng hóa (${totalOrderWeight.toLocaleString('vi-VN')} kg) vượt quá tải trọng tối đa của xe ${truckData.plate_number} (${truckMaxPayload.toLocaleString('vi-VN')} kg) (BR-32)!`);
+        err.statusCode = 400;
+        throw err;
+      }
+    }
   }
 
   let driverId = driver_id ? Number(driver_id) : null;
   const targetDriverName = driver_name || driver1_name;
   if (!driverId && targetDriverName) {
     driverId = await tripModel.findDriverByName(targetDriverName);
+    if (!driverId) {
+      const err = new Error(`Không tìm thấy tài xế: ${targetDriverName}`);
+      err.statusCode = 404;
+      throw err;
+    }
   }
   if (!driverId) {
-    driverId = await tripModel.findFirstDriver();
+    const err = new Error('Thiếu thông tin tài xế cho chuyến xe');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // --- KIỂM TRA RÀNG BUỘC TÀI XẾ (BR-07, IT-TD-006) ---
+  if (driverId) {
+    // BR-07: Tài xế phải có Ca làm việc được duyệt (Approved shift) bao trùm ngày chạy chuyến
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { data: approvedShifts } = await supabase
+      .from('driver_shifts')
+      .select('id, date, status, start_time, end_time')
+      .eq('driver_id', driverId)
+      .eq('date', todayStr)
+      .eq('status', 'Approved');
+
+    if (!approvedShifts || approvedShifts.length === 0) {
+      const err = new Error(`Tài xế được chọn chưa có Ca làm việc được duyệt (Approved Shift) bao trùm thời gian chạy chuyến hôm nay (BR-07)!`);
+      err.statusCode = 400;
+      throw err;
+    }
   }
 
   let secondaryDriverId = null;
@@ -349,11 +438,21 @@ const createTrip = async (payload, userId = 1) => {
         }
       }
 
+      let plannedArrDate = new Date(nowMs + (i + 1) * 45 * 60000);
+      if (s.liveEtaTime && typeof s.liveEtaTime === 'string') {
+        const parts = s.liveEtaTime.split(':');
+        if (parts.length >= 2) {
+          const d = new Date();
+          d.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10), 0, 0);
+          plannedArrDate = d;
+        }
+      }
+
       resolvedStopsData.push({
         type: sType === 'PICKUP' ? 'Pickup' : sType === 'REST' ? 'Rest' : 'Drop-off',
         location_id: locId || 1,
         order_id: resolvedOrderId,
-        planned_arrival: new Date(nowMs + (i + 1) * 45 * 60000),
+        planned_arrival: plannedArrDate,
         status: 'Pending'
       });
     }
@@ -376,6 +475,12 @@ const createTrip = async (payload, userId = 1) => {
     );
   }
 
+  if (planned_distance === undefined || planned_duration === undefined) {
+    const err = new Error('Thiếu thông tin cự ly (planned_distance) hoặc thời gian dự kiến (planned_duration)');
+    err.statusCode = 400;
+    throw err;
+  }
+
   const cleanPlate = truck_plate ? String(truck_plate).split(' ')[0].trim() : '29H-995.72';
   const cleanDriverName = targetDriverName ? String(targetDriverName).split('·')[0].trim() : 'Nguyễn Văn Lái';
 
@@ -384,8 +489,8 @@ const createTrip = async (payload, userId = 1) => {
       trip_code: tripCode,
       status: 'Assigned',
       planned_start: new Date(),
-      planned_distance: planned_distance || 65.6,
-      planned_duration: planned_duration || 97,
+      planned_distance: planned_distance,
+      planned_duration: planned_duration,
       created_by: userId
     },
     truckId,
@@ -399,7 +504,7 @@ const createTrip = async (payload, userId = 1) => {
       truck_plate: cleanPlate,
       driver_name: cleanDriverName,
       driver2_name: driver2_name || null,
-      planned_distance: planned_distance || 65.6
+      planned_distance: planned_distance
     }
   });
 
@@ -440,12 +545,29 @@ const createTrip = async (payload, userId = 1) => {
   };
 };
 
+const VALID_TRIP_STATUSES = ['ASSIGNED', 'ACCEPTED', 'DISPATCHED', 'IN_TRANSIT', 'IN_PROGRESS', 'COMPLETED', 'DELIVERED', 'CANCELLED'];
+
 const updateTripStatus = async (id, status, userId = 1) => {
+  if (!status || typeof status !== 'string') {
+    const error = new Error('Trạng thái chuyến xe không hợp lệ');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const cleanStatus = status.trim().toUpperCase().replace(/\s+/g, '_');
+  if (!VALID_TRIP_STATUSES.includes(cleanStatus)) {
+    const error = new Error(`Trạng thái chuyến xe không hợp lệ: ${status}`);
+    error.statusCode = 400;
+    throw error;
+  }
+
   let dbStatus = 'Assigned';
-  const upper = String(status || '').toUpperCase();
-  if (upper === 'COMPLETED' || upper === 'DELIVERED') dbStatus = 'Completed';
-  else if (upper === 'IN_TRANSIT' || upper === 'IN_PROGRESS' || status === 'In Transit') dbStatus = 'In Progress';
-  else if (upper === 'CANCELLED') dbStatus = 'Cancelled';
+  if (cleanStatus === 'COMPLETED' || cleanStatus === 'DELIVERED') dbStatus = 'Completed';
+  else if (cleanStatus === 'IN_TRANSIT' || cleanStatus === 'IN_PROGRESS') dbStatus = 'In Progress';
+  else if (cleanStatus === 'CANCELLED') dbStatus = 'Cancelled';
+  else if (cleanStatus === 'ACCEPTED') dbStatus = 'Accepted';
+  else if (cleanStatus === 'DISPATCHED') dbStatus = 'Dispatched';
+  else dbStatus = 'Assigned';
 
   const updatedTrip = await tripModel.updateTripStatus(id, dbStatus, userId);
   return formatTrip(updatedTrip);

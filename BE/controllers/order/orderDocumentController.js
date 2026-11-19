@@ -34,7 +34,8 @@ const findOrderByIdentifier = async (identifier, includeRelations = false) => {
   } else if (cleanId.startsWith('NEX-') || cleanId.startsWith('ORD-')) {
     query = query.eq('order_code', cleanId);
   } else {
-    query = query.or(`tracking_token.eq.${cleanId},order_code.eq.${cleanId}`);
+    const sanitizedToken = cleanId.replace(/[^a-zA-Z0-9_\-]/g, '');
+    query = query.or('tracking_token.eq.' + sanitizedToken + ',order_code.eq.' + sanitizedToken);
   }
 
   const { data, error } = await query.limit(1);
@@ -154,7 +155,8 @@ const updateAgreedPrice = async (req, res) => {
     let emailResult = null;
     if (targetEmail) {
       const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
-      const confirmUrl = `http://localhost:3000/customer/order-confirmation/${token}`;
+      const frontendBaseUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://nexlog.vn';
+      const confirmUrl = `${frontendBaseUrl}/customer/order-confirmation/${token}`;
 
       const orderType = currentOrder.order_type || meta.shipping_direction || 'Export';
       const isExport =
@@ -433,10 +435,10 @@ const rejectOrderDocument = async (req, res) => {
       ? documents
       : (meta.documents || meta.web_workflow.documents || []);
 
-    let rejectedDocName = 'Chứng từ vận tải';
+    let rejectedDocName = null;
     const updatedDocs = baseDocs.map((doc) => {
       if (doc.key === doc_key) {
-        rejectedDocName = doc.name || rejectedDocName;
+        rejectedDocName = doc.name || 'Chứng từ vận tải';
         return {
           ...doc,
           status: 'REJECTED',
@@ -446,6 +448,10 @@ const rejectOrderDocument = async (req, res) => {
       }
       return doc;
     });
+
+    if (!rejectedDocName) {
+      return res.status(404).json({ message: `Không tìm thấy chứng từ với mã: ${doc_key}` });
+    }
 
     meta.web_workflow.stage = 'DOCS_REJECTED';
     meta.web_workflow.documents = updatedDocs;
@@ -468,7 +474,8 @@ const rejectOrderDocument = async (req, res) => {
       meta.accounting_email ||
       null;
     const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
-    const reuploadUrl = `http://localhost:3000/customer/order-documents/${token}`;
+    const frontendBaseUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://nexlog.vn';
+    const reuploadUrl = `${frontendBaseUrl}/customer/order-documents/${token}`;
 
     let emailResult = null;
     if (targetEmail) {

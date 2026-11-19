@@ -158,11 +158,10 @@ export function computeStopsLiveEta(stops = [], routeResult = {}, plannedStartSt
   const now = new Date();
   let cursorMinutes = now.getHours() * 60 + now.getMinutes();
 
-  // Nếu plannedStartStr có định dạng HH:mm hợp lệ thì có thể tham chiếu, nhưng Live ETA ưu tiên thời gian thực hiện tại
+  // Nếu plannedStartStr có định dạng HH:mm hợp lệ thì sử dụng làm mốc xuất phát
   const timeMatch = String(plannedStartStr || '').match(/(\d{1,2}):(\d{2})/);
-  if (timeMatch && !routeResult?.useCurrentClock) {
-    // Vẫn giữ đồng bộ với giờ hiện tại nếu chênh lệch lớn để điều phối viên thấy ETA thực tế ngay bây giờ
-    cursorMinutes = now.getHours() * 60 + now.getMinutes();
+  if (timeMatch) {
+    cursorMinutes = parseInt(timeMatch[1], 10) * 60 + parseInt(timeMatch[2], 10);
   }
 
   const formatHm = (minsTotal) => {

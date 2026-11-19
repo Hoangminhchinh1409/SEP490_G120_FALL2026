@@ -156,6 +156,8 @@ const mapDbStatusToFe = (dbStatus, order, meta = null) => {
   }
 
   switch (upperStatus) {
+    case 'CONFIRMED':
+      return 'CONFIRMED';
     case 'WAITING_FOR_DOCUMENTS':
     case 'PENDING_DOCUMENTS':
       if (order?.source === 'HOMEPAGE' && (!order?.agreed_price || order.agreed_price === 0)) {
