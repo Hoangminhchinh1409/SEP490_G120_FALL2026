@@ -79,17 +79,22 @@ export default function TripAssignmentFleetConfig({
             onChange={setSelectedTruckPlate}
           >
             {INTERNAL_FLEET_OPTIONS.map(opt => (
-              <Option key={opt.value} value={opt.value}>
+              <Option key={opt.value} value={opt.value} disabled={opt.disabled}>
                 {opt.label}
               </Option>
             ))}
             {trucks
-              .filter(t => !INTERNAL_FLEET_OPTIONS.some(o => o.plate === t.plate))
-              .map(t => (
-                <Option key={t.plate} value={`${t.plate} - ${t.payload_kg} kg - ${t.status}`}>
-                  {t.plate} · {t.payload_kg} kg · {t.status}
-                </Option>
-              ))}
+              .filter(t => !INTERNAL_FLEET_OPTIONS.some(o => o.plate === (t.plate || t.plate_number)))
+              .map(t => {
+                const rawSt = String(t.status || '').toUpperCase();
+                const isAvail = rawSt === 'AVAILABLE' || rawSt === 'ACTIVE';
+                const p = t.plate || t.plate_number;
+                return (
+                  <Option key={p} value={`${p} - ${t.payload_kg} kg - ${t.status}`} disabled={!isAvail}>
+                    {p} · {t.payload_kg} kg · {t.status}
+                  </Option>
+                );
+              })}
           </Select>
         </div>
 
@@ -157,12 +162,18 @@ export default function TripAssignmentFleetConfig({
           >
             {drivers.map(d => {
               const drivenHours = Number(d.hours_driven ?? d.shift_hours_today ?? 2.0);
-              const statusLabel = d.status === 'AVAILABLE' ? 'Sẵn sàng' : (d.status || 'Sẵn sàng');
+              const rawSt = String(d.status || '').toUpperCase();
+              const isOnTrip = rawSt === 'ON_TRIP' || rawSt === 'ON_DUTY' || rawSt === 'ON TRIP';
+              const isLeave = rawSt === 'LEAVE' || rawSt === 'RESTING';
+              const isAvailable = rawSt === 'AVAILABLE' || rawSt === 'ACTIVE';
+              const statusLabel = isAvailable ? 'Sẵn sàng' : (isOnTrip ? 'Đang chạy chuyến' : (isLeave ? 'Đang nghỉ' : (d.status || 'Không khả dụng')));
+              const isBlocked = !isAvailable || d.status === 'Chờ khám' || drivenHours >= 9;
+
               return (
                 <Option 
                   key={d.id} 
                   value={d.name}
-                  disabled={d.status === 'Chờ khám' || drivenHours >= 9}
+                  disabled={isBlocked}
                 >
                   {d.name} · {statusLabel} · Đã lái {drivenHours}h {drivenHours >= 9 ? '(Vượt trần giờ lái)' : ''}
                 </Option>
@@ -184,12 +195,18 @@ export default function TripAssignmentFleetConfig({
           >
             {drivers.map(d => {
               const drivenHours = Number(d.hours_driven ?? d.shift_hours_today ?? 2.0);
-              const statusLabel = d.status === 'AVAILABLE' ? 'Sẵn sàng' : (d.status || 'Sẵn sàng');
+              const rawSt = String(d.status || '').toUpperCase();
+              const isOnTrip = rawSt === 'ON_TRIP' || rawSt === 'ON_DUTY' || rawSt === 'ON TRIP';
+              const isLeave = rawSt === 'LEAVE' || rawSt === 'RESTING';
+              const isAvailable = rawSt === 'AVAILABLE' || rawSt === 'ACTIVE';
+              const statusLabel = isAvailable ? 'Sẵn sàng' : (isOnTrip ? 'Đang chạy chuyến' : (isLeave ? 'Đang nghỉ' : (d.status || 'Không khả dụng')));
+              const isBlocked = !isAvailable || d.name === selectedDriver1 || d.status === 'Chờ khám' || drivenHours >= 9;
+
               return (
                 <Option 
                   key={d.id} 
                   value={d.name}
-                  disabled={d.name === selectedDriver1 || d.status === 'Chờ khám' || drivenHours >= 9}
+                  disabled={isBlocked}
                 >
                   {d.name} · {statusLabel} · Đã lái {drivenHours}h
                 </Option>

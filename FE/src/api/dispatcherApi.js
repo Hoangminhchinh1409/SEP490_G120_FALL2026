@@ -20,7 +20,7 @@ export const dispatcherApi = {
       });
       return data.truck;
     } catch (error) {
-      console.error('dispatcherApi.createTruck error:', error);
+      console.warn('dispatcherApi.createTruck warning:', error.message || error);
       throw error;
     }
   },
@@ -33,7 +33,7 @@ export const dispatcherApi = {
       });
       return data.truck;
     } catch (error) {
-      console.error('dispatcherApi.updateTruck error:', error);
+      console.warn('dispatcherApi.updateTruck warning:', error.message || error);
       throw error;
     }
   },
@@ -56,7 +56,7 @@ export const dispatcherApi = {
       });
       return data.driver;
     } catch (error) {
-      console.error('dispatcherApi.updateDriver error:', error);
+      console.warn('dispatcherApi.updateDriver warning:', error.message || error);
       throw error;
     }
   },
@@ -183,7 +183,7 @@ export const dispatcherApi = {
       });
       return data.trip;
     } catch (error) {
-      console.error('dispatcherApi.createTrip error:', error);
+      console.warn('dispatcherApi.createTrip warning:', error.message || error);
       throw error;
     }
   },

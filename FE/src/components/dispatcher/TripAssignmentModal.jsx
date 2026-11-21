@@ -31,7 +31,7 @@ const TripAssignmentMap = dynamic(
 );
 
 // Danh mục đội xe nội bộ chuẩn gắn với thông số thùng xe
-const INTERNAL_FLEET_OPTIONS = [
+const BASE_INTERNAL_FLEET_OPTIONS = [
   {
     value: '29A-112.34 - 1.250 kg - Sẵn sàng',
     plate: '29A-112.34',
@@ -156,22 +156,68 @@ function TripAssignmentModalContent({
     return spec.key;
   }, [order]);
 
+  const [trucks, setTrucks] = useState([]);
+  const [drivers, setDrivers] = useState([
+    { id: 6, name: 'Nguyễn Văn Lái', status: 'AVAILABLE', hours_driven: 2.0 },
+    { id: 15, name: 'Nguyễn Tấn Tài', status: 'AVAILABLE', hours_driven: 3.5 },
+    { id: 16, name: 'Đỗ Duy Hải', status: 'AVAILABLE', hours_driven: 2.0 }
+  ]);
+  const [vendors, setVendors] = useState([]);
+
+  // Đồng bộ trạng thái thực tế từ database vào danh sách xe nội bộ (BR-23)
+  const internalFleetOptions = useMemo(() => {
+    return BASE_INTERNAL_FLEET_OPTIONS.map(opt => {
+      const liveTruck = trucks.find(t => (t.plate_number || t.plate) === opt.plate);
+      if (!liveTruck) return opt;
+      const rawStatus = String(liveTruck.status || '').toUpperCase();
+      const isAvailable = rawStatus === 'AVAILABLE' || rawStatus === 'ACTIVE';
+      const isMaintenance = rawStatus === 'MAINTENANCE';
+      const isOnTrip = rawStatus === 'ON TRIP' || rawStatus === 'ON_TRIP' || rawStatus === 'IN_TRANSIT';
+
+      let statusLabel = 'Sẵn sàng';
+      if (isOnTrip) statusLabel = 'Đang chạy chuyến (On Trip)';
+      else if (isMaintenance) statusLabel = 'Đang bảo dưỡng';
+      else if (!isAvailable) statusLabel = liveTruck.status || 'Không khả dụng';
+
+      const parts = opt.label.split('·');
+      const middlePart = parts.length > 2 ? parts.slice(1, -1).join('·').trim() : (parts[1]?.trim() || '');
+
+      return {
+        ...opt,
+        disabled: !isAvailable,
+        status: liveTruck.status,
+        label: `${opt.plate} · ${middlePart} · ${statusLabel}`
+      };
+    });
+  }, [trucks]);
+
   // Bộ lọc danh sách xe: CHỈ hiển thị các xe CÙNG HẠNG TẢI TRỌNG đã chốt (khác biển số)
   const filteredFleetOptions = useMemo(() => {
     const safeKey = String(agreedVehicleSpecKey || 'TRUCK_3.5T');
     const specKeyNorm = safeKey.replace('TRUCK_', '');
-    const matchedOptions = INTERNAL_FLEET_OPTIONS.filter(o => 
+    const matchedOptions = internalFleetOptions.filter(o => 
       o.specKey === safeKey ||
       String(o.specKey || '').replace('TRUCK_', '') === specKeyNorm
     );
-    return matchedOptions.length > 0 ? matchedOptions : INTERNAL_FLEET_OPTIONS;
-  }, [agreedVehicleSpecKey]);
+    return matchedOptions.length > 0 ? matchedOptions : internalFleetOptions;
+  }, [agreedVehicleSpecKey, internalFleetOptions]);
 
   const defaultOption = useMemo(() => {
-    return filteredFleetOptions[0]?.value || INTERNAL_FLEET_OPTIONS[4].value;
-  }, [filteredFleetOptions]);
+    const available = filteredFleetOptions.find(o => !o.disabled);
+    return available?.value || filteredFleetOptions[0]?.value || internalFleetOptions[0]?.value;
+  }, [filteredFleetOptions, internalFleetOptions]);
 
   const [selectedTruckPlate, setSelectedTruckPlate] = useState(defaultOption);
+
+  useEffect(() => {
+    if (defaultOption) {
+      const currentOpt = filteredFleetOptions.find(o => o.value === selectedTruckPlate);
+      if (!currentOpt || currentOpt.disabled) {
+        setSelectedTruckPlate(defaultOption);
+      }
+    }
+  }, [defaultOption, filteredFleetOptions]);
+
   const [driverCount, setDriverCount] = useState(1);
   const [selectedDriver1, setSelectedDriver1] = useState('Nguyễn Văn Lái');
   const [selectedDriver2, setSelectedDriver2] = useState(undefined);
@@ -188,14 +234,6 @@ function TripAssignmentModalContent({
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
 
-  const [trucks, setTrucks] = useState([]);
-  const [drivers, setDrivers] = useState([
-    { id: 6, name: 'Nguyễn Văn Lái', status: 'AVAILABLE', hours_driven: 2.0 },
-    { id: 15, name: 'Nguyễn Tấn Tài', status: 'AVAILABLE', hours_driven: 3.5 },
-    { id: 16, name: 'Đỗ Duy Hải', status: 'AVAILABLE', hours_driven: 2.0 }
-  ]);
-  const [vendors, setVendors] = useState([]);
-
   useEffect(() => {
     let active = true;
     const loadFleetData = async () => {
@@ -209,7 +247,13 @@ function TripAssignmentModalContent({
           if (Array.isArray(truckData) && truckData.length > 0) setTrucks(truckData);
           if (Array.isArray(driverData) && driverData.length > 0) {
             setDrivers(driverData);
-            if (driverData[0]?.name) {
+            const availDriver = driverData.find(d => {
+              const rawSt = String(d.status || '').toUpperCase();
+              return rawSt === 'AVAILABLE' || rawSt === 'ACTIVE';
+            });
+            if (availDriver?.name) {
+              setSelectedDriver1(availDriver.name);
+            } else if (driverData[0]?.name) {
               setSelectedDriver1(driverData[0].name);
             }
           }
@@ -221,7 +265,7 @@ function TripAssignmentModalContent({
           }
         }
       } catch (err) {
-        console.error('Không tải được dữ liệu đội xe / tài xế:', err);
+        console.warn('Không tải được dữ liệu đội xe / tài xế:', err.message || err);
       }
     };
     loadFleetData();
@@ -318,8 +362,8 @@ function TripAssignmentModalContent({
   }, [stops, routeSummary, plannedStart]);
 
   const currentFleetItem = useMemo(() => {
-    return INTERNAL_FLEET_OPTIONS.find(o => o.value === selectedTruckPlate) || INTERNAL_FLEET_OPTIONS[2];
-  }, [selectedTruckPlate]);
+    return internalFleetOptions.find(o => o.value === selectedTruckPlate) || internalFleetOptions[2] || BASE_INTERNAL_FLEET_OPTIONS[2];
+  }, [selectedTruckPlate, internalFleetOptions]);
 
   const selectedTruckSpec = useMemo(() => {
     const matched = getVehicleSpecByKey(currentFleetItem.specKey || '3.5T');
@@ -600,6 +644,7 @@ function TripAssignmentModalContent({
         planned_duration: routeSummary.durationMins
       });
 
+      message.success(`Đã phân bổ chuyến xe ${createdTrip?.trip_code || ''} thành công!`);
       onAssignSuccess?.({
         ...order,
         ...createdTrip,
@@ -617,7 +662,7 @@ function TripAssignmentModalContent({
         durationMins: routeSummary.durationMins
       });
     } catch (err) {
-      console.error('handleAssignInternal error:', err);
+      console.warn('handleAssignInternal warning:', err.message || err);
       message.error(err.message || 'Lỗi khi tạo chuyến và phân bổ xe trên máy chủ');
     } finally {
       setSubmitting(false);
@@ -655,7 +700,7 @@ function TripAssignmentModalContent({
         vendor_vehicles_count: vendorVehicleCount
       });
     } catch (err) {
-      console.error('handleAssignVendor error:', err);
+      console.warn('handleAssignVendor warning:', err.message || err);
       message.error(err.message || 'Lỗi khi bàn giao đơn hàng cho nhà xe đối tác');
     } finally {
       setSubmitting(false);
