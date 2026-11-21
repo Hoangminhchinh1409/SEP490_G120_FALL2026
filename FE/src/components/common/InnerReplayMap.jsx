@@ -10,7 +10,7 @@ const SAFE_VIETMAP_TILE_URL =
   'https://maps.vietmap.vn/api/tm/{z}/{x}/{y}@2x.png?apikey=6ad933d27ec1ae2fb5a5fd36902c817d1c912263116e4644';
 
 // Component cập nhật khung nhìn bản đồ, phóng to vừa vặn toàn tuyến & hỗ trợ pan tới điểm chọn
-function MapReplayController({ boundsPositions, centerOverride }) {
+function MapReplayController({ boundsPositions, centerOverride, incidentLocation, isIncidentMode }) {
   const map = useMap();
   const initialFittedRef = useRef(false);
 
@@ -23,15 +23,24 @@ function MapReplayController({ boundsPositions, centerOverride }) {
         if (!container || !container.offsetParent) return;
         map.invalidateSize();
 
-        if (!initialFittedRef.current && Array.isArray(boundsPositions) && boundsPositions.length >= 2) {
-          const bounds = L.latLngBounds(boundsPositions);
-          if (bounds.isValid()) {
-            map.fitBounds(bounds, {
-              padding: [45, 45],
-              maxZoom: 15,
-              animate: false
-            });
+        if (!initialFittedRef.current) {
+          if (isIncidentMode && incidentLocation?.lat && incidentLocation?.lng) {
+            map.setView(
+              [Number(incidentLocation.lat), Number(incidentLocation.lng)],
+              14,
+              { animate: false }
+            );
             initialFittedRef.current = true;
+          } else if (Array.isArray(boundsPositions) && boundsPositions.length >= 2) {
+            const bounds = L.latLngBounds(boundsPositions);
+            if (bounds.isValid()) {
+              map.fitBounds(bounds, {
+                padding: [45, 45],
+                maxZoom: 15,
+                animate: false
+              });
+              initialFittedRef.current = true;
+            }
           }
         }
       } catch {
@@ -40,7 +49,7 @@ function MapReplayController({ boundsPositions, centerOverride }) {
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [map, boundsPositions]);
+  }, [map, boundsPositions, incidentLocation, isIncidentMode]);
 
   // Khi người dùng bấm vào 1 trạm dừng hoặc sự kiện để tập trung
   useEffect(() => {
@@ -63,7 +72,8 @@ export default function InnerReplayMap({
   events = [],
   incidentLocation = null,
   centerOverride = null,
-  isPlaying = false
+  isPlaying = false,
+  isIncidentMode = false
 }) {
   const currentPoint = gpsTrack[stepIndex] || gpsTrack[0] || { latitude: 21.0285, longitude: 105.8542, speed_kmh: 0 };
   const currentLat = Number(currentPoint.latitude) || 21.0285;
@@ -98,9 +108,12 @@ export default function InnerReplayMap({
 
   // Điểm trung tâm mặc định
   const defaultCenter = useMemo(() => {
+    if (isIncidentMode && incidentLocation?.lat && incidentLocation?.lng) {
+      return [Number(incidentLocation.lat), Number(incidentLocation.lng)];
+    }
     if (fullPolyline.length > 0) return fullPolyline[0];
     return [21.0285, 105.8542];
-  }, [fullPolyline]);
+  }, [fullPolyline, isIncidentMode, incidentLocation]);
 
   // Icon xe tải di chuyển theo tọa độ thực tế
   const truckIcon = useMemo(() => {
@@ -177,17 +190,24 @@ export default function InnerReplayMap({
 
   // Icon cảnh báo sự cố / ngoài bán kính Geofence
   const incidentIcon = useMemo(() => {
+    const pulseRing = isIncidentMode
+      ? '<span class="absolute inline-flex h-11 w-11 rounded-full bg-red-400 opacity-50 animate-ping"></span>'
+      : '';
+    const size = isIncidentMode ? 38 : 32;
     return L.divIcon({
       className: 'custom-incident-marker',
       html: `
-        <div style="width: 32px; height: 32px; border-radius: 50%; background-color: #ef4444; border: 3px solid #ffffff; box-shadow: 0 3px 10px rgba(239, 68, 68, 0.6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 14px; transform: translate(-50%, -50%);">
-          ⚠️
+        <div style="position: relative; display: flex; align-items: center; justify-content: center; transform: translate(-50%, -50%);">
+          ${pulseRing}
+          <div style="position: relative; width: ${size}px; height: ${size}px; border-radius: 50%; background-color: #ef4444; border: 3px solid #ffffff; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.65); display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: ${isIncidentMode ? 16 : 14}px;">
+            ⚠️
+          </div>
         </div>
       `,
       iconSize: [0, 0],
       iconAnchor: [0, 0]
     });
-  }, []);
+  }, [isIncidentMode]);
 
   return (
     <div className="relative w-full h-full min-h-[350px] overflow-hidden rounded-xl border border-slate-200">
@@ -207,22 +227,23 @@ export default function InnerReplayMap({
         <MapReplayController
           boundsPositions={boundsPositions}
           centerOverride={centerOverride}
-          currentPoint={currentPoint}
+          incidentLocation={incidentLocation}
+          isIncidentMode={isIncidentMode}
         />
 
         {/* 1. Lộ trình kế hoạch / toàn bộ hành trình (vạch mờ dự kiến) */}
         {fullPolyline.length > 1 && (
           <Polyline
             positions={fullPolyline}
-            color="#94a3b8"
+            color={isIncidentMode ? '#64748b' : '#94a3b8'}
             weight={4}
             opacity={0.7}
             dashArray="4, 6"
           />
         )}
 
-        {/* 2. Quãng đường thực tế đã lăn bánh (vạch màu nổi bật theo tiến độ tua) */}
-        {traveledPolyline.length > 1 && (
+        {/* 2. Quãng đường thực tế đã lăn bánh (chỉ hiện ở chế độ tua lại GPS) */}
+        {!isIncidentMode && traveledPolyline.length > 1 && (
           <Polyline
             positions={traveledPolyline}
             color="#d97706"
@@ -297,9 +318,11 @@ export default function InnerReplayMap({
         {/* 5. Vị trí Sự cố cụ thể truyền từ màn hình sự cố lớn của Manager */}
         {incidentLocation?.lat && incidentLocation?.lng && !isNaN(Number(incidentLocation.lat)) && !isNaN(Number(incidentLocation.lng)) && (
           <Marker position={[Number(incidentLocation.lat), Number(incidentLocation.lng)]} icon={incidentIcon} zIndexOffset={1200}>
-            <Tooltip permanent direction="top" offset={[0, -18]}>
-              <span className="text-[10px] font-bold text-red-600 bg-white/90 px-1.5 py-0.5 rounded shadow-xs border border-red-200">
-                ⚠️ Hiện trường sự cố {incidentLocation.reported_time ? `(${new Date(incidentLocation.reported_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})` : ''}
+            <Tooltip permanent direction="top" offset={[0, -20]}>
+              <span className="text-[10px] font-bold text-red-600 bg-white/95 px-2 py-0.5 rounded shadow-xs border border-red-200">
+                {isIncidentMode
+                  ? `⚠️ Vị trí tài xế báo sự cố (${plateNumber})`
+                  : `⚠️ Hiện trường sự cố ${incidentLocation.reported_time ? `(${new Date(incidentLocation.reported_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})` : ''}`}
               </span>
             </Tooltip>
             <Popup>
@@ -334,40 +357,51 @@ export default function InnerReplayMap({
           </Marker>
         )}
 
-        {/* 6. Marker Xe tải đang chạy / tua lại */}
-        <Marker position={[currentLat, currentLng]} icon={truckIcon} zIndexOffset={1000}>
-          <Popup>
-            <div className="text-xs font-sans space-y-1">
-              <div className="font-bold text-slate-900 flex items-center justify-between gap-2">
-                <span>Xe: {plateNumber}</span>
-                <span className="text-emerald-600 font-mono">{currentSpeed} km/h</span>
+        {/* 6. Marker Xe tải đang chạy / tua lại (chỉ hiển thị ở chế độ Replay) */}
+        {!isIncidentMode && (
+          <Marker position={[currentLat, currentLng]} icon={truckIcon} zIndexOffset={1000}>
+            <Popup>
+              <div className="text-xs font-sans space-y-1">
+                <div className="font-bold text-slate-900 flex items-center justify-between gap-2">
+                  <span>Xe: {plateNumber}</span>
+                  <span className="text-emerald-600 font-mono">{currentSpeed} km/h</span>
+                </div>
+                <div className="text-slate-500 text-[11px]">
+                  Tọa độ: <span className="font-mono">{currentLat.toFixed(5)}, {currentLng.toFixed(5)}</span>
+                </div>
+                <div className="text-slate-500 text-[11px]">
+                  Thời điểm: <span className="font-mono">{currentPoint.recorded_time ? new Date(currentPoint.recorded_time).toLocaleTimeString('vi-VN') : '--:--'}</span>
+                </div>
               </div>
-              <div className="text-slate-500 text-[11px]">
-                Tọa độ: <span className="font-mono">{currentLat.toFixed(5)}, {currentLng.toFixed(5)}</span>
-              </div>
-              <div className="text-slate-500 text-[11px]">
-                Thời điểm: <span className="font-mono">{currentPoint.recorded_time ? new Date(currentPoint.recorded_time).toLocaleTimeString('vi-VN') : '--:--'}</span>
-              </div>
-            </div>
-          </Popup>
-        </Marker>
+            </Popup>
+          </Marker>
+        )}
       </MapContainer>
 
       {/* Nhãn VietMap góc phải trên */}
       <div className="absolute top-3 right-3 z-[1000] flex items-center gap-2 pointer-events-none">
         <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-white/95 text-indigo-900 border border-indigo-200 shadow-sm flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Bản đồ: VietMap Tilemap Live
+          <span className={`w-2 h-2 rounded-full ${isIncidentMode ? 'bg-red-500' : 'bg-emerald-500 animate-pulse'}`}></span>
+          {isIncidentMode ? 'Bản đồ: VietMap Vị trí sự cố' : 'Bản đồ: VietMap Tilemap Live'}
         </span>
       </div>
 
-      {/* Nút chỉ báo mốc tua ở góc dưới trái bản đồ */}
+      {/* Nhãn thông số ở góc dưới trái bản đồ */}
       <div className="absolute bottom-3 left-3 z-[1000] flex items-center gap-2 pointer-events-none">
-        <div className="bg-slate-900/90 backdrop-blur-xs text-white px-3 py-1.5 rounded-lg border border-slate-700/60 shadow text-xs font-mono flex items-center gap-2.5">
-          <span className="text-amber-400 font-bold">Mốc GPS #{stepIndex + 1}/{Math.max(1, gpsTrack.length)}</span>
-          <span className="text-slate-400">|</span>
-          <span className="text-emerald-300 font-bold">{currentSpeed} km/h</span>
-        </div>
+        {isIncidentMode ? (
+          <div className="bg-slate-900/90 backdrop-blur-xs text-white px-3 py-1.5 rounded-lg border border-slate-700/60 shadow text-xs font-mono flex items-center gap-2">
+            <span className="text-red-400 font-bold">GPS:</span>
+            <span className="text-emerald-300 font-bold">
+              {Number(incidentLocation?.lat || currentLat).toFixed(5)}, {Number(incidentLocation?.lng || currentLng).toFixed(5)}
+            </span>
+          </div>
+        ) : (
+          <div className="bg-slate-900/90 backdrop-blur-xs text-white px-3 py-1.5 rounded-lg border border-slate-700/60 shadow text-xs font-mono flex items-center gap-2.5">
+            <span className="text-amber-400 font-bold">Mốc GPS #{stepIndex + 1}/{Math.max(1, gpsTrack.length)}</span>
+            <span className="text-slate-400">|</span>
+            <span className="text-emerald-300 font-bold">{currentSpeed} km/h</span>
+          </div>
+        )}
       </div>
     </div>
   );

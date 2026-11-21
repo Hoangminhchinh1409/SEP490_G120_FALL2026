@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   Tag,
@@ -16,6 +16,19 @@ import {
 } from 'antd';
 import { managerApi } from '../../../api/managerApi';
 import TripReplayModal from '../../../components/common/TripReplayModal';
+import {
+  calculateAutoCompensation as calcCompensation,
+  checkHasFrameworkContract,
+  getEffectiveLiabilityCap,
+  validateApprovalDecision,
+  validateRejectionDecision,
+  validatePaymentRecording,
+  validateRequestMoreInfo,
+  determineIncidentStatus,
+  buildApprovalPayload,
+  buildRejectionPayload,
+  buildPaymentClosingPayload
+} from '../../../utils/incidentCompensationHelper';
 
 export default function MajorIncidentDetailModal({
   open,
@@ -42,6 +55,7 @@ export default function MajorIncidentDetailModal({
   const [transactionCode, setTransactionCode] = useState('FT26114123456');
   const [paymentProofUrl, setPaymentProofUrl] = useState('');
   const [recordingPayment, setRecordingPayment] = useState(false);
+  const paymentProofInputRef = useRef(null);
 
   // Sub-modals
   const [isLocationMapOpen, setIsLocationMapOpen] = useState(false);
@@ -49,6 +63,9 @@ export default function MajorIncidentDetailModal({
   const [isRequestInfoModalOpen, setIsRequestInfoModalOpen] = useState(false);
   const [isContractViewerOpen, setIsContractViewerOpen] = useState(false);
   const [contractViewerTab, setContractViewerTab] = useState('FRAMEWORK'); // 'FRAMEWORK' | 'ORDER_TRIP'
+  const [isEmailPreviewOpen, setIsEmailPreviewOpen] = useState(false);
+  const [emailPreviewType, setEmailPreviewType] = useState('APPROVAL'); // 'APPROVAL' | 'REJECTION'
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   // Rejection modal inputs (Mục 15)
   const [rejectionReason, setRejectionReason] = useState('');
@@ -64,6 +81,7 @@ export default function MajorIncidentDetailModal({
       return;
     }
 
+    const initStatus = determineIncidentStatus(incident);
     setFault(incident.fault || 'COMPANY');
     setResolutionNote(incident.resolution_note || '');
     setDamagePercentage(Number(incident.damage_percentage || 30));
@@ -71,7 +89,9 @@ export default function MajorIncidentDetailModal({
     setContractClauseRef(incident.contract_clause_ref || 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)');
     setSurveyOrgReport(incident.survey_org_report || 'Giám định ABC - BB-2026-118');
     setPaymentProofUrl(incident.payment_proof_url || '');
-    setCompensationAmount(Number(incident.approved_compensation_amount || incident.proposed_compensation_amount || incident.claim_amount || 36000000));
+    if (incident.payment_date) setPaymentDate(incident.payment_date);
+    if (incident.transaction_code) setTransactionCode(incident.transaction_code);
+    setCompensationAmount(Number(incident.approved_compensation_amount || incident.proposed_compensation_amount || incident.claim_amount || (initStatus.isDone ? 0 : 36000000)));
 
     // Tải chi tiết sự cố và hồ sơ liên quan
     setLoading(true);
@@ -79,6 +99,7 @@ export default function MajorIncidentDetailModal({
     managerApi.getIncidentById(incId)
       .then((res) => {
         const data = res || incident;
+        const dataStatus = determineIncidentStatus(data);
         setDetail(data);
         if (data.fault) setFault(data.fault);
         if (data.resolution_note) setResolutionNote(data.resolution_note);
@@ -87,8 +108,14 @@ export default function MajorIncidentDetailModal({
         if (data.contract_clause_ref) setContractClauseRef(data.contract_clause_ref);
         if (data.survey_org_report) setSurveyOrgReport(data.survey_org_report);
         if (data.rejection_reason) setRejectionReason(data.rejection_reason);
+        if (data.payment_date) setPaymentDate(data.payment_date);
+        if (data.transaction_code) setTransactionCode(data.transaction_code);
         if (data.payment_proof_url) setPaymentProofUrl(data.payment_proof_url);
-        if (data.approved_compensation_amount) {
+        if (
+          data.approved_compensation_amount !== undefined &&
+          data.approved_compensation_amount !== null &&
+          (Number(data.approved_compensation_amount) > 0 || dataStatus.isDone)
+        ) {
           setCompensationAmount(Number(data.approved_compensation_amount));
         } else if (data.proposed_compensation_amount) {
           setCompensationAmount(Number(data.proposed_compensation_amount));
@@ -106,48 +133,61 @@ export default function MajorIncidentDetailModal({
   if (!open || !incident) return null;
 
   const currentData = detail || incident;
-  const rawStatus = (currentData.status || currentData.raw_status || '').toUpperCase();
-
-  // Hồ sơ đã đóng bồi thường: Quản lý đã từ chối HOẶC đã chi tiền hoàn tất
-  const isRejected = Boolean(currentData.rejection_reason) || rawStatus === 'REJECTED';
-  const isPaymentClosed = rawStatus === 'DONE' || rawStatus === 'CLOSED' || Boolean(currentData.closed_at) || Boolean(currentData.payment_proof_url);
-  const isDone = isRejected || isPaymentClosed;
-
-  // Hồ sơ đã phê duyệt bồi thường (chờ chi tiền)
-  const isApproved = !isDone && (rawStatus === 'APPROVED' || (Number(currentData.approved_compensation_amount) > 0 && !isDone));
-
-  // Hồ sơ đang chờ Quản lý thẩm định và xét duyệt
-  const isPending = !isDone && !isApproved;
+  const { isPending, isApproved, isRejected, isPaymentClosed, isDone } = determineIncidentStatus(currentData);
 
   const claimCode = currentData.claim_code || currentData.compensation_claim?.claim_code || `CLM-${String(currentData.id || 1).padStart(4, '0')}`;
   const orderCode = currentData.order_code || currentData.order?.order_code || 'NEX-208337';
   const orderType = currentData.order?.order_type || currentData.order_type || 'Xuất khẩu';
   const orderStatus = currentData.order?.status || 'Đã giao';
   const customerName = currentData.order?.customer?.company_name || currentData.customer_name || 'BV Đa khoa Thái Nguyên';
-  const contactPerson = currentData.order?.contact_person || 'Nguyễn Thị Lan';
-  const contactPhone = currentData.order?.contact_phone || '0912 345 678';
-  const routeDisplay = currentData.order?.route_display || 'Kho ALS Nội Bài → BV Đa khoa TN';
-  const cargoDescription = currentData.order?.cargo_description || 'Thiết bị y tế - 12 kiện - 480 kg';
+  const contactPerson = currentData.order?.contact_person || currentData.receiver_name || currentData.order?.receiver_name || 'Nguyễn Thị Lan';
+  const contactPhone = currentData.order?.contact_phone || currentData.order?.customer?.phone || '0912 345 678';
+  const customerEmailDisplay =
+    currentData.customer_email ||
+    currentData.order?.customer?.email ||
+    currentData.order?.order_contract?.contract_details?.customer_email ||
+    'khachhang@example.com';
+  const receiverName = currentData.receiver_name || currentData.order?.receiver_name || contactPerson;
+  const routeDisplay =
+    currentData.order?.route_display ||
+    (currentData.order?.pickup_address && currentData.order?.delivery_address
+      ? `${currentData.order.pickup_address} → ${currentData.order.delivery_address}`
+      : 'Kho ALS Nội Bài → BV Đa khoa TN');
+  const firstCargo = Array.isArray(currentData.order?.order_cargos) ? currentData.order.order_cargos[0] : null;
+  const cargoDescription =
+    currentData.order?.cargo_description ||
+    (firstCargo?.cargo_name
+      ? `${firstCargo.cargo_name}${firstCargo.package_count ? ` - ${firstCargo.package_count} kiện` : ''}${firstCargo.weight_kg ? ` - ${firstCargo.weight_kg} kg` : ''}`
+      : 'Thiết bị y tế - 12 kiện - 480 kg');
   const declaredValue = Number(currentData.order?.declared_value || currentData.declared_value || 120000000);
   const agreedPrice = Number(currentData.order?.agreed_price || currentData.agreed_price || 5000000);
   const tripCode = currentData.trip_code || (currentData.trip_id ? `TR${currentData.trip_id}` : 'TR261107-003');
   const truckPlate = currentData.truck_plate || '29H-456.78';
   const driverName = currentData.driver_name || 'Trần Văn Khang';
   const driverPhone = currentData.driver_phone || '0987 654 321';
+  const sealNumber = currentData.seal_number || currentData.order?.seal_number || 'Chưa ghi nhận';
   const contractNumber = currentData.contract?.contract_number || 'HĐ vận chuyển ký ngày 02/11/2026';
   const contractPdfUrl = currentData.contract?.attachment_link || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
   const contractCap = Number(currentData.contract?.liability_cap || 200000000);
 
   // Nhận diện đơn hàng có Hợp đồng khung đối tác dài hạn hay là khách vãng lai
-  const hasFrameworkContract = Boolean(
-    currentData.order?.contract_id ||
-    currentData.contract?.id ||
-    (currentData.contract?.contract_number && !currentData.contract.contract_number.includes(orderCode) && !currentData.contract.contract_number.includes('VÃNG-LAI'))
-  );
-  const effectiveLiabilityCap = hasFrameworkContract ? contractCap : 500000000;
+  const hasFrameworkContract = checkHasFrameworkContract({
+    order: currentData.order,
+    contract: currentData.contract
+  });
+  const effectiveLiabilityCap = getEffectiveLiabilityCap({
+    order: currentData.order,
+    contract: currentData.contract
+  });
 
-  // Số tiền yêu cầu bồi thường (Mục 3)
+  // Số tiền yêu cầu bồi thường (Mục 3) & Thông tin chuyển cấp từ ĐPV
   const requestedClaimAmount = Number(currentData.claim_amount || currentData.proposed_compensation_amount || 35000000);
+  const escalatedTimeDisplay = currentData.escalated_time
+    ? new Date(currentData.escalated_time).toLocaleString('vi-VN')
+    : 'Chờ điều phối cập nhật';
+  const escalationReasonDisplay =
+    currentData.escalation_reason ||
+    'Sự cố vượt thẩm quyền điều phối viên, chuyển Quản lý thẩm định và phê duyệt phương án bồi thường.';
 
   // Thông tin sự cố phát sinh (Mục 5 & 6)
   const incidentCode = currentData.code || `INC-${currentData.id || 12}`;
@@ -160,54 +200,88 @@ export default function MajorIncidentDetailModal({
 
   // 4 Khung hình ảnh minh chứng (Mục 9)
   const pickupPhoto = currentData.pickup_photos?.[0] || 'https://images.unsplash.com/photo-1586528116311-ad8ed7c50a41?q=80&w=800';
-  const sealPhoto = currentData.seal_photos?.[0] || 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?q=80&w=800';
+  const sealPhoto = currentData.seal_photos?.[0] || currentData.pickup_photos?.[1] || currentData.pickup_photos?.[0] || 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?q=80&w=800';
   const podPhoto = currentData.delivery_photos?.[0] || 'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=800';
-  const incidentPhoto = currentData.incident_photos?.[0] || currentData.photos?.[0] || 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?q=80&w=800';
+  const incidentPhotosList =
+    Array.isArray(currentData.incident_photos) && currentData.incident_photos.length > 0
+      ? currentData.incident_photos
+      : Array.isArray(currentData.photos) && currentData.photos.length > 0
+        ? currentData.photos
+        : ['https://images.unsplash.com/photo-1578575437130-527eed3abbec?q=80&w=800'];
+  const incidentPhoto = incidentPhotosList[0];
 
   // Tính toán bồi thường theo hợp đồng (Mục 11 & Mục 13)
   const calculateAutoCompensation = (pct, method) => {
-    if (method === 'COMPANY_RECOVERY') {
-      return Math.min(declaredValue, contractCap);
-    }
-    const val = Math.round((declaredValue * (pct / 100)) / 100000) * 100000;
-    return Math.min(val, contractCap);
+    return calcCompensation({
+      declaredValue,
+      damagePercentage: pct,
+      handlingMethod: method,
+      liabilityCap: effectiveLiabilityCap
+    });
   };
 
   const handlePercentageChange = (val) => {
     const num = Number(val) || 0;
     setDamagePercentage(num);
-    setCompensationAmount(calculateAutoCompensation(num, goodsHandlingMethod));
+    if (fault !== 'CUSTOMER') {
+      setCompensationAmount(calculateAutoCompensation(num, goodsHandlingMethod));
+    }
   };
 
   const handleHandlingMethodChange = (method) => {
     setGoodsHandlingMethod(method);
-    setCompensationAmount(calculateAutoCompensation(damagePercentage, method));
+    if (fault !== 'CUSTOMER') {
+      setCompensationAmount(calculateAutoCompensation(damagePercentage, method));
+    }
+  };
+
+  const handleFaultChange = (val) => {
+    setFault(val);
+    if (val === 'CUSTOMER') {
+      setCompensationAmount(0);
+    } else if (val === 'COMPANY' && compensationAmount === 0 && damagePercentage > 0) {
+      setCompensationAmount(calculateAutoCompensation(damagePercentage, goodsHandlingMethod));
+    }
+  };
+
+  const handlePaymentProofFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      message.warning('Vui lòng chọn tệp hình ảnh (JPG, PNG, WEBP) cho biên lai chuyển khoản!');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setPaymentProofUrl(reader.result);
+        message.success(`Đã tải lên chứng từ: ${file.name}`);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Nút 17: Phê duyệt bồi thường
   const handleApproveCompensation = async () => {
-    if (!fault) {
-      message.warning('Vui lòng xác định bên chịu trách nhiệm lỗi!');
-      return;
-    }
-    if (!resolutionNote.trim()) {
-      message.warning('Vui lòng nhập nhận xét & căn cứ giải quyết!');
+    const validation = validateApprovalDecision({ fault, resolutionNote, compensationAmount });
+    if (!validation.isValid) {
+      message.warning(validation.error);
       return;
     }
 
     try {
       setSubmitting(true);
       const incId = currentData.id || currentData.raw_id;
-      const payload = {
-        action: 'APPROVE',
+      const payload = buildApprovalPayload({
         fault,
-        approved_amount: Number(compensationAmount) || 0,
-        damage_percentage: damagePercentage,
-        goods_handling_method: goodsHandlingMethod,
-        contract_clause_ref: contractClauseRef,
-        survey_org_report: surveyOrgReport,
-        resolution_note: resolutionNote.trim()
-      };
+        compensationAmount,
+        damagePercentage,
+        goodsHandlingMethod,
+        contractClauseRef,
+        surveyOrgReport,
+        resolutionNote
+      });
 
       const res = await managerApi.decideIncidentCompensation(incId, payload);
       message.success(res?.message || 'Đã phê duyệt phương án bồi thường thành công!');
@@ -223,8 +297,9 @@ export default function MajorIncidentDetailModal({
 
   // Nút 16: Yêu cầu bổ sung hồ sơ
   const handleConfirmRequestMoreInfo = async () => {
-    if (!requestInfoNote.trim()) {
-      message.warning('Vui lòng ghi rõ nội dung hoặc giấy tờ cần bổ sung!');
+    const validation = validateRequestMoreInfo({ requestInfoNote });
+    if (!validation.isValid) {
+      message.warning(validation.error);
       return;
     }
 
@@ -251,26 +326,20 @@ export default function MajorIncidentDetailModal({
 
   // Nút 15: Từ chối bồi thường
   const handleConfirmReject = async () => {
-    if (!rejectionReason.trim()) {
-      message.warning('Vui lòng nhập lý do từ chối bồi thường chi tiết!');
-      return;
-    }
-    if (!rejectionClause.trim()) {
-      message.warning('Vui lòng viện dẫn điều khoản hợp đồng áp dụng!');
+    const validation = validateRejectionDecision({ rejectionReason, rejectionClause });
+    if (!validation.isValid) {
+      message.warning(validation.error);
       return;
     }
 
     try {
       setSubmitting(true);
       const incId = currentData.id || currentData.raw_id;
-      const payload = {
-        action: 'REJECT',
-        fault: 'CUSTOMER',
-        rejection_reason: rejectionReason.trim(),
-        contract_clause_ref: rejectionClause.trim(),
-        contact_hotline: contactHotline.trim(),
-        resolution_note: `Từ chối bồi thường theo ${rejectionClause.trim()}. Lý do: ${rejectionReason.trim()}`
-      };
+      const payload = buildRejectionPayload({
+        rejectionReason,
+        rejectionClause,
+        contactHotline
+      });
 
       const res = await managerApi.decideIncidentCompensation(incId, payload);
       message.success(res?.message || 'Đã từ chối bồi thường và hoàn tất đóng hồ sơ (DONE)!');
@@ -287,22 +356,21 @@ export default function MajorIncidentDetailModal({
 
   // Nút 19: Ghi nhận đã chi tiền cho khách
   const handleRecordPayment = async () => {
-    if (!transactionCode.trim()) {
-      message.warning('Vui lòng nhập Mã giao dịch ngân hàng!');
-      return;
-    }
-    if (!paymentProofUrl.trim()) {
-      message.warning('Vui lòng nhập link ảnh hoặc tải biên lai chuyển khoản!');
+    const validation = validatePaymentRecording({ transactionCode, paymentProofUrl });
+    if (!validation.isValid) {
+      message.warning(validation.error);
       return;
     }
 
     try {
       setRecordingPayment(true);
       const incId = currentData.id || currentData.raw_id;
-      const payload = {
-        payment_proof_url: paymentProofUrl.trim(),
-        close_note: `Đã hoàn tất chi tiền ngày ${paymentDate}. Mã GD: ${transactionCode.trim()}`
-      };
+      const payload = buildPaymentClosingPayload({
+        paymentDate,
+        transactionCode,
+        paymentProofUrl,
+        approvedAmount: compensationAmount
+      });
 
       const res = await managerApi.closeIncidentCase(incId, payload);
       message.success(res?.message || 'Đã ghi nhận chi tiền thành công và đóng hồ sơ (DONE)!');
@@ -313,6 +381,41 @@ export default function MajorIncidentDetailModal({
       message.error(error.message || 'Lỗi khi ghi nhận chi tiền bồi thường');
     } finally {
       setRecordingPayment(false);
+    }
+  };
+
+  // Gửi trực tiếp hoặc gửi lại Email thông báo tới Khách hàng
+  const handleSendEmailToCustomer = async () => {
+    try {
+      setSendingEmail(true);
+      const incId = currentData.id || currentData.raw_id;
+      const res = await managerApi.sendIncidentEmail(incId, {
+        email_type: emailPreviewType,
+        approved_amount: compensationAmount,
+        damage_percentage: damagePercentage,
+        goods_handling_method: goodsHandlingMethod,
+        contract_clause_ref: emailPreviewType === 'REJECTION' ? rejectionClause : contractClauseRef,
+        survey_org_report: surveyOrgReport,
+        resolution_note: resolutionNote,
+        rejection_reason: rejectionReason || currentData.rejection_reason || resolutionNote,
+        contact_hotline: contactHotline
+      });
+      message.success(res?.message || `Đã gửi email thông báo tới ${customerEmailDisplay} thành công!`);
+      if (res?.email_result?.sent) {
+        setDetail((prev) => ({
+          ...(prev || currentData),
+          email_sent: true,
+          customer_email: res.email_result.customer_email || customerEmailDisplay,
+          email_sent_at: res.email_result.email_sent_at || new Date().toISOString(),
+          email_type: res.email_result.email_type || emailPreviewType
+        }));
+      }
+      onSuccess?.();
+    } catch (error) {
+      console.error('Lỗi gửi email cho khách hàng:', error);
+      message.error(error.message || 'Không thể gửi email tới khách hàng');
+    } finally {
+      setSendingEmail(false);
     }
   };
 
@@ -381,58 +484,66 @@ export default function MajorIncidentDetailModal({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                 {/* Cột trái */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Đơn hàng:</span>
-                    <strong className="font-mono text-primary font-bold">{orderCode} ({orderType})</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Đơn hàng:</span>
+                    <strong className="font-mono text-primary font-bold text-right">{orderCode} ({orderType})</strong>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Trạng thái đơn:</span>
-                    <strong className="text-error font-bold">{orderStatus}</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Trạng thái đơn:</span>
+                    <strong className="text-primary font-bold text-right">{orderStatus}</strong>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Khách hàng:</span>
-                    <strong className="text-error font-bold text-right">{customerName}</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Khách hàng:</span>
+                    <strong className="text-primary font-bold text-right">{customerName}</strong>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Người liên hệ:</span>
-                    <strong className="text-error font-semibold">{contactPerson} - {contactPhone}</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Người nhận / Liên hệ:</span>
+                    <strong className="text-primary font-semibold text-right">{receiverName} - {contactPhone}</strong>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Tuyến:</span>
-                    <strong className="text-error font-semibold text-right">{routeDisplay}</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Tuyến:</span>
+                    <strong className="text-primary font-semibold text-right">{routeDisplay}</strong>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Cước phí vận chuyển:</span>
+                    <strong className="text-primary font-mono font-bold text-right">{agreedPrice.toLocaleString('vi-VN')} đ</strong>
                   </div>
                 </div>
 
                 {/* Cột phải */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Hàng hóa:</span>
-                    <strong className="text-error font-semibold">{cargoDescription}</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Hàng hóa:</span>
+                    <strong className="text-primary font-semibold text-right">{cargoDescription}</strong>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Giá trị khai báo:</span>
-                    <strong className="text-error font-mono font-bold text-sm">{declaredValue.toLocaleString('vi-VN')} đ</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Giá trị khai báo:</span>
+                    <strong className="text-error font-mono font-bold text-sm text-right">{declaredValue.toLocaleString('vi-VN')} đ</strong>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Chuyến xe:</span>
-                    <strong className="font-mono text-primary font-bold">{tripCode}</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Chuyến xe:</span>
+                    <strong className="font-mono text-primary font-bold text-right">{tripCode}</strong>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Xe vận chuyển:</span>
-                    <strong className="font-mono text-primary font-bold">{truckPlate}</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Xe vận chuyển:</span>
+                    <strong className="font-mono text-primary font-bold text-right">{truckPlate}</strong>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-on-surface-variant">Tài xế:</span>
-                    <strong className="text-primary font-bold">{driverName} ({driverPhone})</strong>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Tài xế:</span>
+                    <strong className="text-primary font-bold text-right">{driverName} ({driverPhone})</strong>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-on-surface-variant shrink-0">Số niêm phong chì (Seal):</span>
+                    <strong className="font-mono text-primary font-bold text-right">{sealNumber}</strong>
                   </div>
                 </div>
               </div>
 
               {/* Hàng chân Mục 1 & 2: Hợp đồng áp dụng & Nút Xem PDF */}
               <div className="pt-2 border-t border-surface-container/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                <span className="text-error font-semibold text-xs flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px]">contract</span>
-                  <span>Hợp đồng áp dụng: {contractNumber}</span>
+                <span className="text-primary font-semibold text-xs flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px] text-secondary">contract</span>
+                  <span>Hợp đồng áp dụng: <b>{contractNumber}</b></span>
                 </span>
 
                 <button
@@ -446,9 +557,9 @@ export default function MajorIncidentDetailModal({
               </div>
             </div>
 
-            {/* MỤC 3 & 4: YÊU CẦU BỒI THƯỜNG */}
-            <div className="p-3.5 bg-surface-container-low rounded-2xl border border-surface-container flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-              <div className="flex items-center gap-6">
+            {/* MỤC 3 & 4: YÊU CẦU BỒI THƯỜNG & THÔNG TIN CHUYỂN CẤP TỪ ĐPV */}
+            <div className="p-3.5 bg-surface-container-low rounded-2xl border border-surface-container flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-2xs">
+              <div className="flex items-center gap-6 shrink-0">
                 <div>
                   <span className="text-[11px] font-semibold text-outline uppercase tracking-wider block">
                     Số tiền yêu cầu bồi thường
@@ -468,15 +579,19 @@ export default function MajorIncidentDetailModal({
                 </div>
               </div>
 
-              {/* Nút 4: Tua lại hành trình GPS */}
-              <button
-                type="button"
-                onClick={() => setIsLocationMapOpen(true)}
-                className="h-9 px-4 rounded-xl bg-surface-container-lowest hover:bg-surface-container text-secondary text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-2xs border border-surface-container shrink-0"
-              >
-                <span className="material-symbols-outlined text-[18px]">play_circle</span>
-                <span>Tua lại hành trình GPS</span>
-              </button>
+              {/* Thông tin chuyển cấp từ Điều phối viên */}
+              <div className="lg:max-w-md w-full p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container space-y-0.5">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="font-bold text-primary uppercase tracking-wider flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px] text-amber-600">forward_to_inbox</span>
+                    Chuyển cấp từ Điều phối viên
+                  </span>
+                  <span className="font-mono text-on-surface-variant">{escalatedTimeDisplay}</span>
+                </div>
+                <p className="text-[11px] text-on-surface-variant leading-snug line-clamp-2">
+                  {escalationReasonDisplay}
+                </p>
+              </div>
             </div>
 
             {/* MỤC 5, 6, 7, 8, 9: THÔNG TIN SỰ CỐ PHÁT SINH */}
@@ -488,28 +603,30 @@ export default function MajorIncidentDetailModal({
               </div>
 
               {/* Mục 6: Header Sự cố */}
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <h4 className="font-bold text-primary text-xs flex items-center gap-2">
                   <span className="font-mono font-black text-error">{incidentCode}</span>
                   <span>-</span>
                   <span>{incidentTitle}</span>
                 </h4>
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-on-surface-variant">
-                  <span>Nguồn gốc: <strong className="text-primary font-semibold">{incidentSource}</strong></span>
-                  <span>Thời điểm báo: <strong className="text-error font-mono font-semibold">{incidentTime}</strong></span>
-                  <span className="inline-flex items-center gap-1">
-                    <span>Vị trí:</span>
-                    <strong className="text-error font-mono font-semibold">{incidentLocation}</strong>
-                    <button
-                      type="button"
-                      onClick={() => setIsLocationMapOpen(true)}
-                      className="ml-1 text-secondary hover:underline font-bold text-[11px] inline-flex items-center gap-0.5 cursor-pointer"
-                      title="Mở bản đồ VietMap xem vị trí sự cố"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">map</span>
-                      <span>Xem VietMap</span>
-                    </button>
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-xs text-on-surface-variant">
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+                    <span>Nguồn gốc: <strong className="text-primary font-semibold">{incidentSource}</strong></span>
+                    <span>Thời điểm báo: <strong className="text-error font-mono font-semibold">{incidentTime}</strong></span>
+                    <span className="inline-flex items-center gap-1">
+                      <span>Vị trí:</span>
+                      <strong className="text-error font-mono font-semibold">{incidentLocation}</strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsLocationMapOpen(true)}
+                    className="h-8 px-3 rounded-xl bg-red-50 hover:bg-red-100 text-error font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer border border-red-200 transition-colors shrink-0 shadow-2xs"
+                    title="Mở bản đồ VietMap xác định vị trí xảy ra sự cố khi tài xế gửi báo cáo"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">location_on</span>
+                    <span>Xác định vị trí sự cố trên bản đồ</span>
+                  </button>
                 </div>
               </div>
 
@@ -565,11 +682,25 @@ export default function MajorIncidentDetailModal({
                     </div>
 
                     {/* 4. Ảnh hiện trường */}
-                    <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-300 flex flex-col items-center justify-between text-center gap-1.5">
+                    <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-300 flex flex-col items-center justify-between text-center gap-1.5 relative">
+                      {incidentPhotosList.length > 1 && (
+                        <span className="absolute top-3 right-3 z-10 px-1.5 py-0.5 rounded bg-slate-900/80 text-white text-[10px] font-bold pointer-events-none">
+                          +{incidentPhotosList.length - 1} ảnh
+                        </span>
+                      )}
                       <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner">
                         <Image src={incidentPhoto} alt="Ảnh hiện trường" className="w-full h-20 object-cover" />
                       </div>
-                      <span className="text-[11px] font-bold text-amber-950">Ảnh hiện trường</span>
+                      {incidentPhotosList.length > 1 && (
+                        <div style={{ display: 'none' }}>
+                          {incidentPhotosList.slice(1).map((imgUrl, idx) => (
+                            <Image key={idx} src={imgUrl} alt={`Ảnh hiện trường ${idx + 2}`} />
+                          ))}
+                        </div>
+                      )}
+                      <span className="text-[11px] font-bold text-amber-950">
+                        Ảnh hiện trường ({incidentPhotosList.length})
+                      </span>
                     </div>
                   </Image.PreviewGroup>
                 </div>
@@ -591,7 +722,7 @@ export default function MajorIncidentDetailModal({
                     Tỷ lệ hàng hỏng (%) * :
                   </label>
                   <div className="space-y-2">
-                    <Space.Compact className="w-full">
+                    <Space.Compact block className="w-full">
                       <InputNumber
                         min={0}
                         max={100}
@@ -599,9 +730,10 @@ export default function MajorIncidentDetailModal({
                         value={damagePercentage}
                         onChange={handlePercentageChange}
                         disabled={isDone || isReadOnly || goodsHandlingMethod === 'COMPANY_RECOVERY'}
+                        style={{ width: '100%' }}
                         className="w-full font-mono font-bold text-center h-9 text-xs"
                       />
-                      <span className="inline-flex items-center px-3 bg-surface-container border border-l-0 border-outline-variant/40 text-on-surface-variant font-bold text-xs rounded-r-lg select-none">
+                      <span className="inline-flex items-center px-3 bg-surface-container border border-l-0 border-outline-variant/40 text-on-surface-variant font-bold text-xs rounded-r-lg select-none flex-shrink-0">
                         %
                       </span>
                     </Space.Compact>
@@ -633,7 +765,7 @@ export default function MajorIncidentDetailModal({
                   </label>
                   <Select
                     value={fault}
-                    onChange={(val) => setFault(val)}
+                    onChange={handleFaultChange}
                     disabled={isDone || isReadOnly}
                     className="w-full h-9"
                     options={[
@@ -642,6 +774,16 @@ export default function MajorIncidentDetailModal({
                       { value: 'THIRD_PARTY', label: 'Bên thứ ba / Khách quan' }
                     ]}
                   />
+                  {fault === 'CUSTOMER' && (
+                    <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 leading-snug">
+                      Gợi ý: Lỗi thuộc Khách hàng → đã đưa mức bồi thường về 0 đ (có thể bấm Từ chối hoặc nhập hỗ trợ ngoại lệ).
+                    </p>
+                  )}
+                  {fault === 'THIRD_PARTY' && (
+                    <p className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 leading-snug">
+                      Lưu ý: Lỗi bên thứ ba/khách quan → đối chiếu điều khoản bất khả kháng &amp; quyền truy đòi trong hợp đồng.
+                    </p>
+                  )}
                 </div>
 
                 {/* Cột 3: Đơn vị giám định / Số biên bản */}
@@ -671,10 +813,10 @@ export default function MajorIncidentDetailModal({
               </span>
               <div className="space-y-1 text-xs text-amber-950 leading-relaxed">
                 <div>
-                  Hạn mức bồi thường theo hợp đồng: <b className="font-mono font-bold">{contractCap.toLocaleString('vi-VN')} đ</b>
+                  Hạn mức bồi thường áp dụng ({hasFrameworkContract ? 'Hợp đồng khung đối tác' : 'Khách vãng lai - NĐ 163/2017/NĐ-CP'}): <b className="font-mono font-bold">{effectiveLiabilityCap.toLocaleString('vi-VN')} đ</b>
                 </div>
                 <div>
-                  Giá trị khai báo {declaredValue.toLocaleString('vi-VN')} đ × {damagePercentage}% hỏng = <b className="font-mono font-bold text-error">{(declaredValue * (damagePercentage / 100)).toLocaleString('vi-VN')} đ</b>, {compensationAmount <= contractCap ? 'trong hạn mức.' : <span className="text-error font-bold">⚠ VƯỢT HẠN MỨC TRÁCH NHIỆM!</span>}
+                  Giá trị khai báo {declaredValue.toLocaleString('vi-VN')} đ × {damagePercentage}% hỏng = <b className="font-mono font-bold text-error">{(declaredValue * (damagePercentage / 100)).toLocaleString('vi-VN')} đ</b>, {compensationAmount <= effectiveLiabilityCap ? 'trong hạn mức.' : <span className="text-error font-bold">⚠ VƯỢT HẠN MỨC TRÁCH NHIỆM!</span>}
                 </div>
               </div>
             </div>
@@ -697,7 +839,7 @@ export default function MajorIncidentDetailModal({
                     value={goodsHandlingMethod}
                     onChange={(val) => handleHandlingMethodChange(val)}
                     disabled={isDone || isReadOnly}
-                    className="w-full sm:w-80 h-9"
+                    className="w-full sm:w-[420px] h-9"
                     options={[
                       { value: 'CUSTOMER_RETAIN', label: 'Bồi thường' },
                       { value: 'COMPANY_RECOVERY', label: 'Lấy hàng về và bồi thường' }
@@ -709,14 +851,28 @@ export default function MajorIncidentDetailModal({
                 </div>
               </div>
 
+              {/* Điều khoản hợp đồng viện dẫn */}
+              <div className="space-y-1.5">
+                <label className="block font-bold text-primary text-xs">
+                  Điều khoản Hợp đồng viện dẫn:
+                </label>
+                <Input
+                  value={contractClauseRef}
+                  onChange={(e) => setContractClauseRef(e.target.value)}
+                  disabled={isDone || isReadOnly}
+                  placeholder="VD: Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)"
+                  className="w-full sm:w-[420px] h-9 rounded-xl text-xs font-medium"
+                />
+              </div>
+
               {/* Mục 13: Số tiền duyệt (đ) */}
               <div className="space-y-1.5">
                 <label className="block font-bold text-primary text-xs">
                   Số tiền duyệt (đ) * :
                 </label>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  <div className="w-full sm:w-80">
-                    <Space.Compact className="w-full">
+                  <div className="w-full sm:w-[420px]">
+                    <Space.Compact block className="w-full">
                       <InputNumber
                         min={0}
                         step={500000}
@@ -726,9 +882,10 @@ export default function MajorIncidentDetailModal({
                         disabled={isDone || isReadOnly}
                         formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
                         parser={(val) => val.replace(/\./g, '')}
-                        className="w-full font-mono font-bold text-sm text-error h-9 text-right pr-2"
+                        style={{ width: '100%' }}
+                        className="w-full font-mono font-bold text-sm text-error h-9 text-right pr-2 [&_input]:text-right"
                       />
-                      <span className="inline-flex items-center px-3 bg-surface-container border border-l-0 border-outline-variant/40 text-on-surface-variant font-bold text-xs rounded-r-lg select-none font-mono">
+                      <span className="inline-flex items-center px-3 bg-surface-container border border-l-0 border-outline-variant/40 text-on-surface-variant font-bold text-xs rounded-r-lg select-none font-mono flex-shrink-0">
                         đ
                       </span>
                     </Space.Compact>
@@ -757,11 +914,11 @@ export default function MajorIncidentDetailModal({
               </div>
 
               <div className="pt-1 text-[11px] text-error font-semibold">
-                * Chỉ quyết định được khi đơn đã Delivered hoặc hàng đã lấy về. Mời xác nhận hộp thoại các nhận trước khi lưu.
+                * Vui lòng kiểm tra kỹ kết quả giám định và căn cứ hợp đồng trước khi ban hành quyết định.
               </div>
 
               {/* CỤM NÚT HÀNH ĐỘNG (MỤC 15, 16, 17) */}
-              {isPending && !isReadOnly && (
+              {isPending && !isReadOnly ? (
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-surface-container/60">
                   {/* Nút 15: Từ chối bồi thường */}
                   <button
@@ -774,7 +931,20 @@ export default function MajorIncidentDetailModal({
                     <span>Từ chối bồi thường</span>
                   </button>
 
-                  <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                  <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+                    {/* Nút Xem mẫu Email gửi khách */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailPreviewType('APPROVAL');
+                        setIsEmailPreviewOpen(true);
+                      }}
+                      className="w-full sm:w-auto h-10 px-4 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold cursor-pointer transition-all border border-teal-200 inline-flex items-center justify-center gap-1.5 text-xs shadow-2xs"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">mail</span>
+                      <span>Xem mẫu Email gửi khách</span>
+                    </button>
+
                     {/* Nút 16: Yêu cầu bổ sung hồ sơ */}
                     <button
                       type="button"
@@ -797,6 +967,37 @@ export default function MajorIncidentDetailModal({
                       <span>{submitting ? 'Đang lưu...' : 'Duyệt bồi thường'}</span>
                     </button>
                   </div>
+                </div>
+              ) : (isDone || isApproved) && (
+                <div className={`pt-2.5 mt-1 border-t border-surface-container/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold ${
+                  isRejected ? 'text-error' : isDone ? 'text-emerald-700' : 'text-cyan-800'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">
+                      {isRejected ? 'block' : isDone ? 'lock' : 'pending_actions'}
+                    </span>
+                    <span>
+                      {isRejected
+                        ? 'Đã ban hành quyết định Từ chối bồi thường · Hồ sơ đã khóa'
+                        : isDone
+                          ? (Number(currentData.approved_compensation_amount || compensationAmount) > 0
+                              ? '✔ Đã phê duyệt & hoàn tất chi trả bồi thường · Hồ sơ đã khóa'
+                              : '✔ Sự cố đã xử lý hoàn tất (không phát sinh chi trả) · Hồ sơ đã khóa')
+                          : '✔ Đã phê duyệt phương án bồi thường · Đang chờ chi tiền bên dưới'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmailPreviewType(isRejected ? 'REJECTION' : 'APPROVAL');
+                      setIsEmailPreviewOpen(true);
+                    }}
+                    className="h-8 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-bold text-[11px] inline-flex items-center gap-1.5 cursor-pointer border border-surface-container-highest shrink-0"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">mark_email_read</span>
+                    <span>Xem Email đã gửi khách hàng</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -842,19 +1043,26 @@ export default function MajorIncidentDetailModal({
                     <label className="block font-bold text-cyan-950 text-xs">
                       Chứng từ chi (Ủy nhiệm chi) * :
                     </label>
+                    <input
+                      ref={paymentProofInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePaymentProofFileChange}
+                      className="hidden"
+                    />
                     <div className="flex gap-2">
                       <Input
                         value={paymentProofUrl}
                         onChange={(e) => setPaymentProofUrl(e.target.value)}
-                        placeholder="Link ảnh UNC..."
+                        placeholder="Link ảnh UNC hoặc chọn tệp..."
                         className="h-9 rounded-xl text-xs font-mono"
                       />
                       <button
                         type="button"
-                        onClick={() => setPaymentProofUrl('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?q=80&w=800')}
+                        onClick={() => paymentProofInputRef.current?.click()}
                         className="h-9 px-3 rounded-xl bg-white hover:bg-cyan-50 text-cyan-800 text-xs font-bold border border-cyan-300 shrink-0 cursor-pointer"
                       >
-                        Tải chứng từ chi
+                        Chọn ảnh UNC
                       </button>
                     </div>
                   </div>
@@ -881,53 +1089,117 @@ export default function MajorIncidentDetailModal({
               </div>
             )}
 
-            {/* KHI ĐÃ ĐÓNG (DONE): READ-ONLY SUMMARY FOOTER */}
+            {/* KHI ĐÃ ĐÓNG (DONE): READ-ONLY SUMMARY & KHOẢN CHI / GIAO DỊCH */}
             {isDone && (
-              <div className="p-4 bg-surface-container-low rounded-2xl border border-surface-container space-y-2.5 shadow-2xs">
-                <div className="flex items-center justify-between pb-1 border-b border-surface-container">
+              <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-400/40 space-y-3 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-emerald-200/70">
                   <span className="font-bold text-primary uppercase text-xs flex items-center gap-2 tracking-wide">
-                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">verified</span>
-                    Hồ sơ bồi thường đã được đóng hoàn tất (DONE)
+                    <span className={`material-symbols-outlined text-[20px] ${isRejected ? 'text-error' : 'text-emerald-600'}`}>
+                      {isRejected ? 'cancel' : 'verified'}
+                    </span>
+                    {isRejected
+                      ? 'Hồ sơ bồi thường đã đóng (Từ chối)'
+                      : 'Khoản chi & Giao dịch Thanh toán Bồi thường (DONE)'}
                   </span>
                   <span className="text-[11px] text-outline font-mono">
                     Đã xử lý lúc: {currentData.closed_at ? new Date(currentData.closed_at).toLocaleString('vi-VN') : (currentData.resolved_time ? new Date(currentData.resolved_time).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN'))}
                   </span>
                 </div>
 
-                {currentData.rejection_reason ? (
+                {isRejected || currentData.rejection_reason ? (
                   <Alert
                     type="error"
                     showIcon
                     title={<b className="text-xs">ĐÃ TỪ CHỐI BỒI THƯỜNG</b>}
                     description={
                       <div className="text-xs mt-1 space-y-1 leading-relaxed">
-                        <p>• Điều khoản viện dẫn: <b>{currentData.contract_clause_ref}</b></p>
-                        <p>• Lý do từ chối: {currentData.rejection_reason}</p>
+                        <p>• Điều khoản viện dẫn: <b>{currentData.contract_clause_ref || contractClauseRef}</b></p>
+                        <p>• Lý do từ chối: {currentData.rejection_reason || resolutionNote}</p>
                         <p>• Hotline hỗ trợ khiếu nại: <b className="font-mono text-primary font-bold">{currentData.contact_hotline || '1900 1234'}</b></p>
                       </div>
                     }
                     className="rounded-xl p-3 border border-red-200"
                   />
-                ) : (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                    <div>
-                      <span className="text-on-surface-variant block">Số tiền bồi thường đã hoàn tất:</span>
-                      <strong className="text-error font-mono text-base font-black">
-                        {(currentData.approved_compensation_amount || compensationAmount).toLocaleString('vi-VN')} đ
-                      </strong>
+                ) : Number(currentData.approved_compensation_amount || compensationAmount) > 0 || currentData.payment_proof_url || currentData.transaction_code ? (
+                  <div className="space-y-3 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
+                        <span className="text-[11px] text-on-surface-variant block">Số tiền đã chi trả:</span>
+                        <strong className="text-error font-mono text-base font-black block">
+                          {Number(currentData.approved_compensation_amount || compensationAmount).toLocaleString('vi-VN')} đ
+                        </strong>
+                      </div>
+
+                      <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
+                        <span className="text-[11px] text-on-surface-variant block">Mã giao dịch ngân hàng (UNC):</span>
+                        <strong className="text-primary font-mono text-sm font-black block">
+                          {currentData.transaction_code || transactionCode || 'Chưa cập nhật'}
+                        </strong>
+                      </div>
+
+                      <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
+                        <span className="text-[11px] text-on-surface-variant block">Ngày thanh toán:</span>
+                        <strong className="text-primary font-mono text-sm font-bold block">
+                          {currentData.payment_date
+                            ? new Date(currentData.payment_date).toLocaleDateString('vi-VN')
+                            : (currentData.closed_at
+                                ? new Date(currentData.closed_at).toLocaleDateString('vi-VN')
+                                : new Date(paymentDate).toLocaleDateString('vi-VN'))}
+                        </strong>
+                      </div>
+
+                      <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
+                        <span className="text-[11px] text-on-surface-variant block">Phương thức thanh toán:</span>
+                        <strong className="text-emerald-700 font-bold block">
+                          Chuyển khoản ngân hàng (UNC)
+                        </strong>
+                      </div>
                     </div>
-                    {currentData.payment_proof_url && (
-                      <a
-                        href={currentData.payment_proof_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="h-9 px-4 rounded-xl bg-surface-container hover:bg-surface-container-high text-secondary text-xs font-bold inline-flex items-center gap-1.5 border border-surface-container transition-all"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">receipt</span>
-                        <span>Xem biên lai chuyển khoản (UNC)</span>
-                      </a>
-                    )}
+
+                    <div className="p-3 bg-white rounded-xl border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1 flex-1">
+                        <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider block">
+                          Nội dung / Ghi chú giao dịch chi trả:
+                        </span>
+                        <p className="text-xs text-primary font-medium leading-relaxed">
+                          {currentData.payment_note || currentData.resolution_note || 'Đã hoàn tất chi trả bồi thường cho khách hàng theo hợp đồng.'}
+                        </p>
+                      </div>
+
+                      {(currentData.payment_proof_url || paymentProofUrl) && (
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="w-16 h-12 rounded-lg overflow-hidden border border-emerald-200 bg-black/5">
+                            <Image
+                              src={currentData.payment_proof_url || paymentProofUrl}
+                              alt="Biên lai chuyển khoản UNC"
+                              className="w-16 h-12 object-cover"
+                            />
+                          </div>
+                          <a
+                            href={currentData.payment_proof_url || paymentProofUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-2xs"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">receipt</span>
+                            <span>Xem biên lai (UNC)</span>
+                          </a>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                ) : (
+                  <Alert
+                    type="success"
+                    showIcon
+                    title={<b className="text-xs">Hồ sơ sự cố đã xử lý hoàn tất · Không phát sinh khoản chi bồi thường</b>}
+                    description={
+                      <p className="text-xs mt-1 text-slate-700 leading-relaxed">
+                        {currentData.resolution_note || 'Sự cố đã được xử lý xong tại hiện trường và đóng hồ sơ.'}
+                      </p>
+                    }
+                    className="rounded-xl p-3 border border-emerald-200"
+                  />
                 )}
               </div>
             )}
@@ -935,10 +1207,11 @@ export default function MajorIncidentDetailModal({
         )}
       </Modal>
 
-      {/* MODAL 4: TRÌNH TUA LẠI HÀNH TRÌNH GPS & XÁC THỰC HIỆN TRƯỜNG BẢN ĐỒ VIETMAP */}
+      {/* MODAL 4: BẢN ĐỒ VIETMAP XÁC ĐỊNH VỊ TRÍ XẢY RA SỰ CỐ KHI TÀI XẾ BÁO CÁO */}
       <TripReplayModal
         open={isLocationMapOpen}
         onClose={() => setIsLocationMapOpen(false)}
+        mode="INCIDENT_LOCATION"
         tripId={currentData.trip_id || currentData.trip?.id || (currentData.trip_code ? parseInt(String(currentData.trip_code).replace(/\D/g, ''), 10) : null)}
         incidentInfo={{
           incident_location_lat: currentData.incident_lat || currentData.latitude || 21.2113,
@@ -1015,6 +1288,20 @@ export default function MajorIncidentDetailModal({
               onChange={(e) => setContactHotline(e.target.value)}
               className="h-10 rounded-xl text-xs font-mono font-bold"
             />
+          </div>
+
+          <div className="pt-1 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setEmailPreviewType('REJECTION');
+                setIsEmailPreviewOpen(true);
+              }}
+              className="h-8.5 px-3.5 rounded-xl bg-red-50 hover:bg-red-100 text-error font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer border border-red-200 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">mail</span>
+              <span>Xem trước bản Email Từ chối sẽ gửi khách</span>
+            </button>
           </div>
         </div>
       </Modal>
@@ -1380,6 +1667,371 @@ export default function MajorIncidentDetailModal({
               </div>
             )}
 
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL XEM TRƯỚC THIẾT KẾ EMAIL GỬI KHÁCH HÀNG (DUYỆT & TỪ CHỐI BỒI THƯỜNG) */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2.5 pr-6">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              emailPreviewType === 'APPROVAL' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-red-500/10 text-red-700'
+            }`}>
+              <span className="material-symbols-outlined text-[20px]">mail</span>
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-primary">
+                Thiết kế Bản Email Thông báo Bồi thường gửi Khách hàng
+              </h4>
+              <p className="text-[11px] text-on-surface-variant font-normal">
+                Xem trước giao diện, màu sắc, bố cục và nội dung email sẽ tự động gửi tới khách hàng ({customerEmailDisplay})
+              </p>
+            </div>
+          </div>
+        }
+        open={isEmailPreviewOpen}
+        onCancel={() => setIsEmailPreviewOpen(false)}
+        footer={
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-surface-container">
+            <div className="text-[11px] text-left">
+              {currentData.email_sent ? (
+                <span className="text-emerald-700 font-bold inline-flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[15px]">mark_email_read</span>
+                  <span>
+                    Đã gửi email tới {currentData.customer_email || customerEmailDisplay}
+                    {currentData.email_sent_at ? ` (${new Date(currentData.email_sent_at).toLocaleString('vi-VN')})` : ''}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-amber-700 font-semibold inline-flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[15px]">schedule_send</span>
+                  <span>Chưa ghi nhận lịch sử gửi email cho hồ sơ này</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setIsEmailPreviewOpen(false)}
+                className="h-9 px-4 rounded-xl bg-surface-container hover:bg-surface-container-high text-primary font-bold text-xs cursor-pointer border border-surface-container-highest"
+              >
+                Đóng
+              </button>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  disabled={sendingEmail}
+                  onClick={handleSendEmailToCustomer}
+                  className={`h-9 px-4 rounded-xl text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition-all ${
+                    emailPreviewType === 'REJECTION'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">send</span>
+                  <span>
+                    {sendingEmail
+                      ? 'Đang gửi Email...'
+                      : currentData.email_sent
+                        ? 'Gửi lại Email tới Khách hàng'
+                        : 'Gửi Email này tới Khách hàng'}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        }
+        width={760}
+        centered
+      >
+        <div className="space-y-3.5 pt-2">
+          {/* Thanh chuyển đổi giữa 2 mẫu Email */}
+          <div className="flex items-center gap-2 p-1.5 bg-surface-container-low rounded-xl border border-surface-container">
+            <button
+              type="button"
+              onClick={() => setEmailPreviewType('APPROVAL')}
+              className={`flex-1 h-9 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 ${
+                emailPreviewType === 'APPROVAL'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-on-surface-variant hover:text-primary'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[17px]">check_circle</span>
+              <span>Mẫu 1: Email Duyệt Bồi thường (Cam kết &amp; Hẹn liên hệ)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEmailPreviewType('REJECTION')}
+              className={`flex-1 h-9 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 ${
+                emailPreviewType === 'REJECTION'
+                  ? 'bg-red-600 text-white shadow-xs'
+                  : 'text-on-surface-variant hover:text-primary'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[17px]">cancel</span>
+              <span>Mẫu 2: Email Từ chối Bồi thường (Kèm lý do chi tiết)</span>
+            </button>
+          </div>
+
+          {/* Header giả lập trình đọc Email */}
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] space-y-1 text-slate-600">
+            <div className="flex flex-wrap justify-between gap-2">
+              <span><b>Từ:</b> ALS NEXLOG Claims &lt;claims@nexlog.vn&gt;</span>
+              <span><b>Đến:</b> <span className="font-mono text-primary font-semibold">{customerEmailDisplay}</span></span>
+            </div>
+            <div>
+              <b>Tiêu đề:</b>{' '}
+              <span className="font-bold text-slate-900">
+                {emailPreviewType === 'APPROVAL'
+                  ? `[ALS - NEXLOG] Phê duyệt bồi thường ${Number(compensationAmount || 0).toLocaleString('vi-VN')} đ — Hồ sơ ${incidentCode} (Đơn #${orderCode})`
+                  : `[ALS - NEXLOG] Thông báo kết quả thẩm định sự cố ${incidentCode} (Đơn #${orderCode})`}
+              </span>
+            </div>
+          </div>
+
+          {/* Khung Nội dung Email thiết kế */}
+          <div className="max-h-[66vh] overflow-y-auto bg-slate-100 p-4 rounded-2xl border border-slate-200">
+            {emailPreviewType === 'APPROVAL' ? (
+              <div className="max-w-[620px] mx-auto bg-white rounded-2xl overflow-hidden shadow-md border border-slate-200 text-slate-800 font-sans">
+                {/* Header xanh Navy - Ngọc lục bảo */}
+                <div
+                  className="px-6 py-7 text-center text-white"
+                  style={{ background: 'linear-gradient(135deg, #0f172a 0%, #0d9488 55%, #059669 100%)' }}
+                >
+                  <div className="text-[10px] font-bold tracking-[2px] uppercase opacity-85 mb-1.5">
+                    ALS — NEXLOG SUPPLY CHAIN SOLUTION
+                  </div>
+                  <h3 className="text-lg font-extrabold tracking-wide m-0 text-white">
+                    THÔNG BÁO PHÊ DUYỆT BỒI THƯỜNG HÀNG HÓA
+                  </h3>
+                  <p className="text-xs opacity-90 mt-1.5 mb-0">
+                    Quyết định giải quyết hồ sơ sự cố #{incidentCode} · Đơn hàng #{orderCode}
+                  </p>
+                </div>
+
+                <div className="p-6 space-y-4 text-xs leading-relaxed">
+                  <div className="text-center">
+                    <span className="inline-block bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-4 py-1.5 text-[11px] font-extrabold tracking-wide">
+                      ✓ CHẤP THUẬN BỒI THƯỜNG THEO HỢP ĐỒNG
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-slate-600">
+                    <p className="font-bold text-slate-900 text-sm m-0">
+                      Kính gửi Quý khách hàng {customerName} ({contactPerson}),
+                    </p>
+                    <p className="m-0">
+                      Trước hết, Công ty TNHH Vận tải &amp; Logistics Hàng không ALS (NEXLOG) xin gửi lời xin lỗi chân thành tới Quý khách vì sự cố phát sinh ngoài mong muốn trong quá trình vận chuyển đơn hàng <b>#{orderCode}</b>.
+                    </p>
+                    <p className="m-0">
+                      Sau khi hoàn tất thẩm định hồ sơ hiện trường và đối chiếu điều khoản Hợp đồng vận chuyển, Ban Quản lý ALS trân trọng thông báo <b>chấp thuận chi trả bồi thường thiệt hại</b> với thông tin chi tiết như sau:
+                    </p>
+                  </div>
+
+                  {/* Khung Highlight Số tiền duyệt */}
+                  <div className="p-4 rounded-xl border-2 border-emerald-500 text-center space-y-2" style={{ background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdfa 100%)' }}>
+                    <div className="text-[10px] font-extrabold text-emerald-900 uppercase tracking-widest">
+                      Số tiền bồi thường được phê duyệt
+                    </div>
+                    <div className="text-2xl font-black text-emerald-700 font-mono">
+                      {Number(compensationAmount || 0).toLocaleString('vi-VN')} VNĐ
+                    </div>
+                    <div className="inline-block bg-white/80 border border-emerald-200 rounded-lg px-3 py-1.5 text-[11px] text-emerald-900 leading-snug">
+                      <div>
+                        <b>Phương án xử lý:</b>{' '}
+                        {goodsHandlingMethod === 'COMPANY_RECOVERY'
+                          ? 'ALS thu hồi hàng hư hỏng về kho & Bồi thường 100% theo hạn mức'
+                          : 'Giao phần hàng đạt chuẩn & Bồi thường phần thiệt hại cho Khách hàng'}
+                      </div>
+                      <div><b>Căn cứ áp dụng:</b> {contractClauseRef}</div>
+                    </div>
+                  </div>
+
+                  {/* Bảng đối chiếu hồ sơ */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                    <div className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-1.5">
+                      Chi tiết hồ sơ thẩm định &amp; đối chiếu
+                    </div>
+                    <div className="divide-y divide-dashed divide-slate-200 text-xs">
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Mã hồ sơ / Mã sự cố:</span>
+                        <b className="font-mono text-emerald-700">{claimCode} / {incidentCode}</b>
+                      </div>
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Đơn hàng / Chuyến xe:</span>
+                        <b className="font-mono text-slate-900">{orderCode} · {tripCode}</b>
+                      </div>
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Loại sự cố:</span>
+                        <b className="text-slate-900 text-right">{incidentTitle}</b>
+                      </div>
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Quy cách lô hàng:</span>
+                        <b className="text-slate-900 text-right">{cargoDescription}</b>
+                      </div>
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Giá trị khai báo / Tỷ lệ hỏng:</span>
+                        <b className="font-mono text-slate-900">{declaredValue.toLocaleString('vi-VN')} đ · {damagePercentage}%</b>
+                      </div>
+                      {surveyOrgReport && (
+                        <div className="py-1.5 flex justify-between gap-2">
+                          <span className="text-slate-500">Biên bản giám định:</span>
+                          <b className="text-slate-900 text-right">{surveyOrgReport}</b>
+                        </div>
+                      )}
+                      {resolutionNote && (
+                        <div className="py-1.5 flex justify-between gap-2">
+                          <span className="text-slate-500 shrink-0">Kết luận Ban Quản lý:</span>
+                          <span className="text-slate-800 text-right">{resolutionNote}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Quy trình 3 bước cam kết liên hệ */}
+                  <div className="bg-blue-50 border border-blue-200 border-l-4 border-l-blue-600 rounded-xl p-4 space-y-2.5 text-blue-950">
+                    <div className="text-xs font-extrabold text-blue-900 uppercase tracking-wide">
+                      ⏳ Cam kết liên hệ &amp; Quy trình chi trả bồi thường
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-extrabold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                      <p className="m-0 leading-snug">
+                        <b>Liên hệ lại trong thời gian sớm nhất (tối đa 24 giờ làm việc):</b> Bộ phận Chăm sóc Khách hàng &amp; Pháp chế – Bồi thường ALS sẽ chủ động liên hệ trực tiếp với Quý khách để xác nhận tài khoản ngân hàng thụ hưởng.
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-extrabold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                      <p className="m-0 leading-snug">
+                        <b>Giải ngân chuyển khoản:</b> Phòng Tài chính – Kế toán thực hiện chuyển khoản 100% số tiền <b>{Number(compensationAmount || 0).toLocaleString('vi-VN')} VNĐ</b> trong vòng <b>03 – 05 ngày làm việc</b> kể từ khi thống nhất thông tin thụ hưởng.
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-extrabold flex items-center justify-center shrink-0 mt-0.5">3</span>
+                      <p className="m-0 leading-snug">
+                        <b>Gửi chứng từ &amp; Đóng hồ sơ minh bạch:</b> Gửi ảnh Ủy nhiệm chi (UNC) qua email và cập nhật công khai trên cổng theo dõi đơn hàng.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-3 text-center text-[11px] text-slate-600">
+                    Hotline Bồi thường &amp; CSKH: <b>{contactHotline || '1900 1234'}</b> · Email: <b>claims@nexlog.vn</b>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 text-slate-400 text-[10px] text-center py-4 px-5 space-y-0.5">
+                  <div className="font-bold text-slate-200">CÔNG TY CỔ PHẦN LOGISTICS HÀNG KHÔNG (ALS) — HỆ THỐNG ĐIỀU VẬN NEXLOG</div>
+                  <div>Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội · © 2026 NEXLOG Logistics</div>
+                </div>
+              </div>
+            ) : (
+              <div className="max-w-[620px] mx-auto bg-white rounded-2xl overflow-hidden shadow-md border border-slate-200 text-slate-800 font-sans">
+                {/* Header Đỏ Bordeaux trang trọng */}
+                <div
+                  className="px-6 py-7 text-center text-white"
+                  style={{ background: 'linear-gradient(135deg, #450a0a 0%, #991b1b 50%, #dc2626 100%)' }}
+                >
+                  <div className="text-[10px] font-bold tracking-[2px] uppercase opacity-85 mb-1.5">
+                    ALS — NEXLOG SUPPLY CHAIN SOLUTION
+                  </div>
+                  <h3 className="text-lg font-extrabold tracking-wide m-0 text-white">
+                    THÔNG BÁO KẾT QUẢ THẨM ĐỊNH SỰ CỐ &amp; BỒI THƯỜNG
+                  </h3>
+                  <p className="text-xs opacity-90 mt-1.5 mb-0">
+                    Hồ sơ sự cố #{incidentCode} · Đơn hàng #{orderCode}
+                  </p>
+                </div>
+
+                <div className="p-6 space-y-4 text-xs leading-relaxed">
+                  <div className="text-center">
+                    <span className="inline-block bg-red-50 text-red-700 border border-red-200 rounded-full px-4 py-1.5 text-[11px] font-extrabold tracking-wide">
+                      THÔNG BÁO TỪ CHỐI BỒI THƯỜNG THEO ĐIỀU KHOẢN HỢP ĐỒNG
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-slate-600">
+                    <p className="font-bold text-slate-900 text-sm m-0">
+                      Kính gửi Quý khách hàng {customerName} ({contactPerson}),
+                    </p>
+                    <p className="m-0">
+                      Công ty TNHH Vận tải &amp; Logistics Hàng không ALS (NEXLOG) trân trọng cảm ơn Quý khách đã phản ánh và phối hợp cung cấp thông tin đối với sự cố phát sinh trên đơn hàng <b>#{orderCode}</b>.
+                    </p>
+                    <p className="m-0">
+                      Sau khi tiến hành rà soát toàn diện hồ sơ pháp lý, dữ liệu giám sát hành trình GPS và đối chiếu bằng chứng hình ảnh 3 khâu (Pickup – Niêm phong chì – POD giao hàng), Ban Thẩm định Sự cố ALS xin thông báo <b>chưa đủ cơ sở chấp thuận yêu cầu bồi thường</b> với căn cứ chi tiết như sau:
+                    </p>
+                  </div>
+
+                  {/* Bảng hồ sơ đã thẩm định */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                    <div className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-1.5">
+                      Thông tin hồ sơ đã thẩm định
+                    </div>
+                    <div className="divide-y divide-dashed divide-slate-200 text-xs">
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Mã hồ sơ / Mã sự cố:</span>
+                        <b className="font-mono text-red-700">{claimCode} / {incidentCode}</b>
+                      </div>
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Đơn hàng / Chuyến xe:</span>
+                        <b className="font-mono text-slate-900">{orderCode} · {tripCode}</b>
+                      </div>
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Phân loại sự cố:</span>
+                        <b className="text-slate-900 text-right">{incidentTitle}</b>
+                      </div>
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Thông tin lô hàng:</span>
+                        <b className="text-slate-900 text-right">{cargoDescription}</b>
+                      </div>
+                      <div className="py-1.5 flex justify-between gap-2">
+                        <span className="text-slate-500">Kết quả thẩm định:</span>
+                        <b className="text-red-600">Từ chối bồi thường · Đã đóng hồ sơ</b>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Khung Căn cứ Pháp lý & Lý do từ chối */}
+                  <div className="bg-red-50 border border-red-200 border-l-4 border-l-red-600 rounded-xl p-4 space-y-2.5 text-red-950">
+                    <div className="text-xs font-extrabold text-red-900 uppercase tracking-wide">
+                      ⚖️ Căn cứ hợp đồng &amp; Lý do từ chối chi tiết
+                    </div>
+                    <div>
+                      <b className="block text-red-900">• Điều khoản Hợp đồng viện dẫn:</b>
+                      <p className="m-0 mt-0.5 text-red-800">{rejectionClause || currentData.contract_clause_ref || 'Điều 4.2 - Miễn trừ trách nhiệm theo Hợp đồng vận tải đã ký kết'}</p>
+                    </div>
+                    <div>
+                      <b className="block text-red-900">• Lý do từ chối bồi thường:</b>
+                      <p className="m-0 mt-0.5 text-red-800 font-medium">
+                        {rejectionReason || currentData.rejection_reason || resolutionNote || 'Tổn thất không phát sinh do lỗi của đơn vị vận chuyển căn cứ theo hồ sơ đối chiếu hiện trường.'}
+                      </p>
+                    </div>
+                    <div>
+                      <b className="block text-red-900">• Kết luận đối chiếu chứng từ:</b>
+                      <p className="m-0 mt-0.5 text-red-800">
+                        Đã kiểm tra chéo ảnh chụp lúc nhận hàng (Pickup), tình trạng nguyên vẹn của tem niêm phong chì (Seal) và biên bản bàn giao thực tế (POD).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Khung Hướng dẫn Phúc khảo */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-amber-950 space-y-1 leading-relaxed">
+                    <div className="font-bold">📌 Hướng dẫn Phúc khảo &amp; Hỗ trợ Khiếu nại:</div>
+                    <p className="m-0">
+                      Trường hợp Quý khách có thêm tài liệu đối chứng hoặc biên bản giám định độc lập mới, Quý khách vui lòng gửi đề nghị phúc khảo trong vòng <b>07 ngày làm việc</b> kể từ ngày nhận thông báo này.
+                    </p>
+                    <div>• Hotline Giải quyết Khiếu nại: <b className="font-mono text-red-800">{contactHotline || '1900 1234'}</b></div>
+                    <div>• Email Bộ phận Pháp chế – Bồi thường: <b>claims@nexlog.vn</b></div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 text-slate-400 text-[10px] text-center py-4 px-5 space-y-0.5">
+                  <div className="font-bold text-slate-200">CÔNG TY CỔ PHẦN LOGISTICS HÀNG KHÔNG (ALS) — HỆ THỐNG ĐIỀU VẬN NEXLOG</div>
+                  <div>Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội · © 2026 NEXLOG Logistics</div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </Modal>

@@ -156,13 +156,23 @@ export default function MajorIncidentListPage({ readOnly = false }) {
       width: 150,
       align: 'center',
       render: (_, r) => {
-        const s = (r.status || '').toUpperCase();
-        const isDone = s === 'DONE' || s === 'CLOSED' || Boolean(r.closed_at) || Boolean(r.rejection_reason);
+        const s = (r.status || r.raw_status || '').toUpperCase();
+        const isRejected =
+          Boolean(r.rejection_reason) ||
+          String(r.claim_status || '').toUpperCase() === 'REJECTED' ||
+          s === 'REJECTED';
+        const isDone =
+          s === 'DONE' ||
+          s === 'CLOSED' ||
+          s === 'RESOLVED' ||
+          Boolean(r.closed_at) ||
+          Boolean(r.payment_proof_url) ||
+          isRejected;
         const isApproved = !isDone && (s === 'APPROVED' || Number(r.approved_compensation_amount) > 0);
         if (isDone) {
           return (
-            <Tag color={r.rejection_reason ? "red" : "green"} className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
-              {r.rejection_reason ? "Đã từ chối" : "Đã hoàn tất (Đóng)"}
+            <Tag color={isRejected ? "red" : "green"} className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
+              {isRejected ? "Đã từ chối" : "Đã hoàn tất (Đóng)"}
             </Tag>
           );
         }
@@ -186,8 +196,18 @@ export default function MajorIncidentListPage({ readOnly = false }) {
       width: 120,
       align: 'center',
       render: (_, r) => {
-        const s = (r.status || '').toUpperCase();
-        const isDone = s === 'DONE' || s === 'CLOSED' || Boolean(r.closed_at) || Boolean(r.rejection_reason);
+        const s = (r.status || r.raw_status || '').toUpperCase();
+        const isRejected =
+          Boolean(r.rejection_reason) ||
+          String(r.claim_status || '').toUpperCase() === 'REJECTED' ||
+          s === 'REJECTED';
+        const isDone =
+          s === 'DONE' ||
+          s === 'CLOSED' ||
+          s === 'RESOLVED' ||
+          Boolean(r.closed_at) ||
+          Boolean(r.payment_proof_url) ||
+          isRejected;
         const isApproved = !isDone && (s === 'APPROVED' || Number(r.approved_compensation_amount) > 0);
         let btnText = 'Xét duyệt';
         if (isReadOnly || isDone) btnText = 'Xem lại';
@@ -247,7 +267,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
       </div>
 
       {/* KPI Cards Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 bg-surface-container-lowest rounded-2xl border border-surface-container shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
             <span className="material-symbols-outlined text-[22px]">warning</span>
@@ -263,8 +283,18 @@ export default function MajorIncidentListPage({ readOnly = false }) {
             <span className="material-symbols-outlined text-[22px]">pending_actions</span>
           </div>
           <div>
-            <div className="text-xs text-on-surface-variant font-medium">Chờ xử lý (Escalated)</div>
+            <div className="text-xs text-on-surface-variant font-medium">Chờ xét duyệt (Escalated)</div>
             <div className="text-xl font-black text-amber-600 font-mono">{summary.escalated || summary.pending || 0}</div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-surface-container-lowest rounded-2xl border border-surface-container shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-700 flex items-center justify-center">
+            <span className="material-symbols-outlined text-[22px]">payments</span>
+          </div>
+          <div>
+            <div className="text-xs text-on-surface-variant font-medium">Đã duyệt · Chờ chi trả</div>
+            <div className="text-xl font-black text-cyan-700 font-mono">{summary.approved || 0}</div>
           </div>
         </div>
 
@@ -273,7 +303,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
             <span className="material-symbols-outlined text-[22px]">check_circle</span>
           </div>
           <div>
-            <div className="text-xs text-on-surface-variant font-medium">Đã giải quyết (Resolved)</div>
+            <div className="text-xs text-on-surface-variant font-medium">Đã hoàn tất (Đóng)</div>
             <div className="text-xl font-black text-emerald-600 font-mono">{summary.resolved || 0}</div>
           </div>
         </div>

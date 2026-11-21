@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Modal,
@@ -8,8 +8,7 @@ import {
   Progress,
   Tag,
   Tabs,
-  Spin,
-  Tooltip
+  Spin
 } from 'antd';
 import {
   PlayCircle,
@@ -18,7 +17,6 @@ import {
   MapPin,
   Clock,
   Gauge,
-  Calendar,
   AlertTriangle,
   Compass,
   CheckCircle2,
@@ -42,17 +40,20 @@ const InnerReplayMap = dynamic(
   }
 );
 
+const DEFAULT_FALLBACK_REPORT_MS = new Date('2026-11-21T07:52:00+07:00').getTime();
+
 export default function TripReplayModal({
   open,
   selectedTripReplay,
   tripId: propTripId,
   incidentInfo,
+  mode,
   onClose
 }) {
   const { user } = useAuth() || {};
   const isModalOpen = Boolean(open !== undefined ? open : selectedTripReplay);
-  const [loading, setLoading] = useState(false);
-  const [replayData, setReplayData] = useState(null);
+  const isIncidentMode = mode === 'INCIDENT_LOCATION' || Boolean(incidentInfo);
+  const [fetchState, setFetchState] = useState({ tripId: null, data: null, done: false });
   const [isPlaying, setIsPlaying] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [speedMultiplier, setSpeedMultiplier] = useState(1); // 1x, 2x, 4x
@@ -66,17 +67,18 @@ export default function TripReplayModal({
     return null;
   }, [selectedTripReplay, propTripId]);
 
+  const loading = Boolean(
+    isModalOpen &&
+    effectiveTripId &&
+    !(fetchState.tripId === effectiveTripId && fetchState.done)
+  );
+  const replayData = fetchState.tripId === effectiveTripId ? fetchState.data : null;
+
   // Tải dữ liệu Replay từ Backend
   useEffect(() => {
-    if (!isModalOpen || !effectiveTripId) {
-      setReplayData(null);
-      setIsPlaying(false);
-      setStepIndex(0);
-      return;
-    }
+    if (!isModalOpen || !effectiveTripId) return;
 
     let active = true;
-    setLoading(true);
 
     const fetchData = async () => {
       try {
@@ -85,29 +87,28 @@ export default function TripReplayModal({
         if (isManager) {
           try {
             res = await managerApi.getTripReplay(effectiveTripId);
-          } catch (err) {
+          } catch {
             res = await dispatcherApi.getTripReplay(effectiveTripId);
           }
         } else {
           try {
             res = await dispatcherApi.getTripReplay(effectiveTripId);
-          } catch (err) {
+          } catch {
             res = await managerApi.getTripReplay(effectiveTripId);
           }
         }
 
         if (!active) return;
-        if (res) {
-          setReplayData(res);
-          const trackLen = res?.gps_track?.length || 0;
-          if (trackLen > 0) {
-            setStepIndex(Math.min(trackLen - 1, Math.floor(trackLen * 0.4)));
-          }
+        setFetchState({ tripId: effectiveTripId, data: res || null, done: true });
+        const trackLen = res?.gps_track?.length || 0;
+        if (trackLen > 0) {
+          setStepIndex(Math.min(trackLen - 1, Math.floor(trackLen * 0.4)));
         }
       } catch (error) {
         console.warn('Lỗi tải dữ liệu tua lại chuyến:', error);
-      } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setFetchState({ tripId: effectiveTripId, data: null, done: true });
+        }
       }
     };
 
@@ -119,9 +120,10 @@ export default function TripReplayModal({
   }, [isModalOpen, effectiveTripId, user]);
 
   // Chuỗi tọa độ GPS vệt chạy (nếu DB chưa có thì dùng bộ nội suy mẫu an toàn)
+  const apiGpsTrack = replayData?.gps_track;
   const gpsTrack = useMemo(() => {
-    if (replayData?.gps_track && replayData.gps_track.length > 0) {
-      return replayData.gps_track;
+    if (apiGpsTrack && apiGpsTrack.length > 0) {
+      return apiGpsTrack;
     }
     // Fallback: 14 điểm GPS thực tế dọc hành lang vận tải đi qua hiện trường sự cố
     const baseLat = 21.2187;
@@ -131,7 +133,9 @@ export default function TripReplayModal({
     const endLat = 21.3250;
     const endLng = 105.8500;
 
-    const repTime = incidentInfo?.reported_time ? new Date(incidentInfo.reported_time).getTime() : Date.now();
+    const repTime = incidentInfo?.reported_time
+      ? new Date(incidentInfo.reported_time).getTime()
+      : DEFAULT_FALLBACK_REPORT_MS;
     const incidentIdx = 5; // Mốc xảy ra sự cố
 
     return Array.from({ length: 14 }, (_, idx) => {
@@ -160,7 +164,7 @@ export default function TripReplayModal({
         recorded_time
       };
     });
-  }, [replayData?.gps_track, incidentInfo]);
+  }, [apiGpsTrack, incidentInfo]);
 
   // Timer chạy mô phỏng khi người dùng nhấn Play
   useEffect(() => {
@@ -201,8 +205,14 @@ export default function TripReplayModal({
     incidentInfo?.driver_name ||
     'Đang đồng bộ';
 
-  const stops = replayData?.stops || selectedTripReplay?.stops || [];
-  const events = replayData?.events || [];
+  const stops = useMemo(
+    () => replayData?.stops || selectedTripReplay?.stops || [],
+    [replayData, selectedTripReplay]
+  );
+  const events = useMemo(
+    () => replayData?.events || [],
+    [replayData]
+  );
 
   // Vị trí sự cố cụ thể:
   // 1. Lấy từ incident_location_lat / latitude truyền từ modal
@@ -268,18 +278,24 @@ export default function TripReplayModal({
       title={
         <div className="flex items-center justify-between pb-2 border-b border-slate-100 pr-6">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-600">
-              <PlayCircle size={20} />
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isIncidentMode ? 'bg-red-500/10 text-red-600' : 'bg-amber-500/10 text-amber-600'}`}>
+              {isIncidentMode ? <MapPin size={20} /> : <PlayCircle size={20} />}
             </div>
             <div>
               <h3 className="text-base font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
-                <span>Tua lại hành trình GPS – {tripCode}</span>
-                <Tag color="gold" className="font-mono font-bold text-xs">
-                  VietMap Live
+                <span>
+                  {isIncidentMode
+                    ? `Vị trí Xảy ra Sự cố trên Bản đồ – ${incidentInfo?.incident_code || tripCode}`
+                    : `Tua lại hành trình GPS – ${tripCode}`}
+                </span>
+                <Tag color={isIncidentMode ? 'red' : 'gold'} className="font-mono font-bold text-xs">
+                  {isIncidentMode ? 'VietMap' : 'VietMap Live'}
                 </Tag>
               </h3>
               <p className="text-xs text-slate-500 font-normal">
-                Đối chiếu quỹ đạo GPS thiết bị hộp đen với kế hoạch lộ trình &amp; kiểm tra vi phạm bán kính Geofence
+                {isIncidentMode
+                  ? 'Xác định tọa độ GPS nơi tài xế gửi báo cáo sự cố & đối chiếu với lộ trình vận chuyển của chuyến xe'
+                  : 'Đối chiếu quỹ đạo GPS thiết bị hộp đen với kế hoạch lộ trình & kiểm tra vi phạm bán kính Geofence'}
               </p>
             </div>
           </div>
@@ -292,6 +308,7 @@ export default function TripReplayModal({
       open={isModalOpen}
       onCancel={() => {
         setIsPlaying(false);
+        setStepIndex(0);
         onClose();
       }}
       width={920}
@@ -301,6 +318,7 @@ export default function TripReplayModal({
           key="close"
           onClick={() => {
             setIsPlaying(false);
+            setStepIndex(0);
             onClose();
           }}
           className="font-semibold"
@@ -320,7 +338,7 @@ export default function TripReplayModal({
               <div className="space-y-0.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-bold text-xs text-red-950 uppercase tracking-wide">
-                    Thời điểm tài xế báo xe gặp sự cố:
+                    Thời điểm tài xế gửi báo cáo sự cố:
                   </span>
                   <span className="font-mono font-black text-xs text-red-700 bg-red-100 px-2 py-0.5 rounded-md">
                     {incidentLocationCoords.reported_time
@@ -328,11 +346,11 @@ export default function TripReplayModal({
                       : '07:52 07/11/2026'}
                   </span>
                   <Tag color={incidentLocationCoords.is_on_route !== false ? 'green' : 'red'} className="text-[10px] font-bold m-0 border-0">
-                    {incidentLocationCoords.is_on_route !== false ? '✔ KHỚP LỘ TRÌNH GPS' : '⚠ LỆCH LỘ TRÌNH'}
+                    {incidentLocationCoords.is_on_route !== false ? '✔ Nằm trên lộ trình vận chuyển' : '⚠ Lệch lộ trình'}
                   </Tag>
                 </div>
                 <div className="text-[11px] text-slate-700 flex flex-wrap items-center gap-x-3">
-                  <span><b>Vị trí hiện trường:</b> {incidentLocationCoords.address}</span>
+                  <span><b>Địa điểm hiện trường:</b> {incidentLocationCoords.address}</span>
                   <span className="font-mono text-slate-500">
                     ({Number(incidentLocationCoords.lat).toFixed(5)}, {Number(incidentLocationCoords.lng).toFixed(5)})
                   </span>
@@ -351,7 +369,7 @@ export default function TripReplayModal({
               }}
               className="font-bold text-xs shrink-0 self-start sm:self-center"
             >
-              Định vị hiện trường
+              {isIncidentMode ? 'Định vị vị trí sự cố' : 'Định vị hiện trường'}
             </Button>
           </div>
         )}
@@ -373,128 +391,180 @@ export default function TripReplayModal({
               incidentLocation={incidentLocationCoords}
               centerOverride={centerOverride}
               isPlaying={isPlaying}
+              isIncidentMode={isIncidentMode}
             />
           )}
         </div>
 
-        {/* 2. BẢNG HUD TELEMETRY GPS THỜI GIAN THỰC TẠI MỐC TUA */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 bg-slate-900 text-white rounded-xl font-mono text-[11px] shadow-sm">
-          <div className="space-y-0.5">
-            <span className="text-slate-400 block text-[10px] flex items-center gap-1">
-              <Compass size={12} className="text-emerald-400" /> TỌA ĐỘ GPS VỆ TINH
-            </span>
-            <span className="text-emerald-400 font-bold tracking-tight">
-              {Number(currentPoint.latitude || 21.0285).toFixed(5)}, {Number(currentPoint.longitude || 105.8542).toFixed(5)}
-            </span>
+        {/* 2. BẢNG THÔNG TIN XÁC THỰC VỊ TRÍ / TELEMETRY GPS */}
+        {isIncidentMode ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 p-3.5 bg-slate-900 text-white rounded-xl font-mono text-[11px] shadow-sm">
+            <div className="space-y-0.5">
+              <span className="text-slate-400 block text-[10px] flex items-center gap-1">
+                <Compass size={12} className="text-emerald-400" /> TỌA ĐỘ GPS KHI BÁO CÁO
+              </span>
+              <span className="text-emerald-400 font-bold tracking-tight">
+                {Number(incidentLocationCoords?.lat || currentPoint.latitude || 21.2113).toFixed(5)}, {Number(incidentLocationCoords?.lng || currentPoint.longitude || 105.8340).toFixed(5)}
+              </span>
+            </div>
+
+            <div className="space-y-0.5">
+              <span className="text-slate-400 block text-[10px] flex items-center gap-1">
+                <Clock size={12} className="text-sky-300" /> THỜI ĐIỂM GỬI BÁO CÁO
+              </span>
+              <span className="text-sky-300 font-bold">
+                {incidentLocationCoords?.reported_time
+                  ? new Date(incidentLocationCoords.reported_time).toLocaleString('vi-VN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric'
+                    })
+                  : '--:--'}
+              </span>
+            </div>
+
+            <div className="space-y-0.5">
+              <span className="text-slate-400 block text-[10px] flex items-center gap-1">
+                <Navigation size={12} className="text-amber-400" /> XE &amp; TÀI XẾ GỬI BÁO CÁO
+              </span>
+              <span className="text-amber-300 font-bold truncate block">
+                {plateNumber} • {driverName}
+              </span>
+            </div>
+
+            <div className="space-y-0.5">
+              <span className="text-slate-400 block text-[10px] flex items-center gap-1">
+                <CheckCircle2 size={12} className={incidentLocationCoords?.is_on_route !== false ? 'text-emerald-400' : 'text-red-400'} /> ĐỐI CHIẾU LỘ TRÌNH
+              </span>
+              <span className={`font-bold ${incidentLocationCoords?.is_on_route !== false ? 'text-emerald-400' : 'text-red-400'}`}>
+                {incidentLocationCoords?.is_on_route !== false ? 'Khớp lộ trình chuyến' : 'Lệch lộ trình'}
+              </span>
+            </div>
           </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 bg-slate-900 text-white rounded-xl font-mono text-[11px] shadow-sm">
+              <div className="space-y-0.5">
+                <span className="text-slate-400 block text-[10px] flex items-center gap-1">
+                  <Compass size={12} className="text-emerald-400" /> TỌA ĐỘ GPS VỆ TINH
+                </span>
+                <span className="text-emerald-400 font-bold tracking-tight">
+                  {Number(currentPoint.latitude || 21.0285).toFixed(5)}, {Number(currentPoint.longitude || 105.8542).toFixed(5)}
+                </span>
+              </div>
 
-          <div className="space-y-0.5">
-            <span className="text-slate-400 block text-[10px] flex items-center gap-1">
-              <Gauge size={12} className="text-amber-400" /> VẬN TỐC TỨC THỜI
-            </span>
-            <span className="text-amber-400 font-bold text-sm">
-              {currentSpeed} <span className="text-xs font-normal text-slate-300">km/h</span>
-            </span>
-          </div>
+              <div className="space-y-0.5">
+                <span className="text-slate-400 block text-[10px] flex items-center gap-1">
+                  <Gauge size={12} className="text-amber-400" /> VẬN TỐC TỨC THỜI
+                </span>
+                <span className="text-amber-400 font-bold text-sm">
+                  {currentSpeed} <span className="text-xs font-normal text-slate-300">km/h</span>
+                </span>
+              </div>
 
-          <div className="space-y-0.5">
-            <span className="text-slate-400 block text-[10px] flex items-center gap-1">
-              <Clock size={12} className="text-sky-300" /> THỜI ĐIỂM GHI NHẬN
-            </span>
-            <span className="text-sky-300 font-bold">
-              {currentPoint.recorded_time
-                ? new Date(currentPoint.recorded_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                : selectedTripReplay?.actual_start || '--:--'}
-            </span>
-          </div>
+              <div className="space-y-0.5">
+                <span className="text-slate-400 block text-[10px] flex items-center gap-1">
+                  <Clock size={12} className="text-sky-300" /> THỜI ĐIỂM GHI NHẬN
+                </span>
+                <span className="text-sky-300 font-bold">
+                  {currentPoint.recorded_time
+                    ? new Date(currentPoint.recorded_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    : selectedTripReplay?.actual_start || '--:--'}
+                </span>
+              </div>
 
-          <div className="space-y-0.5">
-            <span className="text-slate-400 block text-[10px] flex items-center gap-1">
-              <Navigation size={12} className="text-indigo-300" /> TIẾN ĐỘ HÀNH TRÌNH
-            </span>
-            <span className="text-indigo-300 font-bold">
-              Mốc #{stepIndex + 1}/{gpsTrack.length} ({replayPercent}%)
-            </span>
-          </div>
-        </div>
-
-        {/* 3. BỘ ĐIỀU KHIỂN TUA LẠI (PLAY CONTROLS & TIMELINE SLIDER) */}
-        <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Button
-                size="small"
-                icon={<RotateCcw size={13} />}
-                onClick={() => {
-                  setStepIndex(0);
-                  setIsPlaying(true);
-                }}
-              >
-                Về đầu
-              </Button>
-
-              <Button
-                type="primary"
-                icon={isPlaying ? <PauseCircle size={15} /> : <PlayCircle size={15} />}
-                className="bg-amber-600 hover:bg-amber-700 font-bold"
-                onClick={() => {
-                  if (stepIndex >= gpsTrack.length - 1) setStepIndex(0);
-                  setIsPlaying((prev) => !prev);
-                }}
-              >
-                {isPlaying ? 'Tạm dừng' : 'Phát GPS (Play)'}
-              </Button>
-
-              {/* Lựa chọn tốc độ tua */}
-              <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 ml-1">
-                {[1, 2, 4].map((spd) => (
-                  <button
-                    key={spd}
-                    type="button"
-                    onClick={() => setSpeedMultiplier(spd)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors ${
-                      speedMultiplier === spd
-                        ? 'bg-amber-500 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {spd}x
-                  </button>
-                ))}
+              <div className="space-y-0.5">
+                <span className="text-slate-400 block text-[10px] flex items-center gap-1">
+                  <Navigation size={12} className="text-indigo-300" /> TIẾN ĐỘ HÀNH TRÌNH
+                </span>
+                <span className="text-indigo-300 font-bold">
+                  Mốc #{stepIndex + 1}/{gpsTrack.length} ({replayPercent}%)
+                </span>
               </div>
             </div>
 
-            <div className="text-[11px] text-slate-500 flex items-center gap-3 font-mono">
-              <span>Xuất bến: <b>{selectedTripReplay?.actual_start || selectedTripReplay?.planned_start || '07:30'}</b></span>
-              <span>•</span>
-              <span>Dự kiến đến: <b>{selectedTripReplay?.planned_finish || '16:00'}</b></span>
-            </div>
-          </div>
+            {/* 3. BỘ ĐIỀU KHIỂN TUA LẠI (PLAY CONTROLS & TIMELINE SLIDER) */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="small"
+                    icon={<RotateCcw size={13} />}
+                    onClick={() => {
+                      setStepIndex(0);
+                      setIsPlaying(true);
+                    }}
+                  >
+                    Về đầu
+                  </Button>
 
-          {/* Thanh Slider kéo tua trực tiếp */}
-          <div className="pt-1 px-1">
-            <Slider
-              min={0}
-              max={Math.max(1, gpsTrack.length - 1)}
-              value={stepIndex}
-              onChange={(val) => {
-                setIsPlaying(false);
-                setStepIndex(val);
-              }}
-              tooltip={{
-                formatter: (val) => {
-                  const pt = gpsTrack[val];
-                  if (!pt) return '';
-                  const time = pt.recorded_time
-                    ? new Date(pt.recorded_time).toLocaleTimeString('vi-VN')
-                    : `Mốc #${val + 1}`;
-                  return `${time} (${pt.speed_kmh || 0} km/h)`;
-                }
-              }}
-            />
-            <Progress percent={replayPercent} strokeColor="#d97706" size="small" showInfo={false} />
-          </div>
-        </div>
+                  <Button
+                    type="primary"
+                    icon={isPlaying ? <PauseCircle size={15} /> : <PlayCircle size={15} />}
+                    className="bg-amber-600 hover:bg-amber-700 font-bold"
+                    onClick={() => {
+                      if (stepIndex >= gpsTrack.length - 1) setStepIndex(0);
+                      setIsPlaying((prev) => !prev);
+                    }}
+                  >
+                    {isPlaying ? 'Tạm dừng' : 'Phát GPS (Play)'}
+                  </Button>
+
+                  {/* Lựa chọn tốc độ tua */}
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 ml-1">
+                    {[1, 2, 4].map((spd) => (
+                      <button
+                        key={spd}
+                        type="button"
+                        onClick={() => setSpeedMultiplier(spd)}
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors ${
+                          speedMultiplier === spd
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {spd}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-500 flex items-center gap-3 font-mono">
+                  <span>Xuất bến: <b>{selectedTripReplay?.actual_start || selectedTripReplay?.planned_start || '07:30'}</b></span>
+                  <span>•</span>
+                  <span>Dự kiến đến: <b>{selectedTripReplay?.planned_finish || '16:00'}</b></span>
+                </div>
+              </div>
+
+              {/* Thanh Slider kéo tua trực tiếp */}
+              <div className="pt-1 px-1">
+                <Slider
+                  min={0}
+                  max={Math.max(1, gpsTrack.length - 1)}
+                  value={stepIndex}
+                  onChange={(val) => {
+                    setIsPlaying(false);
+                    setStepIndex(val);
+                  }}
+                  tooltip={{
+                    formatter: (val) => {
+                      const pt = gpsTrack[val];
+                      if (!pt) return '';
+                      const time = pt.recorded_time
+                        ? new Date(pt.recorded_time).toLocaleTimeString('vi-VN')
+                        : `Mốc #${val + 1}`;
+                      return `${time} (${pt.speed_kmh || 0} km/h)`;
+                    }
+                  }}
+                />
+                <Progress percent={replayPercent} strokeColor="#d97706" size="small" showInfo={false} />
+              </div>
+            </div>
+          </>
+        )}
 
         {/* 4. TABS ĐỐI CHIẾU KẾ HOẠCH VS THỰC TẾ & SỰ KIỆN THEO CHUẨN SRS 4.3.2 */}
         <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">

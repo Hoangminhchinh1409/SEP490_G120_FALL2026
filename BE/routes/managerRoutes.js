@@ -64,6 +64,7 @@ router.get('/incidents', incidentController.getIncidents);
 router.get('/incidents/:id', incidentController.getIncidentById);
 router.post('/incidents/:id/resolve', requireManagerOrAdmin, incidentController.resolveIncident);
 router.post('/incidents/:id/decide', requireManagerOrAdmin, incidentController.decideIncidentCompensation);
+router.post('/incidents/:id/send-email', requireManagerOrAdmin, incidentController.sendIncidentDecisionEmail);
 router.post('/incidents/:id/close', requireManagerOrAdmin, incidentController.closeIncidentCase);
 router.patch('/incidents/:id/close', requireManagerOrAdmin, incidentController.closeIncidentCase);
 

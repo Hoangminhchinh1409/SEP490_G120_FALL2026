@@ -2,6 +2,7 @@ const tripModel = require('../models/tripModel');
 const fleetService = require('./fleetService');
 const leaveModel = require('../models/leaveModel');
 const { getOrCreateLocation } = require('./orderHelperService');
+const supabase = require('../config/supabase');
 
 /**
  * Tính toán trạng thái thực tế của tài xế và % tiến độ chuẩn xác của chuyến xe
@@ -717,7 +718,6 @@ const createTrip = async (payload, userId = 1) => {
   if (targetDriverIds.length > 0 && allocation_type !== 'VENDOR') {
     try {
       const driverModel = require('../models/driverModel');
-      const supabase = require('../config/supabase');
       for (const dId of targetDriverIds) {
         const { data: driverProf } = await supabase
           .from('driver_profiles')
