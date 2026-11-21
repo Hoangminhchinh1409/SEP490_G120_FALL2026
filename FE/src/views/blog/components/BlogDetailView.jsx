@@ -8,7 +8,9 @@ export default function BlogDetailView({
     handleSelectArticle,
     handleCopyLink,
     copied,
-    trendingArticles
+    copyError,
+    trendingArticles,
+    onSelectCategory
 }) {
     if (!selectedArticle) return null;
 
@@ -53,11 +55,6 @@ export default function BlogDetailView({
                                     <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
                                     {selectedArticle.category}
                                 </span>
-                                {selectedArticle.statusLabel && (
-                                    <span className="px-space-xs py-0.5 rounded bg-surface-container text-on-surface-variant font-data-mono text-label-sm">
-                                        {selectedArticle.statusLabel}
-                                    </span>
-                                )}
                             </div>
 
                             <h1 className="font-headline-xl text-3xl sm:text-4xl lg:text-5xl text-primary font-bold tracking-tight leading-tight">
@@ -72,12 +69,10 @@ export default function BlogDetailView({
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="font-headline-sm text-headline-sm text-primary">
-                                            {selectedArticle.author || "Ban Điều Hành NEXLOG"}
+                                            {selectedArticle.author || "Ban Quản Trị NEXLOG"}
                                         </span>
                                         <span className="font-data-mono text-label-sm text-on-surface-variant flex items-center gap-space-xs">
                                             <span>{selectedArticle.publishDate || "Mới xuất bản"}</span>
-                                            <span>•</span>
-                                            <span>5 phút đọc</span>
                                         </span>
                                     </div>
                                 </div>
@@ -85,19 +80,25 @@ export default function BlogDetailView({
                                 <div className="flex items-center gap-space-sm">
                                     <span className="flex items-center gap-1 font-data-mono text-label-md text-on-surface-variant bg-surface-container-low px-space-sm py-1.5 rounded-lg">
                                         <span className="material-symbols-outlined text-sm text-secondary">visibility</span>
-                                        {(selectedArticle.views || 0).toLocaleString("vi-VN")} lượt đọc
+                                        {(Number(selectedArticle.views) || 0).toLocaleString("vi-VN")} lượt đọc
                                     </span>
 
                                     <button
                                         onClick={handleCopyLink}
                                         type="button"
                                         title="Sao chép liên kết"
-                                        className="p-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary transition-colors flex items-center gap-1 text-label-md"
+                                        className={`p-2 rounded-lg transition-colors flex items-center gap-1 text-label-md cursor-pointer ${
+                                            copyError
+                                                ? "bg-red-50 text-red-600"
+                                                : "bg-surface-container-low hover:bg-surface-container text-primary"
+                                        }`}
                                     >
                                         <span className="material-symbols-outlined text-base">
-                                            {copied ? "check" : "share"}
+                                            {copied ? "check" : copyError ? "error" : "share"}
                                         </span>
-                                        <span className="hidden sm:inline">{copied ? "Đã chép link!" : "Chia sẻ"}</span>
+                                        <span className="hidden sm:inline">
+                                            {copied ? "Đã chép link!" : copyError ? "Không thể sao chép liên kết" : "Chia sẻ"}
+                                        </span>
                                     </button>
                                 </div>
                             </div>
@@ -118,9 +119,6 @@ export default function BlogDetailView({
                                     alt={selectedArticle.title}
                                     className="w-full max-h-[500px] object-cover"
                                 />
-                                <figcaption className="p-space-xs bg-surface-container-high/80 text-on-surface-variant text-label-sm text-center">
-                                    Hình ảnh: Trung tâm điều phối vận tải hàng không quốc tế NEXLOG AeroCargo
-                                </figcaption>
                             </figure>
                         )}
 
@@ -129,22 +127,19 @@ export default function BlogDetailView({
                             {renderArticleContent(selectedArticle.content || selectedArticle.summary)}
                         </div>
 
-                        {/* Danh sách Tags */}
-                        <div className="pt-space-md border-t border-surface-container flex flex-wrap items-center gap-2">
-                            <span className="font-label-sm text-label-sm text-on-surface-variant uppercase font-bold mr-1">Chủ đề:</span>
-                            <span className="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container text-primary font-label-sm cursor-pointer transition-colors">
-                                #LogisticsHangKhong
-                            </span>
-                            <span className="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container text-primary font-label-sm cursor-pointer transition-colors">
-                                #NEXLOGAeroCargo
-                            </span>
-                            <span className="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container text-primary font-label-sm cursor-pointer transition-colors">
-                                #{selectedArticle.category?.replace(/\s+/g, "")}
-                            </span>
-                            <span className="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container text-primary font-label-sm cursor-pointer transition-colors">
-                                #IATA2026
-                            </span>
-                        </div>
+                        {/* Chuyên mục bài viết */}
+                        {selectedArticle.category && (
+                            <div className="pt-space-md border-t border-surface-container flex flex-wrap items-center gap-2">
+                                <span className="font-label-sm text-label-sm text-on-surface-variant uppercase font-bold mr-1">Chuyên mục:</span>
+                                <button
+                                    type="button"
+                                    onClick={() => onSelectCategory && onSelectCategory(selectedArticle.category)}
+                                    className="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container text-primary font-label-sm cursor-pointer transition-colors"
+                                >
+                                    {selectedArticle.category}
+                                </button>
+                            </div>
+                        )}
 
                         {/* Author Profile Box */}
                         <div className="p-space-md rounded-xl bg-surface-container-low flex flex-col sm:flex-row items-center gap-space-md mt-space-sm">
@@ -153,11 +148,13 @@ export default function BlogDetailView({
                             </div>
                             <div className="flex flex-col text-center sm:text-left">
                                 <span className="font-headline-sm text-headline-sm text-primary">
-                                    Tác giả: {selectedArticle.author || "Ban Điều Hành NEXLOG"}
+                                    Tác giả: {selectedArticle.author || "Ban Quản Trị NEXLOG"}
                                 </span>
-                                <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
-                                    Đội ngũ chuyên gia phân tích chuỗi cung ứng hàng không và cố vấn điều hành logistics đa phương thức tại NEXLOG Corporation.
-                                </p>
+                                {selectedArticle.category && (
+                                    <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                                        Chuyên mục: {selectedArticle.category}
+                                    </p>
+                                )}
                             </div>
                         </div>
 
@@ -175,10 +172,16 @@ export default function BlogDetailView({
                             <button
                                 onClick={handleCopyLink}
                                 type="button"
-                                className="w-full sm:w-auto px-space-md py-2.5 rounded-xl bg-surface-container hover:bg-surface-container-high text-primary font-label-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                                className={`w-full sm:w-auto px-space-md py-2.5 rounded-xl font-label-lg transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                                    copyError
+                                        ? "bg-red-50 text-red-600"
+                                        : "bg-surface-container hover:bg-surface-container-high text-primary"
+                                }`}
                             >
-                                <span className="material-symbols-outlined text-base">link</span>
-                                {copied ? "Đã sao chép liên kết!" : "Sao chép liên kết bài viết"}
+                                <span className="material-symbols-outlined text-base">
+                                    {copied ? "check" : copyError ? "error" : "link"}
+                                </span>
+                                {copied ? "Đã sao chép liên kết!" : copyError ? "Không thể sao chép liên kết" : "Sao chép liên kết bài viết"}
                             </button>
                         </div>
 
@@ -225,36 +228,6 @@ export default function BlogDetailView({
 
                     {/* Cột phải Sidebar (Thông tin hỗ trợ & Tin đọc nhiều) */}
                     <aside className="lg:col-span-4 flex flex-col gap-space-lg">
-                        {/* Widget Tải Báo Cáo */}
-                        <div className="relative rounded-xl overflow-hidden bg-primary text-on-primary p-space-lg shadow-lg flex flex-col justify-between">
-                            <div className="absolute -right-12 -top-12 w-40 h-40 rounded-full bg-secondary/30 blur-2xl pointer-events-none"></div>
-                            <div className="relative z-10 flex flex-col gap-space-sm">
-                                <div className="flex items-center gap-space-xs text-on-tertiary-container font-label-sm text-label-sm uppercase tracking-wider font-bold">
-                                    <span className="material-symbols-outlined text-sm">menu_book</span>
-                                    BÁO CÁO ĐỘC QUYỀN
-                                </div>
-                                <h3 className="font-headline-md text-headline-md text-on-primary tracking-tight">
-                                    Toàn Cảnh Vận Tải Hàng Không Việt Nam 2026
-                                </h3>
-                                <p className="font-body-sm text-body-sm text-surface-container">
-                                    Tài liệu 56 trang phân tích chu kỳ cước Sea-Air và công suất cảng hàng không mới Long Thành.
-                                </p>
-                                <div className="p-space-sm rounded-lg bg-primary-container flex items-center gap-space-sm my-space-xs">
-                                    <span className="material-symbols-outlined text-secondary-fixed text-2xl">picture_as_pdf</span>
-                                    <div className="flex flex-col">
-                                        <span className="font-label-md text-label-md text-on-primary">NEXLOG_Annual_AirCargo_2026.pdf</span>
-                                        <span className="font-data-mono text-label-sm text-surface-dim">Dung lượng: 14.8 MB</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="relative z-10 pt-space-sm">
-                                <button className="w-full py-space-sm px-space-md rounded-xl bg-on-tertiary-container hover:bg-tertiary-container text-on-primary font-label-lg text-label-lg font-semibold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all" type="button">
-                                    <span className="material-symbols-outlined text-lg">download</span>
-                                    Tải PDF Báo Cáo Miễn Phí
-                                </button>
-                            </div>
-                        </div>
-
                         {/* Widget Tin đọc nhiều nhất */}
                         <div className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-space-md border border-surface-container-low">
                             <div className="flex items-center justify-between pb-space-xs border-b border-surface-container">
@@ -262,7 +235,6 @@ export default function BlogDetailView({
                                     <span className="material-symbols-outlined text-on-tertiary-container">trending_up</span>
                                     <h3 className="font-headline-sm text-headline-sm text-primary">Tin Đọc Nhiều Nhất</h3>
                                 </div>
-                                <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Tuần này</span>
                             </div>
                             <div className="flex flex-col divide-y divide-surface-container-low">
                                 {trendingArticles.map((item, idx) => (

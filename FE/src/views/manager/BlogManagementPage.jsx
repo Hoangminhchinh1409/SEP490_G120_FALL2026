@@ -51,7 +51,7 @@ export default function BlogManagementPage({ readOnly = false }) {
         setArticles(blogList);
       })
       .catch(error => {
-        console.error('Lỗi khi tải danh sách tin tức:', error);
+        console.warn('Lỗi khi tải danh sách tin tức:', error?.message || error);
         showToast('Không thể kết nối máy chủ để lấy danh sách tin tức', 'error');
       })
       .finally(() => {
@@ -67,7 +67,7 @@ export default function BlogManagementPage({ readOnly = false }) {
         if (isMounted) setArticles(blogList);
       })
       .catch(error => {
-        console.error('Lỗi khi tải danh sách tin tức:', error);
+        console.warn('Lỗi khi tải danh sách tin tức:', error?.message || error);
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -200,7 +200,7 @@ export default function BlogManagementPage({ readOnly = false }) {
       setNewArticle(initialArticleState);
       fetchBlogs();
     } catch (err) {
-      console.error('Lỗi lưu bài viết:', err);
+      console.warn('Lỗi lưu bài viết:', err?.message || err);
       showToast(err.message || 'Lỗi khi lưu bài viết', 'error');
     }
   };
@@ -211,7 +211,7 @@ export default function BlogManagementPage({ readOnly = false }) {
       showToast('Đã gỡ bài viết khỏi website thành công!');
       fetchBlogs();
     } catch (err) {
-      console.error('Lỗi khi gỡ bài viết:', err);
+      console.warn('Lỗi khi gỡ bài viết:', err?.message || err);
       showToast(err.message || 'Lỗi khi gỡ bài viết', 'error');
     }
   };
@@ -222,7 +222,7 @@ export default function BlogManagementPage({ readOnly = false }) {
       showToast('Đã đăng lại bài viết thành công lên website!');
       fetchBlogs();
     } catch (err) {
-      console.error('Lỗi xuất bản bài viết:', err);
+      console.warn('Lỗi xuất bản bài viết:', err?.message || err);
       showToast(err.message || 'Lỗi khi đăng bài viết', 'error');
     }
   };
@@ -239,7 +239,7 @@ export default function BlogManagementPage({ readOnly = false }) {
       setDeleteConfirmTarget(null);
       fetchBlogs();
     } catch (err) {
-      console.error('Lỗi xóa bài viết:', err);
+      console.warn('Lỗi xóa bài viết:', err?.message || err);
       showToast(err.message || 'Lỗi khi xóa bài viết', 'error');
     } finally {
       setIsDeleting(false);
@@ -256,7 +256,7 @@ export default function BlogManagementPage({ readOnly = false }) {
       setDeleteConfirmTarget(null);
       fetchBlogs();
     } catch (err) {
-      console.error('Lỗi xóa hàng loạt bài viết:', err);
+      console.warn('Lỗi xóa hàng loạt bài viết:', err?.message || err);
       showToast(err.message || 'Lỗi khi xóa các bài viết đã chọn', 'error');
     } finally {
       setIsDeleting(false);

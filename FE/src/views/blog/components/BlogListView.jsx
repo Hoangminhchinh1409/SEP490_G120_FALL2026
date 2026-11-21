@@ -18,7 +18,8 @@ export default function BlogListView({
     pageSize,
     handlePageChange,
     handleSelectArticle,
-    trendingArticles
+    trendingArticles,
+    listLoading = false
 }) {
     return (
         <div className="flex flex-col w-full">
@@ -72,6 +73,7 @@ export default function BlogListView({
                                 <span className="material-symbols-outlined absolute left-space-md top-1/2 -translate-y-1/2 text-outline">search</span>
                                 <input
                                     value={searchQuery}
+                                    maxLength={100}
                                     onChange={(e) => {
                                         setSearchQuery(e.target.value);
                                         setCurrentPage(1);
@@ -82,8 +84,12 @@ export default function BlogListView({
                                 />
                                 {searchQuery && (
                                     <button
-                                        onClick={() => setSearchQuery("")}
-                                        className="absolute right-space-md top-1/2 -translate-y-1/2 text-outline hover:text-on-surface"
+                                        onClick={() => {
+                                            setSearchQuery("");
+                                            setCurrentPage(1);
+                                        }}
+                                        type="button"
+                                        className="absolute right-space-md top-1/2 -translate-y-1/2 text-outline hover:text-on-surface cursor-pointer"
                                     >
                                         <span className="material-symbols-outlined text-base">close</span>
                                     </button>
@@ -149,14 +155,6 @@ export default function BlogListView({
                                     alt={featuredArticle.title}
                                 />
                                 <div className="absolute inset-0 bg-gradient-to-t from-primary/90 via-primary/30 to-transparent lg:bg-gradient-to-r lg:from-transparent lg:via-primary/20 lg:to-surface-container-lowest"></div>
-                                <div className="absolute top-space-md left-space-md flex items-center gap-space-xs px-space-sm py-1 rounded bg-primary/80 backdrop-blur-md text-on-primary font-label-sm text-label-sm uppercase tracking-widest shadow-lg">
-                                    <span className="material-symbols-outlined text-secondary-fixed text-base">flight_takeoff</span>
-                                    Hub Miền Bắc • Nội Bài (HAN)
-                                </div>
-                                <div className="absolute bottom-space-md left-space-md hidden sm:flex items-center gap-space-xs text-on-primary font-label-sm text-label-sm bg-inverse-surface/80 backdrop-blur px-space-sm py-1 rounded">
-                                    <span className="material-symbols-outlined text-on-tertiary-container text-sm">hub</span>
-                                    <span>Diện tích vận hành mở rộng: 150.000 m²</span>
-                                </div>
                             </div>
 
                             {/* Cột thông tin */}
@@ -166,7 +164,9 @@ export default function BlogListView({
                                         <span className="px-space-sm py-0.5 rounded bg-tertiary-container text-on-tertiary-container font-label-sm text-label-sm uppercase tracking-wider font-bold">
                                             {featuredArticle.category}
                                         </span>
-                                        <span className="text-on-surface-variant font-data-mono text-label-sm">• TIÊU ĐIỂM THÁNG</span>
+                                        {featuredArticle.is_featured && (
+                                            <span className="text-on-surface-variant font-data-mono text-label-sm">• BÀI NỔI BẬT</span>
+                                        )}
                                     </div>
                                     <h2
                                         onClick={() => handleSelectArticle(featuredArticle)}
@@ -187,7 +187,7 @@ export default function BlogListView({
                                         <div className="flex flex-col">
                                             <span className="font-label-lg text-label-lg text-primary">{featuredArticle.author}</span>
                                             <span className="font-body-sm text-body-sm text-on-surface-variant">
-                                                {featuredArticle.publishDate} • 5 phút đọc
+                                                {featuredArticle.publishDate || "Mới xuất bản"} • {(Number(featuredArticle.views) || 0).toLocaleString("vi-VN")} lượt đọc
                                             </span>
                                         </div>
                                     </div>
@@ -196,7 +196,7 @@ export default function BlogListView({
                                         type="button"
                                         className="inline-flex items-center gap-1 font-label-lg text-label-lg text-on-tertiary-container hover:text-tertiary-container font-semibold transition-colors cursor-pointer"
                                     >
-                                        Đọc toàn bộ bài viết
+                                        Đọc bài
                                         <span className="material-symbols-outlined text-lg">arrow_forward</span>
                                     </button>
                                 </div>
@@ -223,8 +223,13 @@ export default function BlogListView({
                             </span>
                         </div>
 
-                        {/* Khi không tìm thấy bài viết */}
-                        {filteredArticles.length === 0 ? (
+                        {/* Khi đang tải hoặc không tìm thấy bài viết */}
+                        {listLoading && filteredArticles.length === 0 ? (
+                            <div className="bg-surface-container-lowest p-space-xl rounded-xl text-center flex flex-col items-center justify-center gap-space-sm border border-surface-container-low">
+                                <span className="material-symbols-outlined text-4xl text-secondary animate-spin">progress_activity</span>
+                                <p className="font-headline-sm text-primary">Đang tải danh sách bài viết...</p>
+                            </div>
+                        ) : filteredArticles.length === 0 ? (
                             <div className="bg-surface-container-lowest p-space-xl rounded-xl text-center flex flex-col items-center justify-center gap-space-sm border border-surface-container-low">
                                 <span className="material-symbols-outlined text-4xl text-outline">search_off</span>
                                 <h3 className="font-headline-md text-primary">Không tìm thấy bài viết nào</h3>
@@ -375,48 +380,13 @@ export default function BlogListView({
 
                     {/* CỘT PHẢI: Deep Intelligence Sidebar (4 cols) */}
                     <aside className="lg:col-span-4 flex flex-col gap-space-lg">
-                        {/* Widget 1: Báo Cáo Chuyên Sâu */}
-                        <div className="relative rounded-xl overflow-hidden bg-primary text-on-primary p-space-lg shadow-lg flex flex-col justify-between">
-                            <div className="absolute -right-12 -top-12 w-40 h-40 rounded-full bg-secondary/30 blur-2xl pointer-events-none"></div>
-                            <div className="absolute -left-10 -bottom-10 w-32 h-32 rounded-full bg-on-tertiary-container/20 blur-xl pointer-events-none"></div>
-                            <div className="relative z-10 flex flex-col gap-space-sm">
-                                <div className="flex items-center gap-space-xs text-on-tertiary-container font-label-sm text-label-sm uppercase tracking-wider font-bold">
-                                    <span className="material-symbols-outlined text-sm">menu_book</span>
-                                    BÁO CÁO ĐỘC QUYỀN
-                                </div>
-                                <h3 className="font-headline-md text-headline-md text-on-primary tracking-tight">
-                                    Toàn Cảnh Vận Tải Hàng Không Việt Nam &amp; Đông Nam Á 2026
-                                </h3>
-                                <p className="font-body-sm text-body-sm text-surface-container">
-                                    Tài liệu 56 trang phân tích chuyên sâu về công suất cảng hàng không mới Long Thành, chi phí cước biển - bay kết hợp (Sea-Air) và dự báo chu kỳ 2026-2030.
-                                </p>
-                                <div className="p-space-sm rounded-lg bg-primary-container flex items-center gap-space-sm my-space-xs">
-                                    <span className="material-symbols-outlined text-secondary-fixed text-2xl">picture_as_pdf</span>
-                                    <div className="flex flex-col">
-                                        <span className="font-label-md text-label-md text-on-primary">NEXLOG_Annual_AirCargo_Report_2026.pdf</span>
-                                        <span className="font-data-mono text-label-sm text-surface-dim">Dung lượng: 14.8 MB • Định dạng song ngữ</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="relative z-10 pt-space-sm">
-                                <button className="w-full py-space-sm px-space-md rounded-xl bg-on-tertiary-container hover:bg-tertiary-container text-on-primary font-label-lg text-label-lg font-semibold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer" type="button">
-                                    <span className="material-symbols-outlined text-lg">download</span>
-                                    Tải PDF Báo Cáo Miễn Phí
-                                </button>
-                                <span className="block text-center font-label-sm text-label-sm text-surface-dim mt-2">
-                                    Dành riêng cho doanh nghiệp XNK và đơn vị Logistics
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Widget 2: Tin Đọc Nhiều Nhất */}
+                        {/* Widget Tin Đọc Nhiều Nhất */}
                         <div className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-space-md border border-surface-container-low">
                             <div className="flex items-center justify-between pb-space-xs border-b border-surface-container">
                                 <div className="flex items-center gap-space-xs">
                                     <span className="material-symbols-outlined text-on-tertiary-container">trending_up</span>
                                     <h3 className="font-headline-sm text-headline-sm text-primary">Tin Đọc Nhiều Nhất</h3>
                                 </div>
-                                <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Tuần này</span>
                             </div>
                             <div className="flex flex-col divide-y divide-surface-container-low">
                                 {trendingArticles.map((item, idx) => (

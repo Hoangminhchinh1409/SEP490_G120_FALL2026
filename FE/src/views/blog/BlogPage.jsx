@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { API_URL } from "@/src/api/apiConfig";
 import BlogDetailView from "./components/BlogDetailView";
@@ -8,15 +8,25 @@ import BlogListView from "./components/BlogListView";
 const CATEGORIES = [
     "Tất cả",
     "Thị trường & Vận hành",
-    "Công nghệ & AI Chuỗi cung ứng",
+    "Công nghệ & AI",
     "Hạ tầng Ga hàng không",
     "Chính sách & Hải quan",
     "Thông báo nội bộ"
 ];
 
+const getArticleTimestamp = (item) => {
+    const raw = item?.publishedAt || item?.createdAt || item?.created_at;
+    if (raw) {
+        const ts = new Date(raw).getTime();
+        if (!Number.isNaN(ts)) return ts;
+    }
+    return 0;
+};
+
 const BlogPage = () => {
     // Danh sách bài viết
     const [articles, setArticles] = useState([]);
+    const [listLoading, setListLoading] = useState(true);
 
     // Trạng thái bộ lọc và phân trang
     const [selectedCategory, setSelectedCategory] = useState("Tất cả");
@@ -27,75 +37,148 @@ const BlogPage = () => {
 
     // Bài viết được chọn xem chi tiết (nếu null -> hiển thị danh sách)
     const [selectedArticle, setSelectedArticle] = useState(null);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [detailError, setDetailError] = useState(null);
     const [copied, setCopied] = useState(false);
+    const [copyError, setCopyError] = useState(false);
+    const activeRequestRef = useRef(0);
 
-    // Fetch dữ liệu từ backend
+    // Fetch danh sách bài viết đã xuất bản từ backend
     useEffect(() => {
+        let mounted = true;
         const fetchBlogs = async () => {
             try {
                 const res = await fetch(`${API_URL}/blogs`);
                 const data = await res.json();
-                if (data.success && Array.isArray(data.blogs) && data.blogs.length > 0) {
+                if (mounted && data.success && Array.isArray(data.blogs)) {
                     setArticles(data.blogs);
                 }
             } catch (error) {
                 console.error("Lỗi khi tải danh sách tin tức từ server:", error);
+            } finally {
+                if (mounted) setListLoading(false);
             }
         };
 
         fetchBlogs();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    // Tải chi tiết bài viết từ API (tăng 1 lượt xem và lấy bài viết liên quan)
+    const loadArticleById = useCallback(async (id, fallbackArticle = null) => {
+        const normalizedId = String(id ?? "").trim();
+        if (!/^[1-9]\d*$/.test(normalizedId)) {
+            activeRequestRef.current += 1;
+            setSelectedArticle(null);
+            setDetailError("Bài viết không tồn tại hoặc đã bị gỡ");
+            setDetailLoading(false);
+            return;
+        }
+
+        const requestToken = ++activeRequestRef.current;
+        setDetailError(null);
+        if (fallbackArticle) {
+            setSelectedArticle(fallbackArticle);
+            setDetailLoading(false);
+        } else {
+            setSelectedArticle(null);
+            setDetailLoading(true);
+        }
+
+        try {
+            const res = await fetch(`${API_URL}/blogs/${normalizedId}`);
+            let data = null;
+            try {
+                data = await res.json();
+            } catch {
+                data = null;
+            }
+
+            if (requestToken !== activeRequestRef.current) return;
+
+            if (res.status === 404 || !res.ok || !data?.success || !data?.blog) {
+                setSelectedArticle(null);
+                setDetailError(
+                    res.status === 404
+                        ? "Bài viết không tồn tại hoặc đã bị gỡ"
+                        : (data?.message || "Không thể tải bài viết. Vui lòng thử lại sau.")
+                );
+                return;
+            }
+
+            setSelectedArticle({
+                ...data.blog,
+                relatedBlogs: Array.isArray(data.related) ? data.related : []
+            });
+            setArticles((prev) =>
+                prev.map((a) =>
+                    String(a.id) === String(data.blog.id)
+                        ? { ...a, views: data.blog.views }
+                        : a
+                )
+            );
+        } catch (err) {
+            if (requestToken !== activeRequestRef.current) return;
+            console.error("Lỗi lấy chi tiết bài viết từ API:", err);
+            if (!fallbackArticle) {
+                setSelectedArticle(null);
+                setDetailError("Không thể kết nối máy chủ để tải bài viết.");
+            }
+        } finally {
+            if (requestToken === activeRequestRef.current) {
+                setDetailLoading(false);
+            }
+        }
     }, []);
 
     // Đồng bộ URL parameter (?id=...) khi mở trang hoặc nhấn back/forward
     useEffect(() => {
-        const handleUrlSync = async () => {
+        const handleUrlSync = () => {
             if (typeof window === "undefined") return;
             const params = new URLSearchParams(window.location.search);
             const id = params.get("id");
 
-            if (id) {
-                const existing = articles.find((a) => a.id.toString() === id.toString());
-                if (existing) {
-                    setSelectedArticle(existing);
-                }
-                try {
-                    const res = await fetch(`${API_URL}/blogs/${id}`);
-                    const data = await res.json();
-                    if (data.success && data.blog) {
-                        setSelectedArticle({
-                            ...data.blog,
-                            relatedBlogs: data.related || []
-                        });
-                    }
-                } catch (err) {
-                    console.error("Lỗi lấy chi tiết bài viết từ API:", err);
-                }
+            if (id !== null && id !== "") {
+                loadArticleById(id);
+            } else if (params.has("id")) {
+                loadArticleById("");
             } else {
+                activeRequestRef.current += 1;
                 setSelectedArticle(null);
+                setDetailError(null);
+                setDetailLoading(false);
             }
         };
 
         handleUrlSync();
         window.addEventListener("popstate", handleUrlSync);
         return () => window.removeEventListener("popstate", handleUrlSync);
-    }, [articles]);
+    }, [loadArticleById]);
 
     // Lọc và sắp xếp bài viết
     const filteredArticles = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
         return articles
             .filter((item) => {
-                const matchCategory = selectedCategory === "Tất cả" || item.category === selectedCategory;
+                const matchCategory =
+                    selectedCategory === "Tất cả" ||
+                    item.category === selectedCategory ||
+                    (selectedCategory === "Công nghệ & AI" && item.category === "Công nghệ & AI Chuỗi cung ứng");
                 const matchSearch =
-                    searchQuery === "" ||
-                    item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    item.summary?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    item.content?.toLowerCase().includes(searchQuery.toLowerCase());
+                    q === "" ||
+                    item.title?.toLowerCase().includes(q) ||
+                    item.summary?.toLowerCase().includes(q) ||
+                    item.content?.toLowerCase().includes(q);
                 return matchCategory && matchSearch;
             })
             .sort((a, b) => {
-                if (sortBy === "views") return (b.views || 0) - (a.views || 0);
-                if (sortBy === "title") return (a.title || "").localeCompare(b.title || "");
-                return new Date(b.created_at || b.publishDate || 0) - new Date(a.created_at || a.publishDate || 0);
+                if (sortBy === "views") return (Number(b.views) || 0) - (Number(a.views) || 0);
+                if (sortBy === "title") return (a.title || "").localeCompare(b.title || "", "vi");
+                const diff = getArticleTimestamp(b) - getArticleTimestamp(a);
+                if (diff !== 0) return diff;
+                return (Number(b.id) || 0) - (Number(a.id) || 0);
             });
     }, [articles, selectedCategory, searchQuery, sortBy]);
 
@@ -109,26 +192,72 @@ const BlogPage = () => {
 
     // Xử lý chuyển bài viết & cập nhật URL
     const handleSelectArticle = (article) => {
-        setSelectedArticle(article);
+        if (!article?.id) return;
         if (typeof window !== "undefined") {
             window.history.pushState({}, "", `/blog?id=${article.id}`);
             window.scrollTo({ top: 0, behavior: "smooth" });
         }
+        loadArticleById(article.id, article);
     };
 
     const handleBackToList = () => {
+        activeRequestRef.current += 1;
         setSelectedArticle(null);
+        setDetailError(null);
+        setDetailLoading(false);
         if (typeof window !== "undefined") {
             window.history.pushState({}, "", `/blog`);
             window.scrollTo({ top: 0, behavior: "smooth" });
         }
     };
 
-    const handleCopyLink = () => {
+    const handleSelectCategoryFromDetail = (category) => {
+        setSelectedCategory(category || "Tất cả");
+        setCurrentPage(1);
+        handleBackToList();
+    };
+
+    const handleCopyLink = async () => {
         if (typeof window === "undefined") return;
-        navigator.clipboard.writeText(window.location.href);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2500);
+        const url = window.location.href;
+        let copiedOk = false;
+
+        try {
+            if (navigator?.clipboard && typeof navigator.clipboard.writeText === "function") {
+                await navigator.clipboard.writeText(url);
+                copiedOk = true;
+            }
+        } catch {
+            copiedOk = false;
+        }
+
+        if (!copiedOk && typeof document !== "undefined") {
+            try {
+                const textarea = document.createElement("textarea");
+                textarea.value = url;
+                textarea.setAttribute("readonly", "");
+                textarea.style.position = "fixed";
+                textarea.style.left = "-9999px";
+                textarea.style.opacity = "0";
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                copiedOk = Boolean(document.execCommand && document.execCommand("copy"));
+                document.body.removeChild(textarea);
+            } catch {
+                copiedOk = false;
+            }
+        }
+
+        if (copiedOk) {
+            setCopied(true);
+            setCopyError(false);
+            setTimeout(() => setCopied(false), 2500);
+        } else {
+            setCopied(false);
+            setCopyError(true);
+            setTimeout(() => setCopyError(false), 3000);
+        }
     };
 
     const handlePageChange = (newPage) => {
@@ -143,12 +272,14 @@ const BlogPage = () => {
         }
     };
 
-    // Bài viết tiêu điểm
-    const featuredArticle = articles[0] || null;
+    // Bài viết tiêu điểm (ưu tiên bài có is_featured === true, mới nhất)
+    const featuredArticle = useMemo(() => {
+        return articles.find((a) => a.is_featured) || articles[0] || null;
+    }, [articles]);
 
     // 4 bài đọc nhiều nhất cho widget sidebar
     const trendingArticles = useMemo(() => {
-        return [...articles].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 4);
+        return [...articles].sort((a, b) => (Number(b.views) || 0) - (Number(a.views) || 0)).slice(0, 4);
     }, [articles]);
 
     return (
@@ -190,16 +321,47 @@ const BlogPage = () => {
                 </div>
             </header>
 
-            {/* Nội dung trang: Chi tiết hoặc Danh sách */}
+            {/* Nội dung trang: Chi tiết, Thông báo không tìm thấy, hoặc Danh sách */}
             <main className="flex-1 pt-20">
-                {selectedArticle ? (
+                {detailLoading ? (
+                    <div className="w-full px-margin-lg py-space-xl">
+                        <div className="max-w-3xl mx-auto bg-surface-container-lowest p-space-xl rounded-2xl shadow-sm border border-surface-container-low text-center flex flex-col items-center gap-space-sm">
+                            <span className="material-symbols-outlined text-4xl text-secondary animate-spin">progress_activity</span>
+                            <p className="font-headline-sm text-primary">Đang tải nội dung bài viết...</p>
+                        </div>
+                    </div>
+                ) : detailError ? (
+                    <div className="w-full px-margin-lg py-space-xl">
+                        <div className="max-w-2xl mx-auto bg-surface-container-lowest p-space-xl rounded-2xl shadow-sm border border-surface-container-low text-center flex flex-col items-center gap-space-md">
+                            <div className="w-16 h-16 rounded-full bg-surface-container-low flex items-center justify-center text-secondary">
+                                <span className="material-symbols-outlined text-4xl">article</span>
+                            </div>
+                            <h1 className="font-headline-lg text-2xl text-primary font-bold">
+                                {detailError}
+                            </h1>
+                            <p className="font-body-md text-on-surface-variant max-w-md">
+                                Liên kết bài viết bạn truy cập không hợp lệ, không tồn tại hoặc bài viết đã bị gỡ khỏi hệ thống.
+                            </p>
+                            <button
+                                onClick={handleBackToList}
+                                type="button"
+                                className="inline-flex items-center gap-2 px-space-lg py-2.5 rounded-xl bg-primary text-on-primary hover:bg-primary-container font-label-lg transition-colors cursor-pointer shadow-sm"
+                            >
+                                <span className="material-symbols-outlined text-base">arrow_back</span>
+                                Quay lại danh sách tin tức
+                            </button>
+                        </div>
+                    </div>
+                ) : selectedArticle ? (
                     <BlogDetailView
                         selectedArticle={selectedArticle}
                         handleBackToList={handleBackToList}
                         handleSelectArticle={handleSelectArticle}
                         handleCopyLink={handleCopyLink}
                         copied={copied}
+                        copyError={copyError}
                         trendingArticles={trendingArticles}
+                        onSelectCategory={handleSelectCategoryFromDetail}
                     />
                 ) : (
                     <BlogListView
@@ -220,6 +382,7 @@ const BlogPage = () => {
                         handlePageChange={handlePageChange}
                         handleSelectArticle={handleSelectArticle}
                         trendingArticles={trendingArticles}
+                        listLoading={listLoading}
                     />
                 )}
             </main>

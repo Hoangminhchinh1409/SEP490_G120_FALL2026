@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { managerApi } from '../../../api/managerApi';
 
 export function BlogCreateEditModal({
@@ -11,7 +11,66 @@ export function BlogCreateEditModal({
   showToast,
   fetchBlogs
 }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   if (!isOpen) return null;
+
+  const statusBadgeLabel =
+    newArticle.status === 'PUBLISHED'
+      ? 'Đã đăng'
+      : newArticle.status === 'UNPUBLISHED'
+      ? 'Đã gỡ'
+      : 'Bản nháp';
+
+  const buildPayload = (status) => ({
+    title: (newArticle.title || '').trim(),
+    summary: (newArticle.summary || '').trim(),
+    content:
+      status === 'DRAFT'
+        ? (newArticle.content?.trim() || 'Nội dung đang được soạn thảo...')
+        : (newArticle.content || '').trim(),
+    category: newArticle.category,
+    author: newArticle.author || 'Nguyễn Quản Lý',
+    status,
+    image: newArticle.image || '',
+    is_featured: Boolean(newArticle.is_featured)
+  });
+
+  const submitWithStatus = async (status) => {
+    if (isSubmitting) return;
+    if (!newArticle.title?.trim()) {
+      showToast('Vui lòng nhập tiêu đề bài viết', 'error');
+      return;
+    }
+    if (status === 'PUBLISHED' && !newArticle.content?.trim()) {
+      showToast('Vui lòng điền đủ Tiêu đề và Nội dung bài viết', 'error');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const payload = buildPayload(status);
+      if (newArticle.id) {
+        await managerApi.updateBlog(newArticle.id, payload);
+      } else {
+        await managerApi.createBlog(payload);
+      }
+      showToast(
+        status === 'PUBLISHED'
+          ? 'Đã xuất bản bài viết thành công!'
+          : 'Đã lưu bản nháp thành công!'
+      );
+      onClose();
+      fetchBlogs();
+    } catch (err) {
+      showToast(
+        err.message || (status === 'PUBLISHED' ? 'Lỗi đăng bài viết' : 'Lỗi lưu bản nháp'),
+        'error'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
@@ -22,7 +81,7 @@ export function BlogCreateEditModal({
               {newArticle.id ? 'Sửa bài viết' : 'Viết bài'}
             </h3>
             <span className="px-3 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold">
-              {newArticle.status === 'PUBLISHED' ? 'Đã đăng' : 'Bản nháp'}
+              {statusBadgeLabel}
             </span>
           </div>
           <button 
@@ -143,59 +202,24 @@ export function BlogCreateEditModal({
 
               <button
                 type="button"
-                onClick={async (e) => {
+                disabled={isSubmitting}
+                onClick={(e) => {
                   e.preventDefault();
-                  if (!newArticle.title?.trim()) {
-                    showToast('Vui lòng nhập tiêu đề bài viết', 'error');
-                    return;
-                  }
-                  try {
-                    const payload = { 
-                      ...newArticle, 
-                      content: newArticle.content?.trim() || 'Nội dung đang được soạn thảo...',
-                      status: 'DRAFT',
-                      is_featured: Boolean(newArticle.is_featured)
-                    };
-                    if (newArticle.id) await managerApi.updateBlog(newArticle.id, payload);
-                    else await managerApi.createBlog(payload);
-                    showToast('Đã lưu bản nháp thành công!');
-                    onClose();
-                    fetchBlogs();
-                  } catch (err) {
-                    showToast(err.message || 'Lỗi lưu bản nháp', 'error');
-                  }
+                  submitWithStatus('DRAFT');
                 }}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-surface-container-low text-primary hover:bg-surface-container border border-surface-container cursor-pointer transition-colors"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-surface-container-low text-primary hover:bg-surface-container border border-surface-container cursor-pointer transition-colors disabled:opacity-50"
               >
                 Lưu bản nháp
               </button>
 
               <button
                 type="button"
-                onClick={async (e) => {
+                disabled={isSubmitting}
+                onClick={(e) => {
                   e.preventDefault();
-                  if (!newArticle.title?.trim() || !newArticle.content?.trim()) {
-                    showToast('Vui lòng điền đủ Tiêu đề và Nội dung bài viết', 'error');
-                    return;
-                  }
-                  try {
-                    const payload = { 
-                      ...newArticle, 
-                      title: newArticle.title.trim(),
-                      content: newArticle.content.trim(),
-                      status: 'PUBLISHED',
-                      is_featured: Boolean(newArticle.is_featured)
-                    };
-                    if (newArticle.id) await managerApi.updateBlog(newArticle.id, payload);
-                    else await managerApi.createBlog(payload);
-                    showToast('Đã xuất bản bài viết thành công!');
-                    onClose();
-                    fetchBlogs();
-                  } catch (err) {
-                    showToast(err.message || 'Lỗi đăng bài viết', 'error');
-                  }
+                  submitWithStatus('PUBLISHED');
                 }}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-secondary text-on-secondary shadow-md hover:bg-secondary-container cursor-pointer transition-all"
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-secondary text-on-secondary shadow-md hover:bg-secondary-container cursor-pointer transition-all disabled:opacity-50"
               >
                 Đăng bài
               </button>
