@@ -101,24 +101,34 @@ const reassignOrdersToDefaultLocation = async (locationId, defaultLocationId = 1
 
 const findRelatedTrips = async (locationId) => {
   const locId = BigInt(locationId);
-  const trips = await prisma.trips.findMany({
+  const tripStops = await prisma.trip_stops.findMany({
     where: {
-      OR: [
-        { pickup_location_id: locId },
-        { delivery_location_id: locId }
-      ]
+      location_id: locId
     },
     select: {
-      id: true,
-      trip_code: true,
-      status: true
+      trips: {
+        select: {
+          id: true,
+          trip_code: true,
+          status: true
+        }
+      }
     }
   });
-  return trips.map(t => ({
-    id: toPlainNumber(t.id),
-    trip_code: t.trip_code,
-    status: t.status
-  }));
+
+  // Gom nhóm các chuyến xe duy nhất
+  const uniqueTripsMap = new Map();
+  for (const ts of tripStops) {
+    if (ts.trips && !uniqueTripsMap.has(ts.trips.id.toString())) {
+      uniqueTripsMap.set(ts.trips.id.toString(), {
+        id: toPlainNumber(ts.trips.id),
+        trip_code: ts.trips.trip_code,
+        status: ts.trips.status
+      });
+    }
+  }
+
+  return Array.from(uniqueTripsMap.values());
 };
 
 const deleteById = async (id) => {

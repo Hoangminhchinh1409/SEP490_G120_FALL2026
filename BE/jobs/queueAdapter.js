@@ -100,9 +100,15 @@ class BackgroundQueueAdapter extends EventEmitter {
 
     try {
       if (pool && pool.connect) {
-        client = await pool.connect();
-        const res = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [lockKey]);
-        lockAcquired = res.rows && res.rows[0]?.acquired === true;
+        try {
+          client = await pool.connect();
+          const res = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [lockKey]);
+          lockAcquired = res.rows && res.rows[0]?.acquired === true;
+        } catch (dbErr) {
+          // Nếu kết nối DB trực tiếp gặp sự cố, fallback chạy bình thường để không làm gián đoạn tác vụ
+          console.warn(`[QueueAdapter] Không thể lấy advisory lock cho [${jobName}] (${dbErr.message}), chuyển sang fallback thực thi.`);
+          lockAcquired = true;
+        }
       } else {
         // Fallback nếu không có pg pool trực tiếp: chạy bình thường
         lockAcquired = true;
