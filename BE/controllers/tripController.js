@@ -534,7 +534,8 @@ const optimizeMultiStopRoute = async (req, res) => {
 
     return res.json({
       success: true,
-      ...optimizationResult
+      ...optimizationResult,
+      data: optimizationResult
     });
   } catch (err) {
     console.error('optimizeMultiStopRoute error:', err);

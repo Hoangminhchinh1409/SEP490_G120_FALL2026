@@ -358,7 +358,7 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
         split_details: formValues.request_split_trucks ? {
           split_count: formValues.split_truck_count || 2,
           vehicle_target: formValues.split_target_vehicle || 'TRUCK_2.5T',
-          vehicle_target_label: getVehicleSpecByKey(formValues.split_target_vehicle || 'TRUCK_2.5T').label,
+          vehicle_target_label: getVehicleSpecByKey(formValues.split_target_vehicle || 'TRUCK_2.5T')?.label || formValues.split_target_vehicle || 'Xe tải 2.5 tấn',
           reason: formValues.split_reason || 'Đường kho hẹp/cấm xe tải trọng lớn'
         } : null
       };

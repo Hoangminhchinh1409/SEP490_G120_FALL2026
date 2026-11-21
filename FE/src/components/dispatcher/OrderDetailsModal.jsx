@@ -16,9 +16,11 @@ import {
   getCoordsFromAddress,
   calculateAlsPricing,
   analyzeVehicleRecommendation,
-  getVehicleSpecByKey
+  getVehicleSpecByKey,
+  VEHICLE_SPECS
 } from '../../data/dispatcherPresets';
 import { orderApi } from '../../api/orderApi';
+import { aiApi } from '../../api/aiApi';
 
 // Subcomponents đã được tách module
 import OrderOverviewTab from './orderDetails/OrderOverviewTab';
@@ -325,7 +327,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       );
       
       const isWebOrder = order.source === 'HOMEPAGE' || Boolean(order.customer_email);
-      const selectedSpec = getVehicleSpecByKey(proposedVehicleType);
+      const selectedSpec = getVehicleSpecByKey(proposedVehicleType) || VEHICLE_SPECS[1];
       const updatedOrder = {
         ...order,
         status: isWebOrder ? 'DRAFT' : 'CONFIRMED',
@@ -613,7 +615,19 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       }
     }
 
-    const newKey = `custom-doc-${Date.now()}`;
+    const slug = title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+      .slice(0, 24) || 'doc';
+    let suffix = documents.length + 1;
+    let newKey = `custom-doc-${suffix}-${slug}`;
+    while (documents.some(d => d.key === newKey)) {
+      suffix += 1;
+      newKey = `custom-doc-${suffix}-${slug}`;
+    }
     const newDoc = {
       key: newKey,
       name: title,
@@ -867,7 +881,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
           order={order}
           currentAgreedPrice={currentAgreedPrice}
           proposedVehicleType={proposedVehicleType}
-          currentProposedSpec={getVehicleSpecByKey(proposedVehicleType)}
+          currentProposedSpec={getVehicleSpecByKey(proposedVehicleType) || VEHICLE_SPECS[1]}
           onUpdateOrder={onUpdateOrder}
         />
       )

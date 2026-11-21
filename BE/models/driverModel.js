@@ -572,6 +572,8 @@ const createIncident = async ({
   type = "Other",
   description,
   photos = null,
+  incidentLat = null,
+  incidentLng = null,
 }) => {
   const payload = {
     trip_id: tripId,
@@ -585,15 +587,23 @@ const createIncident = async ({
       : typeof photos === "string" && photos.trim()
         ? [photos]
         : null,
+    ...(incidentLat !== null && incidentLat !== undefined ? { incident_lat: incidentLat } : {}),
+    ...(incidentLng !== null && incidentLng !== undefined ? { incident_lng: incidentLng } : {}),
     reported_time: new Date().toISOString(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("incidents")
     .insert([payload])
     .select();
+
+  if (error && ("incident_lat" in payload || "incident_lng" in payload)) {
+    console.warn("createIncident with GPS columns failed, retry without GPS:", error.message);
+    const { incident_lat: _lat, incident_lng: _lng, ...corePayload } = payload;
+    ({ data, error } = await supabase.from("incidents").insert([corePayload]).select());
+  }
 
   if (error) {
     console.error("createIncident error:", error);

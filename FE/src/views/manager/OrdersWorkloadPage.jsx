@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { Modal, Select, message, Spin, Tag, Input, Tooltip } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Modal, message, Spin, Tag, Input } from 'antd';
 import { managerApi } from '../../api/managerApi';
 
 export default function OrdersWorkloadPage() {
@@ -8,7 +8,6 @@ export default function OrdersWorkloadPage() {
   const [orders, setOrders] = useState([]);
   const [flaggedOrders, setFlaggedOrders] = useState([]);
   const [dispatchers, setDispatchers] = useState([]);
-  const [summary, setSummary] = useState({ total_orders: 0, flagged_count: 0, active_dispatchers: 0 });
 
   // Bộ chọn điều phối nhanh ở dưới bảng (Khớp Section 3 trong giao diện chuẩn)
   const [selectedOrderForReassign, setSelectedOrderForReassign] = useState(null);
@@ -56,13 +55,16 @@ export default function OrdersWorkloadPage() {
     return {
       orders: cleanedOrders,
       flaggedOrders: flagged,
-      dispatchers: cleanDispatchers,
-      summary: {
-        total_orders: cleanedOrders.length,
-        flagged_count: flagged.length,
-        active_dispatchers: cleanDispatchers.length
-      }
+      dispatchers: cleanDispatchers
     };
+  };
+
+  const pickSuggestedDispatcherId = (dispList, currentDispatcherId = null) => {
+    if (!Array.isArray(dispList) || dispList.length === 0) return null;
+    const candidates = dispList.filter(d => Number(d.id) !== Number(currentDispatcherId));
+    const pool = candidates.length > 0 ? candidates : dispList;
+    const leastLoaded = [...pool].sort((a, b) => (a.active_orders || 0) - (b.active_orders || 0))[0];
+    return leastLoaded?.id ?? dispList[0].id;
   };
 
   const fetchWorkloadData = async () => {
@@ -73,9 +75,8 @@ export default function OrdersWorkloadPage() {
       setOrders(processed.orders);
       setFlaggedOrders(processed.flaggedOrders);
       setDispatchers(processed.dispatchers);
-      setSummary(processed.summary);
       if (processed.dispatchers.length > 0 && !quickTargetDispatcherId) {
-        setQuickTargetDispatcherId(processed.dispatchers[0].id);
+        setQuickTargetDispatcherId(pickSuggestedDispatcherId(processed.dispatchers));
       }
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu khối lượng đơn:', error);
@@ -95,9 +96,8 @@ export default function OrdersWorkloadPage() {
           setOrders(processed.orders);
           setFlaggedOrders(processed.flaggedOrders);
           setDispatchers(processed.dispatchers);
-          setSummary(processed.summary);
           if (processed.dispatchers.length > 0) {
-            setQuickTargetDispatcherId(processed.dispatchers[0].id);
+            setQuickTargetDispatcherId(pickSuggestedDispatcherId(processed.dispatchers));
           }
         }
       } catch (error) {
@@ -113,6 +113,11 @@ export default function OrdersWorkloadPage() {
   // Xử lý nút "Chuyển" trên từng dòng đơn
   const handleSelectOrderToReassign = (order) => {
     setSelectedOrderForReassign(order);
+    const currentDispId = order.dispatcher_id || order.responsible_dispatcher_id;
+    const suggestedId = pickSuggestedDispatcherId(dispatchers, currentDispId);
+    if (suggestedId && (!quickTargetDispatcherId || Number(quickTargetDispatcherId) === Number(currentDispId))) {
+      setQuickTargetDispatcherId(suggestedId);
+    }
     setIsConfirmModalOpen(true);
   };
 
@@ -126,11 +131,16 @@ export default function OrdersWorkloadPage() {
       message.warning('Vui lòng chọn điều phối viên nhận đơn.');
       return;
     }
+    const currentDispId = selectedOrderForReassign.dispatcher_id || selectedOrderForReassign.responsible_dispatcher_id;
+    if (Number(quickTargetDispatcherId) === Number(currentDispId)) {
+      message.warning('Đơn hàng hiện đã thuộc phụ trách của điều phối viên này. Vui lòng chọn điều phối viên khác.');
+      return;
+    }
     try {
       setReassigning(true);
       const res = await managerApi.reassignOrder(
         selectedOrderForReassign.id,
-        quickTargetDispatcherId,
+        Number(quickTargetDispatcherId),
         reassignReason || 'Quản lý điều chuyển cân bằng tải'
       );
       message.success(res.message || `Đã điều chuyển đơn #${selectedOrderForReassign.code || selectedOrderForReassign.id} thành công!`);
@@ -161,6 +171,18 @@ export default function OrdersWorkloadPage() {
       setDetailLoading(false);
     }
   };
+
+  const displayedOrders = useMemo(() => {
+    const source = viewTab === 'FLAGGED' ? flaggedOrders : orders;
+    const q = searchText.trim().toLowerCase();
+    if (!q) return source;
+    return source.filter((o) =>
+      (o.order_code || o.code || '').toLowerCase().includes(q) ||
+      (o.dispatcher_name || '').toLowerCase().includes(q) ||
+      (o.flag_reason || '').toLowerCase().includes(q) ||
+      (o.status || '').toLowerCase().includes(q)
+    );
+  }, [viewTab, flaggedOrders, orders, searchText]);
 
   return (
     <div className="flex flex-col w-full space-y-6">
@@ -283,7 +305,15 @@ export default function OrdersWorkloadPage() {
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input.Search
+              allowClear
+              placeholder="Tìm mã đơn, ĐPV, lý do..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="w-56 text-xs"
+              size="small"
+            />
             <button
               onClick={() => setViewTab('FLAGGED')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -310,11 +340,23 @@ export default function OrdersWorkloadPage() {
         {/* Bảng Đơn bị gắn cờ hoặc Tất cả đơn */}
         {loading ? (
           <div className="py-12 flex justify-center"><Spin /></div>
-        ): (viewTab === 'FLAGGED' ? flaggedOrders: orders).length === 0 ? (
+        ): displayedOrders.length === 0 ? (
           <div className="py-12 text-center text-on-surface-variant bg-surface-container-low/30 rounded-2xl border border-dashed border-surface-container">
             <span className="material-symbols-outlined text-4xl text-emerald-600 mb-1">verified</span>
-            <p className="font-bold text-sm text-primary">Không có đơn hàng nào bị gắn cờ</p>
-            <p className="text-xs text-on-surface-variant mt-1">Toàn bộ đơn hàng đang vận hành đúng tiến độ cam kết SLA.</p>
+            <p className="font-bold text-sm text-primary">
+              {searchText.trim()
+                ? 'Không tìm thấy đơn hàng nào khớp với từ khóa'
+                : viewTab === 'FLAGGED'
+                  ? 'Không có đơn hàng nào bị gắn cờ'
+                  : 'Chưa có đơn hàng nào trong hệ thống'}
+            </p>
+            <p className="text-xs text-on-surface-variant mt-1">
+              {searchText.trim()
+                ? 'Vui lòng thử lại với mã đơn hàng hoặc tên điều phối viên khác.'
+                : viewTab === 'FLAGGED'
+                  ? 'Toàn bộ đơn hàng đang vận hành đúng tiến độ cam kết SLA.'
+                  : 'Các đơn hàng mới tạo sẽ tự động hiển thị tại đây.'}
+            </p>
           </div>
         ): (
           <div className="overflow-x-auto">
@@ -329,7 +371,7 @@ export default function OrdersWorkloadPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-container text-xs">
-                {(viewTab === 'FLAGGED' ? flaggedOrders: orders).map((o) => (
+                {displayedOrders.map((o) => (
                   <tr
                     key={o.id}
                     className={`transition-colors ${
@@ -371,10 +413,7 @@ export default function OrdersWorkloadPage() {
                       <div className="inline-flex items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedOrderForReassign(o);
-                            setIsConfirmModalOpen(true);
-                          }}
+                          onClick={() => handleSelectOrderToReassign(o)}
                           className="text-secondary font-bold hover:underline cursor-pointer"
                         >
                           Chuyển
@@ -404,7 +443,7 @@ export default function OrdersWorkloadPage() {
             </span>
             <select
               value={quickTargetDispatcherId || ''}
-              onChange={(e) => setQuickTargetDispatcherId(e.target.value)}
+              onChange={(e) => setQuickTargetDispatcherId(e.target.value ? Number(e.target.value) : null)}
               className="h-9 px-3 bg-surface-container-low border border-surface-container rounded-xl text-xs font-bold text-primary focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer min-w-[200px]"
             >
               {dispatchers.map((d) => (
@@ -480,7 +519,7 @@ export default function OrdersWorkloadPage() {
               </label>
               <select
                 value={quickTargetDispatcherId || ''}
-                onChange={(e) => setQuickTargetDispatcherId(e.target.value)}
+                onChange={(e) => setQuickTargetDispatcherId(e.target.value ? Number(e.target.value) : null)}
                 className="w-full h-10 px-3 bg-surface-container-low border border-surface-container rounded-xl font-bold text-primary focus:outline-none"
               >
                 {dispatchers.map((d) => (
@@ -536,6 +575,18 @@ export default function OrdersWorkloadPage() {
                 <Tag color="cyan" className="font-bold mt-0.5">{orderDetail.status}</Tag>
               </div>
               <div>
+                <span className="text-on-surface-variant block">Khách hàng:</span>
+                <span className="font-bold text-primary">
+                  {orderDetail.customer_name || orderDetail.customer?.company_name || 'N/A'}
+                </span>
+              </div>
+              <div>
+                <span className="text-on-surface-variant block">Điều phối phụ trách:</span>
+                <span className="font-bold text-primary">
+                  {orderDetail.dispatcher?.full_name || orderDetail.dispatcher?.username || 'Chưa gán'}
+                </span>
+              </div>
+              <div>
                 <span className="text-on-surface-variant block">Giá thỏa thuận:</span>
                 <span className="font-bold text-primary">
                   {Number(orderDetail.agreed_price || 0).toLocaleString('vi-VN')} đ
@@ -561,8 +612,19 @@ export default function OrdersWorkloadPage() {
               <h4 className="font-bold text-primary mb-2 uppercase text-[11px] tracking-wide">
                 Lịch sử & Tuyến điểm:
               </h4>
-              <div className="p-3 bg-surface-container-low rounded-xl text-on-surface-variant">
-                Thời gian tạo: {orderDetail.created_at ? new Date(orderDetail.created_at).toLocaleString('vi-VN'): 'N/A'}
+              <div className="p-3 bg-surface-container-low rounded-xl text-on-surface-variant space-y-1.5">
+                <div>
+                  <span className="font-bold text-primary">Điểm lấy hàng:</span>{' '}
+                  {orderDetail.pickup_address || orderDetail.pickup_location?.address || 'N/A'}
+                </div>
+                <div>
+                  <span className="font-bold text-primary">Điểm giao hàng:</span>{' '}
+                  {orderDetail.delivery_address || orderDetail.delivery_location?.address || 'N/A'}
+                </div>
+                <div>
+                  <span className="font-bold text-primary">Thời gian tạo:</span>{' '}
+                  {orderDetail.created_at ? new Date(orderDetail.created_at).toLocaleString('vi-VN'): 'N/A'}
+                </div>
               </div>
             </div>
           </div>

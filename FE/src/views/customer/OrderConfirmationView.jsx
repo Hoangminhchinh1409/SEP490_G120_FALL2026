@@ -61,7 +61,7 @@ export default function OrderConfirmationView() {
             if (priceChanged || vehicleChanged) {
               const vSpec = getVehicleSpecByKey(latestData.proposed_vehicle_type || latestData.vehicle_type_required);
               message.info(
-                `Điều phối viên vừa cập nhật phương án ${vSpec.label} & chốt lại mức giá: ${Number(latestData.agreed_price).toLocaleString('vi-VN')} VNĐ${
+                `Điều phối viên vừa cập nhật phương án ${vSpec?.label || latestData.proposed_vehicle_type || 'xe phù hợp'} & chốt lại mức giá: ${Number(latestData.agreed_price).toLocaleString('vi-VN')} VNĐ${
                   latestData.web_workflow?.adjustment_reason
                     ? ` (Lý do: ${latestData.web_workflow.adjustment_reason})`
                     : ''
@@ -130,9 +130,9 @@ export default function OrderConfirmationView() {
 
   const customerInitialVehicleKey = order.customer_requested_vehicle || order.vehicle_type_required || '2.5T';
   const proposedVehicleKey = order.agreed_vehicle_type || order.proposed_vehicle_type || order.vehicle_type_required || '2.5T';
-  const customerVehicleSpec = getVehicleSpecByKey(customerInitialVehicleKey);
-  const proposedVehicleSpec = getVehicleSpecByKey(proposedVehicleKey);
-  const isVehicleAdjustedByDispatcher = customerVehicleSpec.key !== proposedVehicleSpec.key;
+  const customerVehicleSpec = getVehicleSpecByKey(customerInitialVehicleKey) || { key: customerInitialVehicleKey, label: customerInitialVehicleKey };
+  const proposedVehicleSpec = getVehicleSpecByKey(proposedVehicleKey) || { key: proposedVehicleKey, label: proposedVehicleKey };
+  const isVehicleAdjustedByDispatcher = customerVehicleSpec?.key !== proposedVehicleSpec?.key;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50/50 via-slate-50 to-slate-100 py-10 px-4 sm:px-6 lg:px-8">

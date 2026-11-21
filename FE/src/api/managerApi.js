@@ -232,6 +232,19 @@ export const managerApi = {
     }
   },
 
+  sendIncidentEmail: async (id, payload) => {
+    try {
+      const data = await fetchWithAuth(`/manager/incidents/${id}/send-email`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.sendIncidentEmail Error:', error);
+      throw error;
+    }
+  },
+
   closeIncidentCase: async (id, payload) => {
     try {
       const data = await fetchWithAuth(`/manager/incidents/${id}/close`, {
@@ -318,79 +331,43 @@ export const managerApi = {
 
   // 6. NHÓM 7: QUẢN LÝ TIN TỨC
   getBlogs: async (params = {}) => {
-    try {
-      const query = new URLSearchParams(params).toString();
-      const endpoint = query ? `/manager/blogs?${query}`: '/manager/blogs';
-      const data = await fetchWithAuth(endpoint);
-      return data;
-    } catch (error) {
-      console.error('managerApi.getBlogs Error:', error);
-      throw error;
-    }
+    const query = new URLSearchParams(params).toString();
+    const endpoint = query ? `/manager/blogs?${query}` : '/manager/blogs';
+    return await fetchWithAuth(endpoint);
   },
 
   createBlog: async (blogData) => {
-    try {
-      const data = await fetchWithAuth('/manager/blogs', {
-        method: 'POST',
-        body: JSON.stringify(blogData)
-      });
-      return data;
-    } catch (error) {
-      console.error('managerApi.createBlog Error:', error);
-      throw error;
-    }
+    return await fetchWithAuth('/manager/blogs', {
+      method: 'POST',
+      body: JSON.stringify(blogData)
+    });
   },
 
   updateBlog: async (blogId, blogData) => {
-    try {
-      const data = await fetchWithAuth(`/manager/blogs/${blogId}`, {
-        method: 'PUT',
-        body: JSON.stringify(blogData)
-      });
-      return data;
-    } catch (error) {
-      console.error('managerApi.updateBlog Error:', error);
-      throw error;
-    }
+    return await fetchWithAuth(`/manager/blogs/${blogId}`, {
+      method: 'PUT',
+      body: JSON.stringify(blogData)
+    });
   },
 
   updateBlogStatus: async (blogId, status) => {
-    try {
-      const data = await fetchWithAuth(`/manager/blogs/${blogId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status })
-      });
-      return data;
-    } catch (error) {
-      console.error('managerApi.updateBlogStatus Error:', error);
-      throw error;
-    }
+    return await fetchWithAuth(`/manager/blogs/${blogId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status })
+    });
   },
 
   approveBlog: async (blogId) => {
-    try {
-      const data = await fetchWithAuth(`/manager/blogs/${blogId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'PUBLISHED' })
-      });
-      return data;
-    } catch (error) {
-      console.error('managerApi.approveBlog Error:', error);
-      throw error;
-    }
+    return await fetchWithAuth(`/manager/blogs/${blogId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'PUBLISHED' })
+    });
   },
 
   deleteBlog: async (blogId) => {
-    try {
-      const data = await fetchWithAuth(`/manager/blogs/${blogId}`, {
-        method: 'DELETE'
-      });
-      return data;
-    } catch (error) {
-      console.error('managerApi.deleteBlog Error:', error);
-      throw error;
-    }
+    return await fetchWithAuth(`/manager/blogs/${blogId}`, {
+      method: 'DELETE'
+    });
   },
 
   // 7. Quản lý Tài khoản Nhân sự (Dispatcher & Driver) -  & 

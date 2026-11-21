@@ -112,9 +112,13 @@ const solveVRPTW = ({
   truckPayloadKg = 2500,
   avoidTruckBan = true
 }) => {
-  if (!Array.isArray(stops) || stops.length <= 1) {
+  const nonRestStops = Array.isArray(stops)
+    ? stops.filter((s) => String(s?.type || s?.stop_type || '').toUpperCase() !== 'REST')
+    : [];
+
+  if (nonRestStops.length <= 1) {
     return {
-      optimizedStops: stops,
+      optimizedStops: nonRestStops,
       totalDistanceKm: 0,
       totalDurationMinutes: 0,
       warnings: [],
@@ -122,25 +126,49 @@ const solveVRPTW = ({
     };
   }
 
-  // Phân tích mốc giờ bắt đầu
+  // Phân tích mốc giờ bắt đầu (hỗ trợ Date, "HH:mm", "dd/MM/yyyy HH:mm", ISO)
   let currentMinutes = 7 * 60 + 30;
-  if (startTime instanceof Date) {
+  if (startTime instanceof Date && !Number.isNaN(startTime.getTime())) {
     currentMinutes = startTime.getHours() * 60 + startTime.getMinutes();
-  } else if (typeof startTime === 'string' && startTime.includes(':')) {
-    const [h, m] = startTime.split(':').map(Number);
-    if (!Number.isNaN(h) && !Number.isNaN(m)) {
-      currentMinutes = h * 60 + m;
+  } else if (typeof startTime === 'string') {
+    const timeMatch = startTime.match(/(\d{1,2}):(\d{2})/);
+    if (timeMatch) {
+      const h = parseInt(timeMatch[1], 10);
+      const m = parseInt(timeMatch[2], 10);
+      if (!Number.isNaN(h) && !Number.isNaN(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+        currentMinutes = h * 60 + m;
+      }
     }
   }
+  const initialStartMinutes = currentMinutes;
 
-  // Tách điểm xuất phát đầu tiên (thường là Kho ALS Nội Bài hoặc Điểm lấy hàng bắt buộc)
-  const pickupStop = stops[0];
-  const pendingStops = stops.slice(1).map((s, idx) => {
+  const normalizeStopCoords = (s) => ({
+    lat: Number(s?.coords?.lat ?? s?.lat ?? s?.latitude ?? 21.2187),
+    lng: Number(s?.coords?.lng ?? s?.lng ?? s?.longitude ?? 105.8042)
+  });
+
+  // Giữ cố định các điểm đầu (START bãi xe -> PICKUP lấy hàng) trước khi tối ưu các điểm DROPOFF
+  const startStops = nonRestStops.filter((s) => String(s?.type || s?.stop_type || '').toUpperCase() === 'START');
+  const pickupStops = nonRestStops.filter((s) => String(s?.type || s?.stop_type || '').toUpperCase() === 'PICKUP');
+  const hasExplicitPrefix = startStops.length > 0 || pickupStops.length > 0;
+
+  const fixedPrefixStops = hasExplicitPrefix
+    ? [...startStops, ...pickupStops]
+    : [nonRestStops[0]];
+
+  const dropoffStops = hasExplicitPrefix
+    ? nonRestStops.filter((s) => {
+        const t = String(s?.type || s?.stop_type || '').toUpperCase();
+        return t !== 'START' && t !== 'PICKUP';
+      })
+    : nonRestStops.slice(1);
+
+  const pendingStops = dropoffStops.map((s, idx) => {
     let earlyMins = 0;
     let lateMins = 24 * 60;
 
     // Parse Time Windows nếu có (e.g. receiving_hours: "08:00 - 11:30" hoặc time_window: { early, late })
-    if (s.time_window?.early && s.time_window?.late) {
+    if (s.time_window?.early !== undefined && s.time_window?.late !== undefined) {
       earlyMins = s.time_window.early;
       lateMins = s.time_window.late;
     } else if (s.receiving_hours && typeof s.receiving_hours === 'string' && s.receiving_hours.includes('-')) {
@@ -151,36 +179,81 @@ const solveVRPTW = ({
       if (pLate) lateMins = parseInt(pLate[1], 10) * 60 + parseInt(pLate[2], 10);
     }
 
+    const { lat, lng } = normalizeStopCoords(s);
     return {
       ...s,
       originalIndex: idx + 1,
       earlyMins,
       lateMins,
-      lat: Number(s.coords?.lat || s.lat || s.latitude || 21.0285),
-      lng: Number(s.coords?.lng || s.lng || s.longitude || 105.8542)
+      lat,
+      lng
     };
   });
 
   const orderedStops = [];
   const warnings = [];
-  let currentLat = Number(pickupStop.coords?.lat || pickupStop.lat || pickupStop.latitude || 21.2187);
-  let currentLng = Number(pickupStop.coords?.lng || pickupStop.lng || pickupStop.longitude || 105.8042);
+  const firstCoords = normalizeStopCoords(fixedPrefixStops[0]);
+  let currentLat = firstCoords.lat;
+  let currentLng = firstCoords.lng;
   let totalDistKm = 0;
   let continuousDrivingMinutes = 0;
   let restStopsCount = 0;
 
-  // Điểm đầu tiên
-  orderedStops.push({
-    ...pickupStop,
-    sequence: 1,
-    arrivalMinutes: currentMinutes,
-    arrivalTimeStr: formatMinutesToTime(currentMinutes),
-    waitingMinutes: 0,
-    distanceFromPrevKm: 0,
-    banStatus: checkHanoiTruckBan(currentMinutes, truckPayloadKg, currentLat, currentLng)
+  // Xử lý tuần tự các điểm xuất phát & lấy hàng cố định
+  fixedPrefixStops.forEach((prefixStop, idx) => {
+    const pCoords = normalizeStopCoords(prefixStop);
+    const stopType = String(prefixStop?.type || prefixStop?.stop_type || '').toUpperCase();
+
+    if (idx === 0) {
+      const banStatus = checkHanoiTruckBan(currentMinutes, truckPayloadKg, pCoords.lat, pCoords.lng);
+      orderedStops.push({
+        ...prefixStop,
+        sequence: 1,
+        arrivalMinutes: currentMinutes,
+        arrivalTimeStr: formatMinutesToTime(currentMinutes),
+        eta: `dự kiến ${formatMinutesToTime(currentMinutes)}`,
+        waitingMinutes: 0,
+        distanceFromPrevKm: 0,
+        banStatus
+      });
+      if (stopType === 'PICKUP') {
+        currentMinutes += 15;
+      }
+    } else {
+      const dist = haversineDistanceKm(currentLat, currentLng, pCoords.lat, pCoords.lng);
+      const isRush = (currentMinutes >= 6 * 60 && currentMinutes <= 9 * 60) ||
+                     (currentMinutes >= 16 * 60 + 30 && currentMinutes <= 19 * 60 + 30);
+      const driveMins = estimateDrivingMinutes(dist, isRush);
+      const arrivalMins = currentMinutes + driveMins;
+      continuousDrivingMinutes += driveMins;
+      totalDistKm += dist;
+      currentMinutes = arrivalMins + 15; // Thời gian bốc hàng tại kho lấy
+
+      const banCheck = checkHanoiTruckBan(arrivalMins, truckPayloadKg, pCoords.lat, pCoords.lng);
+      if (banCheck.isBanned) {
+        warnings.push(`Điểm "${prefixStop.name || prefixStop.address}" đến lúc ${formatMinutesToTime(arrivalMins)}: ${banCheck.reason}`);
+      }
+
+      orderedStops.push({
+        ...prefixStop,
+        sequence: orderedStops.length + 1,
+        distanceFromPrevKm: dist,
+        drivingDurationMinutes: driveMins,
+        arrivalMinutes: arrivalMins,
+        arrivalTimeStr: formatMinutesToTime(arrivalMins),
+        eta: `dự kiến ${formatMinutesToTime(arrivalMins)}`,
+        waitingMinutes: 0,
+        departureMinutes: currentMinutes,
+        departureTimeStr: formatMinutesToTime(currentMinutes),
+        banStatus: banCheck
+      });
+    }
+
+    currentLat = pCoords.lat;
+    currentLng = pCoords.lng;
   });
 
-  // Thuật toán Heuristic chèn theo ràng buộc Time Windows & Giờ cấm tải
+  // Thuật toán Heuristic chèn theo ràng buộc Time Windows & Giờ cấm tải cho các điểm giao hàng
   const remaining = [...pendingStops];
 
   while (remaining.length > 0) {
@@ -235,16 +308,21 @@ const solveVRPTW = ({
       // BR-03: Kiểm tra nếu lái xe liên tục gần 4 giờ (>= 220 phút), tự động chèn điểm nghỉ ngơi 15 phút
       continuousDrivingMinutes += bestDriveMins;
       if (continuousDrivingMinutes >= 220) {
+        const restArrivalMins = currentMinutes;
         currentMinutes += 15;
         continuousDrivingMinutes = 0;
         restStopsCount += 1;
         orderedStops.push({
+          id: `rest-${restStopsCount}`,
+          badge: 'Nghỉ',
           type: 'REST',
           name: 'Trạm dừng nghỉ lái xe an toàn (Luật GTĐB - 4h liên tục)',
           address: 'Khu vực dịch vụ / Bãi đỗ xe an toàn dọc lộ trình',
+          action: 'Nghỉ bắt buộc 15p',
+          eta: `dự kiến ${formatMinutesToTime(restArrivalMins)}`,
           sequence: orderedStops.length + 1,
-          arrivalMinutes: currentMinutes - 15,
-          arrivalTimeStr: formatMinutesToTime(currentMinutes - 15),
+          arrivalMinutes: restArrivalMins,
+          arrivalTimeStr: formatMinutesToTime(restArrivalMins),
           departureTimeStr: formatMinutesToTime(currentMinutes),
           durationMinutes: 15,
           coords: { lat: (currentLat + chosen.lat) / 2, lng: (currentLng + chosen.lng) / 2 }
@@ -271,6 +349,7 @@ const solveVRPTW = ({
         drivingDurationMinutes: bestDriveMins,
         arrivalMinutes: arrivalMins,
         arrivalTimeStr: formatMinutesToTime(arrivalMins),
+        eta: `dự kiến ${formatMinutesToTime(arrivalMins)}`,
         waitingMinutes: bestWaitMins,
         departureMinutes: currentMinutes,
         departureTimeStr: formatMinutesToTime(currentMinutes),
@@ -285,7 +364,7 @@ const solveVRPTW = ({
   return {
     optimizedStops: orderedStops,
     totalDistanceKm: Number(totalDistKm.toFixed(1)),
-    totalDurationMinutes: Math.round(currentMinutes - (startTime instanceof Date ? startTime.getHours() * 60 + startTime.getMinutes() : 7 * 60 + 30)),
+    totalDurationMinutes: Math.max(0, Math.round(currentMinutes - initialStartMinutes)),
     warnings,
     restStopsAdded: restStopsCount
   };

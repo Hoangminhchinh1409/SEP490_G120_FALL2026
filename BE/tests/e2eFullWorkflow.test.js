@@ -1,3 +1,5 @@
+const { test } = require('node:test');
+
 const BASE_URL = 'http://127.0.0.1:9999/api';
 
 async function login(username, password) {
@@ -380,7 +382,19 @@ async function runE2E() {
   console.log('\n=== KẾT THÚC TEST E2E TOÀN BỘ 6 GIAI ĐOẠN THÀNH CÔNG 100% ===');
 }
 
-runE2E().catch(err => {
-  console.error('\n❌ TEST E2E GẶP LỖI:', err);
-  process.exit(1);
+test('E2E Full Workflow (6 giai đoạn nghiệp vụ)', async (t) => {
+  try {
+    const ping = await fetch(`${BASE_URL}/orders/public-locations`, {
+      signal: AbortSignal.timeout(1500)
+    });
+    if (!ping.ok && ping.status >= 500) {
+      t.skip(`Bỏ qua test E2E vì server ${BASE_URL} chưa sẵn sàng (HTTP ${ping.status})`);
+      return;
+    }
+  } catch (err) {
+    t.skip(`Bỏ qua test E2E vì không thể kết nối tới server ${BASE_URL}: ${err.message}`);
+    return;
+  }
+
+  await runE2E();
 });

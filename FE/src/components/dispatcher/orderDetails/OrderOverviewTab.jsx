@@ -13,7 +13,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import RouteMapPicker from '../../common/RouteMapPicker';
-import { getVehicleSpecByKey } from '../../../data/dispatcherPresets';
+import { getVehicleSpecByKey, VEHICLE_SPECS } from '../../../data/dispatcherPresets';
 import { aiApi } from '../../../api/aiApi';
 import { OrderVehicleRecommendationBox, OrderOverviewPreDocsBox } from './OrderOverviewSubSections';
 
@@ -54,8 +54,8 @@ export default function OrderOverviewTab({
     ? order.web_workflow.negotiation_history
     : [];
 
-  const currentProposedSpec = getVehicleSpecByKey(proposedVehicleType || order.vehicle_type_required || 'TRUCK_2.5T');
-  const customerInitialSpec = vehicleRecommendation?.customerSpec || getVehicleSpecByKey(order.customer_requested_vehicle || order.vehicle_type_required || 'TRUCK_2.5T');
+  const currentProposedSpec = getVehicleSpecByKey(proposedVehicleType || order.vehicle_type_required || 'TRUCK_2.5T') || VEHICLE_SPECS[1];
+  const customerInitialSpec = vehicleRecommendation?.customerSpec || getVehicleSpecByKey(order.customer_requested_vehicle || order.vehicle_type_required || 'TRUCK_2.5T') || VEHICLE_SPECS[1];
   const recommendedSpec = vehicleRecommendation?.recommendedSpec || currentProposedSpec;
 
   const [aiAnalyzingVehicle, setAiAnalyzingVehicle] = useState(false);
@@ -194,7 +194,7 @@ export default function OrderOverviewTab({
               <div className="flex items-center flex-wrap gap-1.5">
                 <span>• Loại xe khách đề xuất:</span>
                 <b className="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                  {getVehicleSpecByKey(negotiation.proposed_vehicle_type).label}
+                  {getVehicleSpecByKey(negotiation.proposed_vehicle_type)?.label || negotiation.proposed_vehicle_type}
                 </b>
                 {setProposedVehicleType && (
                   <button
@@ -234,7 +234,7 @@ export default function OrderOverviewTab({
                     </span>
                     <span>
                       → Đã chốt lại: <b className="text-indigo-700">{Number(item.dispatcher_new_price || 0).toLocaleString('vi-VN')} đ</b>{' '}
-                      {item.dispatcher_proposed_vehicle ? `[${getVehicleSpecByKey(item.dispatcher_proposed_vehicle).shortLabel}] ` : ''}
+                      {item.dispatcher_proposed_vehicle ? `[${getVehicleSpecByKey(item.dispatcher_proposed_vehicle)?.shortLabel || item.dispatcher_proposed_vehicle}] ` : ''}
                       <span className="italic text-gray-500">({item.dispatcher_adjustment_reason})</span>
                     </span>
                   </div>

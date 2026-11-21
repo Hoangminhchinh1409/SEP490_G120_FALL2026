@@ -567,7 +567,9 @@ const reportIncident = async (userId, incidentData) => {
     trip_stop_id,
     type = "Other",
     description,
-    photos = null
+    photos = null,
+    incident_lat = null,
+    incident_lng = null
   } = incidentData;
 
   if (!description || !description.trim()) {
@@ -621,13 +623,40 @@ const reportIncident = async (userId, incidentData) => {
     }
   }
 
+  let resolvedLat = incident_lat !== null && incident_lat !== undefined && !isNaN(Number(incident_lat)) ? Number(incident_lat) : null;
+  let resolvedLng = incident_lng !== null && incident_lng !== undefined && !isNaN(Number(incident_lng)) ? Number(incident_lng) : null;
+
+  if ((resolvedLat === null || resolvedLng === null) && currentTrip?.stops?.length > 0) {
+    const targetStop = currentTrip.stops.find(s => Number(s.id) === Number(realTripStopId)) || currentTrip.stops[0];
+    if (targetStop?.location?.latitude && targetStop?.location?.longitude) {
+      resolvedLat = Number(targetStop.location.latitude);
+      resolvedLng = Number(targetStop.location.longitude);
+    }
+  }
+
+  if ((resolvedLat === null || resolvedLng === null) && realTripId) {
+    const { data: stopGeo } = await supabase
+      .from("trip_stops")
+      .select("id, location:locations(latitude, longitude)")
+      .eq("trip_id", realTripId)
+      .order("sequence", { ascending: true })
+      .limit(1);
+    const loc = stopGeo?.[0]?.location;
+    if (loc?.latitude && loc?.longitude) {
+      resolvedLat = Number(loc.latitude);
+      resolvedLng = Number(loc.longitude);
+    }
+  }
+
   const newIncident = await driverModel.createIncident({
     tripId: realTripId,
     tripStopId: realTripStopId,
     reportedBy: profile.id,
     type,
     description: description.trim(),
-    photos
+    photos,
+    incidentLat: resolvedLat,
+    incidentLng: resolvedLng
   });
 
   const tripCodeDisplay = currentTrip?.trip_code || `TRIP-${realTripId}`;

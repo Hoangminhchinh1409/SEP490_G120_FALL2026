@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Modal, Form, Input, message, Progress } from 'antd';
-import { FileText, Sparkles, UploadCloud, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FileText, Sparkles, UploadCloud, CheckCircle2 } from 'lucide-react';
 import { 
   calculateRouteEstimate, 
   calculateAlsPricing,
@@ -411,10 +411,11 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
 
   const estimatedBaselineRate = estimatedPricing.totalRate || 0;
 
+  const flightDatetime = watchedValues?.flight_datetime;
   const exportPickupSuggestion = useMemo(() => {
-    if (shippingDirection !== 'EXPORT' || !watchedValues?.flight_datetime) return null;
-    return calculateExportPickupSuggestion(watchedValues.flight_datetime, routeInfo.distanceKm || 30);
-  }, [shippingDirection, watchedValues?.flight_datetime, routeInfo.distanceKm]);
+    if (shippingDirection !== 'EXPORT' || !flightDatetime) return null;
+    return calculateExportPickupSuggestion(flightDatetime, routeInfo.distanceKm || 30);
+  }, [shippingDirection, flightDatetime, routeInfo.distanceKm]);
 
   useEffect(() => {
     if (estimatedBaselineRate > 0 && !form.isFieldTouched('agreed_price')) {
@@ -632,7 +633,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         split_details: fieldValues.request_split_trucks ? {
           split_count: fieldValues.split_truck_count || 2,
           vehicle_target: fieldValues.split_target_vehicle || 'TRUCK_2.5T',
-          vehicle_target_label: getVehicleSpecByKey(fieldValues.split_target_vehicle || 'TRUCK_2.5T').label,
+          vehicle_target_label: getVehicleSpecByKey(fieldValues.split_target_vehicle || 'TRUCK_2.5T')?.label || fieldValues.split_target_vehicle || 'Xe tải 2.5 tấn',
           reason: fieldValues.split_reason || 'Đường kho hẹp/cấm xe tải lớn'
         } : null,
         created_at: new Date().toISOString()

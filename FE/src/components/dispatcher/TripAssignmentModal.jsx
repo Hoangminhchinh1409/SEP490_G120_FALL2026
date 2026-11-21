@@ -6,7 +6,8 @@ import { dispatcherApi } from '../../api/dispatcherApi';
 import {
   getCoordsFromAddress,
   getVehicleSpecByKey,
-  analyzeVehicleRecommendation
+  analyzeVehicleRecommendation,
+  VEHICLE_SPECS
 } from '../../data/dispatcherPresets';
 import { fetchShortestRoadRoute, optimizeDropoffsByRoadDistance, computeStopsLiveEta } from '../../utils/roadRouting';
 import LoadPlan3DModal from './LoadPlan3DModal';
@@ -94,6 +95,27 @@ export default function TripAssignmentModal({
   incidentContext = null,
   onAssignSuccess
 }) {
+  if (!open || !order) return null;
+
+  return (
+    <TripAssignmentModalContent
+      key={`${order.id || order.order_id}`}
+      open={open}
+      onCancel={onCancel}
+      order={order}
+      incidentContext={incidentContext}
+      onAssignSuccess={onAssignSuccess}
+    />
+  );
+}
+
+function TripAssignmentModalContent({
+  open,
+  onCancel,
+  order,
+  incidentContext = null,
+  onAssignSuccess
+}) {
   const orderCode = order?.order_id || order?.id || 'NEX-ORD';
   const hawbCode = order?.hawb_code || order?.hawb_number || 'HAWB-AUTO';
   const customerName = order?.customer || order?.customer_name || 'Khách hàng';
@@ -130,7 +152,7 @@ export default function TripAssignmentModal({
       order?.proposed_vehicle_type ||
       order?.vehicle_type_required ||
       'TRUCK_3.5T';
-    const spec = getVehicleSpecByKey(rawKey);
+    const spec = getVehicleSpecByKey(rawKey) || VEHICLE_SPECS[2];
     return spec.key;
   }, [order]);
 
@@ -150,19 +172,15 @@ export default function TripAssignmentModal({
   }, [filteredFleetOptions]);
 
   const [selectedTruckPlate, setSelectedTruckPlate] = useState(defaultOption);
-
-  useEffect(() => {
-    if (defaultOption) {
-      setSelectedTruckPlate(defaultOption);
-    }
-  }, [defaultOption, order]);
   const [driverCount, setDriverCount] = useState(1);
   const [selectedDriver1, setSelectedDriver1] = useState('Nguyễn Văn Lái');
   const [selectedDriver2, setSelectedDriver2] = useState(undefined);
   const [selectedVendor, setSelectedVendor] = useState('Công ty TNHH Vận tải & Tiếp vận Hà Nội (Hanoitrans)');
   const [vendorVehicleCount, setVendorVehicleCount] = useState(1);
   const [vendorCost, setVendorCost] = useState('3.500.000');
-  const [vendorTrackingCode, setVendorTrackingCode] = useState('');
+  const [vendorTrackingCode, setVendorTrackingCode] = useState(
+    () => `3PL-${order?.order_id || order?.id || '8829'}`
+  );
   const [changeReason, setChangeReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [is3DOpen, setIs3DOpen] = useState(false);
@@ -247,47 +265,6 @@ export default function TripAssignmentModal({
     ];
   });
 
-  useEffect(() => {
-    if (!order) return;
-    const pickupAddr = order.pickup_address || order.pickup || 'Kho ALS Sân Bay Nội Bài';
-    const dropoffAddr = order.delivery_address || order.dropoff || 'KCN Quế Võ, Bắc Ninh';
-    const pickupCoords = order.pickup_coords || getCoordsFromAddress(pickupAddr, 'A') || { lat: 21.2187, lng: 105.8042 };
-    const dropoffCoords = order.dropoff_coords || order.delivery_coords || getCoordsFromAddress(dropoffAddr, 'B') || { lat: 21.1458, lng: 106.1265 };
-
-    setStops([
-      {
-        id: 'start',
-        badge: 'S',
-        name: 'Bãi xe ALS – Long Biên',
-        action: 'Xuất phát',
-        eta: 'dự kiến 07:00',
-        type: 'START',
-        coords: { lat: 21.0375, lng: 105.8942 }
-      },
-      {
-        id: 'pickup',
-        badge: '1',
-        name: `Lấy hàng: ${pickupAddr}`,
-        action: 'Đã đóng chì xuất phát',
-        eta: 'dự kiến 07:45',
-        type: 'PICKUP',
-        coords: pickupCoords
-      },
-      {
-        id: 'dropoff-1',
-        badge: '2',
-        name: `Điểm trả 1: ${dropoffAddr}`,
-        action: 'Giao hàng',
-        eta: 'dự kiến 09:15',
-        type: 'DROPOFF',
-        coords: dropoffCoords
-      }
-    ]);
-    setMultiDropMode('STANDALONE');
-    setShowAddDropoffInput(false);
-    setVendorTrackingCode(`3PL-${order.order_id || order.id || '8829'}`);
-  }, [order]);
-
   const [routePolyline, setRoutePolyline] = useState([]);
   const [trafficSegments, setTrafficSegments] = useState([]);
   const [trafficSummary, setTrafficSummary] = useState(null);
@@ -345,7 +322,22 @@ export default function TripAssignmentModal({
   }, [selectedTruckPlate]);
 
   const selectedTruckSpec = useMemo(() => {
-    return getVehicleSpecByKey(currentFleetItem.specKey || '3.5T');
+    const matched = getVehicleSpecByKey(currentFleetItem.specKey || '3.5T');
+    if (matched) return matched;
+    if (currentFleetItem.specKey === 'TRUCK_8T') {
+      return {
+        key: 'TRUCK_8T',
+        label: 'Xe tải 8 tấn',
+        shortLabel: 'Xe 8 tấn',
+        maxPayloadKg: 8000,
+        length_cm: 780,
+        width_cm: 235,
+        height_cm: 240,
+        volumeM3: 44.0,
+        boxDimText: 'Thùng 7,8 × 2,35 × 2,4 m'
+      };
+    }
+    return VEHICLE_SPECS[2];
   }, [currentFleetItem]);
 
   const cargoVolume = useMemo(() => {
@@ -470,17 +462,19 @@ export default function TripAssignmentModal({
     setOptimizingRoute(true);
     try {
       // Xác định tải trọng xe để kiểm tra quy chuẩn giờ cấm tải Hà Nội (QĐ 06/2013 & 24/2020)
-      let truckPayloadKg = 2500;
+      let truckPayloadKg = selectedTruckSpec?.maxPayloadKg || 2500;
       if (selectedTruckPlate) {
-        const spec = getVehicleSpecByKey(selectedTruckPlate);
-        if (spec && spec.maxWeightKg) {
-          truckPayloadKg = spec.maxWeightKg;
+        const spec = getVehicleSpecByKey(currentFleetItem?.specKey || selectedTruckPlate);
+        if (spec?.maxPayloadKg) {
+          truckPayloadKg = spec.maxPayloadKg;
         } else if (selectedTruckPlate.includes('1.250 kg') || selectedTruckPlate.includes('1.25T')) {
           truckPayloadKg = 1250;
         } else if (selectedTruckPlate.includes('3.500 kg') || selectedTruckPlate.includes('3.5T')) {
           truckPayloadKg = 3500;
         } else if (selectedTruckPlate.includes('5.000 kg') || selectedTruckPlate.includes('5T')) {
           truckPayloadKg = 5000;
+        } else if (selectedTruckPlate.includes('8.000 kg') || selectedTruckPlate.includes('8T')) {
+          truckPayloadKg = 8000;
         }
       }
 
@@ -492,20 +486,21 @@ export default function TripAssignmentModal({
         avoidTruckBan: true
       });
 
-      if (res && res.success && Array.isArray(res.data?.optimizedStops)) {
-        const optimizedStops = res.data.optimizedStops.map((s, idx) => ({
+      const vrptwData = res?.data || res;
+      if (res?.success && Array.isArray(vrptwData?.optimizedStops)) {
+        const optimizedStops = vrptwData.optimizedStops.map((s, idx) => ({
           ...s,
           badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
         }));
 
         setStops(optimizedStops);
 
-        if (res.data.warnings && res.data.warnings.length > 0) {
+        if (vrptwData.warnings && vrptwData.warnings.length > 0) {
           message.warning({
-            content: `VRPTW hoàn tất: Có ${res.data.warnings.length} lưu ý về khung giờ cấm tải hoặc thời gian giao nhận.`,
+            content: `VRPTW hoàn tất: Có ${vrptwData.warnings.length} lưu ý về khung giờ cấm tải hoặc thời gian giao nhận.`,
             duration: 5
           });
-        } else if (res.data.restStopsAdded > 0) {
+        } else if (vrptwData.restStopsAdded > 0) {
           message.info({
             content: `Engine VRPTW đã tự động chèn điểm nghỉ 15 phút tuân thủ luật lái xe liên tục BR-03 (<= 4h).`,
             duration: 4
@@ -742,7 +737,7 @@ export default function TripAssignmentModal({
               </div>
               <div className="flex items-center gap-1.5">
                 <Tag color="indigo" className="m-0 font-bold text-[11px]">
-                  Xe đã chốt/đề xuất: {getVehicleSpecByKey(order.agreed_vehicle_type || order.proposed_vehicle_type || vehicleAnalysis?.recommendedVehicle?.key || '3.5T').label}
+                  Xe đã chốt/đề xuất: {getVehicleSpecByKey(order.agreed_vehicle_type || order.proposed_vehicle_type || vehicleAnalysis?.recommendedVehicleKey || '3.5T')?.label || 'Xe tải 3.5 tấn'}
                 </Tag>
               </div>
             </div>
@@ -801,7 +796,7 @@ export default function TripAssignmentModal({
                     selectedTruckSpec={selectedTruckSpec}
                     INTERNAL_FLEET_OPTIONS={filteredFleetOptions}
                     trucks={trucks.filter(t => {
-                      const spec = getVehicleSpecByKey(agreedVehicleSpecKey);
+                      const spec = getVehicleSpecByKey(agreedVehicleSpecKey) || VEHICLE_SPECS[2];
                       return Math.abs((t.payload_kg || t.allowed_payload || 0) - spec.maxPayloadKg) < 100;
                     })}
                     driverCount={driverCount}

@@ -1,82 +1,97 @@
 'use client';
 import React, { useState, useMemo } from 'react';
-import { Modal, Button, Select, InputNumber, Input, Tag, Alert, message, Table, Divider } from 'antd';
-import { Split, Truck, AlertTriangle, CheckCircle2, Plus, Trash2, ArrowRight } from 'lucide-react';
+import { Modal, Button, Select, InputNumber, Input, Tag, Alert, message, Table } from 'antd';
+import { Split, Truck } from 'lucide-react';
 import { VEHICLE_SPECS, getVehicleSpecByKey } from '../../data/dispatcherPresets';
 import { orderApi } from '../../api/orderApi';
 
 const { Option } = Select;
 
+const createInitialSplits = (totalWeight, totalPackages, totalPrice, count = 2, vehicleType = 'TRUCK_2.5T') => {
+  const safeCount = Math.max(2, Math.min(5, count));
+  const perWeight = Math.round(totalWeight / safeCount);
+  const perPackages = Math.max(1, Math.round(totalPackages / safeCount));
+  const perPrice = Math.round(totalPrice / safeCount);
+
+  const nextSplits = [];
+  let remWeight = totalWeight;
+  let remPackages = totalPackages;
+  let remPrice = totalPrice;
+
+  for (let i = 1; i <= safeCount; i++) {
+    const isLast = i === safeCount;
+    const w = isLast ? Math.max(0, remWeight) : perWeight;
+    const p = isLast ? Math.max(1, remPackages) : perPackages;
+    const pr = isLast ? Math.max(0, remPrice) : perPrice;
+
+    nextSplits.push({
+      id: i,
+      vehicle_type: vehicleType,
+      weight_kg: w,
+      package_count: p,
+      agreed_price: pr
+    });
+
+    remWeight -= w;
+    remPackages -= p;
+    remPrice -= pr;
+  }
+
+  return nextSplits;
+};
+
 export default function SplitOrderModal({ open, order, onCancel, onSuccess }) {
   if (!open || !order) return null;
 
+  return (
+    <SplitOrderModalContent
+      key={`${order.id || order.order_id}`}
+      open={open}
+      order={order}
+      onCancel={onCancel}
+      onSuccess={onSuccess}
+    />
+  );
+}
+
+function SplitOrderModalContent({ open, order, onCancel, onSuccess }) {
   const totalWeight = Number(order.weight) || 0;
   const totalPackages = Number(order.package_count) || 1;
   const totalPrice = Number(order.agreed_price) || 0;
 
+  const initialRequestedCount = Math.max(
+    2,
+    Math.min(4, Number(order.split_details?.split_count || order.web_workflow?.split_details?.split_count) || 2)
+  );
+  const initialRawTarget =
+    order.split_details?.vehicle_target ||
+    order.web_workflow?.split_details?.vehicle_target ||
+    'TRUCK_2.5T';
+  const initialMatchedKey = getVehicleSpecByKey(initialRawTarget)?.key || 'TRUCK_2.5T';
+  const initialSafeTarget = VEHICLE_SPECS.some(v => v.key === initialMatchedKey && v.maxPayloadKg <= 5000)
+    ? initialMatchedKey
+    : 'TRUCK_2.5T';
+
   // Mặc định ban đầu: Gợi ý chia làm 2 xe 2.5T nếu đơn gốc >= 3.5T hoặc 5T
-  const [vehicleTarget, setVehicleTarget] = useState('TRUCK_2.5T');
-  const [splitCount, setSplitCount] = useState(2);
-  const [reason, setReason] = useState('Khách hàng yêu cầu chia xe nhỏ do cung đường vào kho hẹp / cấm xe tải trọng lớn');
+  const [vehicleTarget, setVehicleTarget] = useState(initialSafeTarget);
+  const [splitCount, setSplitCount] = useState(initialRequestedCount);
+  const [reason, setReason] = useState(
+    order.split_details?.reason ||
+    order.web_workflow?.split_details?.reason ||
+    'Khách hàng yêu cầu chia xe nhỏ do cung đường vào kho hẹp / cấm xe tải trọng lớn'
+  );
   const [submitting, setSubmitting] = useState(false);
 
   // Tạo cấu hình phân bổ
-  const [splits, setSplits] = useState(() => {
-    const halfWeight = Math.round(totalWeight / 2);
-    const halfPackages = Math.max(1, Math.round(totalPackages / 2));
-    const halfPrice = Math.round(totalPrice / 2);
-
-    return [
-      {
-        id: 1,
-        vehicle_type: 'TRUCK_2.5T',
-        weight_kg: halfWeight,
-        package_count: halfPackages,
-        agreed_price: halfPrice
-      },
-      {
-        id: 2,
-        vehicle_type: 'TRUCK_2.5T',
-        weight_kg: totalWeight - halfWeight,
-        package_count: Math.max(1, totalPackages - halfPackages),
-        agreed_price: totalPrice - halfPrice
-      }
-    ];
-  });
+  const [splits, setSplits] = useState(() =>
+    createInitialSplits(totalWeight, totalPackages, totalPrice, initialRequestedCount, initialSafeTarget)
+  );
 
   // Tự động phân bổ lại đều khi người dùng đổi số lượng xe
   const handleRecalculateEqually = (newCount, newVehicleType = vehicleTarget) => {
     const count = Math.max(2, Math.min(5, newCount));
     setSplitCount(count);
-
-    const perWeight = Math.round(totalWeight / count);
-    const perPackages = Math.max(1, Math.round(totalPackages / count));
-    const perPrice = Math.round(totalPrice / count);
-
-    const newSplits = [];
-    let remWeight = totalWeight;
-    let remPackages = totalPackages;
-    let remPrice = totalPrice;
-
-    for (let i = 1; i <= count; i++) {
-      const isLast = i === count;
-      const w = isLast ? remWeight : perWeight;
-      const p = isLast ? Math.max(1, remPackages) : perPackages;
-      const pr = isLast ? remPrice : perPrice;
-
-      newSplits.push({
-        id: i,
-        vehicle_type: newVehicleType,
-        weight_kg: w,
-        package_count: p,
-        agreed_price: pr
-      });
-
-      remWeight -= w;
-      remPackages -= p;
-      remPrice -= pr;
-    }
-    setSplits(newSplits);
+    setSplits(createInitialSplits(totalWeight, totalPackages, totalPrice, count, newVehicleType));
   };
 
   const handleUpdateSplitField = (id, field, val) => {
@@ -85,16 +100,13 @@ export default function SplitOrderModal({ open, order, onCancel, onSuccess }) {
 
   // Tính tổng phân bổ kiểm tra
   const sumAllocatedWeight = splits.reduce((acc, cur) => acc + (Number(cur.weight_kg) || 0), 0);
-  const sumAllocatedPackages = splits.reduce((acc, cur) => acc + (Number(cur.package_count) || 0), 0);
-  const sumAllocatedPrice = splits.reduce((acc, cur) => acc + (Number(cur.agreed_price) || 0), 0);
 
   const isWeightMatch = Math.abs(sumAllocatedWeight - totalWeight) <= 1;
-  const isPackagesMatch = sumAllocatedPackages === totalPackages;
 
   // Kiểm tra tải trọng của từng xe
   const payloadOverloads = useMemo(() => {
     return splits.map(s => {
-      const spec = getVehicleSpecByKey(s.vehicle_type);
+      const spec = getVehicleSpecByKey(s.vehicle_type) || VEHICLE_SPECS[1];
       const isOver = (Number(s.weight_kg) || 0) > spec.maxPayloadKg;
       return { id: s.id, isOver, maxPayloadKg: spec.maxPayloadKg, specLabel: spec.label };
     });

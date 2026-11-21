@@ -242,12 +242,21 @@ const getOrderWorkload = async (req, res) => {
     if (ordersErr) throw ordersErr;
 
     const now = new Date();
-    const activeNormalized = ['READY_FOR_PLANNING', 'PLANNED', 'ASSIGNED', 'IN_TRANSIT', 'CONFIRMED', 'DRAFT'];
+    const activeNormalized = [
+      'READY_FOR_PLANNING',
+      'PLANNED',
+      'ASSIGNED',
+      'IN_TRANSIT',
+      'CONFIRMED',
+      'DRAFT',
+      'WAITING_FOR_DOCUMENTS',
+      'PENDING_DOCUMENTS'
+    ];
 
     const formattedOrders = (ordersData || []).map((o) => {
       const createdAt = new Date(o.created_at);
       const readyAt = o.ready_for_planning_at ? new Date(o.ready_for_planning_at) : null;
-      const statusUpper = (o.status || '').toUpperCase();
+      const statusUpper = (o.status || '').toUpperCase().trim().replace(/\s+/g, '_');
 
       // Thời gian tính cho trạng thái hiện tại:
       // - Với đơn READY_FOR_PLANNING: tính từ ready_for_planning_at (hoặc updated_at nếu có)
@@ -255,7 +264,7 @@ const getOrderWorkload = async (req, res) => {
       let effectiveStartTime = createdAt;
       if (statusUpper === 'READY_FOR_PLANNING') {
         effectiveStartTime = readyAt || (o.updated_at ? new Date(o.updated_at) : createdAt);
-      } else if (['ASSIGNED', 'IN_TRANSIT', 'COMPLETED', 'DELIVERED'].includes(statusUpper)) {
+      } else if (['ASSIGNED', 'IN_TRANSIT', 'COMPLETED', 'DELIVERED', 'PICKED_UP', 'IN_PROGRESS'].includes(statusUpper)) {
         effectiveStartTime = o.updated_at ? new Date(o.updated_at) : createdAt;
       }
 
@@ -272,7 +281,11 @@ const getOrderWorkload = async (req, res) => {
           waitingTooLong = true;
           flagReason = 'Chờ quá lâu (Bản nháp > 4h)';
         }
-      } else if (statusUpper === 'CONFIRMED') {
+      } else if (
+        statusUpper === 'CONFIRMED' ||
+        statusUpper === 'WAITING_FOR_DOCUMENTS' ||
+        statusUpper === 'PENDING_DOCUMENTS'
+      ) {
         if (ageHours > 8 || o.waiting_too_long) {
           waitingTooLong = true;
           flagReason = 'Chờ quá lâu (Chưa gán chuyến > 8h)';
@@ -397,8 +410,9 @@ const reassignOrder = async (req, res) => {
     const { newDispatcherId, reason } = req.body;
     const managerId = req.user?.id || null;
 
-    if (!newDispatcherId) {
-      return res.status(400).json({ message: 'Vui lòng chọn điều phối viên mới.' });
+    const targetDispatcherId = Number(newDispatcherId);
+    if (!newDispatcherId || !Number.isInteger(targetDispatcherId) || targetDispatcherId <= 0) {
+      return res.status(400).json({ message: 'Vui lòng chọn điều phối viên mới hợp lệ.' });
     }
 
     const { data: curOrder, error: curErr } = await supabase
@@ -411,18 +425,22 @@ const reassignOrder = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng cần điều chuyển.' });
     }
 
+    if (Number(curOrder.responsible_dispatcher_id) === targetDispatcherId) {
+      return res.status(400).json({ message: 'Đơn hàng hiện đã thuộc phụ trách của điều phối viên này.' });
+    }
+
     const { data: targetDisp } = await supabase
       .from('users')
       .select('id, full_name, username')
-      .eq('id', newDispatcherId)
+      .eq('id', targetDispatcherId)
       .single();
 
-    const dispName = targetDisp?.full_name || targetDisp?.username || `ID #${newDispatcherId}`;
+    const dispName = targetDisp?.full_name || targetDisp?.username || `ID #${targetDispatcherId}`;
 
     const { data: updatedOrder, error: updateErr } = await supabase
       .from('orders')
       .update({
-        responsible_dispatcher_id: newDispatcherId,
+        responsible_dispatcher_id: targetDispatcherId,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
@@ -440,7 +458,7 @@ const reassignOrder = async (req, res) => {
         target_id: String(id),
         changes: {
           old_dispatcher_id: curOrder.responsible_dispatcher_id,
-          new_dispatcher_id: newDispatcherId
+          new_dispatcher_id: targetDispatcherId
         },
         reason: reason || 'Manager điều chuyển đơn giảm tải',
         created_time: new Date().toISOString()
@@ -469,7 +487,11 @@ const getOrderDetailReadOnly = async (req, res) => {
       .from('orders')
       .select(`
         *,
-        dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, email)
+        customer:customers(id, company_name, tax_code, email, phone, registered_address),
+        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address),
+        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address),
+        dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, email),
+        order_notes(content)
       `)
       .eq('id', id)
       .single();
@@ -478,9 +500,14 @@ const getOrderDetailReadOnly = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy chi tiết đơn hàng.' });
     }
 
+    const meta = parseOrderMeta(order);
+
     return res.json({
       order: {
         ...order,
+        customer_name: order.customer?.company_name || order.receiver_name || 'N/A',
+        pickup_address: meta.pickup_address || order.pickup_location?.address || order.pickup_location?.name || 'N/A',
+        delivery_address: meta.delivery_address || order.delivery_location?.address || order.delivery_location?.name || 'N/A',
         is_read_only: true
       }
     });

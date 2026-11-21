@@ -3,95 +3,166 @@ import React, { useState, useEffect } from 'react';
 import { Steps, Card, Upload, Button, Alert, Modal, message } from 'antd';
 import { Upload as LucideUpload, Phone, MessageCircle, Image as ImageIcon, Clock, ShieldCheck, Package } from 'lucide-react';
 import { useParams } from 'next/navigation';
+import { fetchWithoutAuth } from '../../api/apiClient';
+
+const DEMO_FALLBACK_ORDER = {
+  id: 'ALS260930-0001',
+  customer: 'VinFast LLC',
+  status: 2,
+  pickup: 'Kho ALS Cảng Nội Bài, Sóc Sơn, Hà Nội',
+  dropoff: 'Nhà máy VinFast, KCN Đình Vũ, Hải Phòng',
+  eta: '2026-09-30 22:30:00',
+  dispatcher: { name: 'Nguyễn Văn A (Dispatcher 01)', phone: '0901234567', zalo: 'https://zalo.me/0901234567' },
+  isVendor: false,
+  vendorName: '',
+  vendorTracking: '',
+  sealImage: 'https://images.unsplash.com/photo-1586528116311-ad8ed7c50a41?q=80&w=2070',
+  podImage: 'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=2070',
+  incident: {
+    has_incident: true,
+    code: 'INC-042',
+    type_display: 'Hàng hư hỏng do va chạm',
+    status: 'APPROVED',
+    compensation_amount: 15000000,
+    clause_ref: 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)',
+    resolution_note: null,
+    rejection_reason: null,
+    hotline: '1900 1234',
+    payment_proof_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?q=80&w=800',
+    transaction_code: null,
+    payment_date: null,
+  },
+};
+
+function mapOrderStatusToStep(rawStatus) {
+  if (typeof rawStatus === 'number' && Number.isFinite(rawStatus)) {
+    return Math.max(0, Math.min(3, rawStatus));
+  }
+  const normalized = String(rawStatus || '').toUpperCase().replace(/\s+/g, '_');
+  if (['DELIVERED', 'CLOSED', 'COMPLETED'].includes(normalized)) return 3;
+  if (['IN_TRANSIT', 'PICKED_UP', 'IN_PROGRESS', 'HANDED_OVER_TO_VENDOR', 'INCIDENT'].includes(normalized)) return 2;
+  if (['READY_FOR_PLANNING', 'ASSIGNED', 'PLANNED', 'ACCEPTED', 'DISPATCHED'].includes(normalized)) return 1;
+  return 0;
+}
+
+function mapApiOrderToViewModel(apiOrder) {
+  const phoneDigits = String(apiOrder.dispatcher_phone || '0988123456').replace(/[^0-9]/g, '');
+  return {
+    id: apiOrder.order_code || String(apiOrder.id || ''),
+    customer: apiOrder.customer_name || 'Quý khách hàng',
+    status: mapOrderStatusToStep(apiOrder.status),
+    pickup: apiOrder.pickup_address || 'Đang cập nhật điểm lấy hàng',
+    dropoff: apiOrder.delivery_address || 'Đang cập nhật điểm giao hàng',
+    eta: apiOrder.eta || 'Đang cập nhật',
+    dispatcher: {
+      name: apiOrder.dispatcher_name || 'Điều phối viên NEXLOG',
+      phone: apiOrder.dispatcher_phone || '0988 123 456',
+      zalo: apiOrder.dispatcher_zalo || `https://zalo.me/${phoneDigits || '0988123456'}`,
+    },
+    isVendor: String(apiOrder.status || '').toUpperCase() === 'HANDED_OVER_TO_VENDOR',
+    vendorName: apiOrder.vendor_name || '',
+    vendorTracking: apiOrder.vendor_tracking || '',
+    sealImage: apiOrder.seal_image || null,
+    podImage: apiOrder.pod_image || null,
+    incident: apiOrder.incident || null,
+  };
+}
 
 export default function GuestTrackingPage() {
   const params = useParams();
-  const token = params.token;
+  const token = Array.isArray(params?.token) ? params.token[0] : params?.token;
 
-  // Mock data based on Token
   const [order, setOrder] = useState(null);
   const [isPODOpen, setIsPODOpen] = useState(false);
 
   useEffect(() => {
-    // Giả lập API trả về data dựa trên token
+    let active = true;
+
     const fetchOrder = async () => {
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setOrder({
-        id: 'ALS260930-0001',
-        customer: 'VinFast LLC',
-        status: 2, // 0: Chờ chứng từ, 1: Lấy hàng, 2: Đang giao, 3: Đã giao
-        pickup: 'Kho ALS Cảng Nội Bài, Sóc Sơn, Hà Nội',
-        dropoff: 'Nhà máy VinFast, KCN Đình Vũ, Hải Phòng',
-        eta: '2026-09-30 22:30:00',
-        dispatcher: { name: 'Nguyễn Văn A (Dispatcher 01)', phone: '0901234567', zalo: 'https://zalo.me/0901234567' },
-        isVendor: false,
-        vendorName: '',
-        vendorTracking: '',
-        sealImage: 'https://images.unsplash.com/photo-1586528116311-ad8ed7c50a41?q=80&w=2070',
-        podImage: 'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=2070',
-        // Dữ liệu sự cố & bồi thường minh bạch cho khách hàng
-        incident: {
-          has_incident: true,
-          code: 'INC-042',
-          type_display: 'Hàng hư hỏng do va chạm',
-          status: 'APPROVED', // 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'DONE'
-          compensation_amount: 15000000,
-          clause_ref: 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)',
-          rejection_reason: null,
-          hotline: '1900 1234',
-          payment_proof_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?q=80&w=800'
+      if (!token) {
+        if (active) setOrder(DEMO_FALLBACK_ORDER);
+        return;
+      }
+
+      try {
+        const res = await fetchWithoutAuth(`/orders/customer-view/${encodeURIComponent(token)}`);
+        if (!active) return;
+
+        if (res?.order) {
+          setOrder(mapApiOrderToViewModel(res.order));
+          return;
         }
-      });
+      } catch (err) {
+        console.warn('Không tải được dữ liệu thực qua tracking token, dùng dữ liệu mẫu dự phòng:', err?.message);
+      }
+
+      if (active) {
+        setOrder(DEMO_FALLBACK_ORDER);
+      }
     };
 
     fetchOrder();
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   if (!order) return <div className="p-10 text-center">Đang tải dữ liệu tra cứu...</div>;
+
+  const inc = order.incident;
 
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#0056a0] opacity-5 rounded-bl-full pointer-events-none"></div>
-        <h1 className="text-2xl font-bold text-[#0056a0] mb-2 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-[#0056a0] mb-1 flex items-center gap-2">
           <Package className="text-[#e59f1f]" /> Chi tiết Đơn hàng: {order.id}
         </h1>
-        <p className="text-gray-500 mb-6 flex items-center gap-2"><Clock size={16}/> Thời gian dự kiến đến (ETA): <strong className="text-green-600">{order.eta}</strong></p>
+        {order.customer && (
+          <p className="text-sm text-gray-600 mb-2">
+            Khách hàng: <strong>{order.customer}</strong>
+          </p>
+        )}
+        <p className="text-gray-500 mb-6 flex items-center gap-2">
+          <Clock size={16} /> Thời gian dự kiến đến (ETA): <strong className="text-green-600">{order.eta}</strong>
+        </p>
 
         <Steps
           current={order.status}
           items={[
-            { title: 'Chờ chứng từ', description: 'Đã tạo đơn' },
-            { title: 'Lấy hàng', description: order.pickup },
-            { title: 'Đang giao', description: 'Đang di chuyển' },
-            { title: 'Hoàn thành', description: order.dropoff },
+            { title: 'Chờ chứng từ', content: 'Đã tạo đơn' },
+            { title: 'Lấy hàng', content: order.pickup },
+            { title: 'Đang giao', content: 'Đang di chuyển' },
+            { title: 'Hoàn thành', content: order.dropoff },
           ]}
           className="mb-8"
         />
 
         {/* THÔNG BÁO XỬ LÝ SỰ CỐ & BỒI THƯỜNG MINH BẠCH CHO KHÁCH HÀNG */}
-        {order.incident?.has_incident && (
+        {inc?.has_incident && (
           <div className="mb-6">
-            {order.incident.status === 'PENDING_APPROVAL' && (
+            {inc.status === 'PENDING_APPROVAL' && (
               <Alert
-                title={<span className="font-bold text-amber-900">Đơn hàng đang phát sinh sự cố: {order.incident.type_display} ({order.incident.code})</span>}
-                description="Bộ phận Quản lý của ALS đang tiến hành thẩm định bằng chứng hiện trường và xem xét hồ sơ bồi thường theo hợp đồng. Chúng tôi sẽ cập nhật kết quả trong thời gian sớm nhất."
+                title={<span className="font-bold text-amber-900">Đơn hàng đang phát sinh sự cố: {inc.type_display} ({inc.code})</span>}
+                description="Bộ phận Quản lý của NEXLOG / ALS đang tiến hành thẩm định bằng chứng hiện trường và xem xét hồ sơ bồi thường theo hợp đồng. Chúng tôi sẽ cập nhật kết quả trong thời gian sớm nhất."
                 type="warning"
                 showIcon
                 className="rounded-xl border border-amber-300 bg-amber-50"
               />
             )}
 
-            {order.incident.status === 'APPROVED' && (
+            {inc.status === 'APPROVED' && (
               <Alert
                 title={<span className="font-bold text-blue-900">Thông báo Phê duyệt Bồi thường thiệt hại</span>}
                 description={
                   <div className="space-y-1 mt-1 text-sm text-blue-950">
-                    <p>• Mã sự cố: <b>{order.incident.code}</b> ({order.incident.type_display})</p>
-                    <p>• Căn cứ: <b>{order.incident.clause_ref}</b></p>
-                    <p>• Số tiền được phê duyệt bồi thường: <b className="text-red-600 font-mono text-base">{order.incident.compensation_amount?.toLocaleString('vi-VN')} đ</b></p>
-                    <p className="text-xs text-gray-500 italic mt-1">* Bộ phận Tài chính của ALS đang thực hiện thủ tục chi trả/chuyển khoản đến tài khoản của Quý khách theo quy định.</p>
+                    <p>• Mã sự cố: <b>{inc.code}</b> ({inc.type_display})</p>
+                    <p>• Căn cứ: <b>{inc.clause_ref}</b></p>
+                    <p>• Số tiền được phê duyệt bồi thường: <b className="text-red-600 font-mono text-base">{Number(inc.compensation_amount || 0).toLocaleString('vi-VN')} đ</b></p>
+                    {inc.resolution_note && (
+                      <p>• Ghi chú xử lý: {inc.resolution_note}</p>
+                    )}
+                    <p className="text-xs text-gray-500 italic mt-1">* Bộ phận Tài chính đang thực hiện thủ tục chi trả/chuyển khoản đến tài khoản của Quý khách trong thời gian sớm nhất.</p>
                   </div>
                 }
                 type="info"
@@ -100,14 +171,17 @@ export default function GuestTrackingPage() {
               />
             )}
 
-            {order.incident.status === 'REJECTED' && (
+            {inc.status === 'REJECTED' && (
               <Alert
-                title={<span className="font-bold text-red-900">Thông báo Kết quả Thẩm định Sự cố: Từ chối Bồi thường</span>}
+                title={<span className="font-bold text-red-900">Thông báo Kết quả Thẩm định Sự cố ({inc.code}): Từ chối Bồi thường</span>}
                 description={
                   <div className="space-y-1 mt-1 text-sm text-red-950">
-                    <p>• Viện dẫn hợp đồng: <b>{order.incident.clause_ref}</b></p>
-                    <p>• Lý do: {order.incident.rejection_reason || 'Hàng hóa bị biến dạng trước khi bàn giao cho đơn vị vận chuyển ALS.'}</p>
-                    <p>• Nếu Quý khách cần hỗ trợ thêm, vui lòng liên hệ Hotline Giải quyết Khiếu nại: <b className="font-mono">{order.incident.hotline || '1900 1234'}</b></p>
+                    <p>• Viện dẫn hợp đồng: <b>{inc.clause_ref}</b></p>
+                    <p>• Lý do: {inc.rejection_reason || 'Không đủ điều kiện bồi thường theo hợp đồng vận chuyển.'}</p>
+                    {inc.resolution_note && inc.resolution_note !== inc.rejection_reason && (
+                      <p>• Ghi chú thẩm định: {inc.resolution_note}</p>
+                    )}
+                    <p>• Nếu Quý khách cần hỗ trợ thêm, vui lòng liên hệ Hotline Giải quyết Khiếu nại: <b className="font-mono">{inc.hotline || '1900 1234'}</b></p>
                   </div>
                 }
                 type="error"
@@ -116,16 +190,22 @@ export default function GuestTrackingPage() {
               />
             )}
 
-            {order.incident.status === 'DONE' && (
+            {inc.status === 'DONE' && (
               <Alert
-                title={<span className="font-bold text-green-900">Đã Hoàn tất Bồi thường &amp; Đóng hồ sơ</span>}
+                title={<span className="font-bold text-green-900">Đã Hoàn tất Bồi thường &amp; Đóng hồ sơ ({inc.code})</span>}
                 description={
                   <div className="space-y-1 mt-1 text-sm text-green-950">
-                    <p>Đơn hàng đã được bồi thường số tiền: <b className="font-mono text-green-700">{order.incident.compensation_amount?.toLocaleString('vi-VN')} đ</b>.</p>
-                    {order.incident.payment_proof_url && (
+                    <p>Đơn hàng đã được bồi thường số tiền: <b className="font-mono text-green-700">{Number(inc.compensation_amount || 0).toLocaleString('vi-VN')} đ</b>.</p>
+                    {inc.transaction_code && (
+                      <p>• Mã giao dịch ngân hàng (UNC): <b className="font-mono">{inc.transaction_code}</b>{inc.payment_date ? ` (Ngày ${inc.payment_date})` : ''}</p>
+                    )}
+                    {inc.resolution_note && (
+                      <p>• Nội dung giải quyết: {inc.resolution_note}</p>
+                    )}
+                    {inc.payment_proof_url && (
                       <div className="pt-2">
                         <a
-                          href={order.incident.payment_proof_url}
+                          href={inc.payment_proof_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-800 text-white font-bold text-xs shadow-xs"
@@ -185,12 +265,16 @@ export default function GuestTrackingPage() {
             <div className="space-y-4">
               <div>
                 <p className="font-semibold text-gray-700 mb-2">Ảnh Niêm chì (Lấy hàng):</p>
-                <img src={order.sealImage} alt="Seal Evidence" className="w-full h-40 object-cover rounded-lg border border-gray-200" />
+                {order.sealImage ? (
+                  <img src={order.sealImage} alt="Seal Evidence" className="w-full h-40 object-cover rounded-lg border border-gray-200" />
+                ) : (
+                  <p className="text-sm text-gray-500 italic">Chưa có ảnh niêm chì được cập nhật cho đơn hàng này.</p>
+                )}
               </div>
-              {order.status === 3 ? (
+              {order.status === 3 && order.podImage ? (
                 <div>
                   <p className="font-semibold text-gray-700 mb-2">Biên bản Bàn giao (POD):</p>
-                  <Button type="primary" ghost icon={<ImageIcon size={16} />} onClick={() => setIsPODOpen(true)} className="w-full">Xem & Tải POD</Button>
+                  <Button type="primary" ghost icon={<ImageIcon size={16} />} onClick={() => setIsPODOpen(true)} className="w-full">Xem &amp; Tải POD</Button>
                 </div>
               ) : (
                 <Alert title="POD sẽ hiển thị sau khi hoàn tất giao hàng." type="info" className="text-sm" />
@@ -208,7 +292,7 @@ export default function GuestTrackingPage() {
             </div>
             <h3 className="font-bold text-lg">{order.dispatcher.name}</h3>
             <p className="text-gray-500 text-sm mb-4">Điều phối viên Phụ trách</p>
-            
+
             <div className="w-full space-y-2">
               <Button type="primary" icon={<Phone size={16}/>} className="w-full bg-[#0056a0] hover:bg-blue-800" href={`tel:${order.dispatcher.phone}`}>
                 Gọi Hotline: {order.dispatcher.phone}
@@ -222,7 +306,7 @@ export default function GuestTrackingPage() {
       </div>
 
       <Modal open={isPODOpen} footer={null} onCancel={() => setIsPODOpen(false)} width={600} title="Biên bản Bàn giao Hàng hóa (POD)">
-        <img src={order.podImage} alt="POD" className="w-full rounded-lg mb-4" />
+        {order.podImage && <img src={order.podImage} alt="POD" className="w-full rounded-lg mb-4" />}
         <Button type="primary" icon={<LucideUpload size={14} />} block onClick={() => message.success('Đang tải xuống...')}>Tải xuống PDF/JPG</Button>
       </Modal>
     </div>
