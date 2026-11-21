@@ -82,24 +82,49 @@ const getDriverAffectedTripsByDates = async (driverProfileId, dates = []) => {
 
   if (tripErr) throw tripErr;
 
+  const todayStr = getTodayGMT7Str();
+  const nowMs = Date.now();
+
   return (trips || [])
     .filter((t) => {
       const dateStr = toGMT7DateStr(t.planned_start || t.created_at);
-      return dateStr && targetSet.has(dateStr);
+      if (!dateStr || !targetSet.has(dateStr)) return false;
+
+      // Nếu là chuyến trong ngày hôm nay: loại bỏ các chuyến đã xong hoặc đã hủy
+      if (dateStr === todayStr) {
+        const upperSt = String(t.status || "").toUpperCase();
+        if (upperSt === "COMPLETED" || upperSt === "CANCELLED") return false;
+      }
+      return true;
     })
     .map((t) => {
       const activeTruck =
         (t.truck_assignments || []).find((ta) => !ta.released_time && ta.truck) ||
         t.truck_assignments?.[0] ||
         null;
+
+      const dateStr = toGMT7DateStr(t.planned_start || t.created_at);
+      let isUrgent = false;
+      let hoursUntilStart = null;
+      if (t.planned_start) {
+        const startMs = new Date(t.planned_start).getTime();
+        hoursUntilStart = Number(((startMs - nowMs) / 3600000).toFixed(1));
+        // Nếu chuyến hôm nay xuất phát trong ít hơn 2 giờ tới
+        if (dateStr === todayStr && hoursUntilStart < 2) {
+          isUrgent = true;
+        }
+      }
+
       return {
         trip_id: Number(t.id),
         trip_code: t.trip_code || `TRIP-${t.id}`,
         planned_start: t.planned_start,
-        planned_date: toGMT7DateStr(t.planned_start || t.created_at),
+        planned_date: dateStr,
         status: t.status,
         plate_number: activeTruck?.truck?.plate_number || null,
         route_summary: formatRouteFromStops(t.stops),
+        is_urgent: isUrgent,
+        hours_until_start: hoursUntilStart,
         reassigned: false,
         reassigned_to_driver_id: null,
         reassigned_to_driver_name: null,
@@ -108,12 +133,14 @@ const getDriverAffectedTripsByDates = async (driverProfileId, dates = []) => {
     });
 };
 
-const createLeaveRequest = async ({ userId, driverProfileId, dates, reason, affectedTrips = [] }) => {
+const createLeaveRequest = async ({ userId, driverProfileId, dates, reason, isUrgent = false, affectedTrips = [] }) => {
   const cleanReason = String(reason || "").trim();
+  const urgentFlag = Boolean(isUrgent || affectedTrips.some((t) => t.is_urgent));
   const payloadChanges = {
     leave_dates: dates,
     reason: cleanReason,
     status: "PENDING",
+    is_urgent: urgentFlag,
     affected_trips: affectedTrips,
     manager_comment: null,
     reviewed_by: null,
@@ -170,6 +197,7 @@ const formatLeaveRow = (row, driverMap = {}, activeTripDriverMap = new Map()) =>
     leave_dates: Array.isArray(changes.leave_dates) ? changes.leave_dates : [],
     reason: changes.reason || row.reason || "",
     status: leaveStatus,
+    is_urgent: Boolean(changes.is_urgent || enrichedTrips.some((t) => t.is_urgent)),
     affected_trips: enrichedTrips,
     manager_comment: changes.manager_comment || null,
     reviewed_by: changes.reviewed_by || null,

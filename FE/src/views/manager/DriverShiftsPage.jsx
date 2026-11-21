@@ -839,12 +839,20 @@ export default function DriverShiftsPage({ readOnly = false }) {
                       </div>
                     </td>
                     <td className="py-3 px-3">
-                      <div className="flex flex-wrap gap-1">
-                        {(lr.leave_dates || []).map((dStr) => (
-                          <Tag key={dStr} color="blue" className="font-mono font-semibold !m-0">
-                            {dayjs(dStr).format("DD/MM/YYYY")}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {(lr.leave_dates || []).map((dStr) => {
+                          const isToday = dStr === dayjs().format("YYYY-MM-DD");
+                          return (
+                            <Tag key={dStr} color={isToday ? "volcano" : "blue"} className="font-mono font-semibold !m-0">
+                              {dayjs(dStr).format("DD/MM/YYYY")}{isToday ? " (Hôm nay)" : ""}
+                            </Tag>
+                          );
+                        })}
+                        {lr.is_urgent && (
+                          <Tag color="error" className="font-bold animate-pulse !m-0">
+                            KHẨN CẤP
                           </Tag>
-                        ))}
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-3 max-w-[220px]">

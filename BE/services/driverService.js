@@ -1548,12 +1548,30 @@ const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}
       err.statusCode = 400;
       throw err;
     }
-    if (dStr <= todayStr) {
+    if (dStr < todayStr) {
       const err = new Error(
-        `Không thể chọn ngày hôm nay (${todayStr}) hoặc ngày đã qua. Tài xế chỉ được báo nghỉ cho các ngày từ ngày mai trở đi.`
+        `Không thể chọn ngày trong quá khứ (${dStr}). Tài xế chỉ được báo nghỉ từ hôm nay trở đi.`
       );
       err.statusCode = 400;
       throw err;
+    }
+  }
+
+  // Nếu trong danh sách ngày có hôm nay (Same-day Leave)
+  if (cleanDates.includes(todayStr)) {
+    // Kiểm tra tài xế có đang trong chuyến xe dở dang chở hàng trên đường không
+    try {
+      const activeTripRes = await getActiveTrip(userId);
+      const ongoingTrip = activeTripRes?.trip;
+      if (ongoingTrip && (ongoingTrip.status === "In Progress" || ongoingTrip.status === "In Transit")) {
+        const err = new Error(
+          `Bạn đang có chuyến xe đang vận chuyển hàng trên đường (${ongoingTrip.trip_code || ongoingTrip.id}). Vui lòng hoàn thành chuyến hoặc vào mục 'Báo sự cố' để điều xe/tài thay thế khẩn cấp tại hiện trường.`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    } catch (checkErr) {
+      if (checkErr.statusCode === 400) throw checkErr;
     }
   }
 
@@ -1582,20 +1600,23 @@ const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}
   }
 
   const affectedTrips = await leaveModel.getDriverAffectedTripsByDates(profile.id, cleanDates);
+  const isUrgent = affectedTrips.some((t) => t.is_urgent);
 
   const created = await leaveModel.createLeaveRequest({
     userId,
     driverProfileId: profile.id,
     dates: cleanDates,
     reason: cleanReason,
+    isUrgent,
     affectedTrips,
   });
 
   const driverName = profile.user?.full_name || profile.user?.username || `Tài xế #${profile.id}`;
   const dateDisplay = cleanDates.map((d) => d.split("-").reverse().join("/")).join(", ");
+  const urgentPrefix = isUrgent ? "[KHẨN CẤP / CỰC GẤP] " : "";
   const tripSummaryMsg =
     affectedTrips.length > 0
-      ? ` Có ${affectedTrips.length} chuyến xe bị ảnh hưởng (${affectedTrips.map((t) => t.trip_code).join(", ")}) cần Điều phối viên đổi tài sau khi duyệt.`
+      ? ` Có ${affectedTrips.length} chuyến xe bị ảnh hưởng (${affectedTrips.map((t) => t.trip_code).join(", ")})${isUrgent ? " - CÓ CHUYẾN SẮP CHẠY TRONG 2 GIỜ TỚI" : ""} cần Điều phối viên đổi tài sau khi duyệt.`
       : " Không có chuyến xe nào đang giao trong các ngày này.";
 
   try {
@@ -1605,7 +1626,7 @@ const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}
         userAccountId: mgr.id,
         targetType: "SHIFT",
         targetId: created?.id || null,
-        message: `Tài xế ${driverName} gửi đơn báo nghỉ đột xuất các ngày ${dateDisplay}. Lý do: "${cleanReason}".${tripSummaryMsg}`,
+        message: `${urgentPrefix}Tài xế ${driverName} gửi đơn báo nghỉ đột xuất ${cleanDates.includes(todayStr) ? "HÔM NAY và " : ""}các ngày ${dateDisplay}. Lý do: "${cleanReason}".${tripSummaryMsg}`,
       });
     }
   } catch (notifErr) {

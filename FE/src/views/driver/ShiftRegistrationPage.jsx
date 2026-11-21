@@ -24,7 +24,11 @@ import {
   X,
 } from "lucide-react";
 import dayjs from "dayjs";
-import { driverApi, getOfflineActions, queueOfflineAction } from "../../api/driverApi";
+import {
+  driverApi,
+  getOfflineActions,
+  queueOfflineAction,
+} from "../../api/driverApi";
 
 const WEEKDAY_LABELS = [
   "Chủ Nhật",
@@ -184,9 +188,7 @@ export default function ShiftRegistrationPage() {
         driverApi
           .getTripHistory({ page: 1, limit: 50 })
           .catch(() => ({ trips: [] })),
-        driverApi
-          .getMyLeaveRequests()
-          .catch(() => ({ leaveRequests: [] })),
+        driverApi.getMyLeaveRequests().catch(() => ({ leaveRequests: [] })),
       ]);
       const rows = Array.isArray(shiftsRes)
         ? shiftsRes
@@ -214,9 +216,7 @@ export default function ShiftRegistrationPage() {
           driverApi
             .getTripHistory({ page: 1, limit: 50 })
             .catch(() => ({ trips: [] })),
-          driverApi
-            .getMyLeaveRequests()
-            .catch(() => ({ leaveRequests: [] })),
+          driverApi.getMyLeaveRequests().catch(() => ({ leaveRequests: [] })),
         ]);
         if (!active) return;
         const rows = Array.isArray(shiftsRes)
@@ -224,7 +224,7 @@ export default function ShiftRegistrationPage() {
           : shiftsRes?.shifts || shiftsRes?.data || [];
         setShifts(rows);
         setDriverTrips(mergeDriverTrips(activeRes, historyRes));
-      setLeaveRequests(leaveRes?.leaveRequests || []);
+        setLeaveRequests(leaveRes?.leaveRequests || []);
       } catch (err) {
         if (active) {
           console.error("fetchShifts error:", err);
@@ -276,7 +276,10 @@ export default function ShiftRegistrationPage() {
 
   const now = dayjs();
   const todayStr = useMemo(() => dayjs().format("YYYY-MM-DD"), []);
-  const tomorrowStr = useMemo(() => dayjs().add(1, "day").format("YYYY-MM-DD"), []);
+  const tomorrowStr = useMemo(
+    () => dayjs().add(1, "day").format("YYYY-MM-DD"),
+    [],
+  );
 
   const blockedLeaveDateSet = useMemo(() => {
     const set = new Set();
@@ -303,50 +306,64 @@ export default function ShiftRegistrationPage() {
 
   const upcomingLeaveChoices = useMemo(() => {
     return Array.from({ length: 14 }, (_, idx) => {
-      const d = dayjs().startOf("day").add(idx + 1, "day");
+      const d = dayjs().startOf("day").add(idx, "day");
       const dStr = d.format("YYYY-MM-DD");
+      const isToday = dStr === todayStr;
       return {
         dateStr: dStr,
-        dayName: WEEKDAY_LABELS[d.day()],
+        dayName: isToday ? "Hôm nay" : WEEKDAY_LABELS[d.day()],
         displayDate: d.format("DD/MM"),
         tripCount: (activeTripsByDate.get(dStr) || []).length,
         alreadyRequested: blockedLeaveDateSet.has(dStr),
+        isToday,
       };
     });
-  }, [activeTripsByDate, blockedLeaveDateSet]);
+  }, [activeTripsByDate, blockedLeaveDateSet, todayStr]);
 
   const affectedLeavePreviewTrips = useMemo(() => {
     const list = [];
     const seen = new Set();
+    const nowMs = Date.now();
     [...leaveDates].sort().forEach((dStr) => {
       (activeTripsByDate.get(dStr) || []).forEach((tr) => {
         if (!seen.has(tr.id)) {
           seen.add(tr.id);
-          list.push({ ...tr, leaveDateStr: dStr });
+          const plannedMs = tr.planned_start ? new Date(tr.planned_start).getTime() : 0;
+          const hoursUntil = plannedMs ? (plannedMs - nowMs) / 3600000 : null;
+          const isUrgent = dStr === todayStr && hoursUntil !== null && hoursUntil < 2;
+          list.push({ ...tr, leaveDateStr: dStr, isUrgent, hoursUntil });
         }
       });
     });
     return list;
-  }, [leaveDates, activeTripsByDate]);
+  }, [leaveDates, activeTripsByDate, todayStr]);
+
+  const hasUrgentTrip = useMemo(() => {
+    return affectedLeavePreviewTrips.some((t) => t.isUrgent);
+  }, [affectedLeavePreviewTrips]);
 
   const toggleLeaveDate = (dateStr) => {
-    if (!dateStr || dateStr <= todayStr) {
-      message.warning("Chỉ được chọn nghỉ từ ngày mai trở đi. Không thể chọn hôm nay.");
+    if (!dateStr || dateStr < todayStr) {
+      message.warning("Không thể chọn ngày đã qua trong quá khứ. Vui lòng chọn từ hôm nay trở đi.");
       return;
     }
     if (blockedLeaveDateSet.has(dateStr)) {
-      message.info("Ngày này đã nằm trong đơn báo nghỉ đang chờ duyệt hoặc đã duyệt.");
+      message.info(
+        "Ngày này đã nằm trong đơn báo nghỉ đang chờ duyệt hoặc đã duyệt.",
+      );
       return;
     }
     setLeaveDates((prev) =>
-      prev.includes(dateStr) ? prev.filter((d) => d !== dateStr) : [...prev, dateStr].sort()
+      prev.includes(dateStr)
+        ? prev.filter((d) => d !== dateStr)
+        : [...prev, dateStr].sort(),
     );
   };
 
   const handleAddCustomLeaveDate = () => {
     if (!customLeaveDate) return;
-    if (customLeaveDate <= todayStr) {
-      message.warning("Không thể chọn ngày hôm nay hoặc ngày đã qua. Vui lòng chọn từ ngày mai.");
+    if (customLeaveDate < todayStr) {
+      message.warning("Không thể chọn ngày đã qua trong quá khứ. Vui lòng chọn từ hôm nay trở đi.");
       return;
     }
     if (!leaveDates.includes(customLeaveDate)) {
@@ -357,11 +374,13 @@ export default function ShiftRegistrationPage() {
 
   const handleSubmitLeaveRequest = async () => {
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      message.error("Cần kết nối mạng để gửi đơn báo nghỉ đột xuất tới Quản lý.");
+      message.error(
+        "Cần kết nối mạng để gửi đơn báo nghỉ đột xuất tới Quản lý.",
+      );
       return;
     }
     if (leaveDates.length === 0) {
-      message.warning("Vui lòng chọn ít nhất 1 ngày sắp tới (từ ngày mai trở đi).");
+      message.warning("Vui lòng chọn ít nhất 1 ngày muốn xin nghỉ (bao gồm hôm nay hoặc các ngày sắp tới).");
       return;
     }
     if (!leaveReason.trim()) {
@@ -375,7 +394,8 @@ export default function ShiftRegistrationPage() {
         reason: leaveReason.trim(),
       });
       message.success(
-        res?.message || "Đã gửi đơn báo nghỉ đột xuất tới Quản lý chờ phê duyệt."
+        res?.message ||
+          "Đã gửi đơn báo nghỉ đột xuất tới Quản lý chờ phê duyệt.",
       );
       setLeaveModalOpen(false);
       setLeaveDates([]);
@@ -598,10 +618,11 @@ export default function ShiftRegistrationPage() {
             <AlertTriangle size={16} className="text-amber-400 shrink-0" />
             <div className="min-w-0">
               <div className="text-xs font-bold text-amber-200 truncate">
-                Báo nghỉ đột xuất (Từ ngày mai)
+                Báo nghỉ đột xuất
               </div>
               <div className="text-[10px] text-amber-300/80 truncate">
-                Gửi Quản lý duyệt &amp; Điều phối viên đổi tài xế các chuyến trùng lịch
+                Gửi Quản lý duyệt &amp; Điều phối viên đổi tài xế các chuyến
+                trùng lịch
               </div>
             </div>
           </div>
@@ -1054,7 +1075,9 @@ export default function ShiftRegistrationPage() {
                         </span>
                       ))}
                     </div>
-                    <Tag className={`!m-0 !rounded-full !text-[10px] !px-2 shrink-0 ${st.cls}`}>
+                    <Tag
+                      className={`!m-0 !rounded-full !text-[10px] !px-2 shrink-0 ${st.cls}`}
+                    >
                       {st.label}
                     </Tag>
                   </div>
@@ -1077,12 +1100,16 @@ export default function ShiftRegistrationPage() {
                             {tr.trip_code}
                           </span>
                           <span className="truncate flex-1 text-slate-400">
-                            {tr.planned_start ? dayjs(tr.planned_start).format("DD/MM HH:mm") : ""}
+                            {tr.planned_start
+                              ? dayjs(tr.planned_start).format("DD/MM HH:mm")
+                              : ""}
                           </span>
                           {lr.status === "APPROVED" ? (
                             <span
                               className={`shrink-0 text-[10px] font-semibold ${
-                                tr.reassigned ? "text-emerald-400" : "text-amber-300"
+                                tr.reassigned
+                                  ? "text-emerald-400"
+                                  : "text-amber-300"
                               }`}
                             >
                               {tr.reassigned
@@ -1144,9 +1171,8 @@ export default function ShiftRegistrationPage() {
       >
         <div className="space-y-3.5 pt-2 text-xs">
           <div className="rounded-xl bg-amber-950/40 border border-amber-700/50 px-3 py-2 text-[11px] text-amber-200 leading-relaxed">
-            <strong>Quy định:</strong> Chỉ được chọn xin nghỉ cho{" "}
-            <strong className="text-white">các ngày từ ngày mai trở đi</strong>{" "}
-            (từ <span className="font-mono">{dayjs(tomorrowStr).format("DD/MM/YYYY")}</span>). Không thể chọn nghỉ cho hôm nay.
+            <strong>Quy định:</strong> Được chọn xin nghỉ từ{" "}
+            <strong className="text-white">hôm nay</strong> hoặc các ngày sắp tới (áp dụng cho các chuyến chưa khởi hành).
           </div>
 
           <div className="space-y-1.5">
@@ -1170,20 +1196,29 @@ export default function ShiftRegistrationPage() {
                           : "bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500 cursor-pointer"
                     }`}
                   >
-                    <div className="text-[10px] text-slate-400 truncate">
-                      {opt.dayName}
+                    <div className="text-[10px] truncate flex items-center justify-between">
+                      <span className={opt.isToday ? "font-bold text-amber-300" : "text-slate-400"}>
+                        {opt.dayName}
+                      </span>
+                      {opt.isToday && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" title="Hôm nay" />
+                      )}
                     </div>
                     <div className="font-mono font-bold text-xs">
                       {opt.displayDate}
                     </div>
                     {opt.alreadyRequested ? (
-                      <div className="text-[9px] text-slate-500 truncate">Đã gửi đơn</div>
+                      <div className="text-[9px] text-slate-500 truncate">
+                        Đã gửi đơn
+                      </div>
                     ) : opt.tripCount > 0 ? (
                       <div className="text-[9px] font-semibold text-amber-300 truncate">
                         {opt.tripCount} chuyến xe
                       </div>
                     ) : (
-                      <div className="text-[9px] text-slate-500 truncate">Trống chuyến</div>
+                      <div className="text-[9px] text-slate-500 truncate">
+                        Trống chuyến
+                      </div>
                     )}
                   </button>
                 );
@@ -1193,7 +1228,7 @@ export default function ShiftRegistrationPage() {
             <div className="flex items-center gap-2 pt-1">
               <input
                 type="date"
-                min={tomorrowStr}
+                min={todayStr}
                 value={customLeaveDate}
                 onChange={(e) => setCustomLeaveDate(e.target.value)}
                 className="flex-1 min-w-0 rounded-xl bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
@@ -1241,10 +1276,32 @@ export default function ShiftRegistrationPage() {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-bold text-xs text-white flex items-center gap-1.5">
-                  <Truck size={14} className={affectedLeavePreviewTrips.length > 0 ? "text-red-400" : "text-slate-400"} />
-                  Chuyến xe sẽ phải Re-assign ({affectedLeavePreviewTrips.length})
+                  <Truck
+                    size={14}
+                    className={
+                      affectedLeavePreviewTrips.length > 0
+                        ? "text-red-400"
+                        : "text-slate-400"
+                    }
+                  />
+                  Chuyến xe sẽ phải Re-assign (
+                  {affectedLeavePreviewTrips.length})
                 </span>
               </div>
+
+              {hasUrgentTrip && (
+                <div className="p-2 rounded-lg bg-red-950/80 border border-red-500/80 text-red-200 text-[11px] flex items-start gap-1.5 animate-pulse">
+                  <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-red-100 uppercase">Cảnh báo khẩn cấp:</span> Có chuyến xe sắp chạy trong vòng ít hơn 2 giờ tới! Đơn sẽ được gắn cờ <b>[KHẨN CẤP]</b> để Quản lý và Điều phối xử lý ưu tiên.
+                  </div>
+                </div>
+              )}
+              {leaveDates.includes(todayStr) && !hasUrgentTrip && (
+                <div className="text-[11px] text-amber-300/90 bg-amber-950/40 border border-amber-800/40 rounded-lg p-2">
+                  💡 <b>Báo nghỉ hôm nay:</b> Áp dụng cho các chuyến xe chưa khởi hành từ giờ đến hết hôm nay. Các chuyến đã hoàn thành không bị ảnh hưởng.
+                </div>
+              )}
 
               {affectedLeavePreviewTrips.length === 0 ? (
                 <div className="text-[11px] text-slate-400">
@@ -1253,11 +1310,12 @@ export default function ShiftRegistrationPage() {
               ) : (
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
                   <div className="text-[11px] text-red-200">
-                    Sau khi Quản lý duyệt cho nghỉ, các chuyến sau sẽ được chuyển Điều phối viên gán cho tài xế khác:
+                    Sau khi Quản lý duyệt cho nghỉ, các chuyến sau sẽ được
+                    chuyển Điều phối viên gán cho tài xế khác:
                   </div>
                   {affectedLeavePreviewTrips.map((tr) => {
                     const sortedStops = [...(tr.stops || [])].sort(
-                      (a, b) => (a.sequence || 0) - (b.sequence || 0)
+                      (a, b) => (a.sequence || 0) - (b.sequence || 0),
                     );
                     const firstLoc = sortedStops[0]?.location?.name;
                     const lastLoc =
@@ -1276,15 +1334,24 @@ export default function ShiftRegistrationPage() {
                     return (
                       <div
                         key={tr.id}
-                        className="rounded-lg bg-slate-950/80 border border-red-800/40 px-2.5 py-1.5 space-y-0.5"
+                        className={`rounded-lg bg-slate-950/80 border px-2.5 py-1.5 space-y-0.5 ${
+                          tr.isUrgent ? "border-red-500/80" : "border-red-800/40"
+                        }`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono font-bold text-blue-300">
                             {tr.trip_code || `TRIP-${tr.id}`}
                           </span>
-                          <span className="text-[10px] font-mono text-amber-300">
-                            {dayjs(tr.planned_start || tr.created_at).format("DD/MM HH:mm")}
+                          <span className="text-[10px] font-mono text-amber-300 flex items-center gap-1">
+                            {dayjs(tr.planned_start || tr.created_at).format(
+                              "DD/MM HH:mm",
+                            )}
                             {plate ? ` • ${plate}` : ""}
+                            {tr.isUrgent && (
+                              <span className="bg-red-500/40 text-red-200 border border-red-500/50 text-[9px] px-1 rounded font-bold">
+                                Gấp (&lt;2h)
+                              </span>
+                            )}
                           </span>
                         </div>
                         <div className="text-[10px] text-slate-400 truncate">
