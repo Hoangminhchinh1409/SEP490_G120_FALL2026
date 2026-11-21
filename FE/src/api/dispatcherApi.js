@@ -290,5 +290,33 @@ export const dispatcherApi = {
       console.warn('dispatcherApi.getDashboardStats warn:', error?.message);
       return null;
     }
+  },
+
+  // --- 6. AI Document Agent ---
+  extractOrderDocument: async ({ fileBase64, mimeType, fileName, textContent }) => {
+    try {
+      const data = await fetchWithAuth('/ai/extract-order-document', {
+        method: 'POST',
+        body: JSON.stringify({ fileBase64, mimeType, fileName, textContent })
+      });
+      return data.extractedData;
+    } catch (error) {
+      console.error('dispatcherApi.extractOrderDocument error:', error);
+      throw error;
+    }
+  },
+
+  // --- 7. VRPTW Engine (Vehicle Routing Problem with Time Windows & Hanoi Truck Ban) ---
+  optimizeMultiStopRoute: async ({ stops, startTime, truckPayloadKg, avoidTruckBan }) => {
+    try {
+      const data = await fetchWithAuth('/dispatcher/trips/optimize-vrptw', {
+        method: 'POST',
+        body: JSON.stringify({ stops, startTime, truckPayloadKg, avoidTruckBan })
+      });
+      return data;
+    } catch (error) {
+      console.error('dispatcherApi.optimizeMultiStopRoute error:', error);
+      throw error;
+    }
   }
 };

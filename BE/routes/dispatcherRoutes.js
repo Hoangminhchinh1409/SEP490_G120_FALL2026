@@ -48,6 +48,7 @@ router.get('/customers', contractController.getAllCustomers);
 router.get('/trips', tripController.getAllTrips);
 router.post('/trips', requireDispatcherOrAdmin, tripController.createTrip);
 router.patch('/trips/:id/status', requireDispatcherOrAdmin, tripController.updateTripStatus);
+router.post('/trips/optimize-vrptw', requireDispatcherOrAdmin, tripController.optimizeMultiStopRoute);
 router.get('/trips/:id/replay', tripController.getTripReplay);
 router.get('/routing/road-route', tripController.calculateRoadRoute);
 router.get('/leave-reassignments', tripController.getLeaveReassignments);

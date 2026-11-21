@@ -36,9 +36,10 @@ export default function TripAssignmentStopsList({
               loading={optimizingRoute}
               icon={<Sparkles size={11} />}
               onClick={handleOptimizeShortestRoute}
-              className="text-[11px] h-6 px-2 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 font-semibold"
+              className="text-[11px] h-6 px-2 text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 font-semibold"
+              title="Tối ưu đa điểm dừng, giờ cấm tải Hà Nội và cửa sổ giao hàng (Engine VRPTW)"
             >
-              Tối ưu đường bộ ngắn nhất
+              Tối ưu VRPTW & Giờ cấm
             </Button>
           )}
           {multiDropMode === 'MULTI_POINTS' && (

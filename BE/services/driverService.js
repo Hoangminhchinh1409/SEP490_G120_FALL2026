@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const driverModel = require("../models/driverModel");
 const leaveModel = require("../models/leaveModel");
 const supabase = require("../config/supabase");
+const queueAdapter = require("../jobs/queueAdapter");
 
 // Helper chuẩn hóa điểm lấy hàng (Pickup) hay điểm giao hàng (Drop-off)
 const isPickupStop = (stop) => {
@@ -244,6 +245,18 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
     longitude: phoneLng,
     outsideRadiusFlag: isOutsideRadius
   });
+
+  // Đẩy tọa độ GPS vào Hàng đợi đệm (Bulk Ingestion Buffer) nếu có tọa độ từ thiết bị
+  if (phoneLat && phoneLng) {
+    queueAdapter.addGpsPointToBuffer({
+      trip_id: tripId,
+      latitude: phoneLat,
+      longitude: phoneLng,
+      speed_kmh: 0,
+      recorded_time: arrivalTime,
+      outside_radius_flag: isOutsideRadius
+    });
+  }
 
   await driverModel.logDriverActivity({
     actorId: userId,
@@ -811,6 +824,18 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
     outsideRadiusFlag: isOutsideRadius,
     payload: eventPayload
   });
+
+  // Đẩy tọa độ GPS vào Hàng đợi đệm (Bulk Ingestion Buffer) nếu có tọa độ từ thiết bị
+  if (phoneLat && phoneLng) {
+    queueAdapter.addGpsPointToBuffer({
+      trip_id: tripId,
+      latitude: phoneLat,
+      longitude: phoneLng,
+      speed_kmh: 0,
+      recorded_time: recordedTime,
+      outside_radius_flag: isOutsideRadius
+    });
+  }
 
   return {
     success: true,

@@ -1,13 +1,26 @@
 const fleetService = require("../services/fleetService");
 const supabase = require('../config/supabase');
+const queueAdapter = require('./queueAdapter');
 
 /**
  * Background Jobs Phân hệ Quản lý (Manager Background Jobs)
+ * Tích hợp Distributed Queue Adapter & PostgreSQL Advisory Lock (Improvement 3):
+ * - Đảm bảo tải cho hàng nghìn xe truyền vị trí GPS không làm nghẽn Event Loop.
+ * - Tránh race-condition khi chạy nhiều instance backend bằng pg_try_advisory_lock.
  * - JOB-01: File Retention - Bảo lưu chứng từ, ảnh chì, POD của các đơn có khiếu nại đang PENDING.
  * - JOB-02: GPS & Shift Overtime Check - Cảnh báo 4h lái liên tục và cảnh báo hết ca khi chuyến chưa hoàn tất.
  * - JOB-03: Order Flagger - Tự động gắn cờ các đơn Draft quá hạn và đơn Confirmed chưa gán chuyến quá hạn.
  * - JOB-06: Auto-lock Expired Trucks - Tự động khóa xe hết hạn đăng kiểm sang Inactive.
+ * - JOB-07: Auto-assign Shifts & Reminders - Tự động nhắc và xếp ca tài xế hàng tuần.
  */
+
+// Định nghĩa mã khóa Advisory Lock cho từng Job
+const LOCK_KEYS = {
+  JOB_06: 1006,
+  JOB_03: 1003,
+  JOB_02: 1002,
+  JOB_07: 1007
+};
 
 // JOB-06: Tự động khóa xe hết hạn đăng kiểm sang Inactive (chạy mỗi sáng hoặc định kỳ)
 const runJob06_AutoLockExpiredTrucks = async () => {
@@ -189,24 +202,51 @@ const runJob07_AutoAssignNextWeekShifts = async () => {
 };
 
 const initManagerJobs = () => {
-  console.log('Khởi tạo Background Jobs Phân hệ Quản lý (JOB-01, JOB-02, JOB-03, JOB-06)...');
+  console.log('Khởi tạo Background Jobs Phân hệ Quản lý (JOB-01, JOB-02, JOB-03, JOB-06, JOB-07) qua Distributed Queue Adapter...');
 
-  // Chạy ngay 1 lần khi server start
-  runJob06_AutoLockExpiredTrucks();
-  runJob03_FlagOverdueOrders();
-  runJob02_CheckDriverShiftOvertime();
+  // Đăng ký các background queue workers
+  queueAdapter.process('job:lock-expired-trucks', async () => {
+    await queueAdapter.runWithAdvisoryLock(LOCK_KEYS.JOB_06, 'JOB-06', runJob06_AutoLockExpiredTrucks);
+  });
+
+  queueAdapter.process('job:flag-overdue-orders', async () => {
+    await queueAdapter.runWithAdvisoryLock(LOCK_KEYS.JOB_03, 'JOB-03', runJob03_FlagOverdueOrders);
+  });
+
+  queueAdapter.process('job:check-driver-shift', async () => {
+    await queueAdapter.runWithAdvisoryLock(LOCK_KEYS.JOB_02, 'JOB-02', runJob02_CheckDriverShiftOvertime);
+  });
+
+  queueAdapter.process('job:auto-assign-shifts', async () => {
+    await queueAdapter.runWithAdvisoryLock(LOCK_KEYS.JOB_07, 'JOB-07', runJob07_AutoAssignNextWeekShifts);
+  });
+
+  // Chạy ngay 1 lần khi server start (bằng queue non-blocking)
+  queueAdapter.enqueue('job:lock-expired-trucks');
+  queueAdapter.enqueue('job:flag-overdue-orders');
+  queueAdapter.enqueue('job:check-driver-shift');
+  queueAdapter.enqueue('job:auto-assign-shifts');
 
   // Định kỳ:
   // JOB-03: Mỗi 15 phút (900,000 ms)
-  setInterval(runJob03_FlagOverdueOrders, 15 * 60 * 1000);
+  setInterval(() => {
+    queueAdapter.enqueue('job:flag-overdue-orders');
+  }, 15 * 60 * 1000);
 
   // JOB-02: Mỗi 5 phút (300,000 ms)
-  setInterval(runJob02_CheckDriverShiftOvertime, 5 * 60 * 1000);
+  setInterval(() => {
+    queueAdapter.enqueue('job:check-driver-shift');
+  }, 5 * 60 * 1000);
 
   // JOB-06: Mỗi 6 giờ (21,600,000 ms)
-  setInterval(runJob06_AutoLockExpiredTrucks, 6 * 60 * 60 * 1000);
-  runJob07_AutoAssignNextWeekShifts();
-  setInterval(runJob07_AutoAssignNextWeekShifts, 60 * 1000);
+  setInterval(() => {
+    queueAdapter.enqueue('job:lock-expired-trucks');
+  }, 6 * 60 * 60 * 1000);
+
+  // JOB-07: Mỗi 1 phút quét reminder và phân ca
+  setInterval(() => {
+    queueAdapter.enqueue('job:auto-assign-shifts');
+  }, 60 * 1000);
 };
 
 module.exports = {

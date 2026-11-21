@@ -469,6 +469,54 @@ export default function TripAssignmentModal({
 
     setOptimizingRoute(true);
     try {
+      // Xác định tải trọng xe để kiểm tra quy chuẩn giờ cấm tải Hà Nội (QĐ 06/2013 & 24/2020)
+      let truckPayloadKg = 2500;
+      if (selectedTruckPlate) {
+        const spec = getVehicleSpecByKey(selectedTruckPlate);
+        if (spec && spec.maxWeightKg) {
+          truckPayloadKg = spec.maxWeightKg;
+        } else if (selectedTruckPlate.includes('1.250 kg') || selectedTruckPlate.includes('1.25T')) {
+          truckPayloadKg = 1250;
+        } else if (selectedTruckPlate.includes('3.500 kg') || selectedTruckPlate.includes('3.5T')) {
+          truckPayloadKg = 3500;
+        } else if (selectedTruckPlate.includes('5.000 kg') || selectedTruckPlate.includes('5T')) {
+          truckPayloadKg = 5000;
+        }
+      }
+
+      // Gọi Engine VRPTW Backend: Tối ưu đa điểm dừng, giờ cấm tải Hà Nội, khung giờ nhận và giờ lái tài xế (BR-03)
+      const res = await dispatcherApi.optimizeMultiStopRoute({
+        stops,
+        startTime: plannedStart || new Date().toISOString(),
+        truckPayloadKg,
+        avoidTruckBan: true
+      });
+
+      if (res && res.success && Array.isArray(res.data?.optimizedStops)) {
+        const optimizedStops = res.data.optimizedStops.map((s, idx) => ({
+          ...s,
+          badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
+        }));
+
+        setStops(optimizedStops);
+
+        if (res.data.warnings && res.data.warnings.length > 0) {
+          message.warning({
+            content: `VRPTW hoàn tất: Có ${res.data.warnings.length} lưu ý về khung giờ cấm tải hoặc thời gian giao nhận.`,
+            duration: 5
+          });
+        } else if (res.data.restStopsAdded > 0) {
+          message.info({
+            content: `Engine VRPTW đã tự động chèn điểm nghỉ 15 phút tuân thủ luật lái xe liên tục BR-03 (<= 4h).`,
+            duration: 4
+          });
+        } else {
+          message.success('Đã tối ưu lộ trình VRPTW (khung giờ cấm tải Hà Nội & cửa sổ thời gian)!');
+        }
+        return;
+      }
+
+      // Fallback nếu API VRPTW không trả về: dùng heuristic đường bộ cũ
       const optimizedDropoffs = await optimizeDropoffsByRoadDistance(pickupStop.coords, dropoffStops);
       const startStop = stops.find(s => s.type === 'START');
       const restStops = stops.filter(s => s.type === 'REST');
@@ -486,8 +534,28 @@ export default function TripAssignmentModal({
       setStops(reorderedStops);
       message.success('Đã tối ưu thứ tự điểm trả theo tuyến đường bộ ngắn nhất!');
     } catch (err) {
-      console.error(err);
-      message.error('Không thể tối ưu lộ trình lúc này.');
+      console.error('VRPTW optimization error, falling back:', err);
+      try {
+        const optimizedDropoffs = await optimizeDropoffsByRoadDistance(pickupStop.coords, dropoffStops);
+        const startStop = stops.find(s => s.type === 'START');
+        const restStops = stops.filter(s => s.type === 'REST');
+
+        const reorderedStops = [
+          startStop,
+          pickupStop,
+          ...restStops,
+          ...optimizedDropoffs
+        ].filter(Boolean).map((s, idx) => ({
+          ...s,
+          badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
+        }));
+
+        setStops(reorderedStops);
+        message.success('Đã tối ưu thứ tự điểm trả theo tuyến đường bộ!');
+      } catch (fallbackErr) {
+        console.error(fallbackErr);
+        message.error('Không thể tối ưu lộ trình lúc này.');
+      }
     } finally {
       setOptimizingRoute(false);
     }

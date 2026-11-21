@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Modal, Form, Input, message } from 'antd';
-import { FileText } from 'lucide-react';
+import { Modal, Form, Input, message, Progress } from 'antd';
+import { FileText, Sparkles, UploadCloud, CheckCircle2, AlertCircle } from 'lucide-react';
 import { 
   calculateRouteEstimate, 
   calculateAlsPricing,
@@ -59,6 +59,12 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   const [selectedSpecializedDoc, setSelectedSpecializedDoc] = useState('');
   const [newCustomDocName, setNewCustomDocName] = useState('');
   const fileInputRef = useRef(null);
+
+  // State AI Document Agent (OCR Tờ khai / HAWB)
+  const [isAiScanning, setIsAiScanning] = useState(false);
+  const [aiScanProgress, setAiScanProgress] = useState(0);
+  const [aiScanResult, setAiScanResult] = useState(null);
+  const aiFileInputRef = useRef(null);
 
   // Tải danh sách điểm giao nhận từ database
   useEffect(() => {
@@ -165,6 +171,118 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
     if (found) {
       form.setFieldsValue({ delivery_address: found.address || found.name });
       setDeliveryCoords(found.lat && found.lng ? { lat: parseFloat(found.lat), lng: parseFloat(found.lng) } : null);
+    }
+  };
+
+  // --- XỬ LÝ AI DOCUMENT AGENT (OCR & TỰ ĐỘNG ĐIỀN FORM TRONG 15S) ---
+  const handleAiFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset input
+    e.target.value = '';
+
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      message.error('Vui lòng chọn tệp định dạng PDF hoặc ảnh (JPG, PNG) của Tờ khai hoặc HAWB!');
+      return;
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      message.error('Dung lượng tệp không được vượt quá 15MB!');
+      return;
+    }
+
+    setIsAiScanning(true);
+    setAiScanProgress(15);
+    setAiScanResult(null);
+
+    // Hiệu ứng tiến trình quét trong 12-15s
+    const progressInterval = setInterval(() => {
+      setAiScanProgress(prev => {
+        if (prev >= 90) return prev;
+        return prev + Math.floor(Math.random() * 12) + 5;
+      });
+    }, 600);
+
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const fileBase64 = await base64Promise;
+
+      const extracted = await dispatcherApi.extractOrderDocument({
+        fileBase64,
+        mimeType: file.type,
+        fileName: file.name
+      });
+
+      clearInterval(progressInterval);
+      setAiScanProgress(100);
+
+      if (extracted) {
+        setAiScanResult(extracted);
+        message.success('AI Document Agent đã trích xuất thành công dữ liệu chứng từ!');
+
+        // 1. Tự động điền hướng vận chuyển (IMPORT/EXPORT)
+        const direction = extracted.order_type === 'EXPORT' ? 'EXPORT' : 'IMPORT';
+        applyDirectionPreset(direction);
+
+        // 2. Tự động điền thông tin khách hàng & người nhận
+        form.setFieldsValue({
+          customer_name: extracted.customer_name || form.getFieldValue('customer_name'),
+          customer_tax_code: extracted.customer_tax_code || form.getFieldValue('customer_tax_code'),
+          customer_phone: extracted.customer_phone || form.getFieldValue('customer_phone'),
+          customer_email: extracted.customer_email || form.getFieldValue('customer_email'),
+          receiver_name: extracted.receiver_name || extracted.customer_name || form.getFieldValue('receiver_name'),
+          receiver_phone: extracted.receiver_phone || extracted.customer_phone || form.getFieldValue('receiver_phone'),
+          customer_address: extracted.delivery_address || form.getFieldValue('customer_address'),
+          delivery_address: extracted.delivery_address || form.getFieldValue('delivery_address'),
+          hawb_number: extracted.hawb_number || '',
+          declaration_number: extracted.declaration_number || '',
+          order_notes: `[AI OCR: ${file.name}] Mã tờ khai: ${extracted.declaration_number || 'N/A'} - HAWB: ${extracted.hawb_number || 'N/A'}`
+        });
+
+        // Tự động Geocode tọa độ địa chỉ giao hàng
+        if (extracted.delivery_address) {
+          const coords = getCoordsFromAddress(extracted.delivery_address, 'B');
+          if (coords) setDeliveryCoords(coords);
+        }
+
+        // 3. Tự động điền các dòng hàng hóa
+        if (Array.isArray(extracted.cargo_lines) && extracted.cargo_lines.length > 0) {
+          const newCargos = extracted.cargo_lines.map((c, idx) => ({
+            id: Date.now() + idx,
+            cargo_name: c.cargo_name || 'Hàng hóa linh kiện',
+            cargo_type: c.cargo_type || 'GENERAL',
+            package_count: Number(c.package_count) || 1,
+            package_unit: c.package_unit || 'Kiện',
+            length_cm: Number(c.length_cm) || 60,
+            width_cm: Number(c.width_cm) || 40,
+            height_cm: Number(c.height_cm) || 40,
+            weight: Number(c.actual_weight_kg) || 50
+          }));
+          setCargoItems(newCargos);
+        }
+
+        // 4. Gợi ý loại xe tối ưu
+        if (extracted.recommended_vehicle) {
+          form.setFieldsValue({
+            vehicle_type_required: extracted.recommended_vehicle
+          });
+        }
+      }
+    } catch (scanErr) {
+      clearInterval(progressInterval);
+      console.error('AI Scan Document error:', scanErr);
+      message.error(scanErr.message || 'Lỗi khi quét chứng từ với AI. Vui lòng thử lại hoặc nhập liệu thủ công!');
+    } finally {
+      setTimeout(() => {
+        setIsAiScanning(false);
+      }, 500);
     }
   };
 
@@ -556,6 +674,81 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
       cancelButtonProps={{ className: "h-9 px-4" }}
     >
       <div className="pt-2"></div>
+
+      {/* AI DOCUMENT AGENT BANNER & OCR TRIGGER */}
+      <div className="mb-4 p-3.5 bg-gradient-to-r from-indigo-50 via-purple-50 to-blue-50 border border-indigo-200/70 rounded-xl shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
+              <Sparkles size={18} className="animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-800 text-sm">AI Document Agent</span>
+                <span className="text-[11px] px-2 py-0.5 bg-indigo-100 text-indigo-700 font-semibold rounded-full">
+                  OCR 15s
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Tự động bóc tách Tờ khai hải quan (VNACCS) / Vận đơn HAWB để điền form tự động
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <input
+              type="file"
+              ref={aiFileInputRef}
+              className="hidden"
+              accept=".pdf,image/png,image/jpeg,image/jpg"
+              onChange={handleAiFileSelect}
+            />
+            <button
+              type="button"
+              disabled={isAiScanning}
+              onClick={() => aiFileInputRef.current?.click()}
+              className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg shadow-sm transition-all ${
+                isAiScanning
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white cursor-pointer'
+              }`}
+            >
+              <UploadCloud size={15} />
+              {isAiScanning ? 'Đang phân tích...' : 'Tải lên Tờ khai / HAWB để AI đọc'}
+            </button>
+          </div>
+        </div>
+
+        {/* Thanh tiến trình khi AI đang OCR */}
+        {isAiScanning && (
+          <div className="mt-3 pt-2.5 border-t border-indigo-100/80">
+            <div className="flex justify-between items-center text-xs mb-1">
+              <span className="text-indigo-700 font-medium flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
+                Gemini Vision đang đọc cấu trúc chứng từ và trích xuất hàng hóa...
+              </span>
+              <span className="font-bold text-indigo-600">{aiScanProgress}%</span>
+            </div>
+            <Progress 
+              percent={aiScanProgress} 
+              showInfo={false} 
+              strokeColor={{ '0%': '#7367f0', '100%': '#6366f1' }}
+              size="small" 
+            />
+          </div>
+        )}
+
+        {/* Kết quả scan thành công */}
+        {aiScanResult && !isAiScanning && (
+          <div className="mt-2.5 pt-2 border-t border-indigo-100 flex items-center justify-between text-xs text-emerald-700 bg-emerald-50/60 px-3 py-1.5 rounded-md">
+            <div className="flex items-center gap-1.5 font-medium">
+              <CheckCircle2 size={14} className="text-emerald-600" />
+              <span>Đã tự động điền form: {aiScanResult.customer_name || 'Doanh nghiệp'} ({aiScanResult.cargo_lines?.length || 1} dòng hàng)</span>
+            </div>
+            <span className="text-[11px] text-gray-400">Độ tin cậy: {Math.round((aiScanResult.confidence_score || 0.95) * 100)}%</span>
+          </div>
+        )}
+      </div>
 
       <Form 
         form={form} 

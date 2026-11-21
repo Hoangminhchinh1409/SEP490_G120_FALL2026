@@ -1,6 +1,7 @@
 const https = require('https');
 const supabase = require('../config/supabase');
 const tripService = require('../services/tripService');
+const vrptwService = require('../services/vrptwService');
 
 /**
  * Trip Controller — Nhóm chức năng Hoạch định Chuyến đi, Tính Lộ trình & Tua lại Hành trình
@@ -513,14 +514,41 @@ const reassignTripDriver = async (req, res) => {
   }
 };
 
+// 6. ENGINE VRPTW: Tối ưu hóa thứ tự đa điểm dừng kết hợp giờ cấm tải Hà Nội & Time Windows
+const optimizeMultiStopRoute = async (req, res) => {
+  try {
+    const { stops = [], startTime = '07:30', truckPayloadKg = 2500, avoidTruckBan = true } = req.body;
+    if (!Array.isArray(stops) || stops.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cần ít nhất 2 điểm dừng (Điểm lấy hàng và Điểm giao hàng) để tối ưu lộ trình VRPTW'
+      });
+    }
+
+    const optimizationResult = vrptwService.solveVRPTW({
+      stops,
+      startTime,
+      truckPayloadKg: Number(truckPayloadKg) || 2500,
+      avoidTruckBan: avoidTruckBan !== false
+    });
+
+    return res.json({
+      success: true,
+      ...optimizationResult
+    });
+  } catch (err) {
+    console.error('optimizeMultiStopRoute error:', err);
+    return res.status(500).json({ message: 'Lỗi khi giải bài toán tối ưu VRPTW', error: err.message });
+  }
+};
+
 module.exports = {
   getAllTrips,
   createTrip,
   updateTripStatus,
-  // route calc exported below
-  // route calc exported below
   calculateRoadRoute,
   getTripReplay,
   getLeaveReassignments,
-  reassignTripDriver
+  reassignTripDriver,
+  optimizeMultiStopRoute
 };

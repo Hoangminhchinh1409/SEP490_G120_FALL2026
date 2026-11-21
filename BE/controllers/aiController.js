@@ -69,9 +69,36 @@ const autoScanCustomsDeclaration = async (req, res) => {
   }
 };
 
+const extractOrderFromDocument = async (req, res) => {
+  try {
+    const { fileBase64, mimeType, fileName, textContent } = req.body;
+    if (!fileBase64 && !textContent) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng cung cấp fileBase64 hoặc textContent của tài liệu cần trích xuất'
+      });
+    }
+
+    const result = await aiService.extractOrderFromDocument({
+      fileBase64,
+      mimeType,
+      fileName,
+      textContent
+    });
+
+    return res.json({
+      success: true,
+      extractedData: result
+    });
+  } catch (err) {
+    return handleAiError(res, 'extractOrderFromDocument', err);
+  }
+};
+
 module.exports = {
   analyzeCustomsDocuments,
   analyzeVehicleAndQuote,
   analyzeLoadPlan3D,
-  autoScanCustomsDeclaration
+  autoScanCustomsDeclaration,
+  extractOrderFromDocument
 };

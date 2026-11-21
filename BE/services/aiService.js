@@ -7,13 +7,30 @@ const CANDIDATE_MODELS = [
 
 /**
  * Gọi Google Gemini Generative Language API với cơ chế tự động fallback model
+ * Hỗ trợ cả text prompt và multimodal inline data (file base64 / mimeType)
  */
-const callGeminiGenerateContent = async (promptText, responseJson = true) => {
+const callGeminiGenerateContent = async (promptInput, responseJson = true) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY chưa được cấu hình trong biến môi trường');
   }
   let lastError = null;
+
+  let parts = [];
+  if (typeof promptInput === 'string') {
+    parts = [{ text: promptInput }];
+  } else if (Array.isArray(promptInput)) {
+    parts = promptInput;
+  } else if (typeof promptInput === 'object' && promptInput !== null) {
+    if (promptInput.inlineData) {
+      parts = [
+        { inlineData: promptInput.inlineData },
+        { text: promptInput.text || 'Trích xuất thông tin chi tiết từ tài liệu này.' }
+      ];
+    } else if (promptInput.text) {
+      parts = [{ text: promptInput.text }];
+    }
+  }
 
   for (const modelName of CANDIDATE_MODELS) {
     try {
@@ -22,11 +39,11 @@ const callGeminiGenerateContent = async (promptText, responseJson = true) => {
         contents: [
           {
             role: 'user',
-            parts: [{ text: promptText }]
+            parts
           }
         ],
         generationConfig: {
-          temperature: 0.25,
+          temperature: 0.1,
           thinkingConfig: {
             thinkingBudget: 0
           },
@@ -261,11 +278,106 @@ Trả về JSON với cấu trúc:
   };
 };
 
+/**
+ * 5. AI DOCUMENT AGENT: Đọc tệp PDF hoặc ảnh Tờ khai hải quan / HAWB qua OCR
+ * Trích xuất toàn bộ thông tin đơn hàng để tự động điền form Dispatcher trong vòng <= 15s.
+ */
+const extractOrderFromDocument = async (payload = {}) => {
+  const { fileBase64, mimeType = 'application/pdf', fileName = '', textContent = '' } = payload;
+
+  const extractionPrompt = `Bạn là Chuyên gia AI OCR & Nghiệp vụ Logistic Hải quan của hệ thống ALS Logistics.
+Nhiệm vụ của bạn là đọc và trích xuất dữ liệu thực tế từ tài liệu đính kèm (Tờ khai hải quan thông quan Việt Nam, Vận đơn hàng không HAWB, hoặc Packing List/Invoice).
+Hãy trích xuất chính xác các thông tin sau và trả về định dạng JSON thuần túy (RFC 8259).
+
+LƯU Ý NGHIỆP VỤ QUAN TRỌNG:
+1. "order_type": Xác định là "IMPORT" (Hàng nhập khẩu về Việt Nam qua Nội Bài/Cảng) hoặc "EXPORT" (Hàng xuất khẩu đi nước ngoài).
+2. "customer_name": Tên doanh nghiệp nhập khẩu/xuất khẩu tại Việt Nam (không lấy tên hãng bay).
+3. "customer_tax_code": Mã số thuế doanh nghiệp (10 hoặc 13 số).
+4. "customer_phone": Số điện thoại liên hệ của người nhận/gửi nếu có trong tài liệu.
+5. "customer_email": Email nếu có.
+6. "pickup_address": Địa điểm lấy hàng (Ví dụ: "Kho hàng ALS Nội Bài, Sóc Sơn, Hà Nội" nếu là hàng nhập; hoặc địa chỉ kho nhà máy nếu là hàng xuất).
+7. "delivery_address": Địa chỉ giao hàng cuối cùng tại Việt Nam (ghi rõ số nhà, đường, quận/huyện, tỉnh thành phố).
+8. "receiver_name": Tên người đại diện nhận hàng hoặc tên công ty nhận hàng.
+9. "receiver_phone": Số điện thoại người nhận hàng.
+10. "declaration_number": Số tờ khai hải quan (nếu có, 12 số).
+11. "hawb_number": Số vận đơn hàng không HAWB (nếu có, ví dụ 131-12345678).
+12. "cargo_lines": Danh sách các dòng mặt hàng cụ thể gồm:
+    - cargo_name: Tên mặt hàng tiếng Việt hoặc tiếng Anh
+    - package_count: Số lượng kiện (số nguyên >= 1)
+    - package_unit: Đơn vị tính (Kiện / Thùng / Pallet / Hộp / Cuộn / Bao)
+    - actual_weight_kg: Trọng lượng thực tế (Gross weight) tính bằng kg (số dương)
+    - length_cm: Chiều dài mỗi kiện (cm, ước tính theo tiêu chuẩn hoặc trích xuất từ Packing List)
+    - width_cm: Chiều rộng mỗi kiện (cm)
+    - height_cm: Chiều cao mỗi kiện (cm)
+    - stackable: Hàng có được xếp chồng không (true / false)
+13. "special_handling": Yêu cầu bảo quản đặc biệt ("GENERAL" - Hàng bách hóa, "PERISHABLE" - Hàng tươi sống/nhiệt độ mát, "VALUABLE" - Hàng giá trị cao, "FRAGILE" - Hàng dễ vỡ).
+14. "recommended_vehicle": Gợi ý loại xe tải phù hợp nhất dựa trên tổng trọng lượng và kích thước ("TRUCK_1.25T", "TRUCK_2.5T", "TRUCK_3.5T", "TRUCK_5T", "CONTAINER_20", "CONTAINER_40").
+
+Cấu trúc JSON bắt buộc:
+{
+  "document_type": "CUSTOMS_DECLARATION | HAWB | PACKING_LIST | OTHER",
+  "order_type": "IMPORT | EXPORT",
+  "declaration_number": "string",
+  "hawb_number": "string",
+  "customer_name": "string",
+  "customer_tax_code": "string",
+  "customer_phone": "string",
+  "customer_email": "string",
+  "pickup_address": "string",
+  "delivery_address": "string",
+  "receiver_name": "string",
+  "receiver_phone": "string",
+  "cargo_lines": [
+    {
+      "cargo_name": "string",
+      "package_count": 1,
+      "package_unit": "Kiện",
+      "actual_weight_kg": 100,
+      "length_cm": 60,
+      "width_cm": 40,
+      "height_cm": 40,
+      "stackable": true
+    }
+  ],
+  "total_actual_weight_kg": 100,
+  "total_package_count": 1,
+  "special_handling": "GENERAL",
+  "recommended_vehicle": "TRUCK_1.25T",
+  "notes": "Trích xuất tự động từ văn bản bởi ALS AI Document Agent",
+  "confidence_score": 0.95
+}`;
+
+  let promptInput;
+  if (fileBase64) {
+    const cleanBase64 = fileBase64.includes('base64,') ? fileBase64.split('base64,')[1] : fileBase64;
+    promptInput = [
+      {
+        inlineData: {
+          data: cleanBase64,
+          mimeType: mimeType || 'application/pdf'
+        }
+      },
+      {
+        text: extractionPrompt + `\nTên tệp đính kèm: ${fileName}`
+      }
+    ];
+  } else {
+    promptInput = `${extractionPrompt}\nNội dung văn bản nhận được:\n${textContent}`;
+  }
+
+  const result = await callGeminiGenerateContent(promptInput, true);
+  return {
+    model: result.model,
+    ...result.data
+  };
+};
+
 module.exports = {
   callGeminiGenerateContent,
   analyzeCustomsDocuments,
   analyzeVehicleAndQuote,
   analyzeLoadPlan3D,
-  autoScanCustomsDeclaration
+  autoScanCustomsDeclaration,
+  extractOrderFromDocument
 };
 
