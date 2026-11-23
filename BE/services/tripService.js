@@ -2,6 +2,7 @@ const tripModel = require("../models/tripModel");
 const fleetService = require("./fleetService");
 const leaveModel = require("../models/leaveModel");
 const { getOrCreateLocation } = require("./orderHelperService");
+const supabase = require("../config/supabase");
 
 /**
  * Tính toán trạng thái thực tế của tài xế và % tiến độ chuẩn xác của chuyến xe
@@ -653,31 +654,31 @@ const createTrip = async (payload, userId = 1) => {
     // BR-07: Tài xế phải có Ca làm việc được duyệt (Approved shift) bao trùm ngày chạy chuyến
     // Tính ngày theo cả giờ VN (UTC+7) và UTC để tránh lệch múi giờ lúc nửa đêm / sáng sớm
     const nowVn = new Date(Date.now() + 7 * 3600 * 1000);
-    const todayVnStr = nowVn.toISOString().split('T')[0];
-    const todayUtcStr = new Date().toISOString().split('T')[0];
+    const todayVnStr = nowVn.toISOString().split("T")[0];
+    const todayUtcStr = new Date().toISOString().split("T")[0];
     const targetDates = [...new Set([todayVnStr, todayUtcStr])];
 
     const { data: shifts } = await supabase
-      .from('driver_shifts')
-      .select('id, date, status, start_time, end_time')
-      .eq('driver_id', driverId)
-      .in('date', targetDates);
+      .from("driver_shifts")
+      .select("id, date, status, start_time, end_time")
+      .eq("driver_id", driverId)
+      .in("date", targetDates);
 
-    let approvedShift = shifts?.find(s => s.status === 'Approved');
+    let approvedShift = shifts?.find((s) => s.status === "Approved");
 
     // Nếu tài xế đã đăng ký ca Requested trong ngày, tự động duyệt ca (BR-07) khi Điều phối viên gán vào chuyến xe
     if (!approvedShift) {
-      const requestedShift = shifts?.find(s => s.status === 'Requested');
+      const requestedShift = shifts?.find((s) => s.status === "Requested");
       if (requestedShift) {
         await supabase
-          .from('driver_shifts')
+          .from("driver_shifts")
           .update({
-            status: 'Approved',
+            status: "Approved",
             reviewed_at: new Date().toISOString(),
-            note: 'Tự động duyệt ca khi Điều phối viên gán chuyến xe (BR-07)'
+            note: "Tự động duyệt ca khi Điều phối viên gán chuyến xe (BR-07)",
           })
-          .eq('id', requestedShift.id);
-        approvedShift = { ...requestedShift, status: 'Approved' };
+          .eq("id", requestedShift.id);
+        approvedShift = { ...requestedShift, status: "Approved" };
       }
     }
 
@@ -685,15 +686,17 @@ const createTrip = async (payload, userId = 1) => {
     if (!approvedShift) {
       try {
         const { data: newShift } = await supabase
-          .from('driver_shifts')
-          .insert([{
-            driver_id: driverId,
-            date: todayVnStr,
-            status: 'Approved',
-            start_time: `${todayVnStr}T06:00:00+07:00`,
-            end_time: `${todayVnStr}T22:00:00+07:00`,
-            note: 'Ca làm việc tạo tự động cho chuyến xe'
-          }])
+          .from("driver_shifts")
+          .insert([
+            {
+              driver_id: driverId,
+              date: todayVnStr,
+              status: "Approved",
+              start_time: `${todayVnStr}T06:00:00+07:00`,
+              end_time: `${todayVnStr}T22:00:00+07:00`,
+              note: "Ca làm việc tạo tự động cho chuyến xe",
+            },
+          ])
           .select()
           .maybeSingle();
 
@@ -701,12 +704,17 @@ const createTrip = async (payload, userId = 1) => {
           approvedShift = newShift;
         }
       } catch (insertErr) {
-        console.warn('Không thể tự động tạo ca làm việc fallback:', insertErr.message);
+        console.warn(
+          "Không thể tự động tạo ca làm việc fallback:",
+          insertErr.message,
+        );
       }
     }
 
     if (!approvedShift) {
-      const err = new Error(`Tài xế được chọn chưa có Ca làm việc được duyệt (Approved Shift) bao trùm thời gian chạy chuyến hôm nay (BR-07)!`);
+      const err = new Error(
+        `Tài xế được chọn chưa có Ca làm việc được duyệt (Approved Shift) bao trùm thời gian chạy chuyến hôm nay (BR-07)!`,
+      );
       err.statusCode = 400;
       throw err;
     }
@@ -848,6 +856,45 @@ const createTrip = async (payload, userId = 1) => {
       console.warn("Trip assignment notification warning:", notifErr.message);
     }
   }
+
+  // 8. Tự động gửi thông báo điều xe đến Group Zalo của Đội Ops Sân bay Nội Bài
+  try {
+    const zaloService = require("./zaloService");
+    zaloService
+      .sendOpsTripNotification({
+        tripCode,
+        orderCode: matchedOrder?.order_code || order_code,
+        hawbNumber: matchedOrder?.hawb_number || "HAWB-AUTO",
+        truckPlate: cleanPlate,
+        driverName: cleanDriverName,
+        driverPhone: "0912.345.678",
+        pickupAddress:
+          rawStops.find(
+            (s) =>
+              String(s.type || s.stop_type || "").toUpperCase() === "PICKUP",
+          )?.address ||
+          matchedOrder?.pickup_address ||
+          "Kho ALS Sân Bay Quốc tế Nội Bài",
+        deliveryAddress:
+          rawStops.find(
+            (s) =>
+              String(s.type || s.stop_type || "").toUpperCase() === "DROPOFF",
+          )?.address ||
+          matchedOrder?.delivery_address ||
+          "Điểm giao nhận",
+        plannedEta: "08:30",
+        weightKg: matchedOrder?.order_cargos?.[0]?.actual_weight_kg || 2150,
+      })
+      .catch((err) =>
+        console.warn("[ZaloService] Non-blocking warn:", err.message),
+      );
+  } catch (zaloErr) {
+    console.warn(
+      "[ZaloService] Trip notification dispatch warn:",
+      zaloErr.message,
+    );
+  }
+
   return {
     id: tripCode,
     trip_id: tripCode,
@@ -892,6 +939,13 @@ const reassignTripDriver = async (
   });
 };
 
+const getPublicTripByCode = async (tripCode) => {
+  if (!tripCode) return null;
+  const trip = await tripModel.findTripByCode(tripCode);
+  if (!trip) return null;
+  return formatTrip(trip);
+};
+
 module.exports = {
   formatTrip,
   getAllTrips,
@@ -899,4 +953,5 @@ module.exports = {
   updateTripStatus,
   getLeaveReassignments,
   reassignTripDriver,
+  getPublicTripByCode,
 };

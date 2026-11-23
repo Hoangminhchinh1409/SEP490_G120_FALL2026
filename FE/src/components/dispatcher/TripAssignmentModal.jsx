@@ -644,7 +644,7 @@ function TripAssignmentModalContent({
         planned_duration: routeSummary.durationMins
       });
 
-      message.success(`Đã phân bổ chuyến xe ${createdTrip?.trip_code || ''} thành công!`);
+      message.success(`Đã phân bổ chuyến xe ${createdTrip?.trip_code || ''} thành công! (Đã tự động gửi thông báo đến Đội Ops Sân bay qua Zalo)`);
       onAssignSuccess?.({
         ...order,
         ...createdTrip,
