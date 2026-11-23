@@ -555,6 +555,10 @@ const recordTripEvent = async ({
     .select();
 
   if (error) {
+    if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('already exists')) {
+      console.log(`[Idempotency] Event with clientActionId ${insertPayload.client_action_id} already exists, ignoring duplicate.`);
+      return { client_action_id: insertPayload.client_action_id, duplicate: true };
+    }
     console.error("recordTripEvent error:", error);
     throw error;
   }

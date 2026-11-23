@@ -339,9 +339,9 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     throw error;
   }
 
-  // 3. Cập nhật thông tin điểm bốc hàng
+  // 3. Cập nhật thông tin điểm bốc hàng (BR-11: Sau khi bốc hàng và niêm chì seal, trạng thái là Loading Done; chỉ chuyển Done khi bấm Left)
   const updatedStop = await driverModel.updateTripStop(stopId, {
-    status: "Done",
+    status: "Loading Done",
     loaded_quantity: parsedPackages,
     loaded_weight: parsedWeight
   });
