@@ -158,6 +158,37 @@ const findAllTrips = async () => {
   return (trips || []).map(mapTrip);
 };
 
+const findTripByCode = async (codeOrId) => {
+  if (!codeOrId) return null;
+  const str = String(codeOrId).trim();
+  const isNum = /^\d+$/.test(str);
+
+  let query = supabase
+    .from('trips')
+    .select(`
+      *,
+      trip_trucks(id, trip_id, truck_id, incident_id, assignment_type, trucks(*)),
+      trip_drivers(id, trip_id, driver_id, incident_id, driver_role, assignment_type, driver_profiles(*, users:user_account_id(id, full_name, phone))),
+      trip_stops(*, locations(*), orders(*, customers(*), order_cargos(*)), delivery_evidences(*)),
+      incidents(id, type, status, description, reported_time, resolution_note),
+      waybills(*),
+      trip_events(*)
+    `);
+
+  if (isNum) {
+    query = query.or(`trip_code.eq.${str},id.eq.${Number(str)}`);
+  } else {
+    query = query.ilike('trip_code', str);
+  }
+
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) {
+    console.error('tripModel.findTripByCode error:', error);
+    throw error;
+  }
+  return data ? mapTrip(data) : null;
+};
+
 const findTruckByPlate = async (plate) => {
   if (!plate) return null;
   const cleanPlate = String(plate).split(' ')[0].trim();
@@ -490,6 +521,7 @@ const updateTripStatus = async (id, status, userId = 1) => {
 
 module.exports = {
   findAllTrips,
+  findTripByCode,
   findTruckByPlate,
   findFirstTruck,
   findDriverByName,

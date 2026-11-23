@@ -9,8 +9,12 @@ const driverRoutes = require("./driverRoutes");
 const managerRoutes = require("./managerRoutes");
 const aiRoutes = require("./aiRoutes");
 const uploadRoutes = require("./uploadRoutes");
+const tripController = require("../controllers/tripController");
 
 const router = express.Router();
+
+// Public trip details / e-waybill endpoint (không yêu cầu đăng nhập)
+router.get("/trips/public/:code", tripController.getPublicTrip);
 
 router.use("/auth", authRoutes);
 router.use("/orders", orderRoutes);

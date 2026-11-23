@@ -543,6 +543,20 @@ const optimizeMultiStopRoute = async (req, res) => {
   }
 };
 
+const getPublicTrip = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const trip = await tripService.getPublicTripByCode(code);
+    if (!trip) {
+      return res.status(404).json({ message: 'Không tìm thấy thông tin chuyến xe' });
+    }
+    return res.json({ trip });
+  } catch (err) {
+    console.error('getPublicTrip error:', err);
+    return res.status(500).json({ message: 'Lỗi tải thông tin chuyến xe công khai', error: err.message });
+  }
+};
+
 module.exports = {
   getAllTrips,
   createTrip,
@@ -551,5 +565,6 @@ module.exports = {
   getTripReplay,
   getLeaveReassignments,
   reassignTripDriver,
-  optimizeMultiStopRoute
+  optimizeMultiStopRoute,
+  getPublicTrip
 };
