@@ -5,6 +5,7 @@ import { Camera, AlertTriangle, ArrowLeft, Truck, MapPin, Info, ShieldAlert } fr
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { driverApi, queueOfflineAction } from "../../api/driverApi";
+import { uploadApi } from "../../api/uploadApi";
 
 export default function ReportIncidentPage() {
   const { message } = App.useApp();
@@ -32,10 +33,11 @@ export default function ReportIncidentPage() {
       window.addEventListener("offline", handleOffline);
     }
 
+    let isCancelled = false;
     // Lấy thông tin chuyến xe đang chạy của tài xế để tự động gắn với sự cố
-    setLoadingTrip(true);
     driverApi.getActiveTrip()
       .then(res => {
+        if (isCancelled) return;
         let foundTrip = res?.trip || null;
         if (!foundTrip && Array.isArray(res?.upcomingTrips) && res.upcomingTrips.length > 0) {
           if (paramTripId) {
@@ -85,6 +87,7 @@ export default function ReportIncidentPage() {
     }
 
     return () => {
+      isCancelled = true;
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
@@ -96,9 +99,9 @@ export default function ReportIncidentPage() {
       setSubmitting(true);
 
       const photoList = values.photos || [];
-      const photoUrls = photoList.length > 0 
-        ? photoList.map(p => p.url || p.thumbUrl || p.response?.url || "https://cdn.nexlog.vn/incident-sample.jpg")
-        : ["https://cdn.nexlog.vn/incident-default.jpg"];
+      const photoUrls = photoList
+        .map(p => p.url || p.response?.url || (isOffline ? p.thumbUrl : null))
+        .filter(Boolean);
 
       // Tìm điểm dừng chưa hoàn thành của chuyến đang chạy
       const currentStop = (activeTrip?.stops || []).find(s => s.status !== "Done") || activeTrip?.stops?.[0];
@@ -273,7 +276,23 @@ export default function ReportIncidentPage() {
               listType="picture-card" 
               maxCount={5} 
               multiple 
-              beforeUpload={() => false}
+              accept="image/*"
+              customRequest={async ({ file, onSuccess, onError }) => {
+                try {
+                  if (isOffline) {
+                    const dataUrl = await uploadApi.fileToDataUrl(file);
+                    onSuccess?.({ url: dataUrl });
+                    message.info("Đã lưu ảnh hiện trường tạm ngoại tuyến.");
+                    return;
+                  }
+                  const uploaded = await uploadApi.uploadToCloudinary(file, "nexlog/incidents");
+                  onSuccess?.({ url: uploaded.url });
+                  message.success("Đã tải ảnh hiện trường lên Cloudinary.");
+                } catch (err) {
+                  message.error(err.message || "Lỗi tải ảnh lên Cloudinary");
+                  onError?.(err);
+                }
+              }}
               className="upload-dark"
             >
               <div className="text-slate-400 flex flex-col items-center">

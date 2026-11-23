@@ -17,6 +17,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { orderApi } from '../../../api/orderApi';
+import { uploadApi } from '../../../api/uploadApi';
 
 export default function OrderContractTab({
   order,
@@ -222,39 +223,38 @@ export default function OrderContractTab({
 
     try {
       setUploadingScan(true);
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64Data = reader.result;
-        const res = await orderApi.uploadContractFile(order.id || order.order_id, {
-          file_name: file.name,
-          file_data: base64Data,
-          file_size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
-        });
+      const orderId = order.id || order.order_id;
+      const uploaded = await uploadApi.uploadToCloudinary(file, `nexlog/orders/${orderId}/contract`);
+      const contractUrl = uploaded.url;
+      const res = await orderApi.uploadContractFile(orderId, {
+        file_name: file.name,
+        file_data: contractUrl,
+        file_url: contractUrl,
+        file_size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
+      });
 
-        const now = new Date().toISOString();
-        setContractFile(file.name);
-        setContractFileData(base64Data);
-        setContractUploadedAt(now);
+      const now = new Date().toISOString();
+      setContractFile(file.name);
+      setContractFileData(contractUrl);
+      setContractUploadedAt(now);
 
-        message.success(res?.message || 'Đã tiếp nhận bản scan hợp đồng có chữ ký! Hợp đồng chính thức được xác nhận thành công.');
-        onUpdateOrder?.({
-          ...order,
-          contract_uploaded: true,
-          contract_file: file.name,
-          contract_file_data: base64Data,
-          contract_uploaded_at: now,
-          status: 'READY_FOR_PLANNING',
-          web_workflow: {
-            ...(order.web_workflow || {}),
-            stage: 'CONTRACT_SIGNED',
-            contract_file: file.name
-          }
-        });
-      };
-      reader.readAsDataURL(file);
+      message.success(res?.message || 'Đã tiếp nhận bản scan hợp đồng có chữ ký! Hợp đồng chính thức được xác nhận thành công.');
+      onUpdateOrder?.({
+        ...order,
+        contract_uploaded: true,
+        contract_file: file.name,
+        contract_file_data: contractUrl,
+        contract_uploaded_at: now,
+        status: 'READY_FOR_PLANNING',
+        web_workflow: {
+          ...(order.web_workflow || {}),
+          stage: 'CONTRACT_SIGNED',
+          contract_file: file.name
+        }
+      });
     } catch (err) {
       console.error('uploadContractFile error:', err);
-      message.error(err.message || 'Lỗi khi tải tệp hợp đồng');
+      message.error(err.message || 'Lỗi khi tải tệp hợp đồng lên Cloudinary');
     } finally {
       setUploadingScan(false);
     }
@@ -741,8 +741,8 @@ export default function OrderContractTab({
                   />
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">Mã HAWB / Đơn hàng:</span>
-                  <span className="font-mono font-bold text-indigo-700">{order.hawb || order.order_code || order.tracking_number}</span>
+                  <span className="text-gray-500 block mb-0.5">Mã đơn hàng:</span>
+                  <span className="font-mono font-bold text-indigo-700">{order.order_code || order.order_id || order.tracking_number}</span>
                 </div>
               </div>
             ) : (
@@ -752,7 +752,7 @@ export default function OrderContractTab({
                 <div>• Địa chỉ: <b>{contractDetails.customer_address || 'Địa chỉ khách hàng'}</b></div>
                 <div>• Số điện thoại liên hệ: <b>{contractDetails.customer_phone || 'Chưa cung cấp'}</b></div>
                 <div>• Email tiếp nhận: <b>{contractDetails.customer_email || 'Chưa cung cấp'}</b></div>
-                <div>• Mã HAWB / Đơn hàng: <b>{order.hawb || order.order_code || order.tracking_number}</b></div>
+                <div>• Mã đơn hàng: <b>{order.order_code || order.order_id || order.tracking_number}</b></div>
               </div>
             )}
           </div>

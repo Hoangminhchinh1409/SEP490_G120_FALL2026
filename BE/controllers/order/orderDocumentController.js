@@ -1,4 +1,5 @@
-const supabase = require('../../config/supabase');
+const prisma = require('../../config/prisma');
+const { serializePrisma, formatDateOnly } = require('../../utils/prismaHelper');
 const {
   sendOrderPriceConfirmationEmail,
   sendDocumentRejectionEmail,
@@ -6,44 +7,89 @@ const {
 } = require('../../services/emailService');
 const { parseOrderMeta, saveOrderMeta } = require('../../services/orderHelperService');
 const { generateContractPdfBuffer } = require('../../services/pdfService');
+const cloudinaryService = require('../../services/cloudinaryService');
+
+const serializeOrderWithAliases = (row) => {
+  if (!row) return null;
+  const serialized = serializePrisma(row);
+  if (row.requested_pickup_date) {
+    serialized.requested_pickup_date = formatDateOnly(row.requested_pickup_date);
+  }
+  return {
+    ...serialized,
+    customer: serialized.customers || null,
+    pickup_location: serialized.locations_orders_pickup_location_idTolocations || null,
+    delivery_location: serialized.locations_orders_delivery_location_idTolocations || null,
+    responsible_dispatcher: serialized.users_orders_responsible_dispatcher_idTousers || null
+  };
+};
+
+const normalizeOrderDocAttachments = async (docs, folder) => {
+  if (!Array.isArray(docs)) return [];
+  return Promise.all(
+    docs.map(async (doc) => {
+      if (!doc) return doc;
+      const nextDoc = { ...doc };
+      if (typeof nextDoc.file_url === 'string' && nextDoc.file_url.trim().startsWith('data:')) {
+        const uploadedUrl = await cloudinaryService.uploadDataUriIfNeeded(nextDoc.file_url, folder);
+        nextDoc.file_url = uploadedUrl;
+        nextDoc.file_data = uploadedUrl;
+      } else if (typeof nextDoc.file_data === 'string' && nextDoc.file_data.trim().startsWith('data:')) {
+        const uploadedUrl = await cloudinaryService.uploadDataUriIfNeeded(nextDoc.file_data, folder);
+        nextDoc.file_data = uploadedUrl;
+        if (!nextDoc.file_url) nextDoc.file_url = uploadedUrl;
+      }
+      return nextDoc;
+    })
+  );
+};
 
 // Helper tìm đơn hàng theo id hoặc order_code hoặc tracking_token
 const findOrderByIdentifier = async (identifier, includeRelations = false) => {
-  const selectClause = includeRelations
-    ? `
-      *,
-      customer:customers(company_name, email, tax_code),
-      pickup_location:locations!orders_pickup_location_id_fkey(name, address),
-      delivery_location:locations!orders_delivery_location_id_fkey(name, address),
-      responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
-      order_cargos(*),
-      order_notes(*)
-    `
-    : `
-      *,
-      customer:customers(company_name, email, tax_code),
-      responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
-      order_notes(*)
-    `;
-
-  let query = supabase.from('orders').select(selectClause);
   const cleanId = (identifier || '').toString().trim();
+  if (!cleanId) return null;
 
+  let whereFilter;
   if (/^\d+$/.test(cleanId)) {
-    query = query.eq('id', parseInt(cleanId, 10));
+    whereFilter = { id: BigInt(cleanId) };
   } else if (cleanId.startsWith('NEX-') || cleanId.startsWith('ORD-')) {
-    query = query.eq('order_code', cleanId);
+    whereFilter = { order_code: cleanId };
   } else {
     const sanitizedToken = cleanId.replace(/[^a-zA-Z0-9_\-]/g, '');
-    query = query.or('tracking_token.eq.' + sanitizedToken + ',order_code.eq.' + sanitizedToken);
+    whereFilter = {
+      OR: [{ tracking_token: sanitizedToken }, { order_code: sanitizedToken }]
+    };
   }
 
-  const { data, error } = await query.limit(1);
-  if (error) {
+  const includeClause = includeRelations
+    ? {
+        customers: { select: { company_name: true, email: true, tax_code: true } },
+        locations_orders_pickup_location_idTolocations: { select: { name: true, address: true } },
+        locations_orders_delivery_location_idTolocations: { select: { name: true, address: true } },
+        users_orders_responsible_dispatcher_idTousers: {
+          select: { id: true, username: true, full_name: true, phone: true, zalo_link: true }
+        },
+        order_cargos: true,
+        order_notes: true
+      }
+    : {
+        customers: { select: { company_name: true, email: true, tax_code: true } },
+        users_orders_responsible_dispatcher_idTousers: {
+          select: { id: true, username: true, full_name: true, phone: true, zalo_link: true }
+        },
+        order_notes: true
+      };
+
+  try {
+    const row = await prisma.orders.findFirst({
+      where: whereFilter,
+      include: includeClause
+    });
+    return serializeOrderWithAliases(row);
+  } catch (error) {
     console.error('[orderDocumentController] findOrderByIdentifier error:', error.message);
     return null;
   }
-  return data?.[0] || null;
 };
 
 // 4. CẬP NHẬT GIÁ CƯỚC THỎA THUẬN (VÀ TỰ ĐỘNG GỬI EMAIL XÁC NHẬN CHO KHÁCH HÀNG NẾU LÀ ĐƠN WEB)
@@ -78,36 +124,9 @@ const updateAgreedPrice = async (req, res) => {
       meta.web_workflow = {};
     }
 
-    const wasNegotiating = meta.web_workflow.stage === 'CUSTOMER_NEGOTIATING';
     const cleanReason = (adjustment_reason || '').toString().trim();
     const finalVehicleType = proposed_vehicle_type || meta.web_workflow.proposed_vehicle_type || currentOrder.truck_type_requested || 'TRUCK_2.5T';
     const cleanVehicleNote = (vehicle_analysis_note || '').toString().trim();
-
-    if (wasNegotiating && !cleanReason) {
-      return res.status(400).json({
-        message: 'Vui lòng ghi rõ lý do điều chỉnh lại giá cước / phương án xe (Bắt buộc)!'
-      });
-    }
-
-    // Lưu lịch sử các vòng đàm phán nếu đang từ trạng thái thương lượng chuyển sang chốt lại giá
-    if (wasNegotiating && meta.web_workflow.negotiation) {
-      const history = Array.isArray(meta.web_workflow.negotiation_history)
-        ? meta.web_workflow.negotiation_history
-        : [];
-      history.push({
-        round: history.length + 1,
-        customer_feedback_reason: meta.web_workflow.negotiation.feedback_reason,
-        customer_proposed_price: meta.web_workflow.negotiation.proposed_price,
-        customer_proposed_vehicle: meta.web_workflow.negotiation.proposed_vehicle_type || null,
-        customer_note: meta.web_workflow.negotiation.customer_note,
-        submitted_at: meta.web_workflow.negotiation.submitted_at,
-        dispatcher_new_price: numPrice,
-        dispatcher_proposed_vehicle: finalVehicleType,
-        dispatcher_adjustment_reason: cleanReason,
-        responded_at: new Date().toISOString()
-      });
-      meta.web_workflow.negotiation_history = history;
-    }
 
     meta.web_workflow.stage = 'PRICE_AGREED_BY_DISPATCHER';
     meta.web_workflow.agreed_price = numPrice;
@@ -123,20 +142,21 @@ const updateAgreedPrice = async (req, res) => {
     }
 
     // Cập nhật giá thỏa thuận & loại xe đề xuất vào DB
-    const { data, error } = await supabase
-      .from('orders')
-      .update({
-        agreed_price: numPrice,
-        truck_type_requested: finalVehicleType,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', currentOrder.id)
-      .select();
-
-    if (error) {
+    let updatedPriceRow;
+    try {
+      updatedPriceRow = await prisma.orders.update({
+        where: { id: BigInt(currentOrder.id) },
+        data: {
+          agreed_price: numPrice,
+          truck_type_requested: finalVehicleType,
+          updated_at: new Date()
+        }
+      });
+    } catch (error) {
       console.error('updateAgreedPrice Error:', error);
-      return res.status(500).json({ message: 'Không thể cập nhật giá cước', error });
+      return res.status(500).json({ message: 'Không thể cập nhật giá cước', error: error.message });
     }
+    const updatedOrder = serializeOrderWithAliases(updatedPriceRow);
 
     await saveOrderMeta(currentOrder.id, meta);
 
@@ -218,7 +238,7 @@ const updateAgreedPrice = async (req, res) => {
     }
 
     return res.json({
-      message: wasNegotiating
+      message: cleanReason
         ? `Đã chốt lại giá ${numPrice.toLocaleString('vi-VN')} VNĐ (Lý do: ${cleanReason}) và gửi lại báo giá cho khách hàng!`
         : isWebOrder
           ? `Đã chốt giá ${numPrice.toLocaleString('vi-VN')} VNĐ và tự động gửi email xác nhận kèm link tới khách hàng (${targetEmail || 'N/A'})!`
@@ -226,7 +246,7 @@ const updateAgreedPrice = async (req, res) => {
       email_sent: emailResult?.success || false,
       email_preview_url: emailResult?.previewUrl || null,
       web_workflow: meta.web_workflow,
-      order: data?.[0]
+      order: updatedOrder
     });
   } catch (err) {
     console.error('updateAgreedPrice Exception:', err);
@@ -256,13 +276,13 @@ const customerAgreeOrderPrice = async (req, res) => {
       'TRUCK_2.5T';
 
     await saveOrderMeta(order.id, meta);
-    await supabase
-      .from('orders')
-      .update({
+    await prisma.orders.update({
+      where: { id: BigInt(order.id) },
+      data: {
         status: 'CONFIRMED',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', order.id);
+        updated_at: new Date()
+      }
+    });
 
     const cleanToken = (order.tracking_token || token || '').trim();
     return res.json({
@@ -271,88 +291,6 @@ const customerAgreeOrderPrice = async (req, res) => {
     });
   } catch (err) {
     console.error('customerAgreeOrderPrice Error:', err);
-    return res.status(500).json({ message: 'Internal Server Error' });
-  }
-};
-
-
-// 4.3. API CHO KHÁCH HÀNG: YÊU CẦU ĐIỀU CHỈNH GIÁ / LOẠI XE / LỊCH TRÌNH / TÁCH NHIỀU XE NHỎ (CÓ THỂ DEAL LẠI NHIỀU LẦN)
-const customerNegotiateOrder = async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { 
-      proposed_price, 
-      proposed_vehicle_type, 
-      proposed_pickup_date, 
-      feedback_reason, 
-      customer_note,
-      request_split_trucks,
-      split_details
-    } = req.body;
-
-    const order = await findOrderByIdentifier(token, false);
-    if (!order) {
-      return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
-    }
-
-    const meta = parseOrderMeta(order);
-    if (!meta.web_workflow) meta.web_workflow = {};
-    const round = (Array.isArray(meta.web_workflow.negotiation_history) ? meta.web_workflow.negotiation_history.length : 0) + 1;
-
-    meta.web_workflow.stage = 'CUSTOMER_NEGOTIATING';
-    meta.web_workflow.negotiation = {
-      round,
-      previous_price: order.agreed_price || meta.web_workflow.agreed_price || 0,
-      proposed_price: proposed_price ? parseInt(proposed_price, 10) : null,
-      proposed_vehicle_type: proposed_vehicle_type || null,
-      proposed_pickup_date: proposed_pickup_date || null,
-      feedback_reason: feedback_reason || 'Giá cước chưa phù hợp',
-      customer_note: customer_note || '',
-      request_split_trucks: Boolean(request_split_trucks),
-      split_details: split_details || null,
-      submitted_at: new Date().toISOString()
-    };
-
-    // Lưu vào bảng order_notes (giới hạn <= 480 ký tự)
-    let noteContent = `[Khách hàng phản hồi đàm phán] Lý do: ${feedback_reason || 'Cần điều chỉnh'}.`;
-    if (request_split_trucks && split_details) {
-      noteContent += ` [YÊU CẦU TÁCH ${split_details.split_count || 2} XE NHỎ]: ${split_details.vehicle_target_label || split_details.vehicle_target}. Lý do tách: ${split_details.reason || 'Kho/đường hẹp'}.`;
-    }
-    if (proposed_price) {
-      noteContent += ` Giá khách đề xuất: ${parseInt(proposed_price, 10).toLocaleString('vi-VN')} đ.`;
-    }
-    if (proposed_vehicle_type) {
-      noteContent += ` Xe đề xuất: ${proposed_vehicle_type}.`;
-    }
-    if (customer_note) {
-      noteContent += ` Ghi chú: ${customer_note}`;
-    }
-    noteContent = noteContent.slice(0, 480);
-
-    await supabase.from('order_notes').insert([{
-      order_id: order.id,
-      content: noteContent,
-      created_by: 1
-    }]);
-
-    await saveOrderMeta(order.id, meta);
-    await supabase
-      .from('orders')
-      .update({
-        status: 'CONFIRMED',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', order.id);
-
-    return res.json({
-      success: true,
-      message: request_split_trucks 
-        ? 'Đã gửi yêu cầu tách sang nhiều xe nhỏ tới Điều phối viên NEXLOG! Chúng tôi sẽ liên hệ & cập nhật phương án xe sớm nhất.'
-        : 'Đã gửi yêu cầu thương lượng giá thành công! Điều phối viên NEXLOG sẽ xem xét và phản hồi tới Quý khách sớm nhất.',
-      negotiation: meta.web_workflow.negotiation
-    });
-  } catch (err) {
-    console.error('customerNegotiateOrder Error:', err);
     return res.status(500).json({ message: 'Internal Server Error' });
   }
 };
@@ -389,29 +327,34 @@ const customerUploadDocuments = async (req, res) => {
       return incomingDoc;
     });
 
+    const uploadedDocs = await normalizeOrderDocAttachments(
+      mergedDocs,
+      `nexlog/orders/${order.id}/docs`
+    );
+
     meta.web_workflow.stage = 'DOCS_UPLOADED';
-    meta.web_workflow.documents = mergedDocs;
+    meta.web_workflow.documents = uploadedDocs;
     meta.web_workflow.approved_documents = null;
     meta.web_workflow.docs_uploaded_at = new Date().toISOString();
-    meta.documents = mergedDocs;
+    meta.documents = uploadedDocs;
 
     await saveOrderMeta(order.id, meta);
-    await supabase
-      .from('orders')
-      .update({
+    await prisma.orders.update({
+      where: { id: BigInt(order.id) },
+      data: {
         status: 'CONFIRMED',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', order.id);
+        updated_at: new Date()
+      }
+    });
 
     return res.json({
       message: 'Tải lên chứng từ thành công! Hồ sơ đang được Điều phối viên kiểm duyệt.',
       status: 'PENDING_DISPATCHER_REVIEW',
-      documents: mergedDocs
+      documents: uploadedDocs
     });
   } catch (err) {
     console.error('customerUploadDocuments Error:', err);
-    return res.status(500).json({ message: 'Internal Server Error' });
+    return res.status(err.statusCode || 500).json({ message: err.message || 'Internal Server Error' });
   }
 };
 
@@ -459,13 +402,13 @@ const rejectOrderDocument = async (req, res) => {
     meta.documents = updatedDocs;
 
     await saveOrderMeta(currentOrder.id, meta);
-    await supabase
-      .from('orders')
-      .update({
+    await prisma.orders.update({
+      where: { id: BigInt(currentOrder.id) },
+      data: {
         status: 'CONFIRMED',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', currentOrder.id);
+        updated_at: new Date()
+      }
+    });
 
     // Gửi email yêu cầu khách hàng tải lại đúng giấy tờ bị từ chối
     const targetEmail =
@@ -555,10 +498,10 @@ const approveWebOrderDocuments = async (req, res) => {
       updateFields.waiting_too_long = false;
     }
 
-    await supabase
-      .from('orders')
-      .update(updateFields)
-      .eq('id', currentOrder.id);
+    await prisma.orders.update({
+      where: { id: BigInt(currentOrder.id) },
+      data: updateFields
+    });
 
     return res.json({
       message: meta.contract_uploaded
@@ -608,12 +551,17 @@ const uploadContractFile = async (req, res) => {
     }
 
     const nowIso = new Date().toISOString();
+    const rawContractData = file_data || req.body?.file_url || null;
+    const resolvedContractUrl = rawContractData
+      ? await cloudinaryService.uploadDataUriIfNeeded(rawContractData, `nexlog/orders/${currentOrder.id}/contract`)
+      : null;
+
     meta.contract_uploaded = true;
     meta.contract_file = file_name;
     meta.contract_file_size = file_size || '-';
     meta.contract_uploaded_at = nowIso;
-    if (file_data) {
-      meta.contract_file_data = file_data;
+    if (resolvedContractUrl) {
+      meta.contract_file_data = resolvedContractUrl;
     }
 
     if (!meta.web_workflow) meta.web_workflow = {};
@@ -644,15 +592,15 @@ const uploadContractFile = async (req, res) => {
       updatePayload.waiting_too_long = false;
     }
 
-    const { data: updatedOrders, error: updateError } = await supabase
-      .from('orders')
-      .update(updatePayload)
-      .eq('id', currentOrder.id)
-      .select();
-
-    if (updateError) {
+    let updatedContractRow;
+    try {
+      updatedContractRow = await prisma.orders.update({
+        where: { id: BigInt(currentOrder.id) },
+        data: updatePayload
+      });
+    } catch (updateError) {
       console.error('uploadContractFile update error:', updateError);
-      return res.status(500).json({ message: 'Lỗi khi cập nhật tệp hợp đồng vào CSDL', error: updateError });
+      return res.status(500).json({ message: 'Lỗi khi cập nhật tệp hợp đồng vào CSDL', error: updateError.message });
     }
 
     return res.json({
@@ -664,11 +612,11 @@ const uploadContractFile = async (req, res) => {
       contract_uploaded_at: nowIso,
       stage: 'CONTRACT_SIGNED',
       web_workflow: meta.web_workflow,
-      order: updatedOrders?.[0]
+      order: serializeOrderWithAliases(updatedContractRow)
     });
   } catch (err) {
     console.error('uploadContractFile Exception:', err);
-    return res.status(500).json({ message: 'Internal Server Error' });
+    return res.status(err.statusCode || 500).json({ message: err.message || 'Internal Server Error' });
   }
 };
 
@@ -843,11 +791,13 @@ const confirmHardcopyContractReceived = async (req, res) => {
 
     // Ghi log đơn hàng
     try {
-      await supabase.from('order_notes').insert([{
-        order_id: currentOrder.id,
-        created_by: 3,
-        content: `[PHÁP LÝ HỢP ĐỒNG] Đã tiếp nhận và xác minh bản cứng hợp đồng gốc có dấu đỏ qua bưu điện (Mã bưu cục/vận đơn: ${cleanCode}). Lưu kho pháp lý hoàn tất.`.slice(0, 480)
-      }]);
+      await prisma.order_notes.create({
+        data: {
+          order_id: BigInt(currentOrder.id),
+          created_by: Number(req.user?.id || 3),
+          content: `[PHÁP LÝ HỢP ĐỒNG] Đã tiếp nhận và xác minh bản cứng hợp đồng gốc có dấu đỏ qua bưu điện (Mã bưu cục/vận đơn: ${cleanCode}). Lưu kho pháp lý hoàn tất.`.slice(0, 480)
+        }
+      });
     } catch (noteErr) {
       console.warn('Note insert warning:', noteErr);
     }
@@ -880,15 +830,20 @@ const uploadOrderDocuments = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
+    const resolvedDocs = await normalizeOrderDocAttachments(
+      documents,
+      `nexlog/orders/${currentOrder.id}/docs`
+    );
+
     const meta = parseOrderMeta(currentOrder);
     const nowIso = new Date().toISOString();
     if (!meta.web_workflow) meta.web_workflow = {};
 
     // 1. Phân tích trạng thái danh mục chứng từ để tự động suy luận stage chuẩn xác
-    const customerRequiredDocs = documents.filter(
+    const customerRequiredDocs = resolvedDocs.filter(
       (d) => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'))
     );
-    const hasRejected = documents.some((d) => d.status === 'REJECTED');
+    const hasRejected = resolvedDocs.some((d) => d.status === 'REJECTED');
     const allApproved =
       customerRequiredDocs.length > 0 &&
       customerRequiredDocs.every((d) => d.status === 'APPROVED');
@@ -900,23 +855,22 @@ const uploadOrderDocuments = async (req, res) => {
       resolvedStage = meta.contract_uploaded ? 'CONTRACT_SIGNED' : 'DOCS_APPROVED';
     } else if (
       !resolvedStage ||
-      resolvedStage === 'CUSTOMER_NEGOTIATING' ||
       resolvedStage === 'PRICE_AGREED_BY_DISPATCHER' ||
       resolvedStage === 'CUSTOMER_CONFIRMED'
     ) {
-      const hasUploadedFile = documents.some((d) => d.file && d.file !== 'Chờ tải lên');
+      const hasUploadedFile = resolvedDocs.some((d) => d.file && d.file !== 'Chờ tải lên');
       if (hasUploadedFile) {
         resolvedStage = 'DOCS_UPLOADED';
       }
     }
 
     meta.web_workflow.stage = resolvedStage;
-    meta.web_workflow.documents = documents;
+    meta.web_workflow.documents = resolvedDocs;
     if (resolvedStage === 'DOCS_APPROVED' || allApproved) {
-      meta.web_workflow.approved_documents = documents.filter((d) => d.status === 'APPROVED');
+      meta.web_workflow.approved_documents = resolvedDocs.filter((d) => d.status === 'APPROVED');
       meta.web_workflow.docs_approved_at = meta.web_workflow.docs_approved_at || nowIso;
     }
-    meta.documents = documents;
+    meta.documents = resolvedDocs;
 
     await saveOrderMeta(currentOrder.id, meta);
 
@@ -933,27 +887,27 @@ const uploadOrderDocuments = async (req, res) => {
       updatePayload.document_status = 'APPROVED';
     }
 
-    const { data: updatedOrders, error: updateError } = await supabase
-      .from('orders')
-      .update(updatePayload)
-      .eq('id', currentOrder.id)
-      .select();
-
-    if (updateError) {
+    let updatedDocRow;
+    try {
+      updatedDocRow = await prisma.orders.update({
+        where: { id: BigInt(currentOrder.id) },
+        data: updatePayload
+      });
+    } catch (updateError) {
       console.error('uploadOrderDocuments update error:', updateError);
-      return res.status(500).json({ message: 'Lỗi khi cập nhật chứng từ', error: updateError });
+      return res.status(500).json({ message: 'Lỗi khi cập nhật chứng từ', error: updateError.message });
     }
 
     return res.json({
       message: 'Đã lưu danh mục chứng từ vào hồ sơ đơn hàng thành công!',
-      documents,
+      documents: resolvedDocs,
       stage: resolvedStage,
       web_workflow: meta.web_workflow,
-      order: updatedOrders?.[0]
+      order: serializeOrderWithAliases(updatedDocRow)
     });
   } catch (err) {
     console.error('uploadOrderDocuments Exception:', err);
-    return res.status(500).json({ message: 'Internal Server Error' });
+    return res.status(err.statusCode || 500).json({ message: err.message || 'Internal Server Error' });
   }
 };
 
@@ -1001,24 +955,26 @@ const issueInvoiceToAccounting = async (req, res) => {
 
     await saveOrderMeta(currentOrder.id, meta);
 
-    const { data: updatedOrders, error: updateError } = await supabase
-      .from('orders')
-      .update({ updated_at: nowIso })
-      .eq('id', currentOrder.id)
-      .select();
-
-    if (updateError) {
+    let updatedInvRow;
+    try {
+      updatedInvRow = await prisma.orders.update({
+        where: { id: BigInt(currentOrder.id) },
+        data: { updated_at: new Date() }
+      });
+    } catch (updateError) {
       console.error('issueInvoiceToAccounting error:', updateError);
-      return res.status(500).json({ message: 'Lỗi khi cập nhật hóa đơn', error: updateError });
+      return res.status(500).json({ message: 'Lỗi khi cập nhật hóa đơn', error: updateError.message });
     }
 
     // Thêm ghi chú lịch sử
     try {
-      await supabase.from('order_notes').insert([{
-        order_id: currentOrder.id,
-        created_by: 3,
-        content: `[KẾ TOÁN & HÓA ĐƠN] Đã xuất Hóa đơn GTGT số ${invNumber} (Tổng tiền: ${(parseFloat(total_amount) || currentOrder.agreed_price).toLocaleString('vi-VN')} VNĐ) và bàn giao cho Bộ phận Kế toán.`.slice(0, 480)
-      }]);
+      await prisma.order_notes.create({
+        data: {
+          order_id: BigInt(currentOrder.id),
+          created_by: Number(req.user?.id || 3),
+          content: `[KẾ TOÁN & HÓA ĐƠN] Đã xuất Hóa đơn GTGT số ${invNumber} (Tổng tiền: ${(parseFloat(total_amount) || currentOrder.agreed_price).toLocaleString('vi-VN')} VNĐ) và bàn giao cho Bộ phận Kế toán.`.slice(0, 480)
+        }
+      });
     } catch (noteErr) {
       console.warn('Note insert warning:', noteErr);
     }
@@ -1026,7 +982,7 @@ const issueInvoiceToAccounting = async (req, res) => {
     return res.json({
       message: `Đã xuất hóa đơn ${invNumber} và bàn giao cho Bộ phận Kế toán thành công!`,
       invoice: meta.invoice,
-      order: updatedOrders?.[0]
+      order: serializeOrderWithAliases(updatedInvRow)
     });
   } catch (err) {
     console.error('issueInvoiceToAccounting Exception:', err);
@@ -1037,7 +993,6 @@ const issueInvoiceToAccounting = async (req, res) => {
 module.exports = {
   updateAgreedPrice,
   customerAgreeOrderPrice,
-  customerNegotiateOrder,
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,

@@ -1,7 +1,8 @@
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
 const bcrypt = require('bcrypt');
 const fleetService = require('../services/fleetService');
 const staffAccountService = require('../services/staffAccountService');
+const { serializePrisma, toBigInt, toNum, formatDateOnly } = require('../utils/prismaHelper');
 
 /**
  * Fleet Controller — Nhóm chức năng Quản lý Đội xe, Hồ sơ Tài xế, Lịch Phân ca & Tài khoản Nhân viên Vận hành
@@ -166,87 +167,94 @@ const updateAccountStatus = async (req, res) => {
 // C. MANAGER TRUCKS & DRIVER PROFILES
 // ==========================================
 
+const toDateObj = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return val;
+  const s = String(val).split('T')[0].trim();
+  return new Date(`${s}T00:00:00.000Z`);
+};
+
 const getVehicles = async (req, res) => {
   try {
-    const [
-      { data: trucksResult, error: trucksErr },
-      { data: driversResult, error: driversErr }
-    ] = await Promise.all([
-      supabase
-        .from('trucks')
-        .select(`
-          id, 
-          plate_number, 
-          model,
-          allowed_payload,
-          box_length, 
-          box_width, 
-          box_height,
-          required_license_class,
-          inspection_expiry,
-          insurance_expiry,
-          gps_device_id,
-          status,
-          created_at,
-          updated_at
-        `)
-        .order('id', { ascending: true }),
-      supabase
-        .from('driver_profiles')
-        .select(`
-          id, 
-          user_account_id, 
-          license_number,
-          license_class, 
-          license_expiry, 
-          status,
-          user:users!driver_profiles_user_account_id_fkey(id, full_name, phone, username, email)
-        `)
-        .order('id', { ascending: true })
+    const [trucksResult, driversResult] = await Promise.all([
+      prisma.trucks.findMany({
+        where: { deleted_at: null },
+        select: {
+          id: true,
+          plate_number: true,
+          model: true,
+          allowed_payload: true,
+          box_length: true,
+          box_width: true,
+          box_height: true,
+          required_license_class: true,
+          inspection_expiry: true,
+          insurance_expiry: true,
+          gps_device_id: true,
+          status: true,
+          created_at: true,
+          updated_at: true
+        },
+        orderBy: { id: 'asc' }
+      }),
+      prisma.driver_profiles.findMany({
+        select: {
+          id: true,
+          user_account_id: true,
+          license_number: true,
+          license_class: true,
+          license_expiry: true,
+          status: true,
+          users: {
+            select: { id: true, full_name: true, phone: true, username: true, email: true }
+          }
+        },
+        orderBy: { id: 'asc' }
+      })
     ]);
 
-    if (trucksErr) throw trucksErr;
-    if (driversErr) throw driversErr;
-
-    const formattedTrucks = (trucksResult || []).map((t) => {
-      const isInspectionExpired = t.inspection_expiry ? new Date(t.inspection_expiry) < new Date(): false;
+    const formattedTrucks = serializePrisma(trucksResult || []).map((t, idx) => {
+      const rawT = trucksResult[idx];
+      const isInspectionExpired = rawT.inspection_expiry ? new Date(rawT.inspection_expiry) < new Date() : false;
       return {
-        id: t.id,
+        id: toNum(t.id),
         plate_number: t.plate_number,
         model: t.model || 'Xe tải thùng kín',
-        payload_kg: t.allowed_payload || 5000,
-        allowed_payload: t.allowed_payload || 5000,
-        box_length_cm: t.box_length || 620,
-        box_width_cm: t.box_width || 210,
-        box_height_cm: t.box_height || 220,
-        box_length: t.box_length || 620,
-        box_width: t.box_width || 210,
-        box_height: t.box_height || 220,
+        payload_kg: toNum(t.allowed_payload) || 5000,
+        allowed_payload: toNum(t.allowed_payload) || 5000,
+        box_length_cm: toNum(t.box_length) || 620,
+        box_width_cm: toNum(t.box_width) || 210,
+        box_height_cm: toNum(t.box_height) || 220,
+        box_length: toNum(t.box_length) || 620,
+        box_width: toNum(t.box_width) || 210,
+        box_height: toNum(t.box_height) || 220,
         required_license_class: t.required_license_class || 'C',
-        inspection_expiry: t.inspection_expiry,
-        insurance_expiry: t.insurance_expiry,
+        inspection_expiry: formatDateOnly(rawT.inspection_expiry),
+        insurance_expiry: formatDateOnly(rawT.insurance_expiry),
         gps_device_id: t.gps_device_id,
         status: t.status,
         is_inspection_expired: isInspectionExpired
       };
     });
 
-    const formattedDrivers = (driversResult || []).map((dp) => {
-      const isLicenseExpired = dp.license_expiry ? new Date(dp.license_expiry) < new Date(): false;
+    const formattedDrivers = serializePrisma(driversResult || []).map((dp, idx) => {
+      const rawDp = driversResult[idx];
+      const isLicenseExpired = rawDp.license_expiry ? new Date(rawDp.license_expiry) < new Date() : false;
+      const licExpStr = formatDateOnly(rawDp.license_expiry);
       return {
-        id: dp.id,
-        user_id: dp.user_account_id,
-        user_account_id: dp.user_account_id,
-        name: dp.user?.full_name || dp.user?.username || 'Tài xế',
-        full_name: dp.user?.full_name || dp.user?.username || 'Tài xế',
-        username: dp.user?.username || '',
-        email: dp.user?.email || '',
-        phone: dp.user?.phone || '',
+        id: toNum(dp.id),
+        user_id: toNum(dp.user_account_id),
+        user_account_id: toNum(dp.user_account_id),
+        name: dp.users?.full_name || dp.users?.username || 'Tài xế',
+        full_name: dp.users?.full_name || dp.users?.username || 'Tài xế',
+        username: dp.users?.username || '',
+        email: dp.users?.email || '',
+        phone: dp.users?.phone || '',
         license: dp.license_class,
         license_class: dp.license_class,
         license_number: dp.license_number,
-        expiry: dp.license_expiry,
-        license_expiry: dp.license_expiry,
+        expiry: licExpStr,
+        license_expiry: licExpStr,
         status: dp.status,
         is_license_expired: isLicenseExpired
       };
@@ -285,17 +293,16 @@ const createTruck = async (req, res) => {
 
     const cleanPlate = plate_number.trim().toUpperCase();
 
-    const { data: existingPlate } = await supabase
-      .from('trucks')
-      .select('id')
-      .eq('plate_number', cleanPlate)
-      .maybeSingle();
+    const existingPlate = await prisma.trucks.findFirst({
+      where: { plate_number: cleanPlate },
+      select: { id: true }
+    });
 
     if (existingPlate) {
       return res.status(409).json({ message: `Biển số xe ${cleanPlate} đã tồn tại trong hệ thống.` });
     }
 
-    let finalStatus = status;
+    const finalStatus = status;
     if (inspection_expiry && new Date(inspection_expiry) < new Date()) {
       if (finalStatus === 'AVAILABLE') {
         return res.status(400).json({
@@ -308,10 +315,10 @@ const createTruck = async (req, res) => {
     const bLength = Number(box_length || 620);
     const bWidth = Number(box_width || 210);
     const bHeight = Number(box_height || 220);
+    const defaultExp = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
-    const { data: newTruck, error } = await supabase
-      .from('trucks')
-      .insert({
+    const newTruck = await prisma.trucks.create({
+      data: {
         plate_number: cleanPlate,
         model: model || 'Xe tải thùng kín',
         allowed_payload: payloadNum,
@@ -319,19 +326,20 @@ const createTruck = async (req, res) => {
         box_width: bWidth,
         box_height: bHeight,
         required_license_class: required_license_class || 'C',
-        inspection_expiry: inspection_expiry ? new Date(inspection_expiry).toISOString(): null,
-        insurance_expiry: insurance_expiry ? new Date(insurance_expiry).toISOString(): null,
+        inspection_expiry: toDateObj(inspection_expiry) || defaultExp,
+        insurance_expiry: toDateObj(insurance_expiry) || defaultExp,
         gps_device_id: gps_device_id || null,
         status: finalStatus
-      })
-      .select()
-      .single();
+      }
+    });
 
-    if (error) throw error;
+    const serialized = serializePrisma(newTruck);
+    serialized.inspection_expiry = formatDateOnly(newTruck.inspection_expiry);
+    serialized.insurance_expiry = formatDateOnly(newTruck.insurance_expiry);
 
     return res.status(201).json({
       message: `Đã lưu xe tải ${cleanPlate} thành công.`,
-      truck: newTruck
+      truck: serialized
     });
   } catch (error) {
     console.error('Create Truck Error:', error);
@@ -341,7 +349,7 @@ const createTruck = async (req, res) => {
 
 const updateTruck = async (req, res) => {
   try {
-    const { id } = req.params;
+    const bigId = toBigInt(req.params.id);
     const {
       plate_number,
       model,
@@ -357,16 +365,14 @@ const updateTruck = async (req, res) => {
       status
     } = req.body;
 
-    const updateData = { updated_at: new Date().toISOString() };
+    const updateData = { updated_at: new Date() };
 
     if (plate_number) {
       const cleanPlate = plate_number.trim().toUpperCase();
-      const { data: dup } = await supabase
-        .from('trucks')
-        .select('id')
-        .eq('plate_number', cleanPlate)
-        .neq('id', id)
-        .maybeSingle();
+      const dup = await prisma.trucks.findFirst({
+        where: { plate_number: cleanPlate, id: { not: bigId } },
+        select: { id: true }
+      });
 
       if (dup) {
         return res.status(409).json({ message: `Biển số xe ${cleanPlate} đã bị trùng lặp.` });
@@ -384,22 +390,23 @@ const updateTruck = async (req, res) => {
     if (required_license_class !== undefined) updateData.required_license_class = required_license_class;
     if (gps_device_id !== undefined) updateData.gps_device_id = gps_device_id;
 
-    if (inspection_expiry !== undefined) {
-      updateData.inspection_expiry = inspection_expiry ? new Date(inspection_expiry).toISOString(): null;
+    if (inspection_expiry !== undefined && inspection_expiry) {
+      updateData.inspection_expiry = toDateObj(inspection_expiry);
     }
-    if (insurance_expiry !== undefined) {
-      updateData.insurance_expiry = insurance_expiry ? new Date(insurance_expiry).toISOString(): null;
+    if (insurance_expiry !== undefined && insurance_expiry) {
+      updateData.insurance_expiry = toDateObj(insurance_expiry);
     }
 
-    const targetInspection = updateData.inspection_expiry !== undefined
-      ? updateData.inspection_expiry
-      : null;
+    const targetInspection = updateData.inspection_expiry || null;
 
     if (status !== undefined) {
       if (status === 'AVAILABLE') {
         let exp = targetInspection;
-        if (exp === null) {
-          const { data: cur } = await supabase.from('trucks').select('inspection_expiry').eq('id', id).single();
+        if (!exp) {
+          const cur = await prisma.trucks.findUnique({
+            where: { id: bigId },
+            select: { inspection_expiry: true }
+          });
           exp = cur?.inspection_expiry;
         }
         if (exp && new Date(exp) < new Date()) {
@@ -411,18 +418,18 @@ const updateTruck = async (req, res) => {
       updateData.status = status;
     }
 
-    const { data: updated, error } = await supabase
-      .from('trucks')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
+    const updated = await prisma.trucks.update({
+      where: { id: bigId },
+      data: updateData
+    });
 
-    if (error) throw error;
+    const serialized = serializePrisma(updated);
+    serialized.inspection_expiry = formatDateOnly(updated.inspection_expiry);
+    serialized.insurance_expiry = formatDateOnly(updated.insurance_expiry);
 
     return res.json({
       message: 'Cập nhật thông tin xe tải thành công.',
-      truck: updated
+      truck: serialized
     });
   } catch (error) {
     console.error('Update Truck Error:', error);
@@ -432,7 +439,7 @@ const updateTruck = async (req, res) => {
 
 const updateTruckStatus = async (req, res) => {
   try {
-    const { id } = req.params;
+    const bigId = toBigInt(req.params.id);
     const { status } = req.body;
 
     if (status && status.toUpperCase() === 'ON_TRIP') {
@@ -446,13 +453,12 @@ const updateTruckStatus = async (req, res) => {
     const targetStatus = status.toUpperCase();
 
     if (targetStatus === 'AVAILABLE') {
-      const { data: truck, error: tErr } = await supabase
-        .from('trucks')
-        .select('inspection_expiry, plate_number')
-        .eq('id', id)
-        .single();
+      const truck = await prisma.trucks.findUnique({
+        where: { id: bigId },
+        select: { inspection_expiry: true, plate_number: true }
+      });
 
-      if (tErr || !truck) {
+      if (!truck) {
         return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
       }
 
@@ -463,21 +469,17 @@ const updateTruckStatus = async (req, res) => {
       }
     }
 
-    const { data: updated, error } = await supabase
-      .from('trucks')
-      .update({
+    const updated = await prisma.trucks.update({
+      where: { id: bigId },
+      data: {
         status: targetStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
+        updated_at: new Date()
+      }
+    });
 
     return res.json({
       message: `Đã đổi trạng thái xe thành ${targetStatus}.`,
-      truck: updated
+      truck: serializePrisma(updated)
     });
   } catch (error) {
     console.error('Update Truck Status Error:', error);
@@ -487,13 +489,12 @@ const updateTruckStatus = async (req, res) => {
 
 const deleteTruck = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { error } = await supabase
-      .from('trucks')
-      .update({ status: 'INACTIVE', updated_at: new Date().toISOString() })
-      .eq('id', id);
+    const bigId = toBigInt(req.params.id);
+    await prisma.trucks.update({
+      where: { id: bigId },
+      data: { status: 'INACTIVE', updated_at: new Date() }
+    });
 
-    if (error) throw error;
     return res.json({ message: 'Đã chuyển xe sang trạng thái Ngưng hoạt động (Inactive).' });
   } catch (error) {
     console.error('Delete Truck Error:', error);
@@ -511,27 +512,23 @@ const createDriver = async (req, res) => {
       return res.status(400).json({ message: 'Họ tên và số điện thoại là bắt buộc.' });
     }
 
-    // 1. Kiểm tra xem đã có user nào theo SĐT hoặc Email chưa
     let userId = null;
     let finalUsername = '';
     let finalEmail = '';
     let finalFullName = driverName;
     let finalPhone = cleanPhone;
 
-    const { data: userByPhone } = await supabase
-      .from('users')
-      .select('id, full_name, phone, username, email, role_id')
-      .eq('phone', cleanPhone)
-      .maybeSingle();
+    const userByPhone = await prisma.users.findFirst({
+      where: { phone: cleanPhone },
+      select: { id: true, full_name: true, phone: true, username: true, email: true, role_id: true }
+    });
 
     let existingUser = userByPhone;
     if (!existingUser && email && email.trim()) {
-      const { data: userByEmail } = await supabase
-        .from('users')
-        .select('id, full_name, phone, username, email, role_id')
-        .eq('email', email.trim().toLowerCase())
-        .maybeSingle();
-      if (userByEmail) existingUser = userByEmail;
+      existingUser = await prisma.users.findUnique({
+        where: { email: email.trim().toLowerCase() },
+        select: { id: true, full_name: true, phone: true, username: true, email: true, role_id: true }
+      });
     }
 
     if (existingUser) {
@@ -541,109 +538,99 @@ const createDriver = async (req, res) => {
       finalFullName = existingUser.full_name || driverName;
       finalPhone = existingUser.phone || cleanPhone;
 
-      // Cập nhật vai trò thành Driver (4) nếu chưa phải
-      if (existingUser.role_id !== 4) {
-        await supabase.from('users').update({ role_id: 4 }).eq('id', userId);
+      if (Number(existingUser.role_id) !== 4) {
+        await prisma.users.update({
+          where: { id: userId },
+          data: { role_id: 4n }
+        });
       }
     } else {
-      // Tạo Username duy nhất
       const phoneDigits = cleanPhone.replace(/\D/g, '').slice(-4) || Math.floor(Math.random() * 1000);
       let candidateUsername = `driver_${phoneDigits}_${Math.floor(10 + Math.random() * 90)}`;
-      const { data: dupUser } = await supabase.from('users').select('id').eq('username', candidateUsername).maybeSingle();
+      const dupUser = await prisma.users.findUnique({
+        where: { username: candidateUsername },
+        select: { id: true }
+      });
       if (dupUser) {
         candidateUsername = `driver_${phoneDigits}_${Date.now().toString().slice(-4)}`;
       }
       finalUsername = candidateUsername;
 
-      // Tạo Email hợp lệ không được null và không được trùng
       if (email && email.trim()) {
         finalEmail = email.trim().toLowerCase();
       } else {
         finalEmail = `${finalUsername}@nexlog.vn`;
       }
-      const { data: dupEmail } = await supabase.from('users').select('id').eq('email', finalEmail).maybeSingle();
+      const dupEmail = await prisma.users.findUnique({
+        where: { email: finalEmail },
+        select: { id: true }
+      });
       if (dupEmail) {
         finalEmail = `driver_${phoneDigits}_${Date.now()}@nexlog.vn`;
       }
 
-      // Băm mật khẩu mặc định (bắt buộc vì password_hash NOT NULL)
       const rawPassword = password || 'Nexlog@2026';
       if (typeof rawPassword !== 'string' || Buffer.byteLength(rawPassword, 'utf8') > 72) {
         return res.status(400).json({ message: 'Mật khẩu không được vượt quá 72 byte.' });
       }
       const password_hash = await bcrypt.hash(rawPassword, 10);
 
-      const { data: newUser, error: userErr } = await supabase
-        .from('users')
-        .insert({
+      const newUser = await prisma.users.create({
+        data: {
           username: finalUsername,
           password_hash,
           full_name: driverName,
           email: finalEmail,
           phone: cleanPhone,
-          role_id: 4,
+          role_id: 4n,
           status: 'ACTIVE'
-        })
-        .select('id, full_name, phone, username, email')
-        .single();
-
-      if (userErr) throw userErr;
+        },
+        select: { id: true, full_name: true, phone: true, username: true, email: true }
+      });
       userId = newUser.id;
     }
 
-    // 2. Kiểm tra và thêm / cập nhật hồ sơ driver_profiles
-    const { data: existingProfile } = await supabase
-      .from('driver_profiles')
-      .select('id')
-      .eq('user_account_id', userId)
-      .maybeSingle();
+    const existingProfile = await prisma.driver_profiles.findUnique({
+      where: { user_account_id: userId },
+      select: { id: true }
+    });
 
     const licNum = (license_number || '').trim() || `GPLX-${cleanPhone.slice(-6)}`;
     const licClass = license_class || 'C';
-    // license_expiry is NOT NULL in database: use provided date or default to 5 years in future
-    const licExpiry = expiry 
-      ? new Date(expiry).toISOString().split('T')[0] 
+    const licExpiryStr = expiry
+      ? new Date(expiry).toISOString().split('T')[0]
       : new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const licExpiryDate = toDateObj(licExpiryStr);
 
     let profileResult = null;
     if (existingProfile) {
-      const { data: updatedProfile, error: updateProfileErr } = await supabase
-        .from('driver_profiles')
-        .update({
+      profileResult = await prisma.driver_profiles.update({
+        where: { id: existingProfile.id },
+        data: {
           license_number: licNum,
           license_class: licClass,
-          license_expiry: licExpiry,
+          license_expiry: licExpiryDate,
           status: 'ACTIVE',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existingProfile.id)
-        .select('*')
-        .single();
-
-      if (updateProfileErr) throw updateProfileErr;
-      profileResult = updatedProfile;
+          updated_at: new Date()
+        }
+      });
     } else {
-      const { data: newProfile, error: profileErr } = await supabase
-        .from('driver_profiles')
-        .insert({
+      profileResult = await prisma.driver_profiles.create({
+        data: {
           user_account_id: userId,
           license_number: licNum,
           license_class: licClass,
-          license_expiry: licExpiry,
+          license_expiry: licExpiryDate,
           status: 'ACTIVE'
-        })
-        .select('*')
-        .single();
-
-      if (profileErr) throw profileErr;
-      profileResult = newProfile;
+        }
+      });
     }
 
     return res.status(201).json({
       message: 'Thêm tài xế mới thành công.',
       driver: {
-        id: profileResult.id,
-        user_account_id: userId,
+        id: toNum(profileResult.id),
+        user_account_id: toNum(userId),
         name: finalFullName,
         phone: finalPhone,
         username: finalUsername,
@@ -651,7 +638,7 @@ const createDriver = async (req, res) => {
         license: profileResult.license_class,
         license_class: profileResult.license_class,
         license_number: profileResult.license_number,
-        expiry: profileResult.license_expiry,
+        expiry: formatDateOnly(profileResult.license_expiry),
         status: profileResult.status
       }
     });
@@ -663,41 +650,40 @@ const createDriver = async (req, res) => {
 
 const updateDriverProfile = async (req, res) => {
   try {
-    const { id } = req.params;
+    const bigId = toBigInt(req.params.id);
     const { license_number, license_class, license_expiry, status, full_name, phone, email } = req.body;
 
-    const profileUpdates = { updated_at: new Date().toISOString() };
+    const profileUpdates = { updated_at: new Date() };
     if (license_number !== undefined) profileUpdates.license_number = license_number;
     if (license_class !== undefined) profileUpdates.license_class = license_class;
-    if (license_expiry !== undefined) {
-      profileUpdates.license_expiry = license_expiry ? new Date(license_expiry).toISOString(): null;
+    if (license_expiry !== undefined && license_expiry) {
+      profileUpdates.license_expiry = toDateObj(license_expiry);
     }
     if (status !== undefined) profileUpdates.status = status;
 
-    const { data: updatedProfile, error: pErr } = await supabase
-      .from('driver_profiles')
-      .update(profileUpdates)
-      .eq('id', id)
-      .select('*')
-      .single();
-
-    if (pErr) throw pErr;
+    const updatedProfile = await prisma.driver_profiles.update({
+      where: { id: bigId },
+      data: profileUpdates
+    });
 
     if ((full_name || phone || email) && updatedProfile.user_account_id) {
-      const userUpdates = { updated_at: new Date().toISOString() };
+      const userUpdates = { updated_at: new Date() };
       if (full_name) userUpdates.full_name = full_name;
       if (phone) userUpdates.phone = phone;
       if (email) userUpdates.email = email;
 
-      await supabase
-        .from('users')
-        .update(userUpdates)
-        .eq('id', updatedProfile.user_account_id);
+      await prisma.users.update({
+        where: { id: updatedProfile.user_account_id },
+        data: userUpdates
+      });
     }
+
+    const serialized = serializePrisma(updatedProfile);
+    serialized.license_expiry = formatDateOnly(updatedProfile.license_expiry);
 
     return res.json({
       message: 'Cập nhật hồ sơ tài xế thành công.',
-      profile: updatedProfile
+      profile: serialized
     });
   } catch (error) {
     console.error('Update Driver Profile Error:', error);

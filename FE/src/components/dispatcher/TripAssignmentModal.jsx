@@ -117,7 +117,6 @@ function TripAssignmentModalContent({
   onAssignSuccess
 }) {
   const orderCode = order?.order_id || order?.id || 'NEX-ORD';
-  const hawbCode = order?.hawb_code || order?.hawb_number || 'HAWB-AUTO';
   const customerName = order?.customer || order?.customer_name || 'Khách hàng';
   const actualWeight = Number(order?.weight || order?.weight_kg || 2000);
   const chargeableWeight = Number(order?.chargeable || order?.chargeable_weight || actualWeight);
@@ -207,16 +206,13 @@ function TripAssignmentModalContent({
     return available?.value || filteredFleetOptions[0]?.value || internalFleetOptions[0]?.value;
   }, [filteredFleetOptions, internalFleetOptions]);
 
-  const [selectedTruckPlate, setSelectedTruckPlate] = useState(defaultOption);
+  const [selectedTruckPlateState, setSelectedTruckPlate] = useState(defaultOption);
 
-  useEffect(() => {
-    if (defaultOption) {
-      const currentOpt = filteredFleetOptions.find(o => o.value === selectedTruckPlate);
-      if (!currentOpt || currentOpt.disabled) {
-        setSelectedTruckPlate(defaultOption);
-      }
-    }
-  }, [defaultOption, filteredFleetOptions]);
+  const selectedTruckPlate = useMemo(() => {
+    const currentOpt = filteredFleetOptions.find(o => o.value === selectedTruckPlateState);
+    if (currentOpt && !currentOpt.disabled) return selectedTruckPlateState;
+    return defaultOption || selectedTruckPlateState;
+  }, [filteredFleetOptions, selectedTruckPlateState, defaultOption]);
 
   const [driverCount, setDriverCount] = useState(1);
   const [selectedDriver1, setSelectedDriver1] = useState('Nguyễn Văn Lái');
@@ -693,7 +689,7 @@ function TripAssignmentModalContent({
         order_id: order.id || order.order_id,
         order_code: orderCode,
         allocation_type: 'VENDOR',
-        status: 'HANDED_OVER_TO_VENDOR',
+        status: 'HANDED_OVER_VENDOR',
         vendor: selectedVendor,
         vendor_tracking: vendorTrackingCode.trim(),
         vendor_cost: vendorCost,
@@ -777,7 +773,7 @@ function TripAssignmentModalContent({
             {/* Thông tin chuyến */}
             <div className="p-3 bg-white border border-gray-300 rounded text-xs text-gray-800 leading-relaxed flex flex-wrap items-center justify-between gap-2">
               <div>
-                Đơn: <b>{orderCode}</b> · HAWB <b>{hawbCode}</b> · {customerName} · <b>{order.package_count || 1} {order.package_unit || 'kiện'}</b> ({order.length_cm || 0}×{order.width_cm || 0}×{order.height_cm || 0} cm) · KL thực <b>{actualWeight.toLocaleString()} kg</b> · KL tính cước <b>{chargeableWeight.toLocaleString()} kg</b> · Thể tích <b>{cargoVolume} m³</b><br />
+                Đơn: <b>{orderCode}</b> · {customerName} · <b>{order.package_count || 1} {order.package_unit || 'kiện'}</b> ({order.length_cm || 0}×{order.width_cm || 0}×{order.height_cm || 0} cm) · KL thực <b>{actualWeight.toLocaleString()} kg</b> · KL tính cước <b>{chargeableWeight.toLocaleString()} kg</b> · Thể tích <b>{cargoVolume} m³</b><br />
                 Trạng thái: <b>Sẵn sàng điều xe</b> · Xuất phát dự kiến: <b>{plannedStart}</b> · Quãng đường ngắn nhất <b>{routeSummary.distanceKm} km</b> · Thời gian chuyến <b>{Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</b>
               </div>
               <div className="flex items-center gap-1.5">
@@ -823,7 +819,6 @@ function TripAssignmentModalContent({
                   <TripAssignmentFleetConfig
                     order={order}
                     orderCode={orderCode}
-                    hawbCode={hawbCode}
                     customerName={customerName}
                     actualWeight={actualWeight}
                     chargeableWeight={chargeableWeight}

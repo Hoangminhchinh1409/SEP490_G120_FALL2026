@@ -27,7 +27,6 @@ const {
 const {
   updateAgreedPrice,
   customerAgreeOrderPrice,
-  customerNegotiateOrder,
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,
@@ -63,7 +62,6 @@ module.exports = {
   // Documents & Pricing
   updateAgreedPrice,
   customerAgreeOrderPrice,
-  customerNegotiateOrder,
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,

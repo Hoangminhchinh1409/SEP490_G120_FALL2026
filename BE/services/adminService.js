@@ -481,10 +481,6 @@ const VALID_SETTING_SPECS = {
         validate: (v) => typeof v === "string" && /^[a-zA-Z0-9]{2,10}$/.test(v.trim()),
         error: "order_code_prefix must be alphanumeric, between 2 and 10 characters"
     },
-    default_geofence_radius_meters: {
-        validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 50 && Number(v) <= 5000,
-        error: "default_geofence_radius_meters must be an integer between 50 and 5000"
-    },
     document_retention_days: {
         validate: (v) => Number.isInteger(Number(v)) && Number(v) >= 30 && Number(v) <= 3650,
         error: "document_retention_days must be an integer between 30 and 3650"

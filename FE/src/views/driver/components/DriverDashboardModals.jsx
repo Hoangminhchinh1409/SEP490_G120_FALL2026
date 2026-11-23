@@ -1,6 +1,36 @@
 import React from 'react';
-import { Modal, Upload, Input, InputNumber, Checkbox, Select, Button } from 'antd';
+import { Modal, Upload, Input, InputNumber, Checkbox, Select, Button, App } from 'antd';
 import { Camera, Ban, DollarSign, FileText } from 'lucide-react';
+import { uploadApi } from '../../../api/uploadApi';
+
+const buildPhotoUploadProps = ({ value, setter, folder, name, uid, messageApi }) => ({
+  listType: 'picture-card',
+  maxCount: 1,
+  accept: 'image/*',
+  fileList: value ? [{ uid, name, status: 'done', url: value }] : [],
+  customRequest: async ({ file, onSuccess, onError }) => {
+    try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const dataUrl = await uploadApi.fileToDataUrl(file);
+        setter(dataUrl);
+        onSuccess?.({ url: dataUrl });
+        messageApi?.info('Đã lưu ảnh tạm ngoại tuyến, sẽ đẩy lên Cloudinary khi đồng bộ.');
+        return;
+      }
+      const uploaded = await uploadApi.uploadToCloudinary(file, folder);
+      setter(uploaded.url);
+      onSuccess?.({ url: uploaded.url });
+      messageApi?.success('Đã tải ảnh lên Cloudinary thành công.');
+    } catch (err) {
+      messageApi?.error(err.message || 'Lỗi tải ảnh lên Cloudinary');
+      onError?.(err);
+    }
+  },
+  onRemove: () => {
+    setter('');
+    return true;
+  }
+});
 
 const darkModalStyles = {
   content: {
@@ -87,6 +117,7 @@ export default function DriverDashboardModals({
   docsModalOpen,
   setDocsModalOpen
 }) {
+  const { message } = App.useApp();
   return (
     <>
       {/* MODAL 0: XÁC NHẬN NHẬN CHUYẾN */}
@@ -132,58 +163,64 @@ export default function DriverDashboardModals({
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="font-bold text-slate-200 block mb-1">1. Hàng trước bốc (*)</label>
-              <Upload 
-                listType="picture-card" 
-                maxCount={1} 
-                beforeUpload={() => false}
-                defaultFileList={[{ uid: "-1", name: "cargo.jpg", status: "done", url: cargoPhotoUrl }]}
-                onChange={(i) => {
-                  const f = i.fileList[0];
-                  if (f) setCargoPhotoUrl(f.thumbUrl || f.url || cargoPhotoUrl);
-                }}
+              <Upload
+                {...buildPhotoUploadProps({
+                  value: cargoPhotoUrl,
+                  setter: setCargoPhotoUrl,
+                  folder: 'nexlog/driver/pickup',
+                  name: 'cargo.jpg',
+                  uid: '-1',
+                  messageApi: message
+                })}
               >
-                <div className="flex flex-col items-center text-slate-400">
-                  <Camera size={16}/>
-                  <span className="text-[10px]">Trước bốc</span>
-                </div>
+                {!cargoPhotoUrl && (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <Camera size={16}/>
+                    <span className="text-[10px]">Trước bốc</span>
+                  </div>
+                )}
               </Upload>
             </div>
 
             <div>
               <label className="font-bold text-slate-200 block mb-1">2. Hàng trên xe (*)</label>
-              <Upload 
-                listType="picture-card" 
-                maxCount={1} 
-                beforeUpload={() => false}
-                defaultFileList={[{ uid: "-2", name: "loaded.jpg", status: "done", url: loadedCargoPhotoUrl }]}
-                onChange={(i) => {
-                  const f = i.fileList[0];
-                  if (f) setLoadedCargoPhotoUrl(f.thumbUrl || f.url || loadedCargoPhotoUrl);
-                }}
+              <Upload
+                {...buildPhotoUploadProps({
+                  value: loadedCargoPhotoUrl,
+                  setter: setLoadedCargoPhotoUrl,
+                  folder: 'nexlog/driver/pickup',
+                  name: 'loaded.jpg',
+                  uid: '-2',
+                  messageApi: message
+                })}
               >
-                <div className="flex flex-col items-center text-slate-400">
-                  <Camera size={16}/>
-                  <span className="text-[10px]">Trong thùng</span>
-                </div>
+                {!loadedCargoPhotoUrl && (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <Camera size={16}/>
+                    <span className="text-[10px]">Trong thùng</span>
+                  </div>
+                )}
               </Upload>
             </div>
 
             <div>
               <label className="font-bold text-slate-200 block mb-1">3. Chì & Biển số (*)</label>
-              <Upload 
-                listType="picture-card" 
-                maxCount={1} 
-                beforeUpload={() => false}
-                defaultFileList={[{ uid: "-3", name: "seal.jpg", status: "done", url: sealPhotoUrl }]}
-                onChange={(i) => {
-                  const f = i.fileList[0];
-                  if (f) setSealPhotoUrl(f.thumbUrl || f.url || sealPhotoUrl);
-                }}
+              <Upload
+                {...buildPhotoUploadProps({
+                  value: sealPhotoUrl,
+                  setter: setSealPhotoUrl,
+                  folder: 'nexlog/driver/pickup',
+                  name: 'seal.jpg',
+                  uid: '-3',
+                  messageApi: message
+                })}
               >
-                <div className="flex flex-col items-center text-slate-400">
-                  <Camera size={16}/>
-                  <span className="text-[10px]">Chì & biển</span>
-                </div>
+                {!sealPhotoUrl && (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <Camera size={16}/>
+                    <span className="text-[10px]">Chì & biển</span>
+                  </div>
+                )}
               </Upload>
             </div>
           </div>
@@ -246,38 +283,42 @@ export default function DriverDashboardModals({
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="font-bold text-slate-200 block mb-1">Ảnh cắt chì (*)</label>
-                  <Upload 
-                    listType="picture-card" 
-                    maxCount={1} 
-                    beforeUpload={() => false}
-                    defaultFileList={[{ uid: "-1", name: "cut.jpg", status: "done", url: cutSealPhotoUrl }]}
-                    onChange={(i) => {
-                      const f = i.fileList[0];
-                      if (f) setCutSealPhotoUrl(f.thumbUrl || f.url || cutSealPhotoUrl);
-                    }}
+                  <Upload
+                    {...buildPhotoUploadProps({
+                      value: cutSealPhotoUrl,
+                      setter: setCutSealPhotoUrl,
+                      folder: 'nexlog/driver/delivery',
+                      name: 'cut.jpg',
+                      uid: '-1',
+                      messageApi: message
+                    })}
                   >
-                    <div className="flex flex-col items-center text-slate-400">
-                      <Camera size={16}/>
-                      <span className="text-[10px]">Cắt chì</span>
-                    </div>
+                    {!cutSealPhotoUrl && (
+                      <div className="flex flex-col items-center text-slate-400">
+                        <Camera size={16}/>
+                        <span className="text-[10px]">Cắt chì</span>
+                      </div>
+                    )}
                   </Upload>
                 </div>
                 <div>
                   <label className="font-bold text-slate-200 block mb-1">Ảnh dỡ hàng (*)</label>
-                  <Upload 
-                    listType="picture-card" 
-                    maxCount={1} 
-                    beforeUpload={() => false}
-                    defaultFileList={[{ uid: "-2", name: "unloaded.jpg", status: "done", url: unloadedCargoPhotoUrl }]}
-                    onChange={(i) => {
-                      const f = i.fileList[0];
-                      if (f) setUnloadedCargoPhotoUrl(f.thumbUrl || f.url || unloadedCargoPhotoUrl);
-                    }}
+                  <Upload
+                    {...buildPhotoUploadProps({
+                      value: unloadedCargoPhotoUrl,
+                      setter: setUnloadedCargoPhotoUrl,
+                      folder: 'nexlog/driver/delivery',
+                      name: 'unloaded.jpg',
+                      uid: '-2',
+                      messageApi: message
+                    })}
                   >
-                    <div className="flex flex-col items-center text-slate-400">
-                      <Camera size={16}/>
-                      <span className="text-[10px]">Dỡ hàng</span>
-                    </div>
+                    {!unloadedCargoPhotoUrl && (
+                      <div className="flex flex-col items-center text-slate-400">
+                        <Camera size={16}/>
+                        <span className="text-[10px]">Dỡ hàng</span>
+                      </div>
+                    )}
                   </Upload>
                 </div>
               </div>
@@ -285,20 +326,22 @@ export default function DriverDashboardModals({
           ): (
             <div>
               <label className="font-bold text-slate-200 block mb-1">Ảnh biên bản POD có ký nhận (*)</label>
-              <Upload 
-                listType="picture-card" 
-                maxCount={1} 
-                beforeUpload={() => false}
-                defaultFileList={[{ uid: "-1", name: "pod.jpg", status: "done", url: podPhotoUrl }]}
-                onChange={(i) => {
-                  const f = i.fileList[0];
-                  if (f) setPodPhotoUrl(f.thumbUrl || f.url || podPhotoUrl);
-                }}
+              <Upload
+                {...buildPhotoUploadProps({
+                  value: podPhotoUrl,
+                  setter: setPodPhotoUrl,
+                  folder: 'nexlog/driver/delivery',
+                  name: 'pod.jpg',
+                  uid: '-1',
+                  messageApi: message
+                })}
               >
-                <div className="flex flex-col items-center text-slate-400">
-                  <Camera size={16}/>
-                  <span className="text-[10px]">Chụp POD</span>
-                </div>
+                {!podPhotoUrl && (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <Camera size={16}/>
+                    <span className="text-[10px]">Chụp POD</span>
+                  </div>
+                )}
               </Upload>
               <div>
                 <label className="font-bold text-slate-200 block mb-1 mt-2">Họ tên người nhận hàng (*)</label>
@@ -364,20 +407,22 @@ export default function DriverDashboardModals({
 
           <div>
             <label className="font-bold text-slate-200 block mb-1">Ảnh hiện trường hàng hóa (*) (Bắt buộc)</label>
-            <Upload 
-              listType="picture-card" 
-              maxCount={1} 
-              beforeUpload={() => false}
-              defaultFileList={[{ uid: "-1", name: "refusal.jpg", status: "done", url: refusalCargoPhoto }]}
-              onChange={(i) => {
-                const f = i.fileList[0];
-                if (f) setRefusalCargoPhoto(f.thumbUrl || f.url || refusalCargoPhoto);
-              }}
+            <Upload
+              {...buildPhotoUploadProps({
+                value: refusalCargoPhoto,
+                setter: setRefusalCargoPhoto,
+                folder: 'nexlog/driver/refusal',
+                name: 'refusal.jpg',
+                uid: '-1',
+                messageApi: message
+              })}
             >
-              <div className="flex flex-col items-center text-slate-400">
-                <Camera size={16}/>
-                <span className="text-[10px]">Ảnh hàng</span>
-              </div>
+              {!refusalCargoPhoto && (
+                <div className="flex flex-col items-center text-slate-400">
+                  <Camera size={16}/>
+                  <span className="text-[10px]">Ảnh hàng</span>
+                </div>
+              )}
             </Upload>
           </div>
 
@@ -448,20 +493,22 @@ export default function DriverDashboardModals({
 
           <div>
             <label className="font-bold text-slate-200 block mb-1">Ảnh chứng từ / Biên lai (*) (Bắt buộc)</label>
-            <Upload 
-              listType="picture-card" 
-              maxCount={1} 
-              beforeUpload={() => false}
-              defaultFileList={[{ uid: "-1", name: "receipt.jpg", status: "done", url: feePhotoUrl }]}
-              onChange={(i) => {
-                const f = i.fileList[0];
-                if (f) setFeePhotoUrl(f.thumbUrl || f.url || feePhotoUrl);
-              }}
+            <Upload
+              {...buildPhotoUploadProps({
+                value: feePhotoUrl,
+                setter: setFeePhotoUrl,
+                folder: 'nexlog/driver/extra-fees',
+                name: 'receipt.jpg',
+                uid: '-1',
+                messageApi: message
+              })}
             >
-              <div className="flex flex-col items-center text-slate-400">
-                <Camera size={16}/>
-                <span className="text-[10px]">Chứng từ</span>
-              </div>
+              {!feePhotoUrl && (
+                <div className="flex flex-col items-center text-slate-400">
+                  <Camera size={16}/>
+                  <span className="text-[10px]">Chứng từ</span>
+                </div>
+              )}
             </Upload>
           </div>
         </div>

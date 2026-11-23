@@ -335,7 +335,6 @@ export function Trip3DModal({ selectedTrip3D, onClose }) {
           : [
               {
                 order_id: selectedTrip3D.orders?.[0] || selectedTrip3D.id || 'NEX-140280',
-                hawb_code: selectedTrip3D.waybill_no || '180-87429103',
                 customer: selectedTrip3D.customer || 'Khách hàng vận tải',
                 weight: selectedTrip3D.total_weight || 700,
                 package_count: selectedTrip3D.orders_count || 4,

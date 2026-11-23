@@ -1,10 +1,53 @@
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
+const { serializePrisma } = require('../utils/prismaHelper');
 const incidentService = require('../services/incidentService');
+const cloudinaryService = require('../services/cloudinaryService');
 const { parseOrderMeta } = require('../services/orderHelperService');
 const {
   sendIncidentCompensationApprovalEmail,
   sendIncidentCompensationRejectionEmail
 } = require('../services/emailService');
+
+const mapOrderSummaryAliases = (orderRow) => {
+  if (!orderRow) return null;
+  const s = serializePrisma(orderRow);
+  return {
+    ...s,
+    customer: s.customers || s.customer || null,
+    pickup_location: s.locations_orders_pickup_location_idTolocations || s.pickup_location || null,
+    delivery_location: s.locations_orders_delivery_location_idTolocations || s.delivery_location || null
+  };
+};
+
+const mapIncidentRelations = (row) => {
+  if (!row) return null;
+  const s = serializePrisma(row);
+  if (s.trips) {
+    s.trip = {
+      ...s.trips,
+      trip_trucks: (s.trips.trip_trucks || []).map((tt) => ({
+        ...tt,
+        truck: tt.trucks || tt.truck || null
+      })),
+      trip_drivers: (s.trips.trip_drivers || []).map((td) => ({
+        ...td,
+        driver: td.driver_profiles
+          ? {
+              ...td.driver_profiles,
+              user: td.driver_profiles.users || td.driver_profiles.user || null
+            }
+          : td.driver || null
+      }))
+    };
+  }
+  if (s.driver_profiles) {
+    s.driver = {
+      ...s.driver_profiles,
+      user: s.driver_profiles.users || s.driver_profiles.user || null
+    };
+  }
+  return s;
+};
 
 /**
  * Incident Controller — Nhóm chức năng Quản lý Sự cố & Yêu cầu Bồi thường
@@ -55,72 +98,19 @@ const getIncidents = async (req, res) => {
   try {
     const { status, type } = req.query;
 
-    const CORE_COLUMNS = `
-        id,
-        trip_id,
-        trip_stop_id,
-        type,
-        description,
-        photos,
-        fault,
-        status,
-        reported_by,
-        reported_time,
-        escalated_by,
-        escalated_time,
-        escalation_reason,
-        resolution_note,
-        resolved_by,
-        resolved_time,
-        created_at`;
-    const EXTENDED_COLUMNS = `,
-        damage_percentage,
-        goods_handling_method,
-        contract_clause_ref,
-        proposed_compensation_amount,
-        approved_compensation_amount,
-        rejection_reason,
-        contact_hotline,
-        payment_proof_url,
-        incident_lat,
-        incident_lng,
-        is_on_route,
-        route_deviation_km`;
-    const RELATIONS = `,
-        trip:trips(
-          id, 
-          trip_code, 
-          status,
-          trip_trucks(truck:trucks(plate_number)),
-          trip_drivers(driver:driver_profiles(user:users(full_name, phone)))
-        ),
-        driver:driver_profiles!incidents_reported_by_fkey(
-          id,
-          user:users(id, full_name, phone)
-        ),
-        compensation_claims(id, amount, status, reason, source)`;
-
-    const buildQuery = (withExtended) => {
-      let query = supabase
-        .from('incidents')
-        .select(CORE_COLUMNS + (withExtended ? EXTENDED_COLUMNS : '') + RELATIONS)
-        .order('id', { ascending: false });
-      return applyFilters(query);
-    };
-
-    const applyFilters = (query) => {
+    const where = {};
     if (status && status !== 'ALL') {
       const s = status.toUpperCase();
       if (s === 'ESCALATED') {
-        query = query.in('status', ['ESCALATED', 'Escalated']);
+        where.status = { in: ['ESCALATED', 'Escalated'] };
       } else if (s === 'APPROVED') {
-        query = query.in('status', ['APPROVED', 'Approved']);
+        where.status = { in: ['APPROVED', 'Approved'] };
       } else if (s === 'RESOLVED') {
-        query = query.in('status', ['RESOLVED', 'Resolved', 'DONE', 'Done', 'CLOSED', 'Closed', 'REJECTED', 'Rejected']);
+        where.status = { in: ['RESOLVED', 'Resolved', 'DONE', 'Done', 'CLOSED', 'Closed', 'REJECTED', 'Rejected'] };
       } else if (s === 'REPORTED') {
-        query = query.in('status', ['REPORTED', 'Reported']);
+        where.status = { in: ['REPORTED', 'Reported'] };
       } else {
-        query = query.eq('status', status);
+        where.status = status;
       }
     }
 
@@ -128,58 +118,94 @@ const getIncidents = async (req, res) => {
       // Hỗ trợ map nhóm sự cố mở rộng
       const t = type.toUpperCase();
       if (t === 'DAMAGED_LOST_CARGO' || t === 'DAMAGED_CARGO') {
-        query = query.in('type', ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'Cargo Damaged', 'Cargo Lost']);
+        where.type = { in: ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'Cargo Damaged', 'Cargo Lost'] };
       } else if (t === 'TRAFFIC_ACCIDENT') {
-        query = query.in('type', ['TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident']);
+        where.type = { in: ['TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident'] };
       } else if (t === 'CARGO_HELD') {
-        query = query.in('type', ['CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES']);
+        where.type = { in: ['CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES'] };
       } else if (t === 'ENGINE_BREAKDOWN' || t === 'BREAKDOWN') {
-        query = query.in('type', ['ENGINE_BREAKDOWN', 'BREAKDOWN', 'Vehicle Issue', 'Breakdown']);
+        where.type = { in: ['ENGINE_BREAKDOWN', 'BREAKDOWN', 'Vehicle Issue', 'Breakdown'] };
       } else if (t === 'ROAD_BAN') {
-        query = query.in('type', ['ROAD_BAN', 'Traffic', 'Road Ban']);
+        where.type = { in: ['ROAD_BAN', 'Traffic', 'Road Ban'] };
       } else if (t === 'OTHER') {
-        query = query.in('type', ['OTHER', 'Other']);
+        where.type = { in: ['OTHER', 'Other'] };
       } else {
-        query = query.eq('type', type);
+        where.type = type;
       }
     }
-    return query;
-    };
 
-    // Thử truy vấn đầy đủ cột mở rộng; nếu DB chưa có cột (chưa migrate) thì fallback về cột cơ bản
-    let { data: incidents, error } = await buildQuery(true);
-    if (error) {
-      console.warn('getIncidents extended select failed, fallback to core columns:', error.message);
-      ({ data: incidents, error } = await buildQuery(false));
-    }
-    if (error) throw error;
+    const rawIncidents = await prisma.incidents.findMany({
+      where,
+      orderBy: { id: 'desc' },
+      include: {
+        trips: {
+          select: {
+            id: true,
+            trip_code: true,
+            status: true,
+            trip_trucks: { select: { trucks: { select: { plate_number: true } } } },
+            trip_drivers: {
+              select: {
+                driver_profiles: {
+                  select: { users: { select: { full_name: true, phone: true } } }
+                }
+              }
+            }
+          }
+        },
+        driver_profiles: {
+          select: {
+            id: true,
+            users: { select: { id: true, full_name: true, phone: true } }
+          }
+        },
+        compensation_claims: {
+          select: { id: true, amount: true, status: true, reason: true, source: true }
+        }
+      }
+    });
 
-    const tripIds = (incidents || []).map((i) => i.trip_id).filter(Boolean);
-    const incidentIds = (incidents || []).map((i) => Number(i.id)).filter(Boolean);
-    let orderMapByTrip = {};
+    const incidents = (rawIncidents || []).map(mapIncidentRelations);
+    const tripIds = incidents.map((i) => i.trip_id).filter(Boolean);
+    const incidentIds = incidents.map((i) => Number(i.id)).filter(Boolean);
+    const orderMapByTrip = {};
     if (tripIds.length > 0) {
-      const { data: tripStops } = await supabase
-        .from('trip_stops')
-        .select('trip_id, order:orders(id, order_code)')
-        .in('trip_id', tripIds);
+      const tripStops = await prisma.trip_stops.findMany({
+        where: {
+          trip_id: { in: tripIds.map((tId) => BigInt(tId)) },
+          order_id: { not: null }
+        },
+        select: {
+          trip_id: true,
+          orders: { select: { id: true, order_code: true } }
+        }
+      });
       (tripStops || []).forEach((ts) => {
-        if (ts.trip_id && ts.order?.order_code) {
-          orderMapByTrip[ts.trip_id] = ts.order.order_code;
+        if (ts.trip_id && ts.orders?.order_code) {
+          orderMapByTrip[Number(ts.trip_id)] = ts.orders.order_code;
         }
       });
     }
 
-    // Lấy activity_logs liên quan để khôi phục thông tin duyệt/chi tiền nếu DB thiếu cột mở rộng
+    // Lấy activity_logs liên quan để khôi phục thông tin duyệt/chi tiền
     const logsByIncidentId = {};
     if (incidentIds.length > 0) {
       try {
-        const { data: logs } = await supabase
-          .from('activity_logs')
-          .select('target_id, action, changes, reason, created_time')
-          .eq('target_type', 'INCIDENT')
-          .in('target_id', incidentIds)
-          .order('id', { ascending: false });
-        (logs || []).forEach((lg) => {
+        const rawLogs = await prisma.activity_logs.findMany({
+          where: {
+            target_type: 'INCIDENT',
+            target_id: { in: incidentIds.map((incId) => BigInt(incId)) }
+          },
+          select: {
+            target_id: true,
+            action: true,
+            changes: true,
+            reason: true,
+            created_time: true
+          },
+          orderBy: { id: 'desc' }
+        });
+        (serializePrisma(rawLogs) || []).forEach((lg) => {
           const tid = Number(lg.target_id);
           if (!logsByIncidentId[tid]) logsByIncidentId[tid] = [];
           logsByIncidentId[tid].push(lg);
@@ -342,25 +368,38 @@ const getIncidents = async (req, res) => {
 const getIncidentById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { data: incident, error } = await supabase
-      .from('incidents')
-      .select(`
-        *,
-        trip:trips(
-          *,
-          trip_trucks(truck:trucks(id, plate_number)),
-          trip_drivers(driver:driver_profiles(id, user:users(id, full_name, phone)))
-        ),
-        driver:driver_profiles!incidents_reported_by_fkey(
-          id,
-          user:users(id, full_name, phone)
-        ),
-        compensation_claims(*)
-      `)
-      .eq('id', id)
-      .single();
+    const rawIncident = await prisma.incidents.findUnique({
+      where: { id: BigInt(id) },
+      include: {
+        trips: {
+          include: {
+            trip_trucks: {
+              select: { trucks: { select: { id: true, plate_number: true } } }
+            },
+            trip_drivers: {
+              select: {
+                driver_profiles: {
+                  select: {
+                    id: true,
+                    users: { select: { id: true, full_name: true, phone: true } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        driver_profiles: {
+          select: {
+            id: true,
+            users: { select: { id: true, full_name: true, phone: true } }
+          }
+        },
+        compensation_claims: true
+      }
+    });
 
-    if (error || !incident) {
+    const incident = mapIncidentRelations(rawIncident);
+    if (!incident) {
       return res.status(404).json({ message: 'Không tìm thấy thông tin sự cố.' });
     }
 
@@ -374,31 +413,56 @@ const getIncidentById = async (req, res) => {
     let receiverName = null;
 
     if (incident.trip_id) {
-      const { data: stops } = await supabase
-        .from('trip_stops')
-        .select(`
-          order:orders(
-            id, 
-            order_code, 
-            order_type, 
-            status,
-            agreed_price, 
-            contract_id,
-            signed_order_contract_file,
-            receiver_name,
-            receiver_phone,
-            pickup_location:locations!orders_pickup_location_id_fkey(id, name, address),
-            delivery_location:locations!orders_delivery_location_id_fkey(id, name, address),
-            order_notes(*),
-            customer:customers(id, company_name, contact_person, phone, email, tax_code),
-            order_cargos(cargo_name, quantity, unit, actual_weight_kg, declared_value)
-          )
-        `)
-        .eq('trip_id', incident.trip_id)
-        .limit(1);
+      const firstStop = await prisma.trip_stops.findFirst({
+        where: {
+          trip_id: BigInt(incident.trip_id),
+          order_id: { not: null }
+        },
+        select: {
+          orders: {
+            select: {
+              id: true,
+              order_code: true,
+              order_type: true,
+              status: true,
+              agreed_price: true,
+              contract_id: true,
+              signed_order_contract_file: true,
+              receiver_name: true,
+              receiver_phone: true,
+              locations_orders_pickup_location_idTolocations: {
+                select: { id: true, name: true, address: true }
+              },
+              locations_orders_delivery_location_idTolocations: {
+                select: { id: true, name: true, address: true }
+              },
+              order_notes: true,
+              customers: {
+                select: {
+                  id: true,
+                  company_name: true,
+                  contact_person: true,
+                  phone: true,
+                  email: true,
+                  tax_code: true
+                }
+              },
+              order_cargos: {
+                select: {
+                  cargo_name: true,
+                  quantity: true,
+                  unit: true,
+                  actual_weight_kg: true,
+                  declared_value: true
+                }
+              }
+            }
+          }
+        }
+      });
 
-      if (stops && stops.length > 0 && stops[0].order) {
-        orderInfo = stops[0].order;
+      if (firstStop?.orders) {
+        orderInfo = mapOrderSummaryAliases(firstStop.orders);
         const firstCargo = Array.isArray(orderInfo.order_cargos)
           ? orderInfo.order_cargos[0]
           : orderInfo.order_cargos;
@@ -435,22 +499,36 @@ const getIncidentById = async (req, res) => {
 
     // Tra cứu hợp đồng vận chuyển tương ứng
     if (orderInfo?.contract_id) {
-      const { data: contract } = await supabase
-        .from('transport_contracts')
-        .select('id, contract_number, liability_cap, attachment_link, compensation_terms, terms_and_responsibilities')
-        .eq('id', orderInfo.contract_id)
-        .maybeSingle();
+      const contract = await prisma.transport_contracts.findUnique({
+        where: { id: BigInt(orderInfo.contract_id) },
+        select: {
+          id: true,
+          contract_number: true,
+          liability_cap: true,
+          attachment_link: true,
+          compensation_terms: true,
+          terms_and_responsibilities: true
+        }
+      });
       if (contract) {
-        contractInfo = contract;
+        contractInfo = serializePrisma(contract);
       }
     }
 
     // Lấy bằng chứng ảnh lúc nhận hàng (Pickup), ảnh niêm chì (Seal) và lúc giao hàng (Delivery)
     if (orderInfo?.id) {
-      const { data: evidences } = await supabase
-        .from('delivery_evidences')
-        .select('id, type, file_link, seal_number, receiver_name, captured_time')
-        .eq('order_id', orderInfo.id);
+      const rawEvidences = await prisma.delivery_evidences.findMany({
+        where: { order_id: BigInt(orderInfo.id) },
+        select: {
+          id: true,
+          type: true,
+          file_link: true,
+          seal_number: true,
+          receiver_name: true,
+          captured_time: true
+        }
+      });
+      const evidences = serializePrisma(rawEvidences) || [];
 
       (evidences || []).forEach((e) => {
         const t = (e.type || '').toUpperCase();
@@ -538,14 +616,16 @@ const getIncidentById = async (req, res) => {
     // Lấy activity_logs gần nhất để đọc dữ liệu duyệt & giao dịch chi tiền
     let incLogs = [];
     try {
-      const { data: logs } = await supabase
-        .from('activity_logs')
-        .select('action, changes, reason, created_time')
-        .eq('target_type', 'INCIDENT')
-        .eq('target_id', Number(id))
-        .order('id', { ascending: false })
-        .limit(10);
-      incLogs = logs || [];
+      const rawLogs = await prisma.activity_logs.findMany({
+        where: {
+          target_type: 'INCIDENT',
+          target_id: BigInt(id)
+        },
+        select: { action: true, changes: true, reason: true, created_time: true },
+        orderBy: { id: 'desc' },
+        take: 10
+      });
+      incLogs = serializePrisma(rawLogs) || [];
     } catch (logErr) {
       console.warn('getIncidentById activity_logs warning:', logErr.message);
     }
@@ -709,88 +789,85 @@ const resolveIncident = async (req, res) => {
     }
 
     const amountNum = Number(compensation_amount) || 0;
+    const nowDate = new Date();
+    const resolvedByInt = managerId ? Number(managerId) : null;
 
-    const { data: updatedInc, error: incErr } = await supabase
-      .from('incidents')
-      .update({
+    const updatedIncRow = await prisma.incidents.update({
+      where: { id: BigInt(id) },
+      data: {
         fault: fault,
         resolution_note: resolution_note || 'Quản lý đã thẩm định và giải quyết sự cố.',
         status: 'RESOLVED',
-        resolved_by: managerId,
-        resolved_time: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (incErr) throw incErr;
+        resolved_by: resolvedByInt,
+        resolved_time: nowDate,
+        updated_at: nowDate
+      }
+    });
+    const updatedInc = serializePrisma(updatedIncRow);
 
     //: Nếu số tiền bồi thường > 0, tự động sinh Yêu cầu bồi thường (Compensation Claim) ở trạng thái PENDING
     let createdClaim = null;
     if (amountNum > 0) {
-      const { data: existingClaim } = await supabase
-        .from('compensation_claims')
-        .select('id')
-        .eq('incident_id', id)
-        .maybeSingle();
+      const existingClaim = await prisma.compensation_claims.findFirst({
+        where: { incident_id: BigInt(id) },
+        select: { id: true }
+      });
 
       if (!existingClaim) {
         let orderId = null;
         if (updatedInc.trip_id) {
-          const { data: tripStops } = await supabase
-            .from('trip_stops')
-            .select('id')
-            .eq('trip_id', updatedInc.trip_id)
-            .limit(1);
+          const firstStop = await prisma.trip_stops.findFirst({
+            where: { trip_id: BigInt(updatedInc.trip_id) },
+            select: { id: true, order_id: true }
+          });
 
-          if (tripStops && tripStops.length > 0) {
-            const { data: stopOrder } = await supabase
-              .from('delivery_evidences')
-              .select('order_id')
-              .eq('trip_stop_id', tripStops[0].id)
-              .maybeSingle();
+          if (firstStop?.order_id) {
+            orderId = firstStop.order_id;
+          } else if (firstStop?.id) {
+            const stopOrder = await prisma.delivery_evidences.findFirst({
+              where: { trip_stop_id: firstStop.id, order_id: { not: null } },
+              select: { order_id: true }
+            });
             orderId = stopOrder?.order_id || null;
           }
         }
 
         if (!orderId) {
-          const { data: anyOrder } = await supabase.from('orders').select('id').limit(1).maybeSingle();
-          orderId = anyOrder?.id || 37;
+          const anyOrder = await prisma.orders.findFirst({ select: { id: true } });
+          orderId = anyOrder?.id || BigInt(37);
         }
 
-        const { data: newClaim, error: claimErr } = await supabase
-          .from('compensation_claims')
-          .insert({
-            incident_id: id,
-            order_id: orderId,
-            source: 'INCIDENT',
-            amount: amountNum,
-            reason: `Bồi thường phát sinh từ sự cố INC-${String(id).padStart(3, '0')}: ${resolution_note || updatedInc.description || 'Lỗi vận hành'}`,
-            status: 'PENDING',
-            created_by: managerId || 20
-          })
-          .select()
-          .single();
-
-        if (claimErr) {
+        try {
+          const newClaimRow = await prisma.compensation_claims.create({
+            data: {
+              incident_id: BigInt(id),
+              order_id: BigInt(orderId),
+              source: 'INCIDENT',
+              amount: BigInt(Math.round(amountNum)),
+              reason: `Bồi thường phát sinh từ sự cố INC-${String(id).padStart(3, '0')}: ${resolution_note || updatedInc.description || 'Lỗi vận hành'}`,
+              status: 'PENDING',
+              created_by: Number(managerId || 20)
+            }
+          });
+          createdClaim = serializePrisma(newClaimRow);
+        } catch (claimErr) {
           console.error('Tự động tạo compensation_claim thất bại:', claimErr);
-        } else {
-          createdClaim = newClaim;
         }
       }
     }
 
     try {
-      await supabase.from('activity_logs').insert({
-        actor_id: managerId,
-        actor_type: 'MANAGER',
-        action: 'RESOLVE_INCIDENT',
-        target_type: 'INCIDENT',
-        target_id: String(id),
-        changes: { fault, compensation_amount: amountNum, status: 'RESOLVED' },
-        reason: resolution_note,
-        created_time: new Date().toISOString()
+      await prisma.activity_logs.create({
+        data: {
+          actor_id: resolvedByInt,
+          actor_type: 'MANAGER',
+          action: 'RESOLVE_INCIDENT',
+          target_type: 'INCIDENT',
+          target_id: BigInt(id),
+          changes: { fault, compensation_amount: amountNum, status: 'RESOLVED' },
+          reason: resolution_note || null,
+          created_time: nowDate
+        }
       });
     } catch (logErr) {
       console.warn('activity_logs warning:', logErr.message);
@@ -844,7 +921,9 @@ const decideIncidentCompensation = async (req, res) => {
       }
     }
 
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const managerInt = Number(managerId || 1);
     const resolutionNoteFull = resolution_note || (
       isApprove
         ? `Quản lý đã phê duyệt bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ theo ${contract_clause_ref || 'Hợp đồng vận tải'}. (Hư hỏng: ${damage_percentage || 0}%, xử lý: ${goods_handling_method || 'Khách giữ'})`
@@ -853,13 +932,7 @@ const decideIncidentCompensation = async (req, res) => {
         : `Từ chối bồi thường theo ${contract_clause_ref || 'Hợp đồng'}. Lý do: ${rejection_reason}`
     );
 
-    const updatePayload = {
-      fault: fault || (isApprove ? 'COMPANY' : 'CUSTOMER'),
-      resolution_note: resolutionNoteFull,
-      status: targetStatus,
-      resolved_by: managerId,
-      resolved_time: now,
-      updated_at: now,
+    const extendedMetadata = {
       ...(damage_percentage !== undefined && damage_percentage !== null ? { damage_percentage: Number(damage_percentage) } : {}),
       ...(goods_handling_method ? { goods_handling_method } : {}),
       ...(contract_clause_ref ? { contract_clause_ref } : {}),
@@ -868,108 +941,109 @@ const decideIncidentCompensation = async (req, res) => {
       contact_hotline: contact_hotline || '1900 1234'
     };
 
-    let { data: updatedInc, error: incErr } = await supabase
-      .from('incidents')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .maybeSingle();
+    const corePayload = {
+      fault: fault || (isApprove ? 'COMPANY' : 'CUSTOMER'),
+      resolution_note: String(resolutionNoteFull || '').slice(0, 500),
+      status: targetStatus,
+      resolved_by: managerInt,
+      resolved_time: nowDate,
+      updated_at: nowDate
+    };
 
-    if (incErr) {
-      console.warn('Cập nhật incidents (extended) warning:', incErr.message);
-      // Fallback nếu DB chưa có một số cột mở rộng hoặc có check constraint trên status
-      const corePayload = {
-        fault: updatePayload.fault,
-        resolution_note: String(updatePayload.resolution_note || '').slice(0, 500),
-        status: updatePayload.status,
-        resolved_by: updatePayload.resolved_by,
-        resolved_time: updatePayload.resolved_time,
-        updated_at: updatePayload.updated_at
-      };
-      let retry = await supabase
-        .from('incidents')
-        .update(corePayload)
-        .eq('id', id)
-        .select()
-        .maybeSingle();
-      if (retry.error) {
-        console.warn('Fallback corePayload status retry with compatible status:', retry.error.message);
-        retry = await supabase
-          .from('incidents')
-          .update({
+    let updatedInc = null;
+    try {
+      const updatedIncRow = await prisma.incidents.update({
+        where: { id: BigInt(id) },
+        data: corePayload
+      });
+      updatedInc = serializePrisma(updatedIncRow);
+    } catch (incErr) {
+      console.warn('Fallback incidents status retry with compatible status:', incErr.message);
+      try {
+        const retryRow = await prisma.incidents.update({
+          where: { id: BigInt(id) },
+          data: {
             ...corePayload,
             status: isApprove ? 'ESCALATED' : isRequestMoreInfo ? 'ESCALATED' : 'RESOLVED'
-          })
-          .eq('id', id)
-          .select()
-          .maybeSingle();
+          }
+        });
+        updatedInc = serializePrisma(retryRow);
+      } catch (retryErr) {
+        console.warn('Retry incidents update warning:', retryErr.message);
       }
-      updatedInc = retry.data;
     }
 
     // Đồng bộ hoặc tạo mới bản ghi trong bảng compensation_claims
     const claimStatus = isApprove ? 'APPROVED' : isRequestMoreInfo ? 'PENDING' : 'REJECTED';
-    const { data: existingClaims } = await supabase
-      .from('compensation_claims')
-      .select('id')
-      .eq('incident_id', id);
+    const approvedClaimAmount = BigInt(isApprove ? Math.round(Number(approved_amount) || 0) : 0);
+    const existingClaims = await prisma.compensation_claims.findMany({
+      where: { incident_id: BigInt(id) },
+      select: { id: true }
+    });
 
     if (existingClaims && existingClaims.length > 0) {
-      const { error: claimUpdErr } = await supabase
-        .from('compensation_claims')
-        .update({
-          status: claimStatus,
-          amount: isApprove ? (Number(approved_amount) || 0) : 0,
-          reviewed_by: managerId,
-          reviewed_time: now,
-          review_comment: resolutionNoteFull,
-          updated_at: now
-        })
-        .eq('incident_id', id);
-      if (claimUpdErr) console.warn('compensation_claims update warning:', claimUpdErr.message);
+      try {
+        await prisma.compensation_claims.updateMany({
+          where: { incident_id: BigInt(id) },
+          data: {
+            status: claimStatus,
+            amount: approvedClaimAmount,
+            reviewed_by: managerInt,
+            reviewed_time: nowDate,
+            review_comment: resolutionNoteFull,
+            updated_at: nowDate
+          }
+        });
+      } catch (claimUpdErr) {
+        console.warn('compensation_claims update warning:', claimUpdErr.message);
+      }
     } else {
       // Tìm order_id thực tế của chuyến xe
       let tripIdToLookup = updatedInc?.trip_id;
       if (!tripIdToLookup) {
-        const { data: curInc } = await supabase
-          .from('incidents')
-          .select('trip_id')
-          .eq('id', id)
-          .maybeSingle();
-        tripIdToLookup = curInc?.trip_id || null;
+        const curInc = await prisma.incidents.findUnique({
+          where: { id: BigInt(id) },
+          select: { trip_id: true }
+        });
+        tripIdToLookup = curInc?.trip_id ? Number(curInc.trip_id) : null;
       }
 
       let orderId = null;
       if (tripIdToLookup) {
-        const { data: stops } = await supabase
-          .from('trip_stops')
-          .select('order_id')
-          .eq('trip_id', tripIdToLookup)
-          .not('order_id', 'is', null)
-          .limit(1);
-        if (stops?.[0]?.order_id) orderId = stops[0].order_id;
+        const stop = await prisma.trip_stops.findFirst({
+          where: {
+            trip_id: BigInt(tripIdToLookup),
+            order_id: { not: null }
+          },
+          select: { order_id: true }
+        });
+        if (stop?.order_id) orderId = stop.order_id;
       }
       if (!orderId) {
-        const { data: anyOrder } = await supabase.from('orders').select('id').limit(1).maybeSingle();
+        const anyOrder = await prisma.orders.findFirst({ select: { id: true } });
         orderId = anyOrder?.id || null;
       }
 
       if (orderId) {
-        const { error: claimInsErr } = await supabase
-          .from('compensation_claims')
-          .insert({
-            incident_id: Number(id),
-            order_id: orderId,
-            source: 'INCIDENT',
-            amount: isApprove ? (Number(approved_amount) || 0) : 0,
-            reason: resolutionNoteFull,
-            status: claimStatus,
-            created_by: managerId,
-            reviewed_by: managerId,
-            reviewed_time: now,
-            review_comment: resolutionNoteFull
+        try {
+          await prisma.compensation_claims.create({
+            data: {
+              incident_id: BigInt(id),
+              order_id: BigInt(orderId),
+              source: 'INCIDENT',
+              amount: approvedClaimAmount,
+              reason: resolutionNoteFull,
+              status: claimStatus,
+              created_by: managerInt,
+              reviewed_by: managerInt,
+              reviewed_time: nowDate,
+              review_comment: resolutionNoteFull,
+              updated_at: nowDate
+            }
           });
-        if (claimInsErr) console.warn('compensation_claims insert warning:', claimInsErr.message);
+        } catch (claimInsErr) {
+          console.warn('compensation_claims insert warning:', claimInsErr.message);
+        }
       }
     }
 
@@ -980,40 +1054,45 @@ const decideIncidentCompensation = async (req, res) => {
         let tripIdForEmail = updatedInc?.trip_id || null;
         let incMeta = updatedInc || null;
         if (!incMeta) {
-          const { data: curInc } = await supabase
-            .from('incidents')
-            .select('id, trip_id, type, reported_by')
-            .eq('id', id)
-            .maybeSingle();
-          incMeta = curInc;
-          tripIdForEmail = curInc?.trip_id || null;
+          const curInc = await prisma.incidents.findUnique({
+            where: { id: BigInt(id) },
+            select: { id: true, trip_id: true, type: true, reported_by: true }
+          });
+          incMeta = serializePrisma(curInc);
+          tripIdForEmail = incMeta?.trip_id || null;
         }
 
         let orderForEmail = null;
         let tripCodeForEmail = tripIdForEmail ? `TRIP-${tripIdForEmail}` : '';
         if (tripIdForEmail) {
-          const [{ data: tripRow }, { data: stops }] = await Promise.all([
-            supabase.from('trips').select('id, trip_code').eq('id', tripIdForEmail).maybeSingle(),
-            supabase
-              .from('trip_stops')
-              .select(`
-                order:orders(
-                  id,
-                  order_code,
-                  agreed_price,
-                  tracking_token,
-                  receiver_name,
-                  order_notes(*),
-                  customer:customers(company_name, contact_person, email, phone),
-                  order_cargos(cargo_name, quantity, unit, actual_weight_kg, declared_value)
-                )
-              `)
-              .eq('trip_id', tripIdForEmail)
-              .not('order_id', 'is', null)
-              .limit(1)
+          const [tripRow, firstStop] = await Promise.all([
+            prisma.trips.findUnique({
+              where: { id: BigInt(tripIdForEmail) },
+              select: { id: true, trip_code: true }
+            }),
+            prisma.trip_stops.findFirst({
+              where: {
+                trip_id: BigInt(tripIdForEmail),
+                order_id: { not: null }
+              },
+              select: {
+                orders: {
+                  select: {
+                    id: true,
+                    order_code: true,
+                    agreed_price: true,
+                    tracking_token: true,
+                    receiver_name: true,
+                    order_notes: true,
+                    customers: { select: { company_name: true, contact_person: true, email: true, phone: true } },
+                    order_cargos: { select: { cargo_name: true, quantity: true, unit: true, actual_weight_kg: true, declared_value: true } }
+                  }
+                }
+              }
+            })
           ]);
           if (tripRow?.trip_code) tripCodeForEmail = tripRow.trip_code;
-          orderForEmail = stops?.[0]?.order || null;
+          orderForEmail = firstStop?.orders ? mapOrderSummaryAliases(firstStop.orders) : null;
         }
 
         const meta = orderForEmail ? parseOrderMeta(orderForEmail) : {};
@@ -1102,21 +1181,26 @@ const decideIncidentCompensation = async (req, res) => {
     }
 
     try {
-      await supabase.from('activity_logs').insert({
-        actor_id: managerId,
-        actor_type: 'MANAGER',
-        action: isApprove ? 'APPROVE_INCIDENT_COMPENSATION' : isRequestMoreInfo ? 'REQUEST_MORE_INFO_INCIDENT' : 'REJECT_INCIDENT_COMPENSATION',
-        target_type: 'INCIDENT',
-        target_id: Number(id),
-        changes: {
-          ...updatePayload,
-          email_sent: emailResult.sent,
-          customer_email: emailResult.customer_email,
-          email_type: emailResult.email_type,
-          email_sent_at: emailResult.email_sent_at
-        },
-        reason: String(isApprove ? resolution_note : isRequestMoreInfo ? resolution_note : rejection_reason || '').slice(0, 255),
-        created_time: now
+      await prisma.activity_logs.create({
+        data: {
+          actor_id: managerInt,
+          actor_type: 'MANAGER',
+          action: isApprove ? 'APPROVE_INCIDENT_COMPENSATION' : isRequestMoreInfo ? 'REQUEST_MORE_INFO_INCIDENT' : 'REJECT_INCIDENT_COMPENSATION',
+          target_type: 'INCIDENT',
+          target_id: BigInt(id),
+          changes: {
+            ...corePayload,
+            resolved_time: now,
+            updated_at: now,
+            ...extendedMetadata,
+            email_sent: emailResult.sent,
+            customer_email: emailResult.customer_email,
+            email_type: emailResult.email_type,
+            email_sent_at: emailResult.email_sent_at
+          },
+          reason: String(isApprove ? resolution_note : isRequestMoreInfo ? resolution_note : rejection_reason || '').slice(0, 255),
+          created_time: nowDate
+        }
       });
     } catch (logErr) {
       console.warn('activity_logs warning:', logErr.message);
@@ -1132,20 +1216,19 @@ const decideIncidentCompensation = async (req, res) => {
           : `[${incidentCode}] Quản lý đã từ chối bồi thường theo ${contract_clause_ref || 'hợp đồng'} và đóng hồ sơ.`;
 
       const recipientIds = new Set();
-      const { data: dispatchers } = await supabase
-        .from('users')
-        .select('id')
-        .eq('role_id', 3);
+      const dispatchers = await prisma.users.findMany({
+        where: { role_id: 3 },
+        select: { id: true }
+      });
       (dispatchers || []).forEach((u) => {
         if (u?.id) recipientIds.add(Number(u.id));
       });
 
       if (updatedInc?.reported_by) {
-        const { data: driverProfile } = await supabase
-          .from('driver_profiles')
-          .select('user_account_id')
-          .eq('id', updatedInc.reported_by)
-          .maybeSingle();
+        const driverProfile = await prisma.driver_profiles.findUnique({
+          where: { id: BigInt(updatedInc.reported_by) },
+          select: { user_account_id: true }
+        });
         if (driverProfile?.user_account_id) {
           recipientIds.add(Number(driverProfile.user_account_id));
         }
@@ -1153,13 +1236,13 @@ const decideIncidentCompensation = async (req, res) => {
 
       if (recipientIds.size > 0) {
         const notifRows = Array.from(recipientIds).map((uid) => ({
-          user_account_id: uid,
+          user_account_id: BigInt(uid),
           target_type: 'INCIDENT',
-          target_id: Number(id),
+          target_id: BigInt(id),
           message: notifyMsg,
-          created_time: now
+          created_time: nowDate
         }));
-        await supabase.from('notifications').insert(notifRows);
+        await prisma.notifications.createMany({ data: notifRows });
       }
     } catch (notifyErr) {
       console.warn('notify decideIncidentCompensation warning:', notifyErr.message);
@@ -1173,7 +1256,7 @@ const decideIncidentCompensation = async (req, res) => {
 
     return res.json({
       message: msg,
-      incident: updatedInc || { id, ...updatePayload },
+      incident: updatedInc ? { ...updatedInc, ...extendedMetadata } : { id: Number(id), ...corePayload, ...extendedMetadata },
       email_result: emailResult
     });
   } catch (error) {
@@ -1195,8 +1278,10 @@ const closeIncidentCase = async (req, res) => {
       return res.status(400).json({ message: 'Vui lòng cung cấp ảnh biên lai / chứng từ chuyển khoản ngân hàng để đóng hồ sơ.' });
     }
 
-    const now = new Date().toISOString();
-    const proofStr = payment_proof_url.trim();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const managerInt = Number(managerId || 1);
+    const proofStr = await cloudinaryService.uploadDataUriIfNeeded(payment_proof_url, 'nexlog/claims');
     const noteInput = String(close_note || '').trim();
     const txMatch = noteInput.match(/Mã GD:\s*([A-Za-z0-9_-]+)/i);
     const dateMatch = noteInput.match(/ngày\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})/i);
@@ -1206,16 +1291,15 @@ const closeIncidentCase = async (req, res) => {
     const closeNoteFull = noteInput || `Đã hoàn tất chi tiền ngày ${payDate}. Mã GD: ${txCode}`;
 
     // Đọc thông tin sự cố hiện có để bảo toàn nhận xét phê duyệt & trip_id
-    const { data: existingInc } = await supabase
-      .from('incidents')
-      .select('id, trip_id, resolution_note')
-      .eq('id', id)
-      .maybeSingle();
+    const existingInc = await prisma.incidents.findUnique({
+      where: { id: BigInt(id) },
+      select: { id: true, trip_id: true, resolution_note: true }
+    });
 
-    const { data: existingClaims } = await supabase
-      .from('compensation_claims')
-      .select('id, amount')
-      .eq('incident_id', id);
+    const existingClaims = await prisma.compensation_claims.findMany({
+      where: { incident_id: BigInt(id) },
+      select: { id: true, amount: true }
+    });
 
     const resolvedPaidAmount = Number(
       approved_amount ||
@@ -1226,44 +1310,35 @@ const closeIncidentCase = async (req, res) => {
     const prevNote = existingInc?.resolution_note ? `${existingInc.resolution_note} | ` : '';
     const mergedNote = `${prevNote}[ĐÃ CHI TIỀN - Ngày: ${payDate} | Mã GD: ${txCode}]`.slice(0, 500);
 
-    const updatePayload = {
+    const coreClosePayload = {
       status: 'DONE',
       resolution_note: mergedNote,
-      resolved_by: managerId,
-      resolved_time: now,
-      updated_at: now,
-      ...(proofStr.length <= 500 ? { payment_proof_url: proofStr } : {})
+      resolved_by: managerInt,
+      resolved_time: nowDate,
+      updated_at: nowDate
     };
 
-    let { data: updatedInc, error: incErr } = await supabase
-      .from('incidents')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .maybeSingle();
-
-    if (incErr) {
-      console.warn('Cập nhật close incident qua supabase warning:', incErr.message);
-      const { payment_proof_url: _omit, ...coreClosePayload } = updatePayload;
-      let retry = await supabase
-        .from('incidents')
-        .update(coreClosePayload)
-        .eq('id', id)
-        .select()
-        .maybeSingle();
-      if (retry.error) {
-        console.warn('Close incident status DONE failed, retry with RESOLVED:', retry.error.message);
-        retry = await supabase
-          .from('incidents')
-          .update({
+    let updatedInc = null;
+    try {
+      const updatedIncRow = await prisma.incidents.update({
+        where: { id: BigInt(id) },
+        data: coreClosePayload
+      });
+      updatedInc = serializePrisma(updatedIncRow);
+    } catch (incErr) {
+      console.warn('Close incident status DONE failed, retry with RESOLVED:', incErr.message);
+      try {
+        const retryRow = await prisma.incidents.update({
+          where: { id: BigInt(id) },
+          data: {
             ...coreClosePayload,
             status: 'RESOLVED'
-          })
-          .eq('id', id)
-          .select()
-          .maybeSingle();
+          }
+        });
+        updatedInc = serializePrisma(retryRow);
+      } catch (retryErr) {
+        console.warn('Close incident retry warning:', retryErr.message);
       }
-      updatedInc = retry.data;
     }
 
     // Cập nhật hoặc tạo mới bản ghi compensation_claims để lưu chứng từ UNC & ghi chú giao dịch
@@ -1272,79 +1347,86 @@ const closeIncidentCase = async (req, res) => {
         status: 'PAID',
         evidence: proofStr,
         review_comment: closeNoteFull,
-        reviewed_by: managerId,
-        reviewed_time: now,
-        updated_at: now,
-        ...(resolvedPaidAmount > 0 ? { amount: resolvedPaidAmount } : {})
+        reviewed_by: managerInt,
+        reviewed_time: nowDate,
+        updated_at: nowDate,
+        ...(resolvedPaidAmount > 0 ? { amount: BigInt(Math.round(resolvedPaidAmount)) } : {})
       };
-      const { error: paidErr } = await supabase
-        .from('compensation_claims')
-        .update(claimPayload)
-        .eq('incident_id', id);
-
-      if (paidErr) {
+      try {
+        await prisma.compensation_claims.updateMany({
+          where: { incident_id: BigInt(id) },
+          data: claimPayload
+        });
+      } catch (paidErr) {
         console.warn('compensation_claims status PAID rejected by constraint, retry with APPROVED:', paidErr.message);
-        await supabase
-          .from('compensation_claims')
-          .update({
+        await prisma.compensation_claims.updateMany({
+          where: { incident_id: BigInt(id) },
+          data: {
             ...claimPayload,
             status: 'APPROVED'
-          })
-          .eq('incident_id', id);
+          }
+        });
       }
     } else {
       let orderId = null;
-      const tripIdToLookup = updatedInc?.trip_id || existingInc?.trip_id;
+      const tripIdToLookup = updatedInc?.trip_id || (existingInc?.trip_id ? Number(existingInc.trip_id) : null);
       if (tripIdToLookup) {
-        const { data: stops } = await supabase
-          .from('trip_stops')
-          .select('order_id')
-          .eq('trip_id', tripIdToLookup)
-          .not('order_id', 'is', null)
-          .limit(1);
-        if (stops?.[0]?.order_id) orderId = stops[0].order_id;
+        const stop = await prisma.trip_stops.findFirst({
+          where: {
+            trip_id: BigInt(tripIdToLookup),
+            order_id: { not: null }
+          },
+          select: { order_id: true }
+        });
+        if (stop?.order_id) orderId = stop.order_id;
       }
       if (!orderId) {
-        const { data: anyOrder } = await supabase.from('orders').select('id').limit(1).maybeSingle();
+        const anyOrder = await prisma.orders.findFirst({ select: { id: true } });
         orderId = anyOrder?.id || null;
       }
 
       if (orderId) {
-        await supabase
-          .from('compensation_claims')
-          .insert({
-            incident_id: Number(id),
-            order_id: orderId,
+        await prisma.compensation_claims.create({
+          data: {
+            incident_id: BigInt(id),
+            order_id: BigInt(orderId),
             source: 'INCIDENT',
-            amount: resolvedPaidAmount,
+            amount: BigInt(Math.round(resolvedPaidAmount)),
             reason: closeNoteFull,
             evidence: proofStr,
             status: 'APPROVED',
-            created_by: managerId,
-            reviewed_by: managerId,
-            reviewed_time: now,
-            review_comment: closeNoteFull
-          });
+            created_by: managerInt,
+            reviewed_by: managerInt,
+            reviewed_time: nowDate,
+            review_comment: closeNoteFull,
+            updated_at: nowDate
+          }
+        });
       }
     }
 
     try {
-      await supabase.from('activity_logs').insert({
-        actor_id: managerId,
-        actor_type: 'MANAGER',
-        action: 'CLOSE_INCIDENT_CASE_DONE',
-        target_type: 'INCIDENT',
-        target_id: Number(id),
-        changes: {
-          ...updatePayload,
-          payment_date: payDate,
-          transaction_code: txCode,
-          payment_proof_url: proofStr,
-          close_note: closeNoteFull,
-          approved_amount: resolvedPaidAmount
-        },
-        reason: closeNoteFull.slice(0, 255),
-        created_time: now
+      await prisma.activity_logs.create({
+        data: {
+          actor_id: managerInt,
+          actor_type: 'MANAGER',
+          action: 'CLOSE_INCIDENT_CASE_DONE',
+          target_type: 'INCIDENT',
+          target_id: BigInt(id),
+          changes: {
+            status: updatedInc?.status || coreClosePayload.status,
+            resolution_note: mergedNote,
+            resolved_by: managerInt,
+            resolved_time: now,
+            payment_date: payDate,
+            transaction_code: txCode,
+            payment_proof_url: proofStr,
+            close_note: closeNoteFull,
+            approved_amount: resolvedPaidAmount
+          },
+          reason: closeNoteFull.slice(0, 255),
+          created_time: nowDate
+        }
       });
     } catch (logErr) {
       console.warn('activity_logs warning:', logErr.message);
@@ -1353,7 +1435,7 @@ const closeIncidentCase = async (req, res) => {
     return res.json({
       message: 'Đã xác nhận hoàn tất bồi thường và đóng hồ sơ sự cố thành công (DONE).',
       incident: {
-        ...(updatedInc || { id: Number(id), ...updatePayload }),
+        ...(updatedInc || { id: Number(id), ...coreClosePayload }),
         payment_date: payDate,
         transaction_code: txCode,
         payment_proof_url: proofStr,
@@ -1363,43 +1445,89 @@ const closeIncidentCase = async (req, res) => {
     });
   } catch (error) {
     console.error('closeIncidentCase Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi đóng hồ sơ sự cố', error: error.message });
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi đóng hồ sơ sự cố', error: error.message });
   }
 };
 
 const getClaims = async (req, res) => {
   try {
-    const { data: claims, error } = await supabase
-      .from('compensation_claims')
-      .select(`
-        *,
-        incident:incidents(
-          id, 
-          type, 
-          fault, 
-          description,
-          photos,
-          status,
-          reported_time,
-          trip_id,
-          trip:trips(
-            id,
-            trip_code,
-            status,
-            trip_trucks(truck:trucks(plate_number)),
-            trip_drivers(driver:driver_profiles(user:users(full_name, phone)))
-          )
-        ),
-        order:orders(id, order_code, order_type, agreed_price, customer_id, receiver_name)
-      `)
-      .order('id', { ascending: false });
+    const rawClaims = await prisma.compensation_claims.findMany({
+      orderBy: { id: 'desc' },
+      include: {
+        incidents: {
+          select: {
+            id: true,
+            type: true,
+            fault: true,
+            description: true,
+            photos: true,
+            status: true,
+            reported_time: true,
+            trip_id: true,
+            trips: {
+              select: {
+                id: true,
+                trip_code: true,
+                status: true,
+                trip_trucks: { select: { trucks: { select: { plate_number: true } } } },
+                trip_drivers: {
+                  select: {
+                    driver_profiles: {
+                      select: { users: { select: { full_name: true, phone: true } } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        orders: {
+          select: {
+            id: true,
+            order_code: true,
+            order_type: true,
+            agreed_price: true,
+            customer_id: true,
+            receiver_name: true
+          }
+        }
+      }
+    });
 
-    if (error) throw error;
+    const claims = (serializePrisma(rawClaims) || []).map((c) => ({
+      ...c,
+      decided_by: c.reviewed_by,
+      decided_at: c.reviewed_time,
+      decision_comment: c.review_comment,
+      created_at: c.created_time,
+      order: c.orders || null,
+      incident: c.incidents
+        ? {
+            ...c.incidents,
+            trip: c.incidents.trips
+              ? {
+                  ...c.incidents.trips,
+                  trip_trucks: (c.incidents.trips.trip_trucks || []).map((tt) => ({
+                    ...tt,
+                    truck: tt.trucks || null
+                  })),
+                  trip_drivers: (c.incidents.trips.trip_drivers || []).map((td) => ({
+                    ...td,
+                    driver: td.driver_profiles
+                      ? { ...td.driver_profiles, user: td.driver_profiles.users || null }
+                      : null
+                  }))
+                }
+              : null
+          }
+        : null
+    }));
 
-    const { data: contracts } = await supabase
-      .from('transport_contracts')
-      .select('id, customer_id, liability_cap, status')
-      .eq('status', 'ACTIVE');
+    const rawContracts = await prisma.transport_contracts.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, customer_id: true, liability_cap: true, status: true }
+    });
+    const contracts = serializePrisma(rawContracts) || [];
 
     const contractMap = {};
     (contracts || []).forEach((c) => {
@@ -1538,55 +1666,73 @@ const decideClaim = async (req, res) => {
     const isApprove = action === 'APPROVE' || action === 'Approve';
     const targetStatus = isApprove ? 'APPROVED': 'REJECTED';
 
-    const { data: claim, error: findErr } = await supabase
-      .from('compensation_claims')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const rawClaim = await prisma.compensation_claims.findUnique({
+      where: { id: BigInt(id) }
+    });
 
-    if (findErr || !claim) {
+    if (!rawClaim) {
       return res.status(404).json({ message: 'Không tìm thấy yêu cầu bồi thường.' });
     }
+    const claim = serializePrisma(rawClaim);
 
     if (!isApprove && !decisionText) {
       return res.status(400).json({ message: 'Bắt buộc nhập lý do/nhận xét khi từ chối bồi thường.' });
     }
 
-    const { data: updatedClaim, error: updateErr } = await supabase
-      .from('compensation_claims')
-      .update({
-        status: targetStatus,
-        decided_by: managerId,
-        decided_at: new Date().toISOString(),
-        decision_comment: decisionText || (isApprove ? 'Phê duyệt bồi thường hợp lệ.': 'Từ chối bồi thường.'),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
+    const nowDate = new Date();
+    const reviewerInt = managerId ? Number(managerId) : null;
+    const commentStr = decisionText || (isApprove ? 'Phê duyệt bồi thường hợp lệ.' : 'Từ chối bồi thường.');
 
-    if (updateErr) throw updateErr;
+    const updatedClaimRow = await prisma.compensation_claims.update({
+      where: { id: BigInt(id) },
+      data: {
+        status: targetStatus,
+        reviewed_by: reviewerInt,
+        reviewed_time: nowDate,
+        review_comment: commentStr,
+        updated_at: nowDate
+      }
+    });
+    const serializedClaim = serializePrisma(updatedClaimRow);
+    const updatedClaim = {
+      ...serializedClaim,
+      decided_by: serializedClaim.reviewed_by,
+      decided_at: serializedClaim.reviewed_time,
+      decision_comment: serializedClaim.review_comment
+    };
 
     if (claim.incident_id) {
-      await supabase
-        .from('incidents')
-        .update({
-          status: isApprove ? 'RESOLVED': 'CLOSED',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', claim.incident_id);
+      try {
+        await prisma.incidents.update({
+          where: { id: BigInt(claim.incident_id) },
+          data: {
+            status: isApprove ? 'RESOLVED' : 'CLOSED',
+            updated_at: nowDate
+          }
+        });
+      } catch (incErr) {
+        await prisma.incidents.update({
+          where: { id: BigInt(claim.incident_id) },
+          data: {
+            status: 'RESOLVED',
+            updated_at: nowDate
+          }
+        }).catch(() => {});
+      }
     }
 
     try {
-      await supabase.from('activity_logs').insert({
-        actor_id: managerId,
-        actor_type: 'MANAGER',
-        action: isApprove ? 'APPROVE_CLAIM': 'REJECT_CLAIM',
-        target_type: 'COMPENSATION_CLAIM',
-        target_id: String(id),
-        changes: { status: targetStatus, amount: claim.amount },
-        reason: decisionText,
-        created_time: new Date().toISOString()
+      await prisma.activity_logs.create({
+        data: {
+          actor_id: reviewerInt,
+          actor_type: 'MANAGER',
+          action: isApprove ? 'APPROVE_CLAIM' : 'REJECT_CLAIM',
+          target_type: 'COMPENSATION_CLAIM',
+          target_id: BigInt(id),
+          changes: { status: targetStatus, amount: Number(claim.amount || 0) },
+          reason: decisionText || null,
+          created_time: nowDate
+        }
       });
     } catch (logErr) {
       console.warn('activity_logs warning:', logErr.message);
@@ -1620,40 +1766,42 @@ const sendIncidentDecisionEmail = async (req, res) => {
     } = req.body || {};
     const managerId = req.user?.id || 1;
 
-    const { data: incident, error: incErr } = await supabase
-      .from('incidents')
-      .select(`
-        *,
-        trip:trips(id, trip_code),
-        compensation_claims(*)
-      `)
-      .eq('id', id)
-      .single();
+    const rawIncident = await prisma.incidents.findUnique({
+      where: { id: BigInt(id) },
+      include: {
+        trips: { select: { id: true, trip_code: true } },
+        compensation_claims: true
+      }
+    });
 
-    if (incErr || !incident) {
+    if (!rawIncident) {
       return res.status(404).json({ message: 'Không tìm thấy thông tin sự cố.' });
     }
+    const incident = mapIncidentRelations(rawIncident);
 
     let orderForEmail = null;
     if (incident.trip_id) {
-      const { data: stops } = await supabase
-        .from('trip_stops')
-        .select(`
-          order:orders(
-            id,
-            order_code,
-            agreed_price,
-            tracking_token,
-            receiver_name,
-            order_notes(*),
-            customer:customers(company_name, contact_person, email, phone),
-            order_cargos(cargo_name, quantity, unit, actual_weight_kg, declared_value)
-          )
-        `)
-        .eq('trip_id', incident.trip_id)
-        .not('order_id', 'is', null)
-        .limit(1);
-      orderForEmail = stops?.[0]?.order || null;
+      const stop = await prisma.trip_stops.findFirst({
+        where: {
+          trip_id: BigInt(incident.trip_id),
+          order_id: { not: null }
+        },
+        select: {
+          orders: {
+            select: {
+              id: true,
+              order_code: true,
+              agreed_price: true,
+              tracking_token: true,
+              receiver_name: true,
+              order_notes: true,
+              customers: { select: { company_name: true, contact_person: true, email: true, phone: true } },
+              order_cargos: { select: { cargo_name: true, quantity: true, unit: true, actual_weight_kg: true, declared_value: true } }
+            }
+          }
+        }
+      });
+      orderForEmail = stop?.orders ? mapOrderSummaryAliases(stop.orders) : null;
     }
 
     const meta = orderForEmail ? parseOrderMeta(orderForEmail) : {};
@@ -1746,29 +1894,32 @@ const sendIncidentDecisionEmail = async (req, res) => {
       });
     }
 
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
     const resolvedType = isRejectType ? 'REJECTION' : 'APPROVAL';
     if (sendRes?.success) {
       try {
-        await supabase.from('activity_logs').insert({
-          actor_id: managerId,
-          actor_type: 'MANAGER',
-          action: isRejectType ? 'REJECT_INCIDENT_COMPENSATION' : 'APPROVE_INCIDENT_COMPENSATION',
-          target_type: 'INCIDENT',
-          target_id: Number(id),
-          changes: {
-            email_sent: true,
-            customer_email: customerEmail,
-            email_type: resolvedType,
-            email_sent_at: now,
-            message_id: sendRes.messageId || null,
-            approved_compensation_amount: finalAmount,
-            damage_percentage: damage_percentage ?? incident.damage_percentage ?? 10,
-            goods_handling_method: goods_handling_method || incident.goods_handling_method || 'CUSTOMER_RETAIN',
-            contract_clause_ref: contract_clause_ref || incident.contract_clause_ref || null
-          },
-          reason: `Gửi email thông báo ${isRejectType ? 'từ chối' : 'phê duyệt'} bồi thường tới ${customerEmail}`.slice(0, 255),
-          created_time: now
+        await prisma.activity_logs.create({
+          data: {
+            actor_id: Number(managerId || 1),
+            actor_type: 'MANAGER',
+            action: isRejectType ? 'REJECT_INCIDENT_COMPENSATION' : 'APPROVE_INCIDENT_COMPENSATION',
+            target_type: 'INCIDENT',
+            target_id: BigInt(id),
+            changes: {
+              email_sent: true,
+              customer_email: customerEmail,
+              email_type: resolvedType,
+              email_sent_at: now,
+              message_id: sendRes.messageId || null,
+              approved_compensation_amount: finalAmount,
+              damage_percentage: damage_percentage ?? incident.damage_percentage ?? 10,
+              goods_handling_method: goods_handling_method || incident.goods_handling_method || 'CUSTOMER_RETAIN',
+              contract_clause_ref: contract_clause_ref || incident.contract_clause_ref || null
+            },
+            reason: `Gửi email thông báo ${isRejectType ? 'từ chối' : 'phê duyệt'} bồi thường tới ${customerEmail}`.slice(0, 255),
+            created_time: nowDate
+          }
         });
       } catch (logErr) {
         console.warn('sendIncidentDecisionEmail activity_logs warning:', logErr.message);

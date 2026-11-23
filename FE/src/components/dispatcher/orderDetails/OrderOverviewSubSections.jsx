@@ -236,7 +236,7 @@ export function OrderOverviewPreDocsBox({
           ))
         ) : (
           <div className="col-span-2 text-[11px] text-gray-400 italic text-center py-2">
-            Chưa có danh mục chứng từ nào. Vui lòng bấm "Trợ lý AI gợi ý" để AI tự động cấu hình theo loại hàng.
+            Chưa có danh mục chứng từ nào. Vui lòng bấm &ldquo;Trợ lý AI gợi ý&rdquo; để AI tự động cấu hình theo loại hàng.
           </div>
         )}
       </div>

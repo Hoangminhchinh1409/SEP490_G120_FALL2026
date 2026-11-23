@@ -1,16 +1,89 @@
 const crypto = require("crypto");
-const supabase = require("../config/supabase");
+const prisma = require("../config/prisma");
 const shiftModel = require("./shiftModel");
 const notificationModel = require("./notificationModel");
+const { serializePrisma, toBigInt, toNum, formatDateOnly } = require("../utils/prismaHelper");
 
 const ensureUUID = (val) => {
   if (!val) return crypto.randomUUID();
   if (
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
-  )
+  ) {
     return val;
+  }
   const hash = crypto.createHash("md5").update(String(val)).digest("hex");
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
+};
+
+const normalizeStopDirection = (s) => {
+  const raw = String(s.stop_type || s.type || "").trim().toUpperCase();
+  if (
+    raw === "PICKUP" ||
+    raw === "LẤY HÀNG" ||
+    (s.sequence === 1 && !raw.includes("DROP") && !raw.includes("DELIVER"))
+  ) {
+    return "Pickup";
+  }
+  return "Drop-off";
+};
+
+const mapProfileRow = (row) => {
+  if (!row) return null;
+  const s = serializePrisma(row);
+  const { users: userObj, ...rest } = s;
+  return {
+    ...rest,
+    id: toNum(row.id),
+    user_account_id: toNum(row.user_account_id),
+    license_expiry: formatDateOnly(row.license_expiry),
+    user: userObj || null,
+  };
+};
+
+const mapTripStopRow = (s) => {
+  const ss = serializePrisma(s);
+  const { locations: locObj, orders: ordObj, ...rest } = ss;
+  const orderCargos = ordObj?.order_cargos ? { ...ordObj.order_cargos } : null;
+  let mappedOrder = null;
+  if (ordObj) {
+    const { order_cargos: _omit, ...ordRest } = ordObj;
+    mappedOrder = {
+      ...ordRest,
+      cargos: orderCargos,
+    };
+  }
+  return {
+    ...rest,
+    stop_type: normalizeStopDirection(rest),
+    location: locObj || null,
+    order: mappedOrder,
+  };
+};
+
+const mapTripDetailRow = (t) => {
+  if (!t) return null;
+  const st = serializePrisma(t);
+  const { trip_trucks: ttRows, trip_stops: tsRows, ...rest } = st;
+
+  const stops = (tsRows || [])
+    .map(mapTripStopRow)
+    .sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+
+  const truckAssignments = (ttRows || []).map((tt) => ({
+    truck_id: tt.truck_id,
+    assignment_type: tt.assignment_type,
+    truck: tt.trucks || null,
+  }));
+
+  const activeTruckAssign =
+    truckAssignments.find((ta) => ta.truck) || truckAssignments[0];
+
+  return {
+    ...rest,
+    truck_assignments: truckAssignments,
+    stops,
+    truck: activeTruckAssign ? activeTruckAssign.truck : null,
+  };
 };
 
 // ==========================================
@@ -18,53 +91,55 @@ const ensureUUID = (val) => {
 // ==========================================
 
 const getDriverProfileByUserId = async (userId) => {
-  const { data, error } = await supabase
-    .from("driver_profiles")
-    .select(
-      `
-      id,
-      user_account_id,
-      license_number,
-      license_class,
-      license_expiry,
-      status,
-      last_trip_ended_at,
-      user:users!driver_profiles_user_account_id_fkey(id, username, full_name, phone, email, status)
-    `,
-    )
-    .eq("user_account_id", userId)
-    .single();
-
-  if (error && error.code !== "PGRST116") {
-    console.error("getDriverProfileByUserId error:", error);
-    throw error;
-  }
-  return data || null;
+  const row = await prisma.driver_profiles.findUnique({
+    where: { user_account_id: toBigInt(userId) },
+    select: {
+      id: true,
+      user_account_id: true,
+      license_number: true,
+      license_class: true,
+      license_expiry: true,
+      status: true,
+      last_trip_ended_at: true,
+      users: {
+        select: {
+          id: true,
+          username: true,
+          full_name: true,
+          phone: true,
+          email: true,
+          status: true,
+        },
+      },
+    },
+  });
+  return mapProfileRow(row);
 };
 
 const getDriverProfileById = async (driverProfileId) => {
-  const { data, error } = await supabase
-    .from("driver_profiles")
-    .select(
-      `
-      id,
-      user_account_id,
-      license_number,
-      license_class,
-      license_expiry,
-      status,
-      last_trip_ended_at,
-      user:users!driver_profiles_user_account_id_fkey(id, username, full_name, phone, email, status)
-    `,
-    )
-    .eq("id", driverProfileId)
-    .single();
-
-  if (error && error.code !== "PGRST116") {
-    console.error("getDriverProfileById error:", error);
-    throw error;
-  }
-  return data || null;
+  const row = await prisma.driver_profiles.findUnique({
+    where: { id: toBigInt(driverProfileId) },
+    select: {
+      id: true,
+      user_account_id: true,
+      license_number: true,
+      license_class: true,
+      license_expiry: true,
+      status: true,
+      last_trip_ended_at: true,
+      users: {
+        select: {
+          id: true,
+          username: true,
+          full_name: true,
+          phone: true,
+          email: true,
+          status: true,
+        },
+      },
+    },
+  });
+  return mapProfileRow(row);
 };
 
 // ==========================================
@@ -72,298 +147,276 @@ const getDriverProfileById = async (driverProfileId) => {
 // ==========================================
 
 const getActiveTrip = async (driverProfileId) => {
-  // 1. Tìm chuyến xe đang hoạt động được gán cho tài xế này trong trip_drivers
-  const { data: assignments, error: assignErr } = await supabase
-    .from("trip_drivers")
-    .select("trip_id, driver_role, assignment_type")
-    .eq("driver_id", driverProfileId)
-    .is("released_time", null)
-    .order("id", { ascending: false });
-
-  if (assignErr) {
-    console.error("getActiveTrip assignErr:", assignErr);
-    throw assignErr;
-  }
+  const assignments = await prisma.trip_drivers.findMany({
+    where: {
+      driver_id: toBigInt(driverProfileId),
+      released_time: null,
+    },
+    select: { trip_id: true, driver_role: true, assignment_type: true },
+    orderBy: { id: "desc" },
+  });
 
   if (!assignments || assignments.length === 0) {
     return null;
   }
 
-  const tripIds = assignments.map((a) => a.trip_id);
+  const tripIds = [...new Set(assignments.map((a) => a.trip_id))];
 
-  // 2. Lấy thông tin chuyến xe chưa kết thúc
-  const { data: trips, error: tripErr } = await supabase
-    .from("trips")
-    .select(
-      `
-      id,
-      trip_code,
-      planned_start,
-      planned_distance,
-      planned_duration,
-      actual_distance,
-      actual_duration,
-      status,
-      created_by,
-      created_at,
-      truck_assignments:trip_trucks(
-        truck_id,
-        assignment_type,
-        truck:trucks(
-          id,
-          plate_number,
-          model,
-          allowed_payload,
-          box_length,
-          box_width,
-          box_height,
-          status
-        )
-      ),
-      stops:trip_stops(
-        id,
-        trip_id,
-        order_id,
-        sequence,
-        stop_type,
-        location_id,
-        planned_arrival,
-        actual_arrival,
-        distance_from_previous_stop,
-        loaded_quantity,
-        loaded_weight,
-        delivered_quantity,
-        delivered_weight,
-        status,
-        location:locations(
-          id,
-          name,
-          address,
-          latitude,
-          longitude,
-          contact_name,
-          contact_phone,
-          geofence_radius
-        ),
-        order:orders(
-          id,
-          order_code,
-          order_type,
-          customer_id,
-          agreed_price,
-          status,
-          receiver_name,
-          receiver_phone,
-          cargos:order_cargos(*)
-        )
-      )
-    `,
-    )
-    .in("id", tripIds)
-    .in("status", ["Assigned", "Dispatched", "Accepted", "In Progress"])
-    .order("planned_start", { ascending: true });
+  const tripsRaw = await prisma.trips.findMany({
+    where: {
+      id: { in: tripIds },
+      status: { in: ["Assigned", "Dispatched", "Accepted", "In Progress"] },
+    },
+    select: {
+      id: true,
+      trip_code: true,
+      planned_start: true,
+      planned_distance: true,
+      planned_duration: true,
+      actual_distance: true,
+      actual_duration: true,
+      status: true,
+      created_by: true,
+      created_at: true,
+      trip_trucks: {
+        select: {
+          truck_id: true,
+          assignment_type: true,
+          trucks: {
+            select: {
+              id: true,
+              plate_number: true,
+              model: true,
+              allowed_payload: true,
+              box_length: true,
+              box_width: true,
+              box_height: true,
+              status: true,
+            },
+          },
+        },
+      },
+      trip_stops: {
+        select: {
+          id: true,
+          trip_id: true,
+          order_id: true,
+          sequence: true,
+          stop_type: true,
+          location_id: true,
+          planned_arrival: true,
+          actual_arrival: true,
+          distance_from_previous_stop: true,
+          loaded_quantity: true,
+          loaded_weight: true,
+          delivered_quantity: true,
+          delivered_weight: true,
+          status: true,
+          locations: {
+            select: {
+              id: true,
+              name: true,
+              address: true,
+              latitude: true,
+              longitude: true,
+              contact_name: true,
+              contact_phone: true,
+            },
+          },
+          orders: {
+            select: {
+              id: true,
+              order_code: true,
+              order_type: true,
+              customer_id: true,
+              agreed_price: true,
+              status: true,
+              receiver_name: true,
+              receiver_phone: true,
+              order_cargos: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { planned_start: "asc" },
+  });
 
-  if (tripErr) {
-    console.error("getActiveTrip tripErr:", tripErr);
-    throw tripErr;
-  }
-
-  if (!trips || trips.length === 0) {
+  if (!tripsRaw || tripsRaw.length === 0) {
     return null;
   }
 
-  // Format tất cả các chuyến (sắp xếp stops, trích xuất truck)
-  for (const t of trips) {
-    if (t.stops) {
-      t.stops.sort((a, b) => a.sequence - b.sequence);
-      t.stops.forEach((s) => {
-        const raw = String(s.stop_type || s.type || "").trim().toUpperCase();
-        if (raw === "PICKUP" || raw === "LẤY HÀNG" || (s.sequence === 1 && !raw.includes("DROP") && !raw.includes("DELIVER"))) {
-          s.stop_type = "Pickup";
-        } else {
-          s.stop_type = "Drop-off";
-        }
-      });
-    }
-    const activeTruckAssign =
-      (t.truck_assignments || []).find((ta) => ta.truck) ||
-      t.truck_assignments?.[0];
-    t.truck = activeTruckAssign ? activeTruckAssign.truck : null;
-  }
-
-  // Ưu tiên chuyến In Progress hoặc Accepted, sau đó đến chuyến có lịch sớm nhất
+  const trips = tripsRaw.map(mapTripDetailRow);
   const activeTrip =
     trips.find((t) => t.status === "In Progress" || t.status === "Accepted") ||
     trips[0];
 
   return {
     activeTrip,
-    upcomingTrips: trips
+    upcomingTrips: trips,
   };
 };
 
 const getTripHistory = async (driverProfileId, { page = 1, limit = 10 }) => {
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
 
-  // Lấy các trip_id tài xế từng phụ trách
-  const { data: assignments, error: assignErr } = await supabase
-    .from("trip_drivers")
-    .select("trip_id")
-    .eq("driver_id", driverProfileId);
+  const assignments = await prisma.trip_drivers.findMany({
+    where: { driver_id: toBigInt(driverProfileId) },
+    select: { trip_id: true },
+  });
 
-  if (assignErr) throw assignErr;
   if (!assignments || assignments.length === 0) {
     return { trips: [], total: 0, page, limit };
   }
 
   const tripIds = [...new Set(assignments.map((a) => a.trip_id))];
+  const where = {
+    id: { in: tripIds },
+    status: { in: ["Completed", "Cancelled"] },
+  };
 
-  const { data, count, error } = await supabase
-    .from("trips")
-    .select(
-      `
-      id,
-      trip_code,
-      planned_start,
-      actual_distance,
-      actual_duration,
-      status,
-      created_at,
-      truck_assignments:trip_trucks(
-        truck:trucks(plate_number, allowed_payload)
-      ),
-      stops:trip_stops(
-        id,
-        sequence,
-        stop_type,
-        status,
-        location:locations(name, address)
-      )
-    `,
-      { count: "exact" },
-    )
-    .in("id", tripIds)
-    .in("status", ["Completed", "Cancelled"])
-    .order("id", { ascending: false })
-    .range(from, to);
+  const [rows, total] = await Promise.all([
+    prisma.trips.findMany({
+      where,
+      select: {
+        id: true,
+        trip_code: true,
+        planned_start: true,
+        actual_distance: true,
+        actual_duration: true,
+        status: true,
+        created_at: true,
+        trip_trucks: {
+          select: {
+            trucks: { select: { plate_number: true, allowed_payload: true } },
+          },
+        },
+        trip_stops: {
+          select: {
+            id: true,
+            sequence: true,
+            stop_type: true,
+            status: true,
+            locations: { select: { name: true, address: true } },
+          },
+        },
+      },
+      orderBy: { id: "desc" },
+      skip,
+      take,
+    }),
+    prisma.trips.count({ where }),
+  ]);
 
-  if (error) {
-    console.error("getTripHistory error:", error);
-    throw error;
-  }
+  const trips = serializePrisma(rows || []).map((t) => ({
+    ...t,
+    truck_assignments: (t.trip_trucks || []).map((tt) => ({ truck: tt.trucks || null })),
+    stops: (t.trip_stops || []).map((s) => ({
+      id: s.id,
+      sequence: s.sequence,
+      stop_type: s.stop_type,
+      status: s.status,
+      location: s.locations || null,
+    })),
+  }));
 
   return {
-    trips: data || [],
-    total: count || 0,
+    trips,
+    total: total || 0,
     page,
     limit,
   };
 };
 
 const getTripDetail = async (tripId, driverProfileId) => {
-  // Xác minh quyền phụ trách chuyến xe
-  const { data: assign, error: checkErr } = await supabase
-    .from("trip_drivers")
-    .select("trip_id, driver_role")
-    .eq("trip_id", tripId)
-    .eq("driver_id", driverProfileId)
-    .limit(1);
+  const bigTripId = toBigInt(tripId);
+  const bigDriverId = toBigInt(driverProfileId);
+  if (bigTripId === null || bigDriverId === null) return null;
 
-  if (checkErr || !assign || assign.length === 0) {
+  const assign = await prisma.trip_drivers.findFirst({
+    where: { trip_id: bigTripId, driver_id: bigDriverId },
+    select: { trip_id: true, driver_role: true },
+  });
+
+  if (!assign) {
     return null;
   }
 
-  const { data: trip, error } = await supabase
-    .from("trips")
-    .select(
-      `
-      id,
-      trip_code,
-      planned_start,
-      planned_distance,
-      planned_duration,
-      actual_distance,
-      actual_duration,
-      status,
-      created_by,
-      created_at,
-      truck_assignments:trip_trucks(
-        truck_id,
-        truck:trucks(
-          id,
-          plate_number,
-          model,
-          allowed_payload,
-          status
-        )
-      ),
-      stops:trip_stops(
-        id,
-        trip_id,
-        order_id,
-        sequence,
-        stop_type,
-        location_id,
-        planned_arrival,
-        actual_arrival,
-        distance_from_previous_stop,
-        loaded_quantity,
-        loaded_weight,
-        delivered_quantity,
-        delivered_weight,
-        status,
-        location:locations(
-          id,
-          name,
-          address,
-          latitude,
-          longitude,
-          contact_name,
-          contact_phone,
-          geofence_radius
-        ),
-        order:orders(
-          id,
-          order_code,
-          order_type,
-          customer_id,
-          agreed_price,
-          status,
-          receiver_name,
-          receiver_phone,
-          cargos:order_cargos(*)
-        )
-      )
-    `,
-    )
-    .eq("id", tripId)
-    .single();
+  const trip = await prisma.trips.findUnique({
+    where: { id: bigTripId },
+    select: {
+      id: true,
+      trip_code: true,
+      planned_start: true,
+      planned_distance: true,
+      planned_duration: true,
+      actual_distance: true,
+      actual_duration: true,
+      status: true,
+      created_by: true,
+      created_at: true,
+      trip_trucks: {
+        select: {
+          truck_id: true,
+          assignment_type: true,
+          trucks: {
+            select: {
+              id: true,
+              plate_number: true,
+              model: true,
+              allowed_payload: true,
+              status: true,
+            },
+          },
+        },
+      },
+      trip_stops: {
+        select: {
+          id: true,
+          trip_id: true,
+          order_id: true,
+          sequence: true,
+          stop_type: true,
+          location_id: true,
+          planned_arrival: true,
+          actual_arrival: true,
+          distance_from_previous_stop: true,
+          loaded_quantity: true,
+          loaded_weight: true,
+          delivered_quantity: true,
+          delivered_weight: true,
+          status: true,
+          locations: {
+            select: {
+              id: true,
+              name: true,
+              address: true,
+              latitude: true,
+              longitude: true,
+              contact_name: true,
+              contact_phone: true,
+            },
+          },
+          orders: {
+            select: {
+              id: true,
+              order_code: true,
+              order_type: true,
+              customer_id: true,
+              agreed_price: true,
+              status: true,
+              receiver_name: true,
+              receiver_phone: true,
+              order_cargos: true,
+            },
+          },
+        },
+      },
+    },
+  });
 
-  if (error && error.code !== "PGRST116") {
-    console.error("getTripDetail error:", error);
-    throw error;
-  }
-
-  if (trip) {
-    if (trip.stops) {
-      trip.stops.sort((a, b) => a.sequence - b.sequence);
-      trip.stops.forEach((s) => {
-        const raw = String(s.stop_type || s.type || "").trim().toUpperCase();
-        if (raw === "PICKUP" || raw === "LẤY HÀNG" || (s.sequence === 1 && !raw.includes("DROP") && !raw.includes("DELIVER"))) {
-          s.stop_type = "Pickup";
-        } else {
-          s.stop_type = "Drop-off";
-        }
-      });
-    }
-    const truckAssign =
-      (trip.truck_assignments || []).find((ta) => ta.truck) ||
-      trip.truck_assignments?.[0];
-    trip.truck = truckAssign ? truckAssign.truck : null;
-  }
-
-  return trip || null;
+  return mapTripDetailRow(trip);
 };
 
 // ==========================================
@@ -374,114 +427,107 @@ const updateTripStatus = async (tripId, status, extraFields = {}) => {
   const payload = {
     status,
     ...extraFields,
-    updated_at: new Date().toISOString(),
+    updated_at: new Date(),
   };
 
-  const { data, error } = await supabase
-    .from("trips")
-    .update(payload)
-    .eq("id", tripId)
-    .select();
-
-  if (error) {
-    console.error("updateTripStatus error:", error);
-    throw error;
-  }
-  return data && data.length > 0 ? data[0] : null;
+  const updated = await prisma.trips.update({
+    where: { id: toBigInt(tripId) },
+    data: payload,
+  });
+  return serializePrisma(updated);
 };
 
 const getTripStopById = async (stopId, tripId) => {
-  const { data, error } = await supabase
-    .from("trip_stops")
-    .select(
-      `
-      id,
-      trip_id,
-      order_id,
-      sequence,
-      stop_type,
-      location_id,
-      planned_arrival,
-      actual_arrival,
-      loaded_quantity,
-      loaded_weight,
-      delivered_quantity,
-      delivered_weight,
-      status,
-      location:locations(
-        id,
-        name,
-        address,
-        latitude,
-        longitude,
-        geofence_radius
-      ),
-      order:orders(
-        id,
-        order_code,
-        status
-      )
-    `,
-    )
-    .eq("id", stopId)
-    .eq("trip_id", tripId)
-    .single();
+  const row = await prisma.trip_stops.findFirst({
+    where: {
+      id: toBigInt(stopId),
+      trip_id: toBigInt(tripId),
+    },
+    select: {
+      id: true,
+      trip_id: true,
+      order_id: true,
+      sequence: true,
+      stop_type: true,
+      location_id: true,
+      planned_arrival: true,
+      actual_arrival: true,
+      loaded_quantity: true,
+      loaded_weight: true,
+      delivered_quantity: true,
+      delivered_weight: true,
+      status: true,
+      locations: {
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
+      orders: {
+        select: {
+          id: true,
+          order_code: true,
+          order_type: true,
+          status: true,
+        },
+      },
+    },
+  });
 
-  if (error && error.code !== "PGRST116") {
-    console.error("getTripStopById error:", error);
-    throw error;
-  }
-  return data || null;
+  if (!row) return null;
+  const s = serializePrisma(row);
+  const { locations: locObj, orders: ordObj, ...rest } = s;
+  return {
+    ...rest,
+    location: locObj || null,
+    order: ordObj || null,
+  };
 };
 
 const updateTripStop = async (stopId, updateData) => {
-  const { data, error } = await supabase
-    .from("trip_stops")
-    .update(updateData)
-    .eq("id", stopId)
-    .select();
-
-  if (error) {
-    console.error("updateTripStop error:", error);
-    throw error;
+  const payload = { ...updateData };
+  if (payload.actual_arrival !== undefined) {
+    payload.actual_arrival = payload.actual_arrival ? new Date(payload.actual_arrival) : null;
   }
-  return data && data.length > 0 ? data[0] : null;
+  const updated = await prisma.trip_stops.update({
+    where: { id: toBigInt(stopId) },
+    data: payload,
+  });
+  return serializePrisma(updated);
 };
 
-const updateOrdersStatus = async (
-  orderIds,
-  status,
-  notes = "",
-  changedBy = null,
-) => {
+const updateOrdersStatus = async (orderIds, status, notes = "", changedBy = null) => {
   if (!orderIds || orderIds.length === 0) return [];
+  const bigOrderIds = orderIds.map((oid) => toBigInt(oid)).filter((v) => v !== null);
+  const now = new Date();
+  const bigChangedBy = toBigInt(changedBy);
 
-  const { data, error } = await supabase
-    .from("orders")
-    .update({ status, updated_at: new Date().toISOString() })
-    .in("id", orderIds)
-    .select("id, status");
+  await prisma.orders.updateMany({
+    where: { id: { in: bigOrderIds } },
+    data: { status, updated_at: now },
+  });
 
-  if (error) {
-    console.error("updateOrdersStatus error:", error);
-    throw error;
-  }
-
-  // Ghi lịch sử trạng thái đơn hàng (order_status_history)
-  const historyInserts = orderIds.map((orderId) => ({
-    order_id: orderId,
-    to_status: status,
-    notes,
-    changed_by: changedBy,
-  }));
+  const rows = await prisma.orders.findMany({
+    where: { id: { in: bigOrderIds } },
+    select: { id: true, status: true },
+  });
 
   try {
-    await supabase.from("order_status_history").insert(historyInserts);
+    await prisma.order_status_history.createMany({
+      data: bigOrderIds.map((oid) => ({
+        order_id: oid,
+        status,
+        changed_by: bigChangedBy,
+      })),
+    });
   } catch (histErr) {
     console.warn("order_status_history insert warning:", histErr.message);
   }
 
-  return data || [];
+  return serializePrisma(rows || []);
 };
 
 // ==========================================
@@ -490,33 +536,33 @@ const updateOrdersStatus = async (
 
 const updateTruckStatus = async (truckId, status) => {
   if (!truckId) return null;
-  const { data, error } = await supabase
-    .from("trucks")
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", truckId)
-    .select();
-
-  if (error) console.error("updateTruckStatus error:", error);
-  return data;
+  try {
+    const updated = await prisma.trucks.update({
+      where: { id: toBigInt(truckId) },
+      data: { status, updated_at: new Date() },
+    });
+    return [serializePrisma(updated)];
+  } catch (error) {
+    console.error("updateTruckStatus error:", error);
+    return null;
+  }
 };
 
-const updateDriverProfileStatus = async (
-  driverProfileId,
-  status,
-  lastTripEndedAt = null,
-) => {
+const updateDriverProfileStatus = async (driverProfileId, status, lastTripEndedAt = null) => {
   if (!driverProfileId) return null;
-  const updatePayload = { status, updated_at: new Date().toISOString() };
-  if (lastTripEndedAt) updatePayload.last_trip_ended_at = lastTripEndedAt;
+  try {
+    const updatePayload = { status, updated_at: new Date() };
+    if (lastTripEndedAt) updatePayload.last_trip_ended_at = new Date(lastTripEndedAt);
 
-  const { data, error } = await supabase
-    .from("driver_profiles")
-    .update(updatePayload)
-    .eq("id", driverProfileId)
-    .select();
-
-  if (error) console.error("updateDriverProfileStatus error:", error);
-  return data;
+    const updated = await prisma.driver_profiles.update({
+      where: { id: toBigInt(driverProfileId) },
+      data: updatePayload,
+    });
+    return [serializePrisma(updated)];
+  } catch (error) {
+    console.error("updateDriverProfileStatus error:", error);
+    return null;
+  }
 };
 
 // ==========================================
@@ -532,9 +578,9 @@ const recordTripEvent = async ({
   phoneTime,
   latitude = null,
   longitude = null,
-  outsideRadiusFlag = false,
   payload = null,
 }) => {
+<<<<<<< Updated upstream
   const insertPayload = {
     client_action_id: ensureUUID(clientActionId),
     trip_id: tripId,
@@ -563,6 +609,23 @@ const recordTripEvent = async ({
     throw error;
   }
   return data && data.length > 0 ? data[0] : null;
+=======
+  const created = await prisma.trip_events.create({
+    data: {
+      client_action_id: ensureUUID(clientActionId),
+      trip_id: toBigInt(tripId),
+      trip_stop_id: toBigInt(tripStopId),
+      driver_id: toBigInt(driverId),
+      event_type: eventType,
+      phone_time: phoneTime ? new Date(phoneTime) : new Date(),
+      received_time: new Date(),
+      latitude: latitude !== null && latitude !== undefined ? Number(latitude) : null,
+      longitude: longitude !== null && longitude !== undefined ? Number(longitude) : null,
+      payload: payload ?? undefined,
+    },
+  });
+  return serializePrisma(created);
+>>>>>>> Stashed changes
 };
 
 // ==========================================
@@ -579,41 +642,30 @@ const createIncident = async ({
   incidentLat = null,
   incidentLng = null,
 }) => {
-  const payload = {
-    trip_id: tripId,
-    trip_stop_id: tripStopId,
-    reported_by: reportedBy,
-    type,
-    status: "Reported",
-    description,
-    photos: Array.isArray(photos)
-      ? photos
-      : typeof photos === "string" && photos.trim()
-        ? [photos]
-        : null,
-    ...(incidentLat !== null && incidentLat !== undefined ? { incident_lat: incidentLat } : {}),
-    ...(incidentLng !== null && incidentLng !== undefined ? { incident_lng: incidentLng } : {}),
-    reported_time: new Date().toISOString(),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
+  const now = new Date();
+  const normalizedPhotos = Array.isArray(photos)
+    ? photos.filter(Boolean)
+    : typeof photos === "string" && photos.trim()
+      ? [photos.trim()]
+      : [];
 
-  let { data, error } = await supabase
-    .from("incidents")
-    .insert([payload])
-    .select();
-
-  if (error && ("incident_lat" in payload || "incident_lng" in payload)) {
-    console.warn("createIncident with GPS columns failed, retry without GPS:", error.message);
-    const { incident_lat: _lat, incident_lng: _lng, ...corePayload } = payload;
-    ({ data, error } = await supabase.from("incidents").insert([corePayload]).select());
-  }
-
-  if (error) {
-    console.error("createIncident error:", error);
-    throw error;
-  }
-  return data && data.length > 0 ? data[0] : null;
+  const created = await prisma.incidents.create({
+    data: {
+      trip_id: toBigInt(tripId),
+      trip_stop_id: toBigInt(tripStopId),
+      reported_by: toBigInt(reportedBy),
+      type,
+      status: "Reported",
+      description: String(description || "").slice(0, 500),
+      photos: normalizedPhotos,
+      incident_lat: incidentLat !== null && incidentLat !== undefined ? Number(incidentLat) : null,
+      incident_lng: incidentLng !== null && incidentLng !== undefined ? Number(incidentLng) : null,
+      reported_time: now,
+      created_at: now,
+      updated_at: now,
+    },
+  });
+  return serializePrisma(created);
 };
 
 // ==========================================
@@ -622,17 +674,16 @@ const createIncident = async ({
 
 const checkIdempotency = async (clientActionId) => {
   if (!clientActionId) return false;
-  const uuid = ensureUUID(clientActionId);
-
-  // Kiểm tra trong bảng trip_events
-  const { data, error } = await supabase
-    .from("trip_events")
-    .select("id")
-    .eq("client_action_id", uuid)
-    .limit(1);
-
-  if (error) return false;
-  return data && data.length > 0;
+  try {
+    const uuid = ensureUUID(clientActionId);
+    const match = await prisma.trip_events.findUnique({
+      where: { client_action_id: uuid },
+      select: { id: true },
+    });
+    return Boolean(match);
+  } catch {
+    return false;
+  }
 };
 
 const logDriverActivity = async ({
@@ -646,68 +697,63 @@ const logDriverActivity = async ({
   clientActionId = null,
 }) => {
   try {
-    await supabase.from("activity_logs").insert([
-      {
-        actor_id: actorId,
+    const changesPayload = clientActionId
+      ? { ...(typeof changes === "object" && changes !== null ? changes : {}), client_action_id: clientActionId }
+      : changes;
+
+    await prisma.activity_logs.create({
+      data: {
+        actor_id: toBigInt(actorId),
         actor_type: actorType,
         action,
         target_type: targetType,
-        target_id:
-          typeof targetId === "number" ? targetId : parseInt(targetId) || 0,
-        reason,
-        changes: changes ? JSON.stringify(changes) : null,
-        created_time: new Date().toISOString(),
-        client_action_id: clientActionId,
+        target_id: BigInt(typeof targetId === "number" ? targetId : parseInt(targetId, 10) || 0),
+        reason: reason ? String(reason).slice(0, 255) : null,
+        changes: changesPayload ?? undefined,
+        created_time: new Date(),
       },
-    ]);
+    });
   } catch (err) {
     console.warn("logDriverActivity insert warning:", err.message);
   }
 };
 
 // ==========================================
-// 8. DRIVER SHIFTS (UC-20, BR-60) -> Tách sang ./shiftModel.js
-// ==========================================
-
-// ==========================================
 // 9. CUSTOMER REFUSAL (BR-57)
 // ==========================================
 
-const updateOrderRefusal = async (
-  orderId,
-  { reason, photoUrl, changedBy = null },
-) => {
-  const { data, error } = await supabase
-    .from("orders")
-    .update({
-      status: "Delivered (Exception)",
+const updateOrderRefusal = async (orderId, { reason, photoUrl, changedBy = null }) => {
+  const bigOrderId = toBigInt(orderId);
+  const updated = await prisma.orders.update({
+    where: { id: bigOrderId },
+    data: {
+      status: "DELIVERED_EXCEPTION",
       refusal_reason: reason,
       refusal_photo: photoUrl,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", orderId)
-    .select("id, order_code, status, refusal_reason, refusal_photo");
+      updated_at: new Date(),
+    },
+    select: {
+      id: true,
+      order_code: true,
+      status: true,
+      refusal_reason: true,
+      refusal_photo: true,
+    },
+  });
 
-  if (error) {
-    console.error("updateOrderRefusal error:", error);
-    throw error;
-  }
-
-  // Ghi nhận lịch sử đơn hàng
   try {
-    await supabase.from("order_status_history").insert([
-      {
-        order_id: orderId,
-        to_status: "Delivered (Exception)",
-        notes: `Khách từ chối nhận hàng: ${reason}`,
-        changed_by: changedBy,
+    await prisma.order_status_history.create({
+      data: {
+        order_id: bigOrderId,
+        status: "DELIVERED_EXCEPTION",
+        changed_by: toBigInt(changedBy),
       },
-    ]);
+    });
   } catch (hErr) {
     console.warn("order_status_history insert warning:", hErr.message);
   }
 
-  return data && data.length > 0 ? data[0] : null;
+  return serializePrisma(updated);
 };
 
 // ==========================================
@@ -723,35 +769,23 @@ const createProposedExtraFee = async ({
   photoUrl,
   recordedBy,
 }) => {
-  const payload = {
-    trip_id: tripId,
-    order_id: orderId,
-    fee_type: feeType,
-    amount: parseInt(amount, 10),
-    reason,
-    photo_url: photoUrl,
-    status: "Proposed",
-    source: "Driver",
-    suggested_by_system: false,
-    recorded_by: recordedBy,
-    created_at: new Date().toISOString(),
-  };
-
-  const { data, error } = await supabase
-    .from("extra_fees")
-    .insert([payload])
-    .select();
-
-  if (error) {
-    console.error("createProposedExtraFee error:", error);
-    throw error;
-  }
-  return data && data.length > 0 ? data[0] : null;
+  const created = await prisma.extra_fees.create({
+    data: {
+      trip_id: toBigInt(tripId),
+      order_id: toBigInt(orderId),
+      fee_type: feeType,
+      amount: BigInt(parseInt(amount, 10)),
+      reason,
+      photo_url: photoUrl,
+      status: "Proposed",
+      source: "Driver",
+      suggested_by_system: false,
+      recorded_by: toBigInt(recordedBy),
+      created_at: new Date(),
+    },
+  });
+  return serializePrisma(created);
 };
-
-// ==========================================
-// 11. NOTIFICATIONS (Screen 6.5, MSG80, MSG85, MSG75) -> Tách sang ./notificationModel.js
-// ==========================================
 
 // ==========================================
 // 12. DRIVING HOURS CALCULATION (BR-34)
@@ -759,65 +793,63 @@ const createProposedExtraFee = async ({
 
 const getDriverDrivingTimeStats = async (driverProfileId) => {
   const now = new Date();
-  const startOfDay = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  ).toISOString();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  // Bắt đầu tuần (Thứ hai)
-  const dayOfWeek = now.getDay(); // 0 is Sunday
+  const dayOfWeek = now.getDay();
   const diffToMonday = (dayOfWeek + 6) % 7;
   const startOfWeek = new Date(
     now.getFullYear(),
     now.getMonth(),
-    now.getDate() - diffToMonday,
-  ).toISOString();
+    now.getDate() - diffToMonday
+  );
 
-  // 1. Tính tổng thời gian các chuyến xe đã hoàn thành trong ngày & tuần
-  const { data: assignments } = await supabase
-    .from("trip_drivers")
-    .select("trip_id")
-    .eq("driver_id", driverProfileId);
+  const assignments = await prisma.trip_drivers.findMany({
+    where: { driver_id: toBigInt(driverProfileId) },
+    select: { trip_id: true },
+  });
 
-  const tripIds = (assignments || []).map((a) => a.trip_id);
+  const tripIds = [...new Set((assignments || []).map((a) => a.trip_id))];
 
   let todayDrivenMinutes = 0;
   let weekDrivenMinutes = 0;
   let continuousMinutes = 0;
 
   if (tripIds.length > 0) {
-    const { data: recentTrips } = await supabase
-      .from("trips")
-      .select(
-        "id, actual_duration, status, planned_start, created_at, updated_at",
-      )
-      .in("id", tripIds)
-      .gte("created_at", startOfWeek);
+    const recentTrips = await prisma.trips.findMany({
+      where: {
+        id: { in: tripIds },
+        created_at: { gte: startOfWeek },
+      },
+      select: {
+        id: true,
+        actual_duration: true,
+        status: true,
+        planned_start: true,
+        created_at: true,
+        updated_at: true,
+      },
+    });
 
     for (const t of recentTrips || []) {
-      const dur = t.actual_duration || 0; // phút
+      const dur = t.actual_duration || 0;
       const tripTime = new Date(t.created_at).getTime();
 
-      if (tripTime >= new Date(startOfDay).getTime()) {
+      if (tripTime >= startOfDay.getTime()) {
         todayDrivenMinutes += dur;
       }
       weekDrivenMinutes += dur;
     }
   }
 
-  // 2. Tính thời gian lái của chuyến In Progress hiện tại (nếu có)
-  const activeTrip = await getActiveTrip(driverProfileId);
+  const activeTripRes = await getActiveTrip(driverProfileId);
+  const activeTrip = activeTripRes?.activeTrip || null;
   if (activeTrip && activeTrip.status === "In Progress") {
-    // Tìm sự kiện Arrived đầu tiên
-    const firstStopArrive = (activeTrip.stops || []).find(
-      (s) => s.actual_arrival,
-    );
+    const firstStopArrive = (activeTrip.stops || []).find((s) => s.actual_arrival);
     if (firstStopArrive && firstStopArrive.actual_arrival) {
       const startedAt = new Date(firstStopArrive.actual_arrival).getTime();
       const currentActiveMin = Math.max(
         0,
-        Math.round((now.getTime() - startedAt) / 60000),
+        Math.round((now.getTime() - startedAt) / 60000)
       );
       continuousMinutes = currentActiveMin;
       todayDrivenMinutes += currentActiveMin;
@@ -833,7 +865,7 @@ const getDriverDrivingTimeStats = async (driverProfileId) => {
     continuous_hours_driven: continuousHours,
     continuous_hours_left: Math.max(
       0,
-      Math.round((4.0 - continuousHours) * 10) / 10,
+      Math.round((4.0 - continuousHours) * 10) / 10
     ),
     continuous_limit: 4.0,
 
@@ -867,7 +899,6 @@ module.exports = {
   createProposedExtraFee,
   getDriverDrivingTimeStats,
 
-  // Re-export từ shiftModel & notificationModel để giữ tương thích ngược 100%
   ...shiftModel,
   ...notificationModel,
 };

@@ -2,20 +2,25 @@ const { test, describe, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-const supabaseConfigPath = require.resolve(path.resolve(__dirname, '../config/supabase'));
+const prismaConfigPath = require.resolve(path.resolve(__dirname, '../config/prisma'));
 const blogControllerPath = require.resolve(path.resolve(__dirname, '../controllers/blogController'));
 
-let currentFromHandler = () => {
-  throw new Error('supabase.from handler not configured');
+let currentMockPrisma = () => {
+  throw new Error('prisma mock not configured');
 };
 
-require.cache[supabaseConfigPath] = {
-  id: supabaseConfigPath,
-  filename: supabaseConfigPath,
+require.cache[prismaConfigPath] = {
+  id: prismaConfigPath,
+  filename: prismaConfigPath,
   loaded: true,
-  exports: {
-    from: (table) => currentFromHandler(table)
-  }
+  exports: new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        return currentMockPrisma()[prop];
+      }
+    }
+  )
 };
 
 delete require.cache[blogControllerPath];
@@ -158,135 +163,99 @@ describe('Blog Controller - Luồng Bảng Tin & Tin Tức (news_posts)', () => 
       return { ...row, users: u ? { id: u.id, full_name: u.full_name, username: u.username } : null };
     };
 
-    currentFromHandler = (table) => {
-      if (table === 'users') {
-        return {
-          select() {
-            const chain = {
-              in() { return chain; },
-              order() { return chain; },
-              limit() { return chain; },
-              then(resolve, reject) {
-                return Promise.resolve({ data: userRows, error: null }).then(resolve, reject);
-              }
-            };
-            return chain;
+    const matchesWhere = (r, where = {}) => {
+      for (const [k, cond] of Object.entries(where)) {
+        if (k === 'OR') {
+          const hit = cond.some((sub) => matchesWhere(r, sub));
+          if (!hit) return false;
+          continue;
+        }
+        if (cond && typeof cond === 'object' && !Array.isArray(cond)) {
+          if (cond.in && !cond.in.map(String).includes(String(r[k]))) return false;
+          if (cond.not !== undefined && String(r[k]) === String(cond.not)) return false;
+          if (cond.equals !== undefined) {
+            const a = String(r[k] ?? '');
+            const b = String(cond.equals);
+            if (cond.mode === 'insensitive' ? a.toLowerCase() !== b.toLowerCase() : a !== b) return false;
           }
-        };
+          if (cond.contains !== undefined) {
+            const a = String(r[k] ?? '');
+            const b = String(cond.contains);
+            const ok = cond.mode === 'insensitive'
+              ? a.toLowerCase().includes(b.toLowerCase())
+              : a.includes(b);
+            if (!ok) return false;
+          }
+        } else if (String(r[k]) !== String(cond)) {
+          return false;
+        }
       }
+      return true;
+    };
 
-      assert.equal(table, 'news_posts');
-
-      const buildSelectChain = () => {
-        const filters = [];
-        let orderCfg = null;
-        let limitVal = null;
-
-        const applyFilters = () => {
-          let rows = dbRows.map(attachUsers);
-          for (const f of filters) {
-            if (f.type === 'eq') {
-              rows = rows.filter((r) => String(r[f.col]) === String(f.val));
-            } else if (f.type === 'neq') {
-              rows = rows.filter((r) => String(r[f.col]) !== String(f.val));
-            } else if (f.type === 'in') {
-              rows = rows.filter((r) => f.vals.map(String).includes(String(r[f.col])));
-            } else if (f.type === 'ilike') {
-              const needle = String(f.val).replace(/%/g, '').toLowerCase();
-              rows = rows.filter((r) => String(r[f.col] || '').toLowerCase().includes(needle));
-            }
+    const mockDb = {
+      users: {
+        async findFirst() {
+          return userRows[0] || null;
+        }
+      },
+      news_posts: {
+        async findMany({ where = {}, orderBy, take } = {}) {
+          let rows = dbRows.filter((r) => matchesWhere(r, where)).map(attachUsers);
+          if (orderBy?.id === 'desc') {
+            rows.sort((a, b) => Number(b.id) - Number(a.id));
           }
-          if (orderCfg) {
-            rows.sort((a, b) =>
-              orderCfg.ascending
-                ? Number(a[orderCfg.col]) - Number(b[orderCfg.col])
-                : Number(b[orderCfg.col]) - Number(a[orderCfg.col])
-            );
-          }
-          if (limitVal !== null) {
-            rows = rows.slice(0, limitVal);
+          if (typeof take === 'number') {
+            rows = rows.slice(0, take);
           }
           return rows;
-        };
-
-        const chain = {
-          eq(col, val) { filters.push({ type: 'eq', col, val }); return chain; },
-          neq(col, val) { filters.push({ type: 'neq', col, val }); return chain; },
-          in(col, vals) { filters.push({ type: 'in', col, vals }); return chain; },
-          ilike(col, val) { filters.push({ type: 'ilike', col, val }); return chain; },
-          order(col, opts) { orderCfg = { col, ascending: Boolean(opts?.ascending) }; return chain; },
-          limit(n) { limitVal = n; return chain; },
-          async single() {
-            await delay(15);
-            const rows = applyFilters();
-            if (rows.length === 0) {
-              return { data: null, error: { code: 'PGRST116', message: 'Cannot coerce the result to a single JSON object' } };
-            }
-            return { data: { ...rows[0] }, error: null };
-          },
-          then(resolve, reject) {
-            return Promise.resolve({ data: applyFilters(), error: null }).then(resolve, reject);
+        },
+        async findFirst({ orderBy } = {}) {
+          const sorted = [...dbRows].sort((a, b) =>
+            orderBy?.id === 'desc' ? Number(b.id) - Number(a.id) : Number(a.id) - Number(b.id)
+          );
+          return sorted[0] || null;
+        },
+        async findUnique({ where }) {
+          await delay(15);
+          const found = dbRows.find((r) => Number(r.id) === Number(where.id));
+          return found ? { ...attachUsers(found) } : null;
+        },
+        async create({ data }) {
+          const nextId = dbRows.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
+          const created = {
+            ...data,
+            id: data.id ? Number(data.id) : nextId,
+            author_id: Number(data.author_id)
+          };
+          dbRows.push(created);
+          return attachUsers(created);
+        },
+        async update({ where, data }) {
+          await delay(15);
+          const idx = dbRows.findIndex((r) => Number(r.id) === Number(where.id));
+          if (idx < 0) {
+            const err = new Error('Record not found');
+            err.code = 'P2025';
+            throw err;
           }
-        };
-        return chain;
-      };
-
-      return {
-        select: buildSelectChain,
-        insert(payload) {
-          return {
-            select() {
-              return {
-                async single() {
-                  const nextId = dbRows.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
-                  const created = { id: payload.id || nextId, ...payload };
-                  dbRows.push(created);
-                  return { data: attachUsers(created), error: null };
-                }
-              };
-            }
-          };
+          dbRows[idx] = { ...dbRows[idx], ...data };
+          return attachUsers(dbRows[idx]);
         },
-        update(payload) {
-          return {
-            eq(col, val) {
-              const runUpdate = async () => {
-                await delay(15);
-                const idx = dbRows.findIndex((r) => String(r[col]) === String(val));
-                if (idx >= 0) {
-                  dbRows[idx] = { ...dbRows[idx], ...payload };
-                }
-                return { data: idx >= 0 ? [attachUsers(dbRows[idx])] : [], error: null };
-              };
-              return {
-                select() {
-                  return {
-                    async single() {
-                      await delay(15);
-                      const idx = dbRows.findIndex((r) => String(r[col]) === String(val));
-                      if (idx < 0) return { data: null, error: { code: 'PGRST116' } };
-                      dbRows[idx] = { ...dbRows[idx], ...payload };
-                      return { data: attachUsers(dbRows[idx]), error: null };
-                    }
-                  };
-                },
-                then(resolve, reject) {
-                  return runUpdate().then(resolve, reject);
-                }
-              };
-            }
-          };
-        },
-        delete() {
-          return {
-            async eq(col, val) {
-              dbRows = dbRows.filter((r) => String(r[col]) !== String(val));
-              return { error: null };
-            }
-          };
+        async delete({ where }) {
+          const idx = dbRows.findIndex((r) => Number(r.id) === Number(where.id));
+          if (idx < 0) {
+            const err = new Error('Record not found');
+            err.code = 'P2025';
+            throw err;
+          }
+          const [removed] = dbRows.splice(idx, 1);
+          return removed;
         }
-      };
+      }
     };
+
+    currentMockPrisma = () => mockDb;
   });
 
   test('BUG-NWD-01: Guest không thể xem bài viết chưa xuất bản (DRAFT/UNPUBLISHED)', async () => {
@@ -315,19 +284,18 @@ describe('Blog Controller - Luồng Bảng Tin & Tin Tức (news_posts)', () => 
     assert.equal(dbRows.find((r) => r.id === 1).view_count, 12);
   });
 
-  test('BUG-NWD-05: Lỗi DB/kết nối khác PGRST116 phải trả HTTP 500 thay vì 404', async () => {
+  test('BUG-NWD-05: Lỗi DB/kết nối khác P2025 phải trả HTTP 500 thay vì 404', async () => {
     const origError = console.error;
     console.error = () => {};
     try {
-      currentFromHandler = () => ({
-        select() {
-          const chain = {
-            eq() { return chain; },
-            async single() {
-              return { data: null, error: { message: 'TypeError: fetch failed', code: '' } };
-            }
-          };
-          return chain;
+      const prevDb = currentMockPrisma();
+      currentMockPrisma = () => ({
+        ...prevDb,
+        news_posts: {
+          ...prevDb.news_posts,
+          async findUnique() {
+            throw new Error('TypeError: fetch failed');
+          }
         }
       });
 
@@ -341,7 +309,7 @@ describe('Blog Controller - Luồng Bảng Tin & Tin Tức (news_posts)', () => 
     }
   });
 
-  test('BUG-NWD-05 (404 case): Không tìm thấy bài (PGRST116) hoặc ID không hợp lệ trả về HTTP 404', async () => {
+  test('BUG-NWD-05 (404 case): Không tìm thấy bài hoặc ID không hợp lệ trả về HTTP 404', async () => {
     const resNotFound = createMockRes();
     await blogController.getPublicBlogById({ params: { id: '999999' } }, resNotFound);
     assert.equal(resNotFound.statusCode, 404);
@@ -353,14 +321,21 @@ describe('Blog Controller - Luồng Bảng Tin & Tin Tức (news_posts)', () => 
     assert.deepEqual(resInvalidId.body, { success: false, message: 'Bài viết không tồn tại' });
   });
 
-  test('BUG-NWD-06: Khi supabase.from ném exception, API trả HTTP 500 chung và không lộ error.message', async () => {
+  test('BUG-NWD-06: Khi prisma ném exception, API trả HTTP 500 chung và không lộ error.message', async () => {
     const logged = [];
     const origError = console.error;
     console.error = (...args) => logged.push(args);
     try {
-      currentFromHandler = () => {
-        throw new Error('ECONNREFUSED sensitive-internal-host:5432');
-      };
+      const prevDb = currentMockPrisma();
+      currentMockPrisma = () => ({
+        ...prevDb,
+        news_posts: {
+          ...prevDb.news_posts,
+          findUnique() {
+            throw new Error('ECONNREFUSED sensitive-internal-host:5432');
+          }
+        }
+      });
 
       const res = createMockRes();
       await blogController.getPublicBlogById({ params: { id: '1' } }, res);
@@ -379,20 +354,18 @@ describe('Blog Controller - Luồng Bảng Tin & Tin Tức (news_posts)', () => 
     const origError = console.error;
     console.error = (...args) => logged.push(args);
     try {
-      const baseFrom = currentFromHandler;
-      currentFromHandler = (table) => {
-        const base = baseFrom(table);
-        return {
-          ...base,
-          update() {
-            return {
-              async eq() {
-                return { data: null, error: { message: 'permission denied for table news_posts', code: '42501' } };
-              }
-            };
+      const prevDb = currentMockPrisma();
+      currentMockPrisma = () => ({
+        ...prevDb,
+        news_posts: {
+          ...prevDb.news_posts,
+          async update() {
+            const err = new Error('permission denied for table news_posts');
+            err.code = '42501';
+            throw err;
           }
-        };
-      };
+        }
+      });
 
       const res = createMockRes();
       await blogController.getPublicBlogById({ params: { id: '1' } }, res);
@@ -457,39 +430,26 @@ describe('Blog Controller - Luồng Bảng Tin & Tin Tức (news_posts)', () => 
     assert.equal(res.body.blog.image, 'https://example.com/cover.jpg');
   });
 
-  test('createBlog: Tự động xử lý lệch sequence khóa chính (23505) bằng MAX(id) + 1', async () => {
+  test('createBlog: Tự động xử lý lệch sequence khóa chính (P2002) bằng MAX(id) + 1', async () => {
     let simulatedSeq = 7; // Collides with id=7
-    const baseFrom = currentFromHandler;
-    currentFromHandler = (table) => {
-      if (table !== 'news_posts') return baseFrom(table);
-      const base = baseFrom(table);
-      return {
-        ...base,
-        insert(payload) {
-          return {
-            select() {
-              return {
-                async single() {
-                  const candidateId = payload.id !== undefined ? Number(payload.id) : simulatedSeq++;
-                  if (dbRows.some((r) => Number(r.id) === candidateId)) {
-                    return {
-                      data: null,
-                      error: {
-                        code: '23505',
-                        message: 'duplicate key value violates unique constraint "news_posts_pkey"'
-                      }
-                    };
-                  }
-                  const created = { ...payload, id: candidateId };
-                  dbRows.push(created);
-                  return { data: { ...created, users: userRows[0] }, error: null };
-                }
-              };
-            }
-          };
+    const prevDb = currentMockPrisma();
+    currentMockPrisma = () => ({
+      ...prevDb,
+      news_posts: {
+        ...prevDb.news_posts,
+        async create({ data }) {
+          const candidateId = data.id !== undefined ? Number(data.id) : simulatedSeq++;
+          if (dbRows.some((r) => Number(r.id) === candidateId)) {
+            const err = new Error('Unique constraint failed on id');
+            err.code = 'P2002';
+            throw err;
+          }
+          const created = { ...data, id: candidateId, author_id: Number(data.author_id) };
+          dbRows.push(created);
+          return { ...created, users: userRows[0] };
         }
-      };
-    };
+      }
+    });
 
     const req = {
       user: { id: 20 },

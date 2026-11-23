@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { managerApi } from '../../../api/managerApi';
+import { uploadApi } from '../../../api/uploadApi';
 
 export function BlogCreateEditModal({
   isOpen,
@@ -12,8 +13,25 @@ export function BlogCreateEditModal({
   fetchBlogs
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleCoverUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingCover(true);
+      const uploaded = await uploadApi.uploadToCloudinary(file, 'nexlog/blogs');
+      setNewArticle(prev => ({ ...prev, image: uploaded.url }));
+      showToast('Đã tải ảnh bìa lên Cloudinary!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Không thể tải ảnh bìa lên Cloudinary', 'error');
+    } finally {
+      setUploadingCover(false);
+      e.target.value = '';
+    }
+  };
 
   const statusBadgeLabel =
     newArticle.status === 'PUBLISHED'
@@ -125,13 +143,25 @@ export function BlogCreateEditModal({
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-primary uppercase">Ảnh bìa</label>
-              <input
-                type="text"
-                value={newArticle.image}
-                onChange={e => setNewArticle({ ...newArticle, image: e.target.value })}
-                className="h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary border border-transparent focus:border-secondary"
-                placeholder="URL ảnh bìa (hoặc Cloudinary)..."
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newArticle.image}
+                  onChange={e => setNewArticle({ ...newArticle, image: e.target.value })}
+                  className="flex-1 h-10 px-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-secondary border border-transparent focus:border-secondary"
+                  placeholder="URL ảnh bìa Cloudinary..."
+                />
+                <label className="h-10 px-3 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-xs font-bold flex items-center cursor-pointer whitespace-nowrap">
+                  {uploadingCover ? 'Đang tải...' : 'Tải ảnh'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingCover}
+                    onChange={handleCoverUpload}
+                  />
+                </label>
+              </div>
             </div>
           </div>
 

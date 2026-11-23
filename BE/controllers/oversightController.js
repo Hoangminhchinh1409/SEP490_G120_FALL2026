@@ -1,10 +1,10 @@
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
 const { parseOrderMeta } = require('../services/orderHelperService');
 const oversightService = require('../services/oversightService');
+const { serializePrisma, toBigInt, toNum } = require('../utils/prismaHelper');
 
 /**
  * Oversight Controller — Nhóm chức năng Giám sát Vận hành, Khối lượng Đơn & Báo cáo Hiệu suất
- *
  */
 
 function parsePeriodRange(periodStr) {
@@ -59,35 +59,38 @@ function parsePeriodRange(periodStr) {
 
 const getDispatcherDashboardStats = async (req, res) => {
   try {
-    const [
-      { data: orders },
-      { data: trucks },
-      { data: trips },
-      { data: incidents }
-    ] = await Promise.all([
-      supabase
-        .from('orders')
-        .select(`
-          id,
-          order_code,
-          status,
-          agreed_price,
-          customer_id,
-          created_at,
-          cargos:order_cargos(*),
-          order_notes(content)
-        `),
-      supabase.from('trucks').select('status'),
-      supabase.from('trips').select('status'),
-      supabase.from('incidents').select('status')
+    const [ordersRaw, trucks, trips, incidents] = await Promise.all([
+      prisma.orders.findMany({
+        select: {
+          id: true,
+          order_code: true,
+          status: true,
+          agreed_price: true,
+          customer_id: true,
+          created_at: true,
+          order_cargos: true,
+          order_notes: { select: { content: true } }
+        }
+      }),
+      prisma.trucks.findMany({
+        where: { deleted_at: null },
+        select: { status: true }
+      }),
+      prisma.trips.findMany({ select: { status: true } }),
+      prisma.incidents.findMany({ select: { status: true } })
     ]);
 
-    const orderList = (orders || []).map((o) => {
+    const orders = serializePrisma(ordersRaw || []);
+    const orderList = orders.map((o) => {
       const meta = parseOrderMeta(o);
-      const cargos = Array.isArray(o.cargos) ? o.cargos: [];
-      const weight = cargos.reduce((s, c) => s + (Number(c.chargeable_weight) || Number(c.weight_kg) || Number(c.actual_weight_kg) || 0), 0);
+      const cargos = o.order_cargos ? [o.order_cargos] : [];
+      const weight = cargos.reduce(
+        (s, c) => s + (Number(c.chargeable_weight) || Number(c.weight_kg) || Number(c.chargeable_weight_kg) || Number(c.actual_weight_kg) || 0),
+        0
+      );
       return {
         ...o,
+        cargos,
         cancel_reason: meta.cancel_reason || null,
         cancel_fee: Number(meta.cancel_fee || 0),
         cancelled_at: meta.cancelled_at || null,
@@ -98,7 +101,18 @@ const getDispatcherDashboardStats = async (req, res) => {
     const isCancelled = (o) => o.status === 'CANCELLED' || !!o.cancel_reason || !!o.cancelled_at;
     const nonCancelledOrders = orderList.filter((o) => !isCancelled(o));
 
-    const totalOrders = orderList.length;
+    const totalOrders = nonCancelledOrders.length;
+    const deliveredOrders = nonCancelledOrders.filter((o) => o.status === 'DELIVERED' || o.status === 'CLOSED').length;
+    const readyOrders = nonCancelledOrders.filter((o) => o.status === 'READY_FOR_PLANNING').length;
+    const assignedOrders = nonCancelledOrders.filter((o) => o.status === 'ASSIGNED').length;
+    const inTransitOrders = nonCancelledOrders.filter((o) => o.status === 'IN_TRANSIT').length;
+    const confirmedOrders = nonCancelledOrders.filter((o) => o.status === 'CONFIRMED').length;
+    const cancelledOrders = orderList.filter((o) => isCancelled(o)).length;
+
+    const availableTrucks = (trucks || []).filter((t) => ['AVAILABLE', 'Available', 'Active'].includes(t.status)).length;
+    const activeTripsCount = (trips || []).filter((t) => ['IN_PROGRESS', 'ASSIGNED', 'IN_TRANSIT', 'ACCEPTED', 'In Progress', 'Assigned', 'Accepted'].includes(t.status)).length;
+    const openIncidents = (incidents || []).filter((i) => !['RESOLVED', 'DONE', 'CLOSED'].includes(String(i.status || '').toUpperCase())).length;
+
     const totalRevenue = orderList.reduce((sum, o) => {
       if (isCancelled(o)) {
         return sum + (Number(o.cancel_fee) || 0);
@@ -106,92 +120,50 @@ const getDispatcherDashboardStats = async (req, res) => {
       return sum + (Number(o.agreed_price) || 0);
     }, 0);
 
-    const avgRevenue = nonCancelledOrders.length > 0 ? Math.round(totalRevenue / nonCancelledOrders.length): 0;
-    const totalWeight = nonCancelledOrders.reduce((sum, o) => sum + (Number(o.weight) || 0), 0);
-    const uniqueCustomers = new Set(nonCancelledOrders.map((o) => o.customer_id).filter(Boolean)).size;
-
-    const statusCounts = {
-      DRAFT: orderList.filter((o) => (o.status === 'DRAFT' || o.status === 'WAITING_FOR_DOCUMENTS') && Number(o.agreed_price || 0) === 0).length,
-      CONFIRMED: orderList.filter((o) => (o.status === 'CONFIRMED' || o.status === 'WAITING_FOR_DOCUMENTS') && Number(o.agreed_price || 0) > 0).length,
-      READY_FOR_PLANNING: orderList.filter((o) => o.status === 'READY_FOR_PLANNING').length,
-      ASSIGNED: orderList.filter((o) => o.status === 'ASSIGNED' || o.status === 'PLANNED').length,
-      IN_TRANSIT: orderList.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'PICKED_UP').length,
-      DELIVERED: orderList.filter((o) => o.status === 'DELIVERED' || o.status === 'COMPLETED' || (o.status === 'CLOSED' && !o.cancel_reason)).length,
-      CANCELLED: orderList.filter((o) => isCancelled(o)).length
-    };
-
-    const truckList = trucks || [];
-    const fleetStats = {
-      total: truckList.length,
-      available: truckList.filter((t) => t.status === 'AVAILABLE').length,
-      on_trip: truckList.filter((t) => t.status === 'ON_TRIP').length,
-      maintenance: truckList.filter((t) => t.status === 'MAINTENANCE').length
-    };
-
-    const tripList = trips || [];
-    const activeTripsCount = tripList.filter((t) => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED').length;
-
-    const incidentList = incidents || [];
-    const pendingIncidentsCount = incidentList.filter((i) => i.status === 'REPORTED' || i.status === 'Reported').length;
-
-    const monthlyRevenue = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    const monthlyOrders = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    orderList.forEach((o) => {
-      if (o.created_at) {
-        const d = new Date(o.created_at);
-        const m = d.getMonth();
-        if (!isCancelled(o)) {
-          monthlyOrders[m] += 1;
-          monthlyRevenue[m] += Math.round((Number(o.agreed_price) || 0) / 1000000);
-        } else if (Number(o.cancel_fee) > 0) {
-          monthlyRevenue[m] += Math.round((Number(o.cancel_fee) || 0) / 1000000);
-        }
-      }
-    });
+    const totalWeight = nonCancelledOrders.reduce((s, o) => s + o.weight, 0);
 
     return res.json({
-      stats: {
-        totalOrders,
-        totalRevenue,
-        avgRevenue,
-        totalWeight,
-        uniqueCustomers: uniqueCustomers || 8,
-        deliveredCount: statusCounts.DELIVERED,
-        inTransitCount: statusCounts.IN_TRANSIT + statusCounts.ASSIGNED,
-        deliveredRate: totalOrders > 0 ? ((statusCounts.DELIVERED / totalOrders) * 100).toFixed(1): '100.0',
-        statusCounts,
-        fleetStats,
-        activeTripsCount,
-        pendingIncidentsCount,
-        monthlyRevenue,
-        monthlyOrders
+      kpi: {
+        total_orders: totalOrders,
+        ready_for_planning: readyOrders,
+        assigned_orders: assignedOrders,
+        confirmed_orders: confirmedOrders,
+        in_transit_orders: inTransitOrders,
+        delivered_orders: deliveredOrders,
+        cancelled_orders: cancelledOrders,
+        available_trucks: availableTrucks,
+        total_trucks: (trucks || []).length,
+        active_trips: activeTripsCount,
+        open_incidents: openIncidents,
+        total_revenue: totalRevenue,
+        total_weight_kg: Math.round(totalWeight)
       }
     });
   } catch (err) {
-    console.error('getDispatcherDashboardStats exception:', err);
-    return res.status(500).json({ message: 'Internal Server Error' });
+    console.error('getDispatcherDashboardStats error:', err);
+    return res.status(500).json({ message: 'Lỗi tải thống kê tổng quan', error: err.message });
   }
 };
 
 // ==========================================
-// B. MANAGER PERFORMANCE DASHBOARD & DRIVER PERFORMANCE
+// B. MANAGER PERFORMANCE OVERSIGHT (SCREEN 16 & 41)
 // ==========================================
 
-const getDashboardStats = async (req, res) => {
+const getPerformanceOverview = async (req, res) => {
   try {
-    const period = req.query.period || 'Tháng 10/2026';
-    const result = await oversightService.getPerformanceOverview(period);
+    const periodStr = req.query.period || 'ALL';
+    const result = await oversightService.getPerformanceOverview(periodStr);
     return res.json(result);
   } catch (error) {
-    console.error('getDashboardStats Error:', error);
-    return res.status(500).json({ message: 'Lỗi tải số liệu Dashboard', error: error.message });
+    console.error('getPerformanceOverview Error:', error);
+    return res.status(500).json({ message: 'Lỗi tải dữ liệu tổng quan hiệu suất', error: error.message });
   }
 };
 
 const getDriverPerformance = async (req, res) => {
   try {
-    const period = req.query.period;
-    const result = await oversightService.getDriverPerformance(period);
+    const periodStr = req.query.period || 'ALL';
+    const result = await oversightService.getDriverPerformance(periodStr);
     return res.json(result);
   } catch (error) {
     console.error('getDriverPerformance Error:', error);
@@ -205,41 +177,48 @@ const getDriverPerformance = async (req, res) => {
 
 const getOrderWorkload = async (req, res) => {
   try {
-    const [
-      { data: dispatchersData, error: dispErr },
-      { data: ordersData, error: ordersErr }
-    ] = await Promise.all([
-      supabase
-        .from('users')
-        .select('id, username, full_name, email, phone, role_id, status')
-        .or('role_id.eq.3,username.ilike.%disp%')
-        .order('id', { ascending: true }),
-      supabase
-        .from('orders')
-        .select(`
-          id, 
-          order_code, 
-          order_type,
-          status, 
-          document_status,
-          responsible_dispatcher_id, 
-          agreed_price, 
-          receiver_name,
-          receiver_phone,
-          tracking_token,
-          vendor_id,
-          waiting_too_long,
-          late_risk,
-          created_at, 
-          ready_for_planning_at,
-          updated_at,
-          dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name)
-        `)
-        .order('id', { ascending: false })
+    const [dispatchersRaw, ordersRaw] = await Promise.all([
+      prisma.users.findMany({
+        where: {
+          OR: [
+            { role_id: 3n },
+            { username: { contains: 'disp', mode: 'insensitive' } }
+          ]
+        },
+        select: { id: true, username: true, full_name: true, email: true, phone: true, role_id: true, status: true },
+        orderBy: { id: 'asc' }
+      }),
+      prisma.orders.findMany({
+        select: {
+          id: true,
+          order_code: true,
+          order_type: true,
+          status: true,
+          document_status: true,
+          responsible_dispatcher_id: true,
+          agreed_price: true,
+          receiver_name: true,
+          receiver_phone: true,
+          tracking_token: true,
+          vendor_id: true,
+          waiting_too_long: true,
+          late_risk: true,
+          created_at: true,
+          ready_for_planning_at: true,
+          updated_at: true,
+          users_orders_responsible_dispatcher_idTousers: {
+            select: { id: true, username: true, full_name: true }
+          }
+        },
+        orderBy: { id: 'desc' }
+      })
     ]);
 
-    if (dispErr) throw dispErr;
-    if (ordersErr) throw ordersErr;
+    const dispatchersData = serializePrisma(dispatchersRaw || []);
+    const ordersData = serializePrisma(ordersRaw || []).map((o) => ({
+      ...o,
+      dispatcher: o.users_orders_responsible_dispatcher_idTousers || null
+    }));
 
     const now = new Date();
     const activeNormalized = [
@@ -248,65 +227,46 @@ const getOrderWorkload = async (req, res) => {
       'ASSIGNED',
       'IN_TRANSIT',
       'CONFIRMED',
-      'DRAFT',
-      'WAITING_FOR_DOCUMENTS',
-      'PENDING_DOCUMENTS'
+      'ACCEPTED',
+      'PICKED_UP',
+      'DRAFT'
     ];
 
-    const formattedOrders = (ordersData || []).map((o) => {
-      const createdAt = new Date(o.created_at);
-      const readyAt = o.ready_for_planning_at ? new Date(o.ready_for_planning_at) : null;
-      const statusUpper = (o.status || '').toUpperCase().trim().replace(/\s+/g, '_');
+    const processedOrders = ordersData.map((o) => {
+      const statusUpper = (o.status || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const createdAt = o.created_at ? new Date(o.created_at) : now;
+      const ageHours = Math.max(0, (now - createdAt) / (1000 * 60 * 60));
 
-      // Thời gian tính cho trạng thái hiện tại:
-      // - Với đơn READY_FOR_PLANNING: tính từ ready_for_planning_at (hoặc updated_at nếu có)
-      // - Với đơn DRAFT / CONFIRMED: tính từ created_at
-      let effectiveStartTime = createdAt;
-      if (statusUpper === 'READY_FOR_PLANNING') {
-        effectiveStartTime = readyAt || (o.updated_at ? new Date(o.updated_at) : createdAt);
-      } else if (['ASSIGNED', 'IN_TRANSIT', 'COMPLETED', 'DELIVERED', 'PICKED_UP', 'IN_PROGRESS'].includes(statusUpper)) {
-        effectiveStartTime = o.updated_at ? new Date(o.updated_at) : createdAt;
-      }
-
-      const ageHours = Math.max(0, (now - effectiveStartTime) / (1000 * 60 * 60));
-      const overallAgeHours = Math.max(0, (now - createdAt) / (1000 * 60 * 60));
-
-      let waitingTooLong = false;
-      let overdueDocs = false;
+      let waitingTooLong = Boolean(o.waiting_too_long);
       let lateRisk = Boolean(o.late_risk);
-      let flagReason = null;
+      let overdueDocs = false;
+      let flagReason = '';
 
       if (statusUpper === 'DRAFT') {
-        if (ageHours > 4 || o.waiting_too_long) {
+        if (ageHours > 4) {
           waitingTooLong = true;
-          flagReason = 'Chờ quá lâu (Bản nháp > 4h)';
+          flagReason = 'Bản nháp quá 4h chưa xử lý';
         }
-      } else if (
-        statusUpper === 'CONFIRMED' ||
-        statusUpper === 'WAITING_FOR_DOCUMENTS' ||
-        statusUpper === 'PENDING_DOCUMENTS'
-      ) {
-        if (ageHours > 8 || o.waiting_too_long) {
+      } else if (statusUpper === 'CONFIRMED') {
+        if (ageHours > 2) {
           waitingTooLong = true;
-          flagReason = 'Chờ quá lâu (Chưa gán chuyến > 8h)';
+          flagReason = 'Đã xác nhận nhưng chờ duyệt chứng từ lâu';
         }
-        if ((o.document_status || '').toUpperCase() !== 'APPROVED' && overallAgeHours > 12) {
+        if (o.document_status !== 'APPROVED' && ageHours > 12) {
           overdueDocs = true;
           flagReason = flagReason ? `${flagReason} & Quá hạn chứng từ` : 'Quá hạn chứng từ';
         }
       } else if (statusUpper === 'READY_FOR_PLANNING') {
-        // Đơn đã được Điều phối viên tiếp nhận và chuyển sang Sẵn sàng vận chuyển / Sẵn sàng xếp xe
-        // Đã hoàn tất tiếp nhận & chứng từ hợp lệ nên tuyệt đối không thuộc nhóm Đơn bị gắn cờ
         waitingTooLong = false;
         overdueDocs = false;
         lateRisk = false;
         flagReason = 'Sẵn sàng xếp xe';
         if (o.waiting_too_long) {
-          supabase
-            .from('orders')
-            .update({ waiting_too_long: false })
-            .eq('id', o.id)
-            .then(() => {})
+          prisma.orders
+            .update({
+              where: { id: BigInt(o.id) },
+              data: { waiting_too_long: false }
+            })
             .catch(() => {});
         }
       } else if (statusUpper === 'IN_TRANSIT') {
@@ -321,107 +281,106 @@ const getOrderWorkload = async (req, res) => {
       const timeInStatus = `${o.status || 'Đang xử lý'} ${hoursRounded > 0 ? `${hoursRounded}h` : `${Math.max(1, Math.round(ageHours * 60))}m`}`;
 
       return {
-        id: o.id,
+        id: toNum(o.id),
         order_code: o.order_code,
         code: o.order_code,
         order_type: o.order_type || 'Export',
         status: o.status,
         document_status: o.document_status || 'PENDING',
-        responsible_dispatcher_id: o.responsible_dispatcher_id,
+        responsible_dispatcher_id: toNum(o.responsible_dispatcher_id),
         agreed_price: o.agreed_price,
         created_at: o.created_at,
         age_hours: Math.round(ageHours),
         time_in_status: timeInStatus,
         waiting_too_long: waitingTooLong,
-        overdue_docs: overdueDocs,
         late_risk: lateRisk,
+        overdue_docs: overdueDocs,
         is_flagged: isFlagged,
-        flag_reason: flagReason || 'Bình thường',
-        dispatcher_id: o.dispatcher?.id || o.responsible_dispatcher_id || null,
-        dispatcher_username: o.dispatcher?.username || null,
-        dispatcher_name: o.dispatcher?.full_name || o.dispatcher?.username || (o.responsible_dispatcher_id ? `ĐPV #${o.responsible_dispatcher_id}`: 'Chưa gán'),
-        tracking_token: o.tracking_token
+        flag_reason: flagReason,
+        dispatcher_name: o.dispatcher?.full_name || o.dispatcher?.username || 'Chưa phân công',
+        tracking_token: o.tracking_token,
+        is_active: activeNormalized.includes(statusUpper)
       };
     });
 
-    const allDispMap = new Map();
-    (dispatchersData || []).forEach((d) => {
-      allDispMap.set(d.id, {
-        id: d.id,
-        username: d.username,
-        full_name: d.full_name || d.username,
-        status: d.status
-      });
-    });
+    const totalOrdersCount = processedOrders.length;
+    const flaggedOrdersCount = processedOrders.filter((o) => o.is_flagged).length;
+    const completedOrdersCount = processedOrders.filter((o) => {
+      const su = (o.status || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+      return ['DELIVERED', 'COMPLETED', 'DELIVERED_EXCEPTION', 'CLOSED'].includes(su);
+    }).length;
 
-    formattedOrders.forEach((o) => {
-      if (o.dispatcher_id && !allDispMap.has(o.dispatcher_id)) {
-        allDispMap.set(o.dispatcher_id, {
-          id: o.dispatcher_id,
-          username: o.dispatcher_username || `user_${o.dispatcher_id}`,
-          full_name: o.dispatcher_name,
-          status: 'ACTIVE'
-        });
+    const dispatcherWorkload = dispatchersData.map((d) => {
+      const assigned = processedOrders.filter((o) => Number(o.responsible_dispatcher_id) === Number(d.id));
+      const activeOrders = assigned.filter((o) => o.is_active);
+      const flaggedOrders = assigned.filter((o) => o.is_flagged);
+
+      const loadPercent = Math.min(100, Math.round((activeOrders.length / 8) * 100));
+      let workloadBadge = 'Cân bằng';
+      let badgeColor = 'success';
+      if (loadPercent >= 80 || activeOrders.length >= 6) {
+        workloadBadge = 'Quá tải';
+        badgeColor = 'danger';
+      } else if (loadPercent >= 50 || activeOrders.length >= 4) {
+        workloadBadge = 'Bình thường';
+        badgeColor = 'warning';
       }
-    });
-
-    const dispatcherWorkload = Array.from(allDispMap.values()).map((d) => {
-      const userOrders = formattedOrders.filter((o) => o.responsible_dispatcher_id === d.id || o.dispatcher_id === d.id);
-      const total = userOrders.length;
-      const active = userOrders.filter((o) => activeNormalized.includes((o.status || '').toUpperCase())).length;
-      const flagged = userOrders.filter((o) => o.is_flagged).length;
-      const completed = userOrders.filter((o) => ['COMPLETED', 'DELIVERED'].includes((o.status || '').toUpperCase())).length;
-      const loadPercent = total > 0 ? Math.min(Math.round((active / 10) * 100), 100): 0;
 
       return {
-        id: d.id,
+        id: toNum(d.id),
         username: d.username,
         full_name: d.full_name || d.username,
-        total_orders: total,
-        active_orders: active,
-        flagged_orders: flagged,
-        completed_orders: completed,
+        name: d.full_name || d.username,
+        email: d.email,
+        phone: d.phone,
+        status: d.status || 'ACTIVE',
+        total_orders: assigned.length,
+        active_orders: activeOrders.length,
+        flagged_orders: flaggedOrders.length,
+        completed_orders: assigned.filter((o) => !o.is_active).length,
         load_percent: loadPercent,
-        status: d.status
+        workload_badge: workloadBadge,
+        badge_color: badgeColor
       };
     });
 
-    const flaggedOrders = formattedOrders.filter((o) => o.is_flagged);
+    const flaggedList = processedOrders.filter((o) => o.is_flagged);
 
     return res.json({
-      orders: formattedOrders,
-      flagged_orders: flaggedOrders,
       dispatchers: dispatcherWorkload,
+      orders: processedOrders,
+      flagged_orders: flaggedList,
       summary: {
-        total_orders: formattedOrders.length,
-        flagged_count: flaggedOrders.length,
-        active_dispatchers: dispatchersData.length
-      }
+        total_orders: totalOrdersCount,
+        flagged_count: flaggedOrdersCount,
+        completed_count: completedOrdersCount,
+        total_dispatchers: dispatcherWorkload.length
+      },
+      is_read_only: true
     });
   } catch (error) {
     console.error('getOrderWorkload Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi lấy thông tin khối lượng đơn', error: error.message });
+    return res.status(500).json({ message: 'Lỗi tải khối lượng công việc đơn hàng', error: error.message });
   }
 };
 
 const reassignOrder = async (req, res) => {
   try {
-    const { id } = req.params;
+    const bigOrderId = toBigInt(req.params.id);
     const { newDispatcherId, reason } = req.body;
-    const managerId = req.user?.id || null;
+    const managerId = req.user?.id ? toBigInt(req.user.id) : null;
 
     const targetDispatcherId = Number(newDispatcherId);
     if (!newDispatcherId || !Number.isInteger(targetDispatcherId) || targetDispatcherId <= 0) {
       return res.status(400).json({ message: 'Vui lòng chọn điều phối viên mới hợp lệ.' });
     }
 
-    const { data: curOrder, error: curErr } = await supabase
-      .from('orders')
-      .select('id, order_code, responsible_dispatcher_id')
-      .eq('id', id)
-      .single();
+    const curOrder = await prisma.orders.findUnique({
+      where: { id: bigOrderId },
+      select: { id: true, order_code: true, responsible_dispatcher_id: true }
+    });
 
-    if (curErr || !curOrder) {
+    if (!curOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng cần điều chuyển.' });
     }
 
@@ -429,39 +388,36 @@ const reassignOrder = async (req, res) => {
       return res.status(400).json({ message: 'Đơn hàng hiện đã thuộc phụ trách của điều phối viên này.' });
     }
 
-    const { data: targetDisp } = await supabase
-      .from('users')
-      .select('id, full_name, username')
-      .eq('id', targetDispatcherId)
-      .single();
+    const targetDisp = await prisma.users.findUnique({
+      where: { id: BigInt(targetDispatcherId) },
+      select: { id: true, full_name: true, username: true }
+    });
 
     const dispName = targetDisp?.full_name || targetDisp?.username || `ID #${targetDispatcherId}`;
 
-    const { data: updatedOrder, error: updateErr } = await supabase
-      .from('orders')
-      .update({
-        responsible_dispatcher_id: targetDispatcherId,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (updateErr) throw updateErr;
+    const updatedOrder = await prisma.orders.update({
+      where: { id: bigOrderId },
+      data: {
+        responsible_dispatcher_id: BigInt(targetDispatcherId),
+        updated_at: new Date()
+      }
+    });
 
     try {
-      await supabase.from('activity_logs').insert({
-        actor_id: managerId,
-        actor_type: 'MANAGER',
-        action: 'REASSIGN_ORDER',
-        target_type: 'ORDER',
-        target_id: String(id),
-        changes: {
-          old_dispatcher_id: curOrder.responsible_dispatcher_id,
-          new_dispatcher_id: targetDispatcherId
-        },
-        reason: reason || 'Manager điều chuyển đơn giảm tải',
-        created_time: new Date().toISOString()
+      await prisma.activity_logs.create({
+        data: {
+          actor_id: managerId,
+          actor_type: 'MANAGER',
+          action: 'REASSIGN_ORDER',
+          target_type: 'ORDER',
+          target_id: bigOrderId,
+          changes: {
+            old_dispatcher_id: toNum(curOrder.responsible_dispatcher_id),
+            new_dispatcher_id: targetDispatcherId
+          },
+          reason: reason || 'Manager điều chuyển đơn giảm tải',
+          created_time: new Date()
+        }
       });
     } catch (logErr) {
       console.warn('activity_logs insert warning:', logErr.message);
@@ -471,7 +427,7 @@ const reassignOrder = async (req, res) => {
 
     return res.json({
       message: successMessage,
-      order: updatedOrder
+      order: serializePrisma(updatedOrder)
     });
   } catch (error) {
     console.error('reassignOrder Error:', error);
@@ -481,24 +437,42 @@ const reassignOrder = async (req, res) => {
 
 const getOrderDetailReadOnly = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const { data: order, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        customer:customers(id, company_name, tax_code, email, phone, registered_address),
-        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address),
-        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address),
-        dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, email),
-        order_notes(content)
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error || !order) {
+    const bigId = toBigInt(req.params.id);
+    if (bigId === null) {
       return res.status(404).json({ message: 'Không tìm thấy chi tiết đơn hàng.' });
     }
+
+    const orderRaw = await prisma.orders.findUnique({
+      where: { id: bigId },
+      include: {
+        customers: { select: { id: true, company_name: true, tax_code: true, email: true, phone: true, registered_address: true } },
+        locations_orders_pickup_location_idTolocations: { select: { id: true, name: true, address: true } },
+        locations_orders_delivery_location_idTolocations: { select: { id: true, name: true, address: true } },
+        users_orders_responsible_dispatcher_idTousers: { select: { id: true, username: true, full_name: true, phone: true, email: true } },
+        order_notes: { select: { content: true } }
+      }
+    });
+
+    if (!orderRaw) {
+      return res.status(404).json({ message: 'Không tìm thấy chi tiết đơn hàng.' });
+    }
+
+    const serialized = serializePrisma(orderRaw);
+    const {
+      customers: customer,
+      locations_orders_pickup_location_idTolocations: pickup_location,
+      locations_orders_delivery_location_idTolocations: delivery_location,
+      users_orders_responsible_dispatcher_idTousers: dispatcher,
+      ...restOrder
+    } = serialized;
+
+    const order = {
+      ...restOrder,
+      customer: customer || null,
+      pickup_location: pickup_location || null,
+      delivery_location: delivery_location || null,
+      dispatcher: dispatcher || null
+    };
 
     const meta = parseOrderMeta(order);
 
@@ -513,16 +487,17 @@ const getOrderDetailReadOnly = async (req, res) => {
     });
   } catch (error) {
     console.error('getOrderDetailReadOnly Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi lấy chi tiết đơn hàng', error: error.message });
+    return res.status(500).json({ message: 'Lỗi tải chi tiết đơn hàng', error: error.message });
   }
 };
 
 module.exports = {
+  parsePeriodRange,
   getDispatcherDashboardStats,
-  getDashboardStats,
+  getPerformanceOverview,
+  getDashboardStats: getPerformanceOverview,
   getDriverPerformance,
-  getOrders: getOrderWorkload,
   getOrderWorkload,
-  getOrderDetailReadOnly,
-  reassignOrder
+  reassignOrder,
+  getOrderDetailReadOnly
 };

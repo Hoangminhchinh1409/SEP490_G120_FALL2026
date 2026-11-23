@@ -16,7 +16,6 @@ const mapLocation = (loc) => {
     customer_id: toPlainNumber(loc.customer_id),
     latitude: loc.latitude !== null ? Number(loc.latitude) : null,
     longitude: loc.longitude !== null ? Number(loc.longitude) : null,
-    geofence_radius: toPlainNumber(loc.geofence_radius),
     created_by: toPlainNumber(loc.created_by),
     customer
   };

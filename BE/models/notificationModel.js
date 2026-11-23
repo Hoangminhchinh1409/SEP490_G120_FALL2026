@@ -1,100 +1,80 @@
-const supabase = require('../config/supabase');
-
-const toPlainNumber = (val) => (val !== null && val !== undefined ? Number(val) : null);
+const prisma = require('../config/prisma');
+const { serializePrisma, toBigInt, toNum } = require('../utils/prismaHelper');
 
 const mapNotification = (n) => {
   if (!n) return null;
+  const serialized = serializePrisma(n);
   return {
-    ...n,
-    id: toPlainNumber(n.id),
-    user_account_id: toPlainNumber(n.user_account_id),
-    target_id: toPlainNumber(n.target_id)
+    ...serialized,
+    id: toNum(serialized.id),
+    user_account_id: toNum(serialized.user_account_id),
+    target_id: toNum(serialized.target_id)
   };
 };
 
 const getDriverNotifications = async (userAccountId) => {
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('*')
-    .eq('user_account_id', userAccountId)
-    .order('id', { ascending: false })
-    .limit(50);
-
-  if (error) {
-    console.error('getDriverNotifications error:', error);
-    throw error;
-  }
-  return (data || []).map(mapNotification);
+  const rows = await prisma.notifications.findMany({
+    where: { user_account_id: toBigInt(userAccountId) },
+    orderBy: { id: 'desc' },
+    take: 50
+  });
+  return (rows || []).map(mapNotification);
 };
 
 const markNotificationAsRead = async (notificationId, userAccountId) => {
-  const { data, error } = await supabase
-    .from('notifications')
-    .update({ read_time: new Date().toISOString() })
-    .eq('id', notificationId)
-    .eq('user_account_id', userAccountId)
-    .select()
-    .single();
+  const notifId = toBigInt(notificationId);
+  const userId = toBigInt(userAccountId);
+  const existing = await prisma.notifications.findFirst({
+    where: { id: notifId, user_account_id: userId }
+  });
+  if (!existing) return null;
 
-  if (error) {
-    if (error.code === 'PGRST116') return null;
-    console.error('markNotificationAsRead error:', error);
-    throw error;
-  }
-  return mapNotification(data);
+  const updated = await prisma.notifications.update({
+    where: { id: notifId },
+    data: { read_time: new Date() }
+  });
+  return mapNotification(updated);
 };
 
 const markAllNotificationsAsRead = async (userAccountId) => {
-  const { data, error } = await supabase
-    .from('notifications')
-    .update({ read_time: new Date().toISOString() })
-    .eq('user_account_id', userAccountId)
-    .is('read_time', null)
-    .select('id');
-
-  if (error) {
-    console.error('markAllNotificationsAsRead error:', error);
-    throw error;
-  }
-  return data ? data.length : 0;
+  const result = await prisma.notifications.updateMany({
+    where: {
+      user_account_id: toBigInt(userAccountId),
+      read_time: null
+    },
+    data: { read_time: new Date() }
+  });
+  return result.count || 0;
 };
 
 const createNotification = async (notificationData) => {
-  const payload = {
-    user_account_id: notificationData.user_account_id,
-    target_type: notificationData.target_type || null,
-    target_id: notificationData.target_id || null,
-    message: notificationData.message,
-    created_time: notificationData.created_time || new Date().toISOString(),
-    read_time: null
-  };
-
-  const { data, error } = await supabase
-    .from('notifications')
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error) {
-    console.error('createNotification error:', error);
-    throw error;
-  }
-  return mapNotification(data);
+  const created = await prisma.notifications.create({
+    data: {
+      user_account_id: toBigInt(notificationData.user_account_id),
+      target_type: notificationData.target_type || null,
+      target_id: toBigInt(notificationData.target_id),
+      message: notificationData.message,
+      created_time: notificationData.created_time ? new Date(notificationData.created_time) : new Date(),
+      read_time: null
+    }
+  });
+  return mapNotification(created);
 };
 
 const hasNotificationWithText = async (userAccountId, textSubstring) => {
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('id')
-    .eq('user_account_id', userAccountId)
-    .ilike('message', `%${textSubstring}%`)
-    .limit(1);
-
-  if (error) {
+  try {
+    const match = await prisma.notifications.findFirst({
+      where: {
+        user_account_id: toBigInt(userAccountId),
+        message: { contains: textSubstring, mode: 'insensitive' }
+      },
+      select: { id: true }
+    });
+    return Boolean(match);
+  } catch (error) {
     console.error('hasNotificationWithText error:', error);
     return false;
   }
-  return Array.isArray(data) && data.length > 0;
 };
 
 const createSystemNotification = async ({
@@ -104,13 +84,13 @@ const createSystemNotification = async ({
   target_type,
   targetId,
   target_id,
-  message,
+  message
 } = {}) => {
   return createNotification({
     user_account_id: userAccountId ?? user_account_id,
     target_type: targetType ?? target_type ?? null,
     target_id: targetId ?? target_id ?? null,
-    message,
+    message
   });
 };
 

@@ -20,6 +20,7 @@ import {
   Eye
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
+import { uploadApi } from '../../../src/api/uploadApi';
 import { getRecommendedDocsByCargo } from '../../../src/data/dispatcherPresets';
 import { CheckCircle2 } from 'lucide-react';
 
@@ -143,7 +144,7 @@ export default function OrderDocumentsView() {
     }
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !uploadingDocKey) return;
 
@@ -154,17 +155,18 @@ export default function OrderDocumentsView() {
     const nowFormatted = new Date().toLocaleString('vi-VN', { 
       day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' 
     });
+    const orderFolder = `nexlog/orders/${order?.id || order?.order_id || 'guest'}/docs`;
+    const targetDocKey = uploadingDocKey;
 
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const base64Data = uploadEvent.target?.result;
-
+    try {
+      const uploaded = await uploadApi.uploadToCloudinary(file, orderFolder, { requireAuthCookie: false });
       setDocuments(prev => prev.map(d => {
-        if (d.key === uploadingDocKey) {
+        if (d.key === targetDocKey) {
           return {
             ...d,
             file: file.name,
-            file_data: base64Data,
+            file_url: uploaded.url,
+            file_data: uploaded.url,
             size: sizeFormatted,
             uploadDate: nowFormatted,
             status: 'PENDING_REVIEW',
@@ -174,11 +176,12 @@ export default function OrderDocumentsView() {
         return d;
       }));
 
-      message.success(`Đã cập nhật tệp mới: ${file.name}`);
+      message.success(`Đã tải lên Cloudinary tệp mới: ${file.name}`);
+    } catch (err) {
+      message.error(err.message || `Không thể tải tệp ${file.name} lên Cloudinary.`);
+    } finally {
       setUploadingDocKey(null);
-    };
-
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmitAllDocs = async () => {
@@ -281,14 +284,10 @@ export default function OrderDocumentsView() {
                 className="flex items-center gap-1.5 text-xs font-mono text-indigo-700 truncate max-w-[200px] cursor-pointer hover:underline bg-slate-50 p-1.5 px-2.5 rounded-lg border border-slate-200" 
                 title="Bấm để tải về / xem tệp"
                 onClick={() => {
-                  if (record.file_data) {
-                    const a = document.createElement('a');
-                    a.href = record.file_data;
-                    a.download = record.file;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    message.success(`Đang mở / tải xuống: ${record.file}`);
+                  const fileHref = record.file_url || record.file_data;
+                  if (fileHref) {
+                    window.open(fileHref, '_blank', 'noopener,noreferrer');
+                    message.success(`Đang mở tệp: ${record.file}`);
                   }
                 }}
               >
@@ -342,14 +341,10 @@ export default function OrderDocumentsView() {
               className="flex items-center gap-1.5 text-xs font-mono text-indigo-700 truncate max-w-[170px] cursor-pointer hover:underline" 
               title="Bấm để tải về / xem tệp"
               onClick={() => {
-                if (record.file_data) {
-                  const a = document.createElement('a');
-                  a.href = record.file_data;
-                  a.download = record.file;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  message.success(`Đang mở / tải xuống: ${record.file}`);
+                const fileHref = record.file_url || record.file_data;
+                if (fileHref) {
+                  window.open(fileHref, '_blank', 'noopener,noreferrer');
+                  message.success(`Đang mở tệp: ${record.file}`);
                 }
               }}
             >
@@ -669,18 +664,21 @@ export default function OrderDocumentsView() {
                             if (!file) return;
                             try {
                               setUploadingContractScan(true);
-                              const reader = new FileReader();
-                              reader.onload = async () => {
-                                await orderApi.uploadContractFile(order.id || order.order_id, {
-                                  file_name: file.name,
-                                  file_data: reader.result,
-                                  file_size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
-                                });
-                                message.success('Đã tải lên bản scan hợp đồng đã ký!');
-                                const latest = await orderApi.getOrderByToken(token);
-                                if (latest) setOrder(latest);
-                              };
-                              reader.readAsDataURL(file);
+                              const orderId = order.id || order.order_id;
+                              const uploaded = await uploadApi.uploadToCloudinary(
+                                file,
+                                `nexlog/orders/${orderId}/contract`,
+                                { requireAuthCookie: false }
+                              );
+                              await orderApi.uploadContractFile(orderId, {
+                                file_name: file.name,
+                                file_data: uploaded.url,
+                                file_url: uploaded.url,
+                                file_size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
+                              });
+                              message.success('Đã tải lên bản scan hợp đồng đã ký!');
+                              const latest = await orderApi.getOrderByToken(token);
+                              if (latest) setOrder(latest);
                             } catch (err) {
                               message.error(err.message || 'Lỗi khi tải tệp');
                             } finally {
@@ -703,18 +701,21 @@ export default function OrderDocumentsView() {
                           if (!file) return;
                           try {
                             setUploadingContractScan(true);
-                            const reader = new FileReader();
-                            reader.onload = async () => {
-                              await orderApi.uploadContractFile(order.id || order.order_id, {
-                                file_name: file.name,
-                                file_data: reader.result,
-                                file_size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
-                              });
-                              message.success('Đã tải lên bản scan hợp đồng đã ký thành công!');
-                              const latest = await orderApi.getOrderByToken(token);
-                              if (latest) setOrder(latest);
-                            };
-                            reader.readAsDataURL(file);
+                            const orderId = order.id || order.order_id;
+                            const uploaded = await uploadApi.uploadToCloudinary(
+                              file,
+                              `nexlog/orders/${orderId}/contract`,
+                              { requireAuthCookie: false }
+                            );
+                            await orderApi.uploadContractFile(orderId, {
+                              file_name: file.name,
+                              file_data: uploaded.url,
+                              file_url: uploaded.url,
+                              file_size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
+                            });
+                            message.success('Đã tải lên bản scan hợp đồng đã ký thành công!');
+                            const latest = await orderApi.getOrderByToken(token);
+                            if (latest) setOrder(latest);
                           } catch (err) {
                             message.error(err.message || 'Lỗi khi tải tệp');
                           } finally {

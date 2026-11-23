@@ -97,7 +97,7 @@ export default function RolesPage() {
   const [initialRoleMap, setInitialRoleMap] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
 
-  const fetchMatrix = async () => {
+  const fetchMatrix = React.useCallback(async () => {
     setLoading(true);
     try {
       const data = await adminApi.getPermissionsMatrix();
@@ -140,11 +140,14 @@ export default function RolesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchMatrix();
-  }, []);
+    const timer = setTimeout(() => {
+      fetchMatrix();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchMatrix]);
 
   const handleToggle = (roleId, permissionId) => {
     const p = permissions.find((item) => item.id === permissionId);

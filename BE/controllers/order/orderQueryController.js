@@ -1,11 +1,75 @@
-const supabase = require("../../config/supabase");
+const prisma = require("../../config/prisma");
 const jwt = require("jsonwebtoken");
+const { serializePrisma, formatDateOnly } = require("../../utils/prismaHelper");
 const {
   mapDbStatusToFe,
   parseOrderMeta,
   META_NOTE_PREFIX,
   META_CHUNK_PREFIX,
 } = require("../../services/orderHelperService");
+
+const orderRelationInclude = {
+  customers: {
+    select: {
+      id: true,
+      company_name: true,
+      tax_code: true,
+      email: true,
+      registered_address: true,
+    },
+  },
+  locations_orders_pickup_location_idTolocations: {
+    select: {
+      id: true,
+      name: true,
+      address: true,
+      latitude: true,
+      longitude: true,
+      type: true,
+      province: true,
+    },
+  },
+  locations_orders_delivery_location_idTolocations: {
+    select: {
+      id: true,
+      name: true,
+      address: true,
+      latitude: true,
+      longitude: true,
+      type: true,
+      province: true,
+    },
+  },
+  users_orders_responsible_dispatcher_idTousers: {
+    select: {
+      id: true,
+      username: true,
+      full_name: true,
+      phone: true,
+      zalo_link: true,
+    },
+  },
+  order_cargos: true,
+  order_notes: true,
+};
+
+const mapOrderWithRelations = (row) => {
+  if (!row) return null;
+  const serialized = serializePrisma(row);
+  if (row.requested_pickup_date) {
+    serialized.requested_pickup_date = formatDateOnly(row.requested_pickup_date);
+  }
+  return {
+    ...serialized,
+    customer: serialized.customers || null,
+    pickup_location:
+      serialized.locations_orders_pickup_location_idTolocations || null,
+    delivery_location:
+      serialized.locations_orders_delivery_location_idTolocations || null,
+    responsible_dispatcher:
+      serialized.users_orders_responsible_dispatcher_idTousers || null,
+  };
+};
 
 // 1. LẤY TOÀN BỘ DANH SÁCH ĐƠN HÀNG
 const getAllOrders = async (req, res) => {
@@ -34,33 +98,26 @@ const getAllOrders = async (req, res) => {
       }
     }
 
-    let query = supabase
-      .from("orders")
-      .select(
-        `
-        *,
-        customer:customers(id, company_name, tax_code, email, registered_address),
-        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, latitude, longitude, type, province),
-        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude, type, province),
-        responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
-        order_cargos(*),
-        order_notes(*)
-      `,
-      )
-      .order("created_at", { ascending: false });
+    const whereClause =
+      dispatcherFilterId && (isDispatcherRole || req.query?.dispatcher_id)
+        ? { responsible_dispatcher_id: Number(dispatcherFilterId) }
+        : {};
 
-    if (dispatcherFilterId && (isDispatcherRole || req.query?.dispatcher_id)) {
-      query = query.eq("responsible_dispatcher_id", dispatcherFilterId);
-    }
-
-    const { data: dbOrders, error } = await query;
-
-    if (error) {
-      console.error("Error fetching orders from Supabase:", error);
+    let rawOrders;
+    try {
+      rawOrders = await prisma.orders.findMany({
+        where: whereClause,
+        include: orderRelationInclude,
+        orderBy: { created_at: "desc" },
+      });
+    } catch (error) {
+      console.error("Error fetching orders via Prisma:", error);
       return res
         .status(500)
-        .json({ message: "Không thể tải danh sách đơn hàng", error });
+        .json({ message: "Không thể tải danh sách đơn hàng", error: error.message });
     }
+
+    const dbOrders = (rawOrders || []).map(mapOrderWithRelations);
 
     // Map dữ liệu thành định dạng chuẩn cho giao diện Frontend
     const formattedOrders = (dbOrders || []).map((order) => {
@@ -211,7 +268,6 @@ const getAllOrders = async (req, res) => {
         id: order.id,
         order_id: order.order_code,
         order_code: order.order_code,
-        hawb_code: order.order_code,
         customer: order.customer?.company_name || "Khách hàng",
         customer_phone:
           order.receiver_phone || order.customer?.tax_code || "0988123456",
@@ -411,34 +467,33 @@ const resolveOrderIdFromIncidentToken = async (cleanToken) => {
   const incidentId = Number(incMatch[1]);
   if (!Number.isFinite(incidentId) || incidentId <= 0) return null;
 
-  const { data: claim } = await supabase
-    .from("compensation_claims")
-    .select("order_id")
-    .eq("incident_id", incidentId)
-    .not("order_id", "is", null)
-    .order("id", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const claim = await prisma.compensation_claims.findFirst({
+    where: {
+      incident_id: BigInt(incidentId),
+      order_id: { not: null },
+    },
+    orderBy: { id: "desc" },
+    select: { order_id: true },
+  });
 
-  if (claim?.order_id) return claim.order_id;
+  if (claim?.order_id) return Number(claim.order_id);
 
-  const { data: inc } = await supabase
-    .from("incidents")
-    .select("trip_id")
-    .eq("id", incidentId)
-    .maybeSingle();
+  const inc = await prisma.incidents.findUnique({
+    where: { id: BigInt(incidentId) },
+    select: { trip_id: true },
+  });
 
   if (!inc?.trip_id) return null;
 
-  const { data: stop } = await supabase
-    .from("trip_stops")
-    .select("order_id")
-    .eq("trip_id", inc.trip_id)
-    .not("order_id", "is", null)
-    .limit(1)
-    .maybeSingle();
+  const stop = await prisma.trip_stops.findFirst({
+    where: {
+      trip_id: inc.trip_id,
+      order_id: { not: null },
+    },
+    select: { order_id: true },
+  });
 
-  return stop?.order_id || null;
+  return stop?.order_id ? Number(stop.order_id) : null;
 };
 
 const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
@@ -448,27 +503,40 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
   let eta = extraMeta?.eta || null;
 
   try {
-    const [stopsRes, claimsRes, evidencesRes] = await Promise.all([
-      supabase
-        .from("trip_stops")
-        .select("id, trip_id, stop_type, planned_arrival, actual_arrival")
-        .eq("order_id", order.id),
-      supabase
-        .from("compensation_claims")
-        .select("*")
-        .eq("order_id", order.id)
-        .order("id", { ascending: false })
-        .limit(1),
-      supabase
-        .from("delivery_evidences")
-        .select("id, type, file_link, seal_number, receiver_name, captured_time")
-        .eq("order_id", order.id)
-        .order("id", { ascending: false }),
+    const orderIdBigInt = BigInt(order.id);
+    const [stopsRaw, claimsRaw, evidencesRaw] = await Promise.all([
+      prisma.trip_stops.findMany({
+        where: { order_id: orderIdBigInt },
+        select: {
+          id: true,
+          trip_id: true,
+          stop_type: true,
+          planned_arrival: true,
+          actual_arrival: true,
+        },
+      }),
+      prisma.compensation_claims.findMany({
+        where: { order_id: orderIdBigInt },
+        orderBy: { id: "desc" },
+        take: 1,
+      }),
+      prisma.delivery_evidences.findMany({
+        where: { order_id: orderIdBigInt },
+        orderBy: { id: "desc" },
+        select: {
+          id: true,
+          type: true,
+          file_link: true,
+          seal_number: true,
+          receiver_name: true,
+          captured_time: true,
+        },
+      }),
     ]);
 
-    const stops = stopsRes?.data || [];
-    const claimRow = claimsRes?.data?.[0] || null;
-    const evidences = evidencesRes?.data || [];
+    const stops = serializePrisma(stopsRaw) || [];
+    const claimRow = serializePrisma(claimsRaw?.[0]) || null;
+    const evidences = serializePrisma(evidencesRaw) || [];
 
     evidences.forEach((ev) => {
       const evType = String(ev.type || "").toUpperCase();
@@ -491,24 +559,21 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
 
     let incidentRow = null;
     if (claimRow?.incident_id) {
-      const { data: incByClaim } = await supabase
-        .from("incidents")
-        .select("*")
-        .eq("id", claimRow.incident_id)
-        .maybeSingle();
-      incidentRow = incByClaim || null;
+      const incByClaim = await prisma.incidents.findUnique({
+        where: { id: BigInt(claimRow.incident_id) },
+      });
+      incidentRow = serializePrisma(incByClaim) || null;
     }
 
     if (!incidentRow) {
       const tripIds = [...new Set(stops.map((s) => s.trip_id).filter(Boolean))];
       if (tripIds.length > 0) {
-        const { data: incByTrip } = await supabase
-          .from("incidents")
-          .select("*")
-          .in("trip_id", tripIds)
-          .order("id", { ascending: false })
-          .limit(1);
-        incidentRow = incByTrip?.[0] || null;
+        const incByTrip = await prisma.incidents.findMany({
+          where: { trip_id: { in: tripIds.map((tId) => BigInt(tId)) } },
+          orderBy: { id: "desc" },
+          take: 1,
+        });
+        incidentRow = serializePrisma(incByTrip?.[0]) || null;
       }
     }
 
@@ -516,14 +581,21 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
     if (incidentRow || claimRow) {
       let incLogs = [];
       if (incidentId) {
-        const { data: logs } = await supabase
-          .from("activity_logs")
-          .select("action, changes, reason, created_time")
-          .eq("target_type", "INCIDENT")
-          .eq("target_id", Number(incidentId))
-          .order("id", { ascending: false })
-          .limit(10);
-        incLogs = logs || [];
+        const logsRaw = await prisma.activity_logs.findMany({
+          where: {
+            target_type: "INCIDENT",
+            target_id: BigInt(incidentId),
+          },
+          select: {
+            action: true,
+            changes: true,
+            reason: true,
+            created_time: true,
+          },
+          orderBy: { id: "desc" },
+          take: 10,
+        });
+        incLogs = serializePrisma(logsRaw) || [];
       }
 
       const closeLog = incLogs.find((l) => l.action === "CLOSE_INCIDENT_CASE_DONE");
@@ -678,38 +750,32 @@ const getOrderByToken = async (req, res) => {
       return res.status(400).json({ message: "Thiếu tracking token" });
     }
 
-    let query = supabase.from("orders").select(`
-        *,
-        customer:customers(id, company_name, tax_code, email, registered_address),
-        pickup_location:locations!orders_pickup_location_id_fkey(id, name, address, latitude, longitude),
-        delivery_location:locations!orders_delivery_location_id_fkey(id, name, address, latitude, longitude),
-        responsible_dispatcher:users!orders_responsible_dispatcher_id_fkey(id, username, full_name, phone, zalo_link),
-        order_cargos(*),
-        order_notes(*)
-      `);
-
     const cleanToken = (token || "").trim();
     const incOrderId = await resolveOrderIdFromIncidentToken(cleanToken);
+    let whereFilter;
     if (incOrderId) {
-      query = query.eq("id", incOrderId);
+      whereFilter = { id: BigInt(incOrderId) };
     } else if (cleanToken.startsWith("NEX-") || cleanToken.startsWith("ORD-")) {
-      query = query.eq("order_code", cleanToken);
+      whereFilter = { order_code: cleanToken };
     } else {
-      query = query.or(
-        `tracking_token.eq.${cleanToken},order_code.eq.${cleanToken}`,
-      );
+      whereFilter = {
+        OR: [{ tracking_token: cleanToken }, { order_code: cleanToken }],
+      };
     }
 
-    const { data: orders, error } = await query.limit(1);
+    const rawOrder = await prisma.orders.findFirst({
+      where: whereFilter,
+      include: orderRelationInclude,
+    });
 
-    if (error || !orders || orders.length === 0) {
+    if (!rawOrder) {
       console.warn(`[getOrderByToken] Not found with token: "${token}"`);
       return res.status(404).json({
         message: "Không tìm thấy đơn hàng tương ứng với mã token này",
       });
     }
 
-    const order = orders[0];
+    const order = mapOrderWithRelations(rawOrder);
     const extraMeta = parseOrderMeta(order);
     const { incident, seal_image, pod_image, eta } =
       await resolveOrderIncidentAndEvidences(order, extraMeta);

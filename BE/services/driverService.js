@@ -1,13 +1,17 @@
 const crypto = require("crypto");
 const driverModel = require("../models/driverModel");
 const leaveModel = require("../models/leaveModel");
-const supabase = require("../config/supabase");
+const prisma = require("../config/prisma");
+const { serializePrisma } = require("../utils/prismaHelper");
 const queueAdapter = require("../jobs/queueAdapter");
+const cloudinaryService = require("./cloudinaryService");
 
 // Helper chuẩn hóa điểm lấy hàng (Pickup) hay điểm giao hàng (Drop-off)
 const isPickupStop = (stop) => {
   if (!stop) return false;
-  const raw = String(stop.stop_type || stop.type || "").trim().toUpperCase();
+  const raw = String(stop.stop_type || stop.type || "")
+    .trim()
+    .toUpperCase();
   if (raw === "PICKUP" || raw === "LẤY HÀNG" || raw === "LAY HANG") return true;
   if (
     raw === "DROPOFF" ||
@@ -43,7 +47,7 @@ const getMyProfile = async (userId) => {
   const drivingHours = await driverModel.getDriverDrivingTimeStats(profile.id);
   return {
     ...profile,
-    drivingHours
+    drivingHours,
   };
 };
 
@@ -60,14 +64,16 @@ const getActiveTrip = async (userId) => {
       message: "Hiện tại bạn chưa có chuyến xe nào được phân công.",
       trip: null,
       upcomingTrips: [],
-      drivingHours: profile.drivingHours
+      drivingHours: profile.drivingHours,
     };
   }
 
   // Xác định điểm dừng kế tiếp cần thực hiện (điểm dừng chưa hoàn thành 'Done')
   let currentStop = null;
   if (trip && trip.stops && trip.stops.length > 0) {
-    currentStop = trip.stops.find(s => s.status !== "Done") || trip.stops[trip.stops.length - 1];
+    currentStop =
+      trip.stops.find((s) => s.status !== "Done") ||
+      trip.stops[trip.stops.length - 1];
   }
 
   return {
@@ -75,7 +81,7 @@ const getActiveTrip = async (userId) => {
     trip,
     upcomingTrips,
     currentStop,
-    drivingHours: profile.drivingHours
+    drivingHours: profile.drivingHours,
   };
 };
 
@@ -88,7 +94,9 @@ const getTripDetail = async (userId, tripId) => {
   const profile = await getMyProfile(userId);
   const trip = await driverModel.getTripDetail(tripId, profile.id);
   if (!trip) {
-    const error = new Error("Không tìm thấy chuyến xe hoặc bạn không có quyền truy cập");
+    const error = new Error(
+      "Không tìm thấy chuyến xe hoặc bạn không có quyền truy cập",
+    );
     error.statusCode = 404;
     throw error;
   }
@@ -99,19 +107,28 @@ const getTripDetail = async (userId, tripId) => {
 // 2. TRIP WORKFLOW: ACCEPT TRIP
 // ==========================================
 
-const acceptTrip = async (userId, tripId, { clientActionId = null, phoneTime = null } = {}) => {
+const acceptTrip = async (
+  userId,
+  tripId,
+  { clientActionId = null, phoneTime = null } = {},
+) => {
   const actionId = clientActionId || crypto.randomUUID();
 
   // 1. Kiểm tra tính bất biến Offline Sync
   if (await driverModel.checkIdempotency(actionId)) {
-    return { success: true, message: "Hành động đã được ghi nhận trước đó (Idempotent)" };
+    return {
+      success: true,
+      message: "Hành động đã được ghi nhận trước đó (Idempotent)",
+    };
   }
 
   const profile = await getMyProfile(userId);
   const trip = await driverModel.getTripDetail(tripId, profile.id);
 
   if (!trip) {
-    const error = new Error("Chuyến xe không tồn tại hoặc không thuộc quyền phụ trách");
+    const error = new Error(
+      "Chuyến xe không tồn tại hoặc không thuộc quyền phụ trách",
+    );
     error.statusCode = 404;
     throw error;
   }
@@ -124,16 +141,14 @@ const acceptTrip = async (userId, tripId, { clientActionId = null, phoneTime = n
   const updatedTrip = await driverModel.updateTripStatus(tripId, "Accepted");
 
   // Cập nhật trạng thái các đơn hàng thuộc chuyến xe sang Accepted
-  const orderIds = (trip.stops || [])
-    .map(s => s.order_id)
-    .filter(Boolean);
+  const orderIds = (trip.stops || []).map((s) => s.order_id).filter(Boolean);
   const uniqueOrderIds = [...new Set(orderIds)];
   if (uniqueOrderIds.length > 0) {
     await driverModel.updateOrdersStatus(
       uniqueOrderIds,
-      "Accepted",
+      "ACCEPTED",
       `Tài xế đã xác nhận nhận chuyến xe ${trip.trip_code}`,
-      userId
+      userId,
     );
   }
 
@@ -143,7 +158,7 @@ const acceptTrip = async (userId, tripId, { clientActionId = null, phoneTime = n
     tripId,
     driverId: profile.id,
     eventType: "Accepted",
-    phoneTime: phoneTime || new Date().toISOString()
+    phoneTime: phoneTime || new Date().toISOString(),
   });
 
   // Ghi nhật ký vết hệ thống (activity_logs)
@@ -155,13 +170,13 @@ const acceptTrip = async (userId, tripId, { clientActionId = null, phoneTime = n
     targetId: tripId,
     reason: `Tài xế ${profile.user?.full_name || userId} đã xác nhận nhận chuyến xe ${trip.trip_code}`,
     changes: { previousStatus: trip.status, newStatus: "Accepted" },
-    clientActionId: actionId
+    clientActionId: actionId,
   });
 
   return {
     success: true,
     message: `Đã xác nhận nhận chuyến xe ${trip.trip_code}`,
-    trip: updatedTrip
+    trip: updatedTrip,
   };
 };
 
@@ -169,7 +184,17 @@ const acceptTrip = async (userId, tripId, { clientActionId = null, phoneTime = n
 // 3. TRIP WORKFLOW: STOP ARRIVAL
 // ==========================================
 
-const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng = null, phoneTime = null, clientActionId = null } = {}) => {
+const arriveAtStop = async (
+  userId,
+  tripId,
+  stopId,
+  {
+    phoneLat = null,
+    phoneLng = null,
+    phoneTime = null,
+    clientActionId = null,
+  } = {},
+) => {
   const actionId = clientActionId || crypto.randomUUID();
 
   if (await driverModel.checkIdempotency(actionId)) {
@@ -192,26 +217,17 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
   }
 
   if (stop.status === "Arrived" || stop.status === "Done") {
-    return { success: true, message: "Điểm dừng đã được đánh dấu tới nơi", stop };
-  }
-
-  // Kiểm tra bán kính Geofence
-  let isOutsideRadius = false;
-  if (phoneLat && phoneLng && stop.location?.latitude && stop.location?.longitude) {
-    const radiusMeters = stop.location.geofence_radius || 500;
-    // Công thức tính khoảng cách Haversine sơ bộ
-    const dLat = (phoneLat - stop.location.latitude) * 111000;
-    const dLng = (phoneLng - stop.location.longitude) * 111000 * Math.cos(stop.location.latitude * Math.PI / 180);
-    const distance = Math.sqrt(dLat * dLat + dLng * dLng);
-    if (distance > radiusMeters) {
-      isOutsideRadius = true;
-    }
+    return {
+      success: true,
+      message: "Điểm dừng đã được đánh dấu tới nơi",
+      stop,
+    };
   }
 
   const arrivalTime = phoneTime || new Date().toISOString();
   const updatedStop = await driverModel.updateTripStop(stopId, {
     status: "Arrived",
-    actual_arrival: arrivalTime
+    actual_arrival: arrivalTime,
   });
 
   // Nếu là điểm dừng đầu tiên: Chuyển chuyến sang In Progress và xe sang On Trip
@@ -223,13 +239,13 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
     await driverModel.updateDriverProfileStatus(profile.id, "On Trip");
   }
 
-  // Nếu là điểm giao hàng (Drop-off): Chuyển đơn hàng sang In Transit
+  // Nếu là điểm giao hàng (Drop-off): Chuyển đơn hàng sang IN_TRANSIT
   if (isDropoffStop(stop) && stop.order_id) {
     await driverModel.updateOrdersStatus(
       [stop.order_id],
-      "In Transit",
+      "IN_TRANSIT",
       `Đang vận chuyển đến điểm giao hàng #${stop.sequence}`,
-      userId
+      userId,
     );
   }
 
@@ -243,7 +259,6 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
     phoneTime: arrivalTime,
     latitude: phoneLat,
     longitude: phoneLng,
-    outsideRadiusFlag: isOutsideRadius
   });
 
   // Đẩy tọa độ GPS vào Hàng đợi đệm (Bulk Ingestion Buffer) nếu có tọa độ từ thiết bị
@@ -254,7 +269,6 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
       longitude: phoneLng,
       speed_kmh: 0,
       recorded_time: arrivalTime,
-      outside_radius_flag: isOutsideRadius
     });
   }
 
@@ -264,15 +278,14 @@ const arriveAtStop = async (userId, tripId, stopId, { phoneLat = null, phoneLng 
     action: "STOP_ARRIVED",
     targetType: "TRIP_STOP",
     targetId: stopId,
-    reason: `Tài xế đã đến điểm dừng #${stop.sequence} (${stop.location?.address || 'Kho hàng'})${isOutsideRadius ? ' [NGOÀI BÁN KÍNH GEOFENCE]': ''}`,
-    clientActionId: actionId
+    reason: `Tài xế đã đến điểm dừng #${stop.sequence} (${stop.location?.address || "Kho hàng"})`,
+    clientActionId: actionId,
   });
 
   return {
     success: true,
     message: `Đã ghi nhận đến điểm dừng #${stop.sequence}`,
     stop: updatedStop,
-    isOutsideRadius
   };
 };
 
@@ -291,7 +304,7 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     phoneLat = null,
     phoneLng = null,
     phoneTime = null,
-    clientActionId = null
+    clientActionId = null,
   } = pickupData;
 
   const actionId = clientActionId || crypto.randomUUID();
@@ -302,13 +315,17 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
 
   // 1. Kiểm tra các trường bắt buộc
   if (!seal_photo_url || !seal_number || !seal_number.trim()) {
-    const error = new Error("Hãy chụp rõ số chì và biển số xe, rồi nhập số chì");
+    const error = new Error(
+      "Hãy chụp rõ số chì và biển số xe, rồi nhập số chì",
+    );
     error.statusCode = 400;
     throw error;
   }
 
   if (!loaded_packages || !loaded_weight) {
-    const error = new Error("Vui lòng nhập đủ số kiện và khối lượng hàng bốc thực tế");
+    const error = new Error(
+      "Vui lòng nhập đủ số kiện và khối lượng hàng bốc thực tế",
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -327,23 +344,42 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
   // 2. Kiểm tra quá tải trọng xe
   const truckPayload = trip.truck?.allowed_payload || 5000;
   if (parsedWeight > truckPayload) {
-    const error = new Error(`Tổng khối lượng ${parsedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe`);
+    const error = new Error(
+      `Tổng khối lượng ${parsedWeight} kg vượt tải trọng cho phép ${truckPayload} kg của xe`,
+    );
     error.statusCode = 400;
     throw error;
   }
 
   const stop = await driverModel.getTripStopById(stopId, tripId);
   if (!stop || !isPickupStop(stop)) {
-    const error = new Error("Điểm dừng không hợp lệ hoặc không phải điểm lấy hàng (Pickup)");
+    const error = new Error(
+      "Điểm dừng không hợp lệ hoặc không phải điểm lấy hàng (Pickup)",
+    );
     error.statusCode = 400;
     throw error;
   }
 
+<<<<<<< Updated upstream
   // 3. Cập nhật thông tin điểm bốc hàng (BR-11: Sau khi bốc hàng và niêm chì seal, trạng thái là Loading Done; chỉ chuyển Done khi bấm Left)
+=======
+  const uploadFolder = `nexlog/trips/${tripId}/pickup`;
+  const [resolvedCargoUrl, resolvedLoadedUrl, resolvedSealUrl] =
+    await Promise.all([
+      cloudinaryService.uploadDataUriIfNeeded(cargo_photo_url, uploadFolder),
+      cloudinaryService.uploadDataUriIfNeeded(
+        loaded_cargo_photo_url,
+        uploadFolder,
+      ),
+      cloudinaryService.uploadDataUriIfNeeded(seal_photo_url, uploadFolder),
+    ]);
+
+  // 3. Cập nhật thông tin điểm bốc hàng
+>>>>>>> Stashed changes
   const updatedStop = await driverModel.updateTripStop(stopId, {
     status: "Loading Done",
     loaded_quantity: parsedPackages,
-    loaded_weight: parsedWeight
+    loaded_weight: parsedWeight,
   });
 
   // 4. Ghi nhận sự kiện trip_events
@@ -357,22 +393,22 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     latitude: phoneLat,
     longitude: phoneLng,
     payload: {
-      cargo_photo_url: cargo_photo_url || seal_photo_url,
-      loaded_cargo_photo_url: loaded_cargo_photo_url || seal_photo_url,
+      cargo_photo_url: resolvedCargoUrl || resolvedSealUrl,
+      loaded_cargo_photo_url: resolvedLoadedUrl || resolvedSealUrl,
       seal_number: seal_number.trim(),
-      seal_photo_url,
+      seal_photo_url: resolvedSealUrl,
       loaded_packages: parsedPackages,
-      loaded_weight: parsedWeight
-    }
+      loaded_weight: parsedWeight,
+    },
   });
 
-  // 5. Cập nhật đơn hàng liên kết sang Picked Up
+  // 5. Cập nhật đơn hàng liên kết sang PICKED_UP
   if (stop.order_id) {
     await driverModel.updateOrdersStatus(
       [stop.order_id],
-      "Picked Up",
+      "PICKED_UP",
       `Đã lấy hàng và niêm phong chì số ${seal_number.trim()}`,
-      userId
+      userId,
     );
   }
 
@@ -383,13 +419,13 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     targetType: "TRIP_STOP",
     targetId: stopId,
     reason: `Bốc hàng thành công: ${parsedPackages} kiện (${parsedWeight} kg), Số chì: ${seal_number.trim()}`,
-    clientActionId: actionId
+    clientActionId: actionId,
   });
 
   return {
     success: true,
     message: "Ghi nhận lấy hàng và niêm chì thành công!",
-    stop: updatedStop
+    stop: updatedStop,
   };
 };
 
@@ -408,7 +444,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     phoneLat = null,
     phoneLng = null,
     phoneTime = null,
-    clientActionId = null
+    clientActionId = null,
   } = deliveryData;
 
   const actionId = clientActionId || crypto.randomUUID();
@@ -427,7 +463,9 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
 
   const stop = await driverModel.getTripStopById(stopId, tripId);
   if (!stop || !isDropoffStop(stop)) {
-    const error = new Error("Điểm dừng không hợp lệ hoặc không phải điểm giao hàng (Drop-off)");
+    const error = new Error(
+      "Điểm dừng không hợp lệ hoặc không phải điểm giao hàng (Drop-off)",
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -436,7 +474,9 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
   const isExport = stop.order?.order_type === "Export" || !!cut_seal_photo_url;
   if (isExport) {
     if (!cut_seal_photo_url || !unloaded_cargo_photo_url) {
-      const error = new Error("Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng");
+      const error = new Error(
+        "Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng",
+      );
       error.statusCode = 400;
       throw error;
     }
@@ -448,11 +488,28 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     }
   }
 
+  const uploadFolder = `nexlog/trips/${tripId}/delivery`;
+  const [resolvedPodUrl, resolvedCutSealUrl, resolvedUnloadedUrl] =
+    await Promise.all([
+      cloudinaryService.uploadDataUriIfNeeded(
+        pod_photo_url?.trim() || null,
+        uploadFolder,
+      ),
+      cloudinaryService.uploadDataUriIfNeeded(
+        cut_seal_photo_url?.trim() || null,
+        uploadFolder,
+      ),
+      cloudinaryService.uploadDataUriIfNeeded(
+        unloaded_cargo_photo_url?.trim() || null,
+        uploadFolder,
+      ),
+    ]);
+
   // 2. Cập nhật thông tin điểm giao hàng
   const updatedStop = await driverModel.updateTripStop(stopId, {
     status: "Done",
     delivered_quantity: stop.loaded_quantity || 1,
-    delivered_weight: stop.loaded_weight || 0
+    delivered_weight: stop.loaded_weight || 0,
   });
 
   // 3. Ghi nhận sự kiện trip_events
@@ -466,62 +523,74 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     latitude: phoneLat,
     longitude: phoneLng,
     payload: {
-      pod_photo_url: pod_photo_url?.trim() || null,
-      cut_seal_photo_url: cut_seal_photo_url?.trim() || null,
-      unloaded_cargo_photo_url: unloaded_cargo_photo_url?.trim() || null,
+      pod_photo_url: resolvedPodUrl || null,
+      cut_seal_photo_url: resolvedCutSealUrl || null,
+      unloaded_cargo_photo_url: resolvedUnloadedUrl || null,
       receiver_name: receiver_name?.trim() || null,
       documents_handed_over: !!documents_handed_over,
-      extra_fees
-    }
+      extra_fees,
+    },
   });
 
   // 3.1. Lưu trực tiếp vào bảng delivery_evidences để bảo đảm hiển thị đầy đủ trên mọi view giám sát
-  if (pod_photo_url?.trim() || cut_seal_photo_url?.trim()) {
+  if (resolvedPodUrl || resolvedCutSealUrl) {
     try {
       const evidencesToInsert = [];
-      if (pod_photo_url?.trim()) {
+      const nowDate = new Date();
+      if (resolvedPodUrl) {
         evidencesToInsert.push({
-          trip_stop_id: stopId,
-          order_id: stop.order_id || null,
-          evidence_type: 'POD',
-          file_url: pod_photo_url.trim(),
-          captured_time: new Date().toISOString(),
+          trip_stop_id: BigInt(stopId),
+          order_id: stop.order_id ? BigInt(stop.order_id) : null,
+          type: "POD",
+          file_link: resolvedPodUrl.slice(0, 255),
+          receiver_name: receiver_name?.trim()
+            ? receiver_name.trim().slice(0, 100)
+            : null,
+          captured_time: nowDate,
           latitude: phoneLat,
-          longitude: phoneLng
+          longitude: phoneLng,
         });
       }
-      if (cut_seal_photo_url?.trim()) {
+      if (resolvedCutSealUrl) {
         evidencesToInsert.push({
-          trip_stop_id: stopId,
-          order_id: stop.order_id || null,
-          evidence_type: 'CutSeal',
-          file_url: cut_seal_photo_url.trim(),
-          captured_time: new Date().toISOString(),
+          trip_stop_id: BigInt(stopId),
+          order_id: stop.order_id ? BigInt(stop.order_id) : null,
+          type: "CutSeal",
+          file_link: resolvedCutSealUrl.slice(0, 255),
+          receiver_name: receiver_name?.trim()
+            ? receiver_name.trim().slice(0, 100)
+            : null,
+          captured_time: nowDate,
           latitude: phoneLat,
-          longitude: phoneLng
+          longitude: phoneLng,
         });
       }
       if (evidencesToInsert.length > 0) {
-        await supabase.from('delivery_evidences').insert(evidencesToInsert);
+        await prisma.delivery_evidences.createMany({ data: evidencesToInsert });
       }
     } catch (e) {
-      console.warn('[recordDelivery] Error inserting into delivery_evidences:', e.message);
+      console.warn(
+        "[recordDelivery] Error inserting into delivery_evidences:",
+        e.message,
+      );
     }
   }
 
-  // 4. Cập nhật đơn hàng liên kết sang Delivered
+  // 4. Cập nhật đơn hàng liên kết sang DELIVERED
   if (stop.order_id) {
     await driverModel.updateOrdersStatus(
       [stop.order_id],
-      "Delivered",
+      "DELIVERED",
       `Đã giao hàng thành công (Người nhận: ${receiver_name || "Khách hàng"})`,
-      userId
+      userId,
     );
   }
 
   // 5. Kiểm tra xem có phải điểm dừng cuối cùng của chuyến không
   const allStops = trip.stops || [];
-  const remainingIncompleteStops = allStops.filter(s => s.id !== stopId && s.status !== "Done");
+  const remainingIncompleteStops = allStops.filter(
+    (s) => s.id !== stopId && s.status !== "Done",
+  );
 
   let isTripCompleted = false;
   if (remainingIncompleteStops.length === 0) {
@@ -532,28 +601,32 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     if (trip.truck?.id) {
       await driverModel.updateTruckStatus(trip.truck.id, "Available");
     }
-    await driverModel.updateDriverProfileStatus(profile.id, "Active", new Date().toISOString());
+    await driverModel.updateDriverProfileStatus(
+      profile.id,
+      "Active",
+      new Date().toISOString(),
+    );
   }
 
   await driverModel.logDriverActivity({
     actorId: userId,
     actorType: "DRIVER",
-    action: isTripCompleted ? "COMPLETE_TRIP": "RECORD_DELIVERY",
+    action: isTripCompleted ? "COMPLETE_TRIP" : "RECORD_DELIVERY",
     targetType: "TRIP_STOP",
     targetId: stopId,
-    reason: isTripCompleted 
-      ? `Đã hoàn tất toàn bộ điểm dừng của chuyến xe ${trip.trip_code}` 
+    reason: isTripCompleted
+      ? `Đã hoàn tất toàn bộ điểm dừng của chuyến xe ${trip.trip_code}`
       : `Giao hàng thành công tại điểm dừng #${stop.sequence}`,
-    clientActionId: actionId
+    clientActionId: actionId,
   });
 
   return {
     success: true,
-    message: isTripCompleted 
-      ? "Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe!" 
+    message: isTripCompleted
+      ? "Chúc mừng! Bạn đã hoàn thành toàn bộ chuyến xe!"
       : "Ghi nhận giao hàng và lưu POD thành công!",
     stop: updatedStop,
-    isTripCompleted
+    isTripCompleted,
   };
 };
 
@@ -569,7 +642,7 @@ const reportIncident = async (userId, incidentData) => {
     description,
     photos = null,
     incident_lat = null,
-    incident_lng = null
+    incident_lng = null,
   } = incidentData;
 
   if (!description || !description.trim()) {
@@ -587,47 +660,73 @@ const reportIncident = async (userId, incidentData) => {
 
   // Lấy chuyến xe đang chạy hoặc đang được phân công của tài xế (In Progress, Accepted, Dispatched, Assigned)
   const activeTripRes = await driverModel.getActiveTrip(profile.id);
-  currentTrip = activeTripRes?.activeTrip || (activeTripRes?.id ? activeTripRes : null) || activeTripRes?.upcomingTrips?.[0] || null;
+  currentTrip =
+    activeTripRes?.activeTrip ||
+    (activeTripRes?.id ? activeTripRes : null) ||
+    activeTripRes?.upcomingTrips?.[0] ||
+    null;
 
   if (currentTrip && currentTrip.id) {
     // Ưu tiên cao nhất: Gắn vào chuyến xe đang chạy thực tế của chính tài xế này
     realTripId = currentTrip.id;
     if (!realTripStopId && currentTrip.stops && currentTrip.stops.length > 0) {
-      const activeStop = currentTrip.stops.find(s => s.status !== "Done") || currentTrip.stops[0];
+      const activeStop =
+        currentTrip.stops.find((s) => s.status !== "Done") ||
+        currentTrip.stops[0];
       if (activeStop?.id) realTripStopId = activeStop.id;
     }
-  } else if (trip_id && !isNaN(parseInt(trip_id, 10)) && parseInt(trip_id, 10) > 0) {
+  } else if (
+    trip_id &&
+    !isNaN(parseInt(trip_id, 10)) &&
+    parseInt(trip_id, 10) > 0
+  ) {
     // Nếu tài xế chưa có chuyến In Progress nhưng request truyền trip_id cụ thể hợp lệ
     realTripId = parseInt(trip_id, 10);
   } else {
     // Fallback: Tìm chuyến được gán gần đây nhất của tài xế trong bảng trip_drivers
-    const { data: latestAssignment } = await supabase
-      .from("trip_drivers")
-      .select("trip_id, trips(id, trip_code, status)")
-      .eq("driver_id", profile.id)
-      .order("id", { ascending: false })
-      .limit(1);
+    const latestAssignment = await prisma.trip_drivers.findFirst({
+      where: { driver_id: BigInt(profile.id) },
+      select: {
+        trip_id: true,
+        trips: { select: { id: true, trip_code: true, status: true } },
+      },
+      orderBy: { id: "desc" },
+    });
 
-    if (latestAssignment && latestAssignment.length > 0 && latestAssignment[0].trip_id) {
-      realTripId = latestAssignment[0].trip_id;
-      currentTrip = latestAssignment[0].trips || null;
+    if (latestAssignment && latestAssignment.trip_id) {
+      realTripId = Number(latestAssignment.trip_id);
+      currentTrip = serializePrisma(latestAssignment.trips) || null;
     } else {
       // Nếu tài xế chưa từng được phân công chuyến nào, lấy chuyến mới nhất trong hệ thống
-      const { data: fallbackTrip } = await supabase
-        .from("trips")
-        .select("id, trip_code, status")
-        .order("id", { ascending: false })
-        .limit(1);
-      realTripId = fallbackTrip?.[0]?.id || 1;
-      currentTrip = fallbackTrip?.[0] || null;
+      const fallbackTrip = await prisma.trips.findFirst({
+        select: { id: true, trip_code: true, status: true },
+        orderBy: { id: "desc" },
+      });
+      realTripId = fallbackTrip ? Number(fallbackTrip.id) : 1;
+      currentTrip = serializePrisma(fallbackTrip) || null;
     }
   }
 
-  let resolvedLat = incident_lat !== null && incident_lat !== undefined && !isNaN(Number(incident_lat)) ? Number(incident_lat) : null;
-  let resolvedLng = incident_lng !== null && incident_lng !== undefined && !isNaN(Number(incident_lng)) ? Number(incident_lng) : null;
+  let resolvedLat =
+    incident_lat !== null &&
+    incident_lat !== undefined &&
+    !isNaN(Number(incident_lat))
+      ? Number(incident_lat)
+      : null;
+  let resolvedLng =
+    incident_lng !== null &&
+    incident_lng !== undefined &&
+    !isNaN(Number(incident_lng))
+      ? Number(incident_lng)
+      : null;
 
-  if ((resolvedLat === null || resolvedLng === null) && currentTrip?.stops?.length > 0) {
-    const targetStop = currentTrip.stops.find(s => Number(s.id) === Number(realTripStopId)) || currentTrip.stops[0];
+  if (
+    (resolvedLat === null || resolvedLng === null) &&
+    currentTrip?.stops?.length > 0
+  ) {
+    const targetStop =
+      currentTrip.stops.find((s) => Number(s.id) === Number(realTripStopId)) ||
+      currentTrip.stops[0];
     if (targetStop?.location?.latitude && targetStop?.location?.longitude) {
       resolvedLat = Number(targetStop.location.latitude);
       resolvedLng = Number(targetStop.location.longitude);
@@ -635,17 +734,33 @@ const reportIncident = async (userId, incidentData) => {
   }
 
   if ((resolvedLat === null || resolvedLng === null) && realTripId) {
-    const { data: stopGeo } = await supabase
-      .from("trip_stops")
-      .select("id, location:locations(latitude, longitude)")
-      .eq("trip_id", realTripId)
-      .order("sequence", { ascending: true })
-      .limit(1);
-    const loc = stopGeo?.[0]?.location;
+    const stopGeo = await prisma.trip_stops.findFirst({
+      where: { trip_id: BigInt(realTripId) },
+      select: {
+        id: true,
+        locations: { select: { latitude: true, longitude: true } },
+      },
+      orderBy: { sequence: "asc" },
+    });
+    const loc = stopGeo?.locations;
     if (loc?.latitude && loc?.longitude) {
       resolvedLat = Number(loc.latitude);
       resolvedLng = Number(loc.longitude);
     }
+  }
+
+  let resolvedPhotos = photos;
+  if (Array.isArray(photos)) {
+    resolvedPhotos = await Promise.all(
+      photos.map((p) =>
+        cloudinaryService.uploadDataUriIfNeeded(p, "nexlog/incidents"),
+      ),
+    );
+  } else if (typeof photos === "string" && photos.trim()) {
+    resolvedPhotos = await cloudinaryService.uploadDataUriIfNeeded(
+      photos,
+      "nexlog/incidents",
+    );
   }
 
   const newIncident = await driverModel.createIncident({
@@ -654,9 +769,9 @@ const reportIncident = async (userId, incidentData) => {
     reportedBy: profile.id,
     type,
     description: description.trim(),
-    photos,
+    photos: resolvedPhotos,
     incidentLat: resolvedLat,
-    incidentLng: resolvedLng
+    incidentLng: resolvedLng,
   });
 
   const tripCodeDisplay = currentTrip?.trip_code || `TRIP-${realTripId}`;
@@ -667,28 +782,33 @@ const reportIncident = async (userId, incidentData) => {
     action: "REPORT_INCIDENT",
     targetType: "INCIDENT",
     targetId: newIncident?.id || 0,
-    reason: `Tài xế báo cáo sự cố [${type}] trên chuyến xe [${tripCodeDisplay}]: ${description.trim()}`
+    reason: `Tài xế báo cáo sự cố [${type}] trên chuyến xe [${tripCodeDisplay}]: ${description.trim()}`,
   });
 
   // Bắn thông báo thời gian thực tới điều phối viên và quản trị viên
   try {
-    const { data: dispatchers } = await supabase
-      .from("users")
-      .select("id")
-      .in("role_id", [1, 3]);
+    const dispatchers = await prisma.users.findMany({
+      where: { role_id: { in: [1n, 3n] } },
+      select: { id: true },
+    });
 
     if (dispatchers && dispatchers.length > 0) {
       for (const d of dispatchers) {
-        await driverModel.createNotification({
-          user_account_id: d.id,
-          target_type: "INCIDENT",
-          target_id: newIncident?.id,
-          message: `Cảnh báo sự cố: Tài xế báo cáo sự cố [${type}] trên chuyến xe [${tripCodeDisplay}]. Cần kiểm tra ngay!`
-        }).catch(() => {});
+        await driverModel
+          .createNotification({
+            user_account_id: Number(d.id),
+            target_type: "INCIDENT",
+            target_id: newIncident?.id,
+            message: `Cảnh báo sự cố: Tài xế báo cáo sự cố [${type}] trên chuyến xe [${tripCodeDisplay}]. Cần kiểm tra ngay!`,
+          })
+          .catch(() => {});
       }
     }
   } catch (notifyErr) {
-    console.warn("Could not notify dispatchers about incident:", notifyErr.message);
+    console.warn(
+      "Could not notify dispatchers about incident:",
+      notifyErr.message,
+    );
   }
 
   return {
@@ -697,19 +817,20 @@ const reportIncident = async (userId, incidentData) => {
     incident: {
       ...newIncident,
       trip_id: realTripId,
-      trip_code: tripCodeDisplay
-    }
+      trip_code: tripCodeDisplay,
+    },
   };
 };
 
 // ==========================================
-// 7. STOP EVENTS & GEOFENCE
+// 7. STOP EVENTS
 // ==========================================
 
 // Kiểm tra độ lệch đồng hồ (BR-27)
 const validatePhoneTime = (phoneTime) => {
   const now = Date.now();
-  if (!phoneTime) return { time: new Date(now).toISOString(), timeFlagged: false };
+  if (!phoneTime)
+    return { time: new Date(now).toISOString(), timeFlagged: false };
   const clientTs = new Date(phoneTime).getTime();
   const driftMinutes = (clientTs - now) / 60000;
   // BR-27: Nếu phone_time vượt quá 5 phút so với đồng hồ server hoặc quá 24h trong quá khứ
@@ -719,7 +840,19 @@ const validatePhoneTime = (phoneTime) => {
   return { time: new Date(clientTs).toISOString(), timeFlagged: false };
 };
 
-const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = null, phoneLng = null, phoneTime = null, clientActionId = null, payload = null } = {}) => {
+const recordStopEvent = async (
+  userId,
+  tripId,
+  stopId,
+  {
+    eventType,
+    phoneLat = null,
+    phoneLng = null,
+    phoneTime = null,
+    clientActionId = null,
+    payload = null,
+  } = {},
+) => {
   const actionId = clientActionId || crypto.randomUUID();
   if (await driverModel.checkIdempotency(actionId)) {
     return { success: true, message: "Hành động đã được ghi nhận trước đó" };
@@ -738,25 +871,13 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
     throw error;
   }
 
-  // Geofence check
-  let isOutsideRadius = false;
-  if (phoneLat && phoneLng && stop.location?.latitude && stop.location?.longitude) {
-    const radiusMeters = stop.location.geofence_radius || 500;
-    const dLat = (phoneLat - stop.location.latitude) * 111000;
-    const dLng = (phoneLng - stop.location.longitude) * 111000 * Math.cos(stop.location.latitude * Math.PI / 180);
-    const distance = Math.sqrt(dLat * dLat + dLng * dLng);
-    if (distance > radiusMeters) {
-      isOutsideRadius = true;
-    }
-  }
-
   // BR-27 Clock validation
   const { time: recordedTime, timeFlagged } = validatePhoneTime(phoneTime);
 
   const normalizedEventType = (eventType || "Stop Event").trim();
   let eventPayload = {
     ...(payload || {}),
-    time_flagged: timeFlagged
+    time_flagged: timeFlagged,
   };
 
   let waitingMinutes = 0;
@@ -768,15 +889,16 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
     // 1. Tính thời gian chờ (Waiting time: từ lúc Arrived đến lúc Loading Started)
     let arrivalTime = stop.actual_arrival;
     if (!arrivalTime) {
-      const { data: arrEvents } = await supabase
-        .from("trip_events")
-        .select("phone_time, created_at")
-        .eq("trip_stop_id", stopId)
-        .eq("event_type", "Arrived")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      if (arrEvents && arrEvents.length > 0) {
-        arrivalTime = arrEvents[0].phone_time || arrEvents[0].created_at;
+      const arrEvent = await prisma.trip_events.findFirst({
+        where: {
+          trip_stop_id: BigInt(stopId),
+          event_type: "Arrived",
+        },
+        select: { phone_time: true, created_at: true },
+        orderBy: { created_at: "desc" },
+      });
+      if (arrEvent) {
+        arrivalTime = arrEvent.phone_time || arrEvent.created_at;
       }
     }
 
@@ -786,11 +908,10 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
       waitingMinutes = Math.max(0, Math.round((startTs - arrTs) / 60000));
 
       // Lấy thời gian chờ miễn phí từ system_settings
-      const { data: waitSetting } = await supabase
-        .from("system_settings")
-        .select("value")
-        .eq("key", "waiting_too_long_minutes")
-        .maybeSingle();
+      const waitSetting = await prisma.system_settings.findUnique({
+        where: { key: "waiting_too_long_minutes" },
+        select: { value: true },
+      });
 
       if (waitSetting && !isNaN(Number(waitSetting.value))) {
         freeWaitingMinutes = Number(waitSetting.value);
@@ -808,25 +929,24 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
     eventPayload.suggested_waiting_fee = suggestedWaitingFee;
 
     await driverModel.updateTripStop(stopId, { status: "Loading Started" });
-
   } else if (normalizedEventType === "Loading Done") {
     await driverModel.updateTripStop(stopId, { status: "Loading Done" });
-
   } else if (normalizedEventType === "Left") {
     await driverModel.updateTripStop(stopId, { status: "Done" });
 
-    // Nếu điểm dừng là lấy hàng và có đơn hàng, chuyển trạng thái đơn sang In Transit
+    // Nếu điểm dừng là lấy hàng và có đơn hàng, chuyển trạng thái đơn sang IN_TRANSIT
     if (isPickupStop(stop) && stop.order_id) {
       await driverModel.updateOrdersStatus(
         [stop.order_id],
-        "In Transit",
+        "IN_TRANSIT",
         `Đã rời điểm lấy hàng #${stop.sequence}, đang vận chuyển trên đường`,
-        userId
+        userId,
       );
     }
 
     // Kiểm tra xem đây có phải điểm dừng cuối cùng của chuyến không
-    const remainingStops = trip.stops?.filter(s => s.id !== stopId && s.status !== "Done") || [];
+    const remainingStops =
+      trip.stops?.filter((s) => s.id !== stopId && s.status !== "Done") || [];
     if (remainingStops.length === 0) {
       // Đã hoàn thành điểm dừng cuối -> Chuyến xe hoàn thành (Completed)
       await driverModel.updateTripStatus(tripId, "Completed");
@@ -834,10 +954,10 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
         await driverModel.updateTruckStatus(trip.truck.id, "Available");
       }
       await driverModel.updateDriverProfileStatus(profile.id, "Available");
-      await supabase
-        .from("driver_profiles")
-        .update({ last_trip_ended_at: recordedTime })
-        .eq("id", profile.id);
+      await prisma.driver_profiles.update({
+        where: { id: BigInt(profile.id) },
+        data: { last_trip_ended_at: new Date(recordedTime) },
+      });
     }
   }
 
@@ -850,8 +970,7 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
     phoneTime: recordedTime,
     latitude: phoneLat,
     longitude: phoneLng,
-    outsideRadiusFlag: isOutsideRadius,
-    payload: eventPayload
+    payload: eventPayload,
   });
 
   // Đẩy tọa độ GPS vào Hàng đợi đệm (Bulk Ingestion Buffer) nếu có tọa độ từ thiết bị
@@ -862,19 +981,17 @@ const recordStopEvent = async (userId, tripId, stopId, { eventType, phoneLat = n
       longitude: phoneLng,
       speed_kmh: 0,
       recorded_time: recordedTime,
-      outside_radius_flag: isOutsideRadius
     });
   }
 
   return {
     success: true,
     message: `Đã ghi nhận sự kiện ${normalizedEventType}`,
-    isOutsideRadius,
     timeFlagged,
     waitingMinutes,
     suggestedWaitingFee,
     freeWaitingMinutes,
-    event
+    event,
   };
 };
 
@@ -890,7 +1007,7 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
     phoneLat = null,
     phoneLng = null,
     phoneTime = null,
-    clientActionId = null
+    clientActionId = null,
   } = refusalData;
 
   const actionId = clientActionId || crypto.randomUUID();
@@ -905,7 +1022,9 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
   }
 
   if (!cargo_photo || !cargo_photo.trim()) {
-    const error = new Error("Vui lòng chụp ảnh hiện trường hàng hóa bị từ chối");
+    const error = new Error(
+      "Vui lòng chụp ảnh hiện trường hàng hóa bị từ chối",
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -931,17 +1050,25 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
     throw error;
   }
 
+  const resolvedCargoPhoto = await cloudinaryService.uploadDataUriIfNeeded(
+    cargo_photo.trim(),
+    `nexlog/trips/${tripId}/refusal`,
+  );
+
   // 1. Cập nhật đơn hàng sang Delivered (Exception)
-  const fullReason = note && note.trim() ? `${reason.trim()} - Ghi chú: ${note.trim()}`: reason.trim();
+  const fullReason =
+    note && note.trim()
+      ? `${reason.trim()} - Ghi chú: ${note.trim()}`
+      : reason.trim();
   await driverModel.updateOrderRefusal(stop.order_id, {
     reason: fullReason,
-    photoUrl: cargo_photo.trim(),
-    changedBy: userId
+    photoUrl: resolvedCargoPhoto,
+    changedBy: userId,
   });
 
   // 2. Cập nhật điểm dừng sang Done
   await driverModel.updateTripStop(stopId, {
-    status: "Done"
+    status: "Done",
   });
 
   // 3. Ghi nhận sự kiện trip_events
@@ -957,8 +1084,8 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
     payload: {
       orderId: stop.order_id,
       reason: fullReason,
-      cargo_photo: cargo_photo.trim()
-    }
+      cargo_photo: resolvedCargoPhoto,
+    },
   });
 
   // 4. Tạo thông báo cho Điều phối viên
@@ -968,7 +1095,7 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
       userAccountId: trip.created_by,
       targetType: "ORDER",
       targetId: stop.order_id,
-      message: `Khách không nhận hàng của đơn ${orderCode}. Hãy điều tài xế về kho ALS.`
+      message: `Khách không nhận hàng của đơn ${orderCode}. Hãy điều tài xế về kho ALS.`,
     });
   }
 
@@ -979,12 +1106,12 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
     targetType: "ORDER",
     targetId: stop.order_id,
     reason: `Tài xế báo cáo khách từ chối nhận hàng: ${fullReason}`,
-    clientActionId: actionId
+    clientActionId: actionId,
   });
 
   return {
     success: true,
-    message: "Đã ghi nhận khách không nhận hàng."
+    message: "Đã ghi nhận khách không nhận hàng.",
   };
 };
 
@@ -993,17 +1120,13 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
 // ==========================================
 
 const proposeExtraFee = async (userId, tripId, feeData) => {
-  const {
-    order_id = null,
-    fee_type,
-    amount,
-    reason,
-    photo_url
-  } = feeData;
+  const { order_id = null, fee_type, amount, reason, photo_url } = feeData;
 
   const validTypes = ["Bốc xếp thêm", "Nâng hạ", "Trả kho thay khách"];
   if (!fee_type || !validTypes.includes(fee_type)) {
-    const error = new Error(`Loại phụ phí không hợp lệ. Chỉ chấp nhận: ${validTypes.join(", ")}`);
+    const error = new Error(
+      `Loại phụ phí không hợp lệ. Chỉ chấp nhận: ${validTypes.join(", ")}`,
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -1030,24 +1153,32 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
   const profile = await getMyProfile(userId);
   const trip = await driverModel.getTripDetail(tripId, profile.id);
   if (!trip) {
-    const error = new Error("Chuyến xe không tồn tại hoặc không thuộc quyền phụ trách");
+    const error = new Error(
+      "Chuyến xe không tồn tại hoặc không thuộc quyền phụ trách",
+    );
     error.statusCode = 404;
     throw error;
   }
 
+  const resolvedFeePhoto = await cloudinaryService.uploadDataUriIfNeeded(
+    photo_url.trim(),
+    `nexlog/trips/${tripId}/extra-fees`,
+  );
+
   const newFee = await driverModel.createProposedExtraFee({
     tripId,
-    orderId: order_id ? parseInt(order_id, 10): null,
+    orderId: order_id ? parseInt(order_id, 10) : null,
     feeType: fee_type,
     amount: parsedAmount,
     reason: reason.trim(),
-    photoUrl: photo_url.trim(),
-    recordedBy: userId
+    photoUrl: resolvedFeePhoto,
+    recordedBy: userId,
   });
 
   // Thông báo cho Điều phối viên
-  const driverName = profile.user?.full_name || profile.user?.username || "Tài xế";
-  const orderLabel = order_id ? `đơn #${order_id}`: `chuyến ${trip.trip_code}`;
+  const driverName =
+    profile.user?.full_name || profile.user?.username || "Tài xế";
+  const orderLabel = order_id ? `đơn #${order_id}` : `chuyến ${trip.trip_code}`;
   const formattedAmount = `${parsedAmount.toLocaleString("vi-VN")} đ`;
 
   if (trip.created_by) {
@@ -1055,7 +1186,7 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
       userAccountId: trip.created_by,
       targetType: "TRIP",
       targetId: tripId,
-      message: `Tài xế ${driverName} đề xuất phí ${fee_type} ${formattedAmount} cho ${orderLabel}. Hãy xác nhận hoặc từ chối.`
+      message: `Tài xế ${driverName} đề xuất phí ${fee_type} ${formattedAmount} cho ${orderLabel}. Hãy xác nhận hoặc từ chối.`,
     });
   }
 
@@ -1065,13 +1196,13 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
     action: "PROPOSE_EXTRA_FEE",
     targetType: "TRIP",
     targetId: tripId,
-    reason: `Tài xế đề xuất phụ phí: ${fee_type} ${formattedAmount}`
+    reason: `Tài xế đề xuất phụ phí: ${fee_type} ${formattedAmount}`,
   });
 
   return {
     success: true,
     message: `Đã gửi đề xuất phụ phí ${fee_type} ${formattedAmount}. Vui lòng chờ Điều phối viên xác nhận.`,
-    extraFee: newFee
+    extraFee: newFee,
   };
 };
 
@@ -1104,7 +1235,8 @@ const getNowGMT7Info = () => {
   const todayStr = gmt7.toISOString().split("T")[0];
   const dayOfWeek = gmt7.getUTCDay(); // 0=Sun..6=Sat
   const hour = gmt7.getUTCHours();
-  const { weekStart: currentMondayStr, weekEnd: currentSundayStr } = getMondaySundayOfDate(todayStr);
+  const { weekStart: currentMondayStr, weekEnd: currentSundayStr } =
+    getMondaySundayOfDate(todayStr);
   const nextMondayStr = addDaysStr(currentMondayStr, 7);
   const nextSundayStr = addDaysStr(nextMondayStr, 6);
   return {
@@ -1119,8 +1251,11 @@ const getNowGMT7Info = () => {
 };
 
 const normalizeWeeklyShiftType = ({ shift_type, start_time } = {}) => {
-  const rawType = String(shift_type || "").trim().toUpperCase();
-  if (rawType === "MORNING" || rawType === "CA_SANG" || rawType === "DAY") return "MORNING";
+  const rawType = String(shift_type || "")
+    .trim()
+    .toUpperCase();
+  if (rawType === "MORNING" || rawType === "CA_SANG" || rawType === "DAY")
+    return "MORNING";
   if (rawType === "NIGHT" || rawType === "CA_DEM") return "NIGHT";
   if (start_time) {
     const str = String(start_time);
@@ -1140,7 +1275,9 @@ const registerShift = async (userId, shiftData = {}) => {
 
   const shiftType = normalizeWeeklyShiftType({ shift_type, start_time });
   if (!shiftType) {
-    const err = new Error("Vui lòng chọn ca làm việc hợp lệ: Ca Sáng (08:00 - 17:00) hoặc Ca Đêm (17:00 - 08:00 hôm sau).");
+    const err = new Error(
+      "Vui lòng chọn ca làm việc hợp lệ: Ca Sáng (08:00 - 17:00) hoặc Ca Đêm (17:00 - 08:00 hôm sau).",
+    );
     err.statusCode = 400;
     throw err;
   }
@@ -1149,7 +1286,9 @@ const registerShift = async (userId, shiftData = {}) => {
   const anchorInput = week_start || date || nowInfo.nextMondayStr;
   const anchorDateStr = String(anchorInput).split("T")[0];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDateStr)) {
-    const err = new Error("Định dạng ngày/tuần đăng ký không hợp lệ (YYYY-MM-DD).");
+    const err = new Error(
+      "Định dạng ngày/tuần đăng ký không hợp lệ (YYYY-MM-DD).",
+    );
     err.statusCode = 400;
     throw err;
   }
@@ -1163,43 +1302,68 @@ const registerShift = async (userId, shiftData = {}) => {
   }
 
   // Kiểm tra hạn chót 22:00 Chủ Nhật cho tuần tới
-  if (weekStart === nowInfo.nextMondayStr && nowInfo.dayOfWeek === 0 && nowInfo.hour >= 22) {
-    const err = new Error("Đã quá hạn chót 22:00 Chủ Nhật để đăng ký tuần tới. Hệ thống sẽ tự động xếp lịch cố định.");
+  if (
+    weekStart === nowInfo.nextMondayStr &&
+    nowInfo.dayOfWeek === 0 &&
+    nowInfo.hour >= 22
+  ) {
+    const err = new Error(
+      "Đã quá hạn chót 22:00 Chủ Nhật để đăng ký tuần tới. Hệ thống sẽ tự động xếp lịch cố định.",
+    );
     err.statusCode = 400;
     throw err;
   }
 
-  const existingShifts = await driverModel.getShiftsInRange(profile.id, weekStart, weekEnd);
+  const existingShifts = await driverModel.getShiftsInRange(
+    profile.id,
+    weekStart,
+    weekEnd,
+  );
   const activeShifts = existingShifts.filter((sh) => sh.status !== "Rejected");
 
   const hasLockedShift = activeShifts.some(
     (sh) =>
       sh.status === "Approved" ||
       (sh.note && sh.note.includes("[Hệ thống tự động xếp lịch]")) ||
-      sh.registered_by === null
+      sh.registered_by === null,
   );
   if (hasLockedShift) {
-    const err = new Error("Lịch làm việc tuần này đã được duyệt hoặc hệ thống tự động xếp, không thể sửa đổi!");
+    const err = new Error(
+      "Lịch làm việc tuần này đã được duyệt hoặc hệ thống tự động xếp, không thể sửa đổi!",
+    );
     err.statusCode = 400;
     throw err;
   }
 
   if (activeShifts.length > 0) {
-    const err = new Error("Bạn đã gửi đăng ký ca cho tuần này (đang chờ duyệt). Vui lòng hủy đăng ký tuần trước khi chọn lại.");
+    const err = new Error(
+      "Bạn đã gửi đăng ký ca cho tuần này (đang chờ duyệt). Vui lòng hủy đăng ký tuần trước khi chọn lại.",
+    );
     err.statusCode = 400;
     throw err;
   }
 
-  const shiftLabel = shiftType === "MORNING" ? "Ca Sáng (08:00 - 17:00)" : "Ca Đêm (17:00 - 08:00 hôm sau)";
-  const effectiveStartDate = weekStart < nowInfo.todayStr ? nowInfo.todayStr : weekStart;
+  const shiftLabel =
+    shiftType === "MORNING"
+      ? "Ca Sáng (08:00 - 17:00)"
+      : "Ca Đêm (17:00 - 08:00 hôm sau)";
+  const effectiveStartDate =
+    weekStart < nowInfo.todayStr ? nowInfo.todayStr : weekStart;
   const shiftPayloads = [];
 
   let curDate = effectiveStartDate;
   while (curDate <= weekEnd) {
-    const startIso = shiftType === "MORNING" ? `${curDate}T08:00:00+07:00` : `${curDate}T17:00:00+07:00`;
+    const startIso =
+      shiftType === "MORNING"
+        ? `${curDate}T08:00:00+07:00`
+        : `${curDate}T17:00:00+07:00`;
     const endDate = shiftType === "MORNING" ? curDate : addDaysStr(curDate, 1);
-    const endIso = shiftType === "MORNING" ? `${endDate}T17:00:00+07:00` : `${endDate}T08:00:00+07:00`;
-    const trimmedNote = note && String(note).trim() ? String(note).trim() : null;
+    const endIso =
+      shiftType === "MORNING"
+        ? `${endDate}T17:00:00+07:00`
+        : `${endDate}T08:00:00+07:00`;
+    const trimmedNote =
+      note && String(note).trim() ? String(note).trim() : null;
     const finalNote = trimmedNote
       ? `[${shiftLabel}] ${trimmedNote}`
       : `[${shiftLabel}] Đăng ký ca cố định cả tuần (${weekStart} đến ${weekEnd})`;
@@ -1240,7 +1404,10 @@ const registerShift = async (userId, shiftData = {}) => {
 
 const cancelShift = async (userId, shiftId) => {
   const profile = await getMyProfile(userId);
-  const result = await driverModel.cancelDriverShiftRequest(shiftId, profile.id);
+  const result = await driverModel.cancelDriverShiftRequest(
+    shiftId,
+    profile.id,
+  );
 
   await driverModel.logDriverActivity({
     actorId: userId,
@@ -1267,7 +1434,10 @@ const getDriverNotifications = async (userId) => {
 };
 
 const markNotificationRead = async (userId, notificationId) => {
-  return await driverModel.markNotificationAsRead(parseInt(notificationId, 10), userId);
+  return await driverModel.markNotificationAsRead(
+    parseInt(notificationId, 10),
+    userId,
+  );
 };
 
 const markAllNotificationsRead = async (userId) => {
@@ -1285,26 +1455,31 @@ const formatActionDescription = (type, payload = {}, tripId, stopId) => {
     case "ARRIVE_STOP":
       return `Đến điểm dừng ${stopId ? `#${stopId}` : ""} (Arrived)`.trim();
     case "RECORD_STOP_EVENT": {
-      const eventName = payload?.event_type || payload?.eventType || "Tiến trình";
+      const eventName =
+        payload?.event_type || payload?.eventType || "Tiến trình";
       const eventMap = {
         LOADING_START: "Bắt đầu bốc hàng (Loading Started)",
         LOADING_DONE: "Bốc hàng xong (Loading Done)",
         UNLOADING_START: "Bắt đầu dỡ hàng (Unloading Started)",
         UNLOADING_DONE: "Dỡ hàng xong (Unloading Done)",
-        DEPARTED: "Xe lăn bánh rời điểm dừng (Left)"
+        DEPARTED: "Xe lăn bánh rời điểm dừng (Left)",
       };
-      return eventMap[eventName] || `Cập nhật trạng thái điểm dừng: ${eventName}`;
+      return (
+        eventMap[eventName] || `Cập nhật trạng thái điểm dừng: ${eventName}`
+      );
     }
     case "RECORD_PICKUP": {
       const seal = payload?.seal_number || payload?.sealNumber || "";
       return `Lấy hàng & Niêm phong seal ${seal ? `#${seal}` : ""} (Picked Up)`.trim();
     }
     case "RECORD_DELIVERY": {
-      const receiver = payload?.receiver_name || payload?.receiverName || "Khách hàng";
+      const receiver =
+        payload?.receiver_name || payload?.receiverName || "Khách hàng";
       return `Giao hàng thành công & Ký nhận POD (${receiver})`;
     }
     case "REFUSE_CARGO": {
-      const reason = payload?.rejection_reason || payload?.reason || "Khách từ chối nhận";
+      const reason =
+        payload?.rejection_reason || payload?.reason || "Khách từ chối nhận";
       return `Người nhận từ chối nhận hàng (Lý do: ${reason})`;
     }
     case "PROPOSE_EXTRA_FEE": {
@@ -1313,7 +1488,8 @@ const formatActionDescription = (type, payload = {}, tripId, stopId) => {
       return `Đề xuất phụ phí phát sinh: ${amount} đ (${feeName})`;
     }
     case "REGISTER_SHIFT": {
-      const date = payload?.date || payload?.work_date || payload?.workDate || "Ngày làm";
+      const date =
+        payload?.date || payload?.work_date || payload?.workDate || "Ngày làm";
       let startStr = payload?.start_time || payload?.startTime || "";
       let endStr = payload?.end_time || payload?.endTime || "";
       if (typeof startStr === "string" && startStr.includes("T")) {
@@ -1331,7 +1507,10 @@ const formatActionDescription = (type, payload = {}, tripId, stopId) => {
       const st = normalizeWeeklyShiftType(payload);
       if (st) {
         const wk = payload?.week_start || date;
-        const label = st === "MORNING" ? "Ca Sáng (08:00 - 17:00)" : "Ca Đêm (17:00 - 08:00 hôm sau)";
+        const label =
+          st === "MORNING"
+            ? "Ca Sáng (08:00 - 17:00)"
+            : "Ca Đêm (17:00 - 08:00 hôm sau)";
         return `Đăng ký ${label} cả tuần bắt đầu ${wk}`;
       }
       const hours = startStr && endStr ? ` (${startStr} - ${endStr})` : "";
@@ -1352,7 +1531,9 @@ const syncOfflineActions = async (userId, actions = []) => {
   }
 
   if (actions.length > 50) {
-    const error = new Error("Đã đạt giới hạn 50 thao tác ngoại tuyến chưa đồng bộ.");
+    const error = new Error(
+      "Đã đạt giới hạn 50 thao tác ngoại tuyến chưa đồng bộ.",
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -1361,8 +1542,13 @@ const syncOfflineActions = async (userId, actions = []) => {
   for (const actionItem of actions) {
     const { type, tripId, stopId, payload = {} } = actionItem || {};
     const label = formatActionDescription(type, payload, tripId, stopId);
-    const clientActionId = payload?.clientActionId || actionItem?.clientActionId;
-    const clientTime = payload?.phoneTime || actionItem?.phoneTime || actionItem?.queuedAt || new Date().toISOString();
+    const clientActionId =
+      payload?.clientActionId || actionItem?.clientActionId;
+    const clientTime =
+      payload?.phoneTime ||
+      actionItem?.phoneTime ||
+      actionItem?.queuedAt ||
+      new Date().toISOString();
 
     try {
       let res;
@@ -1395,7 +1581,10 @@ const syncOfflineActions = async (userId, actions = []) => {
           res = await reportIncident(userId, payload);
           break;
         default:
-          res = { success: false, message: `Loại hành động không hợp lệ: ${type}` };
+          res = {
+            success: false,
+            message: `Loại hành động không hợp lệ: ${type}`,
+          };
       }
       results.push({
         actionId: clientActionId,
@@ -1404,7 +1593,7 @@ const syncOfflineActions = async (userId, actions = []) => {
         status: "SUCCESS",
         clientTime,
         syncedAt: new Date().toISOString(),
-        res
+        res,
       });
     } catch (err) {
       results.push({
@@ -1414,7 +1603,7 @@ const syncOfflineActions = async (userId, actions = []) => {
         status: "FAILED",
         clientTime,
         syncedAt: new Date().toISOString(),
-        error: err.message
+        error: err.message,
       });
     }
   }
@@ -1427,36 +1616,34 @@ const syncOfflineActions = async (userId, actions = []) => {
 
   try {
     // 1. Lưu bản ghi kiểm tra chi tiết các hành động vào activity_logs (Database)
-    const { data: actLog, error: actErr } = await supabase
-      .from("activity_logs")
-      .insert([
-        {
-          actor_id: userId,
-          actor_type: "DRIVER",
-          action: "OFFLINE_SYNC",
-          target_type: "OFFLINE_SYNC",
-          target_id: 0,
-          changes: {
-            totalCount,
-            syncedCount,
-            failedCount,
-            items: results.map((r) => ({
-              actionId: r.actionId,
-              type: r.type,
-              description: r.description,
-              status: r.status,
-              clientTime: r.clientTime,
-              syncedAt: r.syncedAt,
-              error: r.error || null
-            }))
-          },
-          reason: `Đồng bộ ngoại tuyến: ${syncedCount}/${totalCount} thành công (BR-27, MSG39)`
-        }
-      ])
-      .select();
+    const actLog = await prisma.activity_logs.create({
+      data: {
+        actor_id: BigInt(userId),
+        actor_type: "DRIVER",
+        action: "OFFLINE_SYNC",
+        target_type: "OFFLINE_SYNC",
+        target_id: 0n,
+        changes: {
+          totalCount,
+          syncedCount,
+          failedCount,
+          items: results.map((r) => ({
+            actionId: r.actionId,
+            type: r.type,
+            description: r.description,
+            status: r.status,
+            clientTime: r.clientTime,
+            syncedAt: r.syncedAt,
+            error: r.error || null,
+          })),
+        },
+        reason: `Đồng bộ ngoại tuyến: ${syncedCount}/${totalCount} thành công (BR-27, MSG39)`,
+      },
+      select: { id: true },
+    });
 
-    if (!actErr && actLog && actLog[0]) {
-      logId = actLog[0].id;
+    if (actLog) {
+      logId = Number(actLog.id);
     }
   } catch (logErr) {
     console.warn("Failed to insert offline sync activity log:", logErr.message);
@@ -1464,22 +1651,26 @@ const syncOfflineActions = async (userId, actions = []) => {
 
   try {
     // 2. Tạo thông báo hiển thị cho Driver tại Screen 6.5
-    const notifMessage = failedCount === 0
-      ? `Đã đồng bộ thành công ${syncedCount}/${totalCount} hành động ngoại tuyến lên máy chủ (BR-27, MSG39). Bấm để xem chi tiết danh sách.`
-      : `Đồng bộ ngoại tuyến hoàn tất: ${syncedCount}/${totalCount} thành công (${failedCount} thao tác bị lỗi). Bấm để kiểm tra chi tiết.`;
+    const notifMessage =
+      failedCount === 0
+        ? `Đã đồng bộ thành công ${syncedCount}/${totalCount} hành động ngoại tuyến lên máy chủ (BR-27, MSG39). Bấm để xem chi tiết danh sách.`
+        : `Đồng bộ ngoại tuyến hoàn tất: ${syncedCount}/${totalCount} thành công (${failedCount} thao tác bị lỗi). Bấm để kiểm tra chi tiết.`;
 
-    await supabase.from("notifications").insert([
-      {
-        user_account_id: userId,
+    await prisma.notifications.create({
+      data: {
+        user_account_id: BigInt(userId),
         target_type: "OFFLINE_SYNC",
-        target_id: logId,
+        target_id: logId ? BigInt(logId) : null,
         message: notifMessage,
-        created_time: new Date().toISOString(),
-        read_time: null
-      }
-    ]);
+        created_time: new Date(),
+        read_time: null,
+      },
+    });
   } catch (notifErr) {
-    console.warn("Failed to insert offline sync notification:", notifErr.message);
+    console.warn(
+      "Failed to insert offline sync notification:",
+      notifErr.message,
+    );
   }
 
   return {
@@ -1488,7 +1679,7 @@ const syncOfflineActions = async (userId, actions = []) => {
     failedCount,
     totalCount,
     logId,
-    results
+    results,
   };
 };
 
@@ -1499,20 +1690,29 @@ const getSyncLogDetail = async (userId, logId) => {
     throw error;
   }
 
-  const { data, error } = await supabase
-    .from("activity_logs")
-    .select("id, actor_id, action, target_type, changes, reason, created_time")
-    .eq("id", logId)
-    .eq("actor_id", userId)
-    .maybeSingle();
+  const data = await prisma.activity_logs.findFirst({
+    where: {
+      id: BigInt(Number(logId)),
+      actor_id: BigInt(userId),
+    },
+    select: {
+      id: true,
+      actor_id: true,
+      action: true,
+      target_type: true,
+      changes: true,
+      reason: true,
+      created_time: true,
+    },
+  });
 
-  if (error || !data) {
+  if (!data) {
     const err = new Error("Không tìm thấy chi tiết phiên đồng bộ này");
     err.statusCode = 404;
     throw err;
   }
 
-  return data;
+  return serializePrisma(data);
 };
 
 // ==========================================
@@ -1521,7 +1721,9 @@ const getSyncLogDetail = async (userId, logId) => {
 
 const getMyLeaveRequests = async (userId) => {
   const profile = await getMyProfile(userId);
-  const leaveRequests = await leaveModel.getLeaveRequests({ driverProfileId: profile.id });
+  const leaveRequests = await leaveModel.getLeaveRequests({
+    driverProfileId: profile.id,
+  });
   const todayStr = leaveModel.getTodayGMT7Str();
   return {
     leaveRequests,
@@ -1530,13 +1732,22 @@ const getMyLeaveRequests = async (userId) => {
   };
 };
 
-const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}) => {
+const submitSuddenLeaveRequest = async (
+  userId,
+  { dates = [], reason = "" } = {},
+) => {
   const profile = await getMyProfile(userId);
   const rawDates = Array.isArray(dates) ? dates : [];
-  const cleanDates = [...new Set(rawDates.map((d) => String(d).split("T")[0].trim()).filter(Boolean))].sort();
+  const cleanDates = [
+    ...new Set(
+      rawDates.map((d) => String(d).split("T")[0].trim()).filter(Boolean),
+    ),
+  ].sort();
 
   if (cleanDates.length === 0) {
-    const err = new Error("Vui lòng chọn ít nhất 1 ngày sắp tới muốn xin nghỉ.");
+    const err = new Error(
+      "Vui lòng chọn ít nhất 1 ngày sắp tới muốn xin nghỉ.",
+    );
     err.statusCode = 400;
     throw err;
   }
@@ -1550,7 +1761,7 @@ const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}
     }
     if (dStr < todayStr) {
       const err = new Error(
-        `Không thể chọn ngày trong quá khứ (${dStr}). Tài xế chỉ được báo nghỉ từ hôm nay trở đi.`
+        `Không thể chọn ngày trong quá khứ (${dStr}). Tài xế chỉ được báo nghỉ từ hôm nay trở đi.`,
       );
       err.statusCode = 400;
       throw err;
@@ -1563,9 +1774,13 @@ const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}
     try {
       const activeTripRes = await getActiveTrip(userId);
       const ongoingTrip = activeTripRes?.trip;
-      if (ongoingTrip && (ongoingTrip.status === "In Progress" || ongoingTrip.status === "In Transit")) {
+      if (
+        ongoingTrip &&
+        (ongoingTrip.status === "In Progress" ||
+          ongoingTrip.status === "In Transit")
+      ) {
         const err = new Error(
-          `Bạn đang có chuyến xe đang vận chuyển hàng trên đường (${ongoingTrip.trip_code || ongoingTrip.id}). Vui lòng hoàn thành chuyến hoặc vào mục 'Báo sự cố' để điều xe/tài thay thế khẩn cấp tại hiện trường.`
+          `Bạn đang có chuyến xe đang vận chuyển hàng trên đường (${ongoingTrip.trip_code || ongoingTrip.id}). Vui lòng hoàn thành chuyến hoặc vào mục 'Báo sự cố' để điều xe/tài thay thế khẩn cấp tại hiện trường.`,
         );
         err.statusCode = 400;
         throw err;
@@ -1582,7 +1797,9 @@ const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}
     throw err;
   }
 
-  const existing = await leaveModel.getLeaveRequests({ driverProfileId: profile.id });
+  const existing = await leaveModel.getLeaveRequests({
+    driverProfileId: profile.id,
+  });
   const conflictDates = [];
   existing.forEach((reqItem) => {
     if (reqItem.status === "PENDING" || reqItem.status === "APPROVED") {
@@ -1593,13 +1810,16 @@ const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}
   });
   if (conflictDates.length > 0) {
     const err = new Error(
-      `Ngày ${[...new Set(conflictDates)].join(", ")} đã có đơn xin nghỉ đang chờ duyệt hoặc đã được duyệt.`
+      `Ngày ${[...new Set(conflictDates)].join(", ")} đã có đơn xin nghỉ đang chờ duyệt hoặc đã được duyệt.`,
     );
     err.statusCode = 400;
     throw err;
   }
 
-  const affectedTrips = await leaveModel.getDriverAffectedTripsByDates(profile.id, cleanDates);
+  const affectedTrips = await leaveModel.getDriverAffectedTripsByDates(
+    profile.id,
+    cleanDates,
+  );
   const isUrgent = affectedTrips.some((t) => t.is_urgent);
 
   const created = await leaveModel.createLeaveRequest({
@@ -1611,8 +1831,13 @@ const submitSuddenLeaveRequest = async (userId, { dates = [], reason = "" } = {}
     affectedTrips,
   });
 
-  const driverName = profile.user?.full_name || profile.user?.username || `Tài xế #${profile.id}`;
-  const dateDisplay = cleanDates.map((d) => d.split("-").reverse().join("/")).join(", ");
+  const driverName =
+    profile.user?.full_name ||
+    profile.user?.username ||
+    `Tài xế #${profile.id}`;
+  const dateDisplay = cleanDates
+    .map((d) => d.split("-").reverse().join("/"))
+    .join(", ");
   const urgentPrefix = isUrgent ? "[KHẨN CẤP / CỰC GẤP] " : "";
   const tripSummaryMsg =
     affectedTrips.length > 0
@@ -1666,5 +1891,5 @@ module.exports = {
   markNotificationRead,
   markAllNotificationsRead,
   syncOfflineActions,
-  getSyncLogDetail
+  getSyncLogDetail,
 };

@@ -11,81 +11,7 @@ import { getCoordsFromAddress } from '../../data/dispatcherPresets';
 import { useAuth } from '../../providers/AuthProvider';
 import AccessDenied from '../../components/common/AccessDenied';
 
-const SAFE_VIETMAP_TILE_URL =
-  VIETMAP_TILE_URL ||
-  'https://maps.vietmap.vn/api/tm/{z}/{x}/{y}@2x.png?apikey=6ad933d27ec1ae2fb5a5fd36902c817d1c912263116e4644';
-
-// Dữ liệu mặc định dự phòng khi chưa có chuyến đang chạy
-const fallbackTrucks = [
-  {
-    id: '29H-995.72',
-    trip_code: 'TRIP-9993',
-    route: 'KCN Tiên Sơn -> Ga Nội Bài NCTS',
-    pickup: 'KCN Tiên Sơn',
-    dropoff: 'Ga Nội Bài NCTS',
-    status: 'Sự cố (Hỏng xe)',
-    time: 'Cập nhật 2 phút trước',
-    progress: 45,
-    lat: 21.1963,
-    lng: 105.9525,
-    speed: '0km/h',
-    eta_live: 'Tạm dừng xử lý',
-    traffic_status: 'CONGESTED',
-    traffic_note: 'Xe dừng khẩn cấp trên QL.18',
-    has_incident: true
-  },
-  {
-    id: '29H-767.99',
-    trip_code: 'TRIP-8821',
-    route: 'Nội Bài -> Cụm CN Lai Xá (Lô 2)',
-    pickup: 'Kho ALS Nội Bài',
-    dropoff: 'Cụm CN Lai Xá, Hoài Đức',
-    status: 'Đang di chuyển',
-    time: 'Cập nhật 1 phút trước',
-    progress: 65,
-    lat: 21.0785,
-    lng: 105.7442,
-    speed: '52km/h',
-    eta_live: 'Dự kiến đến sau 22 phút',
-    traffic_status: 'SLOW',
-    traffic_note: 'Đông xe đoạn Cầu Thăng Long - Phạm Văn Đồng',
-    has_incident: false
-  },
-  {
-    id: '29C-456.78',
-    trip_code: 'TRIP-7712',
-    route: 'Yên Phong -> Cảng Hải Phòng',
-    pickup: 'KCN Yên Phong, Bắc Ninh',
-    dropoff: 'Cảng Đình Vũ, Hải Phòng',
-    status: 'Sắp đến',
-    time: 'Cập nhật 30 giây trước',
-    progress: 90,
-    lat: 20.8649,
-    lng: 106.6581,
-    speed: '58km/h',
-    eta_live: 'Dự kiến đến sau 12 phút',
-    traffic_status: 'SMOOTH',
-    traffic_note: 'QL.18 & Cao tốc HN-HP thông thoáng',
-    has_incident: false
-  },
-  {
-    id: '29A-112.34',
-    trip_code: 'TRIP-6610',
-    route: 'ALS Nội Bài -> Hà Nội',
-    pickup: 'Kho ALS Nội Bài',
-    dropoff: 'KCN Quang Minh, Mê Linh',
-    status: 'Đang bốc dỡ',
-    time: 'Cập nhật 5 phút trước',
-    progress: 20,
-    lat: 21.0285,
-    lng: 105.8542,
-    speed: '0km/h',
-    eta_live: 'Đang bốc hàng (ETA +35p)',
-    traffic_status: 'SMOOTH',
-    traffic_note: 'Võ Văn Kiệt thông thoáng',
-    has_incident: false
-  }
-];
+const SAFE_VIETMAP_TILE_URL = VIETMAP_TILE_URL;
 
 // Custom Truck Marker Icon using DivIcon
 const createCustomIcon = (truck) => {
@@ -134,12 +60,53 @@ const TrackingMap = () => {
   const allowed = !user || Number(user.role_id) === 1 || Number(user.role_id) === 3 || (hasPermission && hasPermission('TRIP_MONITOR'));
   const [mapCenter, setMapCenter] = useState([21.1285, 105.8542]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTrucks, setActiveTrucks] = useState(fallbackTrucks);
+  const [activeTrucks, setActiveTrucks] = useState([]);
   const [selectedTruck, setSelectedTruck] = useState(null);
   const [selectedRouteData, setSelectedRouteData] = useState(null);
   const [incidents, setIncidents] = useState([]);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const handleSelectTruck = useCallback(async (truck) => {
+    setSelectedTruck(truck);
+    setMapCenter([truck.lat, truck.lng]);
+    try {
+      const pCoords = getCoordsFromAddress(truck.pickup || '', 'A') || { lat: 21.2187, lng: 105.8042 };
+      const dCoords = getCoordsFromAddress(truck.dropoff || '', 'B') || { lat: 21.1215, lng: 105.9754 };
+      const routeRes = await fetchShortestRoadRoute([
+        pCoords,
+        { lat: truck.lat, lng: truck.lng },
+        dCoords
+      ]);
+      if (routeRes?.success) {
+        setSelectedRouteData(routeRes);
+        const summary = routeRes.trafficSummary;
+        if (summary) {
+          setActiveTrucks((prev) =>
+            prev.map((item) =>
+              item.trip_code === truck.trip_code
+                ? {
+                    ...item,
+                    traffic_status: item.has_incident ? 'CONGESTED' : (summary.status || 'SMOOTH'),
+                    traffic_note: item.has_incident
+                      ? item.traffic_note
+                      : (summary.statusLabel || 'Dữ liệu VietMap v4'),
+                    speed: item.has_incident || item.speed === '0km/h'
+                      ? item.speed
+                      : `${summary.avgSpeedKmh || 40}km/h`,
+                    eta_live: item.has_incident
+                      ? item.eta_live
+                      : (routeRes.etaText ? `ETA ${routeRes.etaText} (~${routeRes.durationMins} phút)` : item.eta_live)
+                  }
+                : item
+            )
+          );
+        }
+      }
+    } catch {
+      // Ignore routing preview errors
+    }
+  }, []);
 
   const loadTrackingData = useCallback(async () => {
     if (!allowed) {
@@ -163,19 +130,17 @@ const TrackingMap = () => {
           const hasInc = Boolean(t.has_incident || pendingInc);
           const lat = t.current_coords?.lat || (21.18 - idx * 0.035);
           const lng = t.current_coords?.lng || (105.82 + idx * 0.045);
-          const remMins = Math.max(8, Math.round((100 - (t.progress || 35)) * 0.65));
-          const etaDate = new Date(Date.now() + remMins * 60000);
-          const etaClock = `${String(etaDate.getHours()).padStart(2, '0')}:${String(etaDate.getMinutes()).padStart(2, '0')}`;
+          const hasSpeed = t.speed_kmh !== undefined && t.speed_kmh !== null;
 
           return {
-            id: t.plate || `29H-${100 + idx}.88`,
+            id: t.plate || `XE-${t.raw_id || idx + 1}`,
             trip_code: t.id,
             raw_trip_id: t.raw_id,
             driver_name: t.driver_name,
             driver_phone: t.driver_phone,
             orders: t.orders || [],
             pickup: t.pickup || 'Kho ALS Nội Bài',
-            dropoff: t.dropoff || 'KCN Yên Phong, Bắc Ninh',
+            dropoff: t.dropoff || 'Điểm giao hàng',
             route: `${t.pickup} -> ${t.dropoff}`,
             status: hasInc
               ? `Sự cố (${pendingInc?.type || 'Hiện trường'})`
@@ -185,21 +150,23 @@ const TrackingMap = () => {
                   ? 'Sắp đến'
                   : 'Đang di chuyển',
             time: 'Cập nhật tức thời (VietMap GPS)',
-            progress: t.progress || 35,
+            progress: t.progress || 0,
             lat,
             lng,
-            speed: hasInc || t.status === 'COMPLETED' ? '0km/h' : `${46 + (idx % 4) * 4}km/h`,
+            speed: hasInc || t.status === 'COMPLETED'
+              ? '0km/h'
+              : hasSpeed
+                ? `${Math.round(Number(t.speed_kmh))}km/h`
+                : '--',
             eta_live: hasInc
               ? 'Tạm hoãn (Đang xử lý sự cố)'
               : t.status === 'COMPLETED'
                 ? 'Đã đến điểm giao'
-                : `ETA ${etaClock} (còn ~${remMins} phút)`,
-            traffic_status: hasInc ? 'CONGESTED' : idx % 3 === 1 ? 'SLOW' : 'SMOOTH',
+                : t.eta_text || 'Đang tính ETA VietMap v4...',
+            traffic_status: hasInc ? 'CONGESTED' : 'SMOOTH',
             traffic_note: hasInc
-              ? 'Đang dừng khẩn cấp trên tuyến'
-              : idx % 3 === 1
-                ? 'Đông xe đoạn QL.18 / Võ Văn Kiệt (+6p)'
-                : 'Tuyến đường thông thoáng',
+              ? 'Đang dừng xử lý sự cố trên tuyến'
+              : 'Chọn xe để tải mật độ giao thông VietMap v4',
             has_incident: hasInc,
             incident: pendingInc || (hasInc ? {
               id: t.incident_id || `INC-${t.raw_id || 9}`,
@@ -214,38 +181,29 @@ const TrackingMap = () => {
           };
         });
         setActiveTrucks(mapped);
-        if (!selectedTruck && mapped.length > 0) {
-          handleSelectTruck(mapped[0]);
+        if (mapped.length > 0) {
+          await handleSelectTruck(mapped[0]);
         }
+      } else {
+        setActiveTrucks([]);
       }
     } catch (err) {
       console.warn('loadTrackingData fallback:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  const handleSelectTruck = async (truck) => {
-    setSelectedTruck(truck);
-    setMapCenter([truck.lat, truck.lng]);
-    try {
-      const pCoords = getCoordsFromAddress(truck.pickup || '', 'A') || { lat: 21.2187, lng: 105.8042 };
-      const dCoords = getCoordsFromAddress(truck.dropoff || '', 'B') || { lat: 21.1215, lng: 105.9754 };
-      const routeRes = await fetchShortestRoadRoute([
-        pCoords,
-        { lat: truck.lat, lng: truck.lng },
-        dCoords
-      ]);
-      if (routeRes?.success) {
-        setSelectedRouteData(routeRes);
-      }
-    } catch (e) {
-      // Ignore routing preview errors
-    }
-  };
+  }, [allowed, handleSelectTruck]);
 
   useEffect(() => {
-    loadTrackingData();
+    let active = true;
+    const initLoad = async () => {
+      if (!active) return;
+      await loadTrackingData();
+    };
+    initLoad();
+    return () => {
+      active = false;
+    };
   }, [loadTrackingData]);
 
   const handleResolveIncident = async (incidentId, payload) => {

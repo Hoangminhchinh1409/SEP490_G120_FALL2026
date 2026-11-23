@@ -5,9 +5,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { VIETMAP_TILE_URL } from '../../utils/roadRouting';
 
-const SAFE_VIETMAP_TILE_URL =
-  VIETMAP_TILE_URL ||
-  'https://maps.vietmap.vn/api/tm/{z}/{x}/{y}@2x.png?apikey=6ad933d27ec1ae2fb5a5fd36902c817d1c912263116e4644';
+const SAFE_VIETMAP_TILE_URL = VIETMAP_TILE_URL;
 
 // Component tự động pan, fitBounds & invalidateSize an toàn
 function MapBoundsUpdater({ pickupCoords, deliveryCoords, routePolyline }) {

@@ -1,6 +1,7 @@
 const tripModel = require("../models/tripModel");
 const fleetService = require("./fleetService");
 const leaveModel = require("../models/leaveModel");
+const prisma = require("../config/prisma");
 const { getOrCreateLocation } = require("./orderHelperService");
 const supabase = require("../config/supabase");
 
@@ -393,7 +394,6 @@ const formatTrip = (trip) => {
     orders: orderCodes,
     orders_data: uniqueOrders.map((o) => ({
       order_id: o.order_code,
-      hawb_code: o.hawb_number || o.order_code,
       customer: o.customer?.company_name || customerName,
       weight: o.cargo?.actual_weight_kg || 700,
       package_count: o.cargo?.quantity || 4,
@@ -625,7 +625,7 @@ const createTrip = async (payload, userId = 1) => {
       vendor_name:
         vendor_name || matchedVendor?.company_name || "Nhà xe đối tác 3PL",
       vendor_tracking_code,
-      status: "HANDED_OVER_TO_VENDOR",
+      status: "HANDED_OVER_VENDOR",
       order_id: resolvedOrderId,
       order_code: matchedOrder?.order_code || order_code,
     };
@@ -657,7 +657,10 @@ const createTrip = async (payload, userId = 1) => {
     const todayVnStr = nowVn.toISOString().split("T")[0];
     const todayUtcStr = new Date().toISOString().split("T")[0];
     const targetDates = [...new Set([todayVnStr, todayUtcStr])];
+    const targetDateObjs = targetDates.map((d) => new Date(`${d}T00:00:00.000Z`));
+    const bigDriverId = BigInt(Number(driverId));
 
+<<<<<<< Updated upstream
     const { data: shifts } = await supabase
       .from("driver_shifts")
       .select("id, date, status, start_time, end_time")
@@ -679,12 +682,38 @@ const createTrip = async (payload, userId = 1) => {
           })
           .eq("id", requestedShift.id);
         approvedShift = { ...requestedShift, status: "Approved" };
+=======
+    const shifts = await prisma.driver_shifts.findMany({
+      where: {
+        driver_id: bigDriverId,
+        date: { in: targetDateObjs },
+      },
+      select: { id: true, date: true, status: true, start_time: true, end_time: true },
+    });
+
+    let approvedShift = shifts?.find((s) => s.status === 'Approved');
+
+    // Nếu tài xế đã đăng ký ca Requested trong ngày, tự động duyệt ca (BR-07) khi Điều phối viên gán vào chuyến xe
+    if (!approvedShift) {
+      const requestedShift = shifts?.find((s) => s.status === 'Requested');
+      if (requestedShift) {
+        await prisma.driver_shifts.update({
+          where: { id: requestedShift.id },
+          data: {
+            status: 'Approved',
+            reviewed_at: new Date(),
+            note: 'Tự động duyệt ca khi Điều phối viên gán chuyến xe (BR-07)',
+          },
+        });
+        approvedShift = { ...requestedShift, status: 'Approved' };
+>>>>>>> Stashed changes
       }
     }
 
     // Nếu tài xế chưa có ca nào trong ngày (môi trường test/demo hoặc phát sinh gấp)
     if (!approvedShift) {
       try {
+<<<<<<< Updated upstream
         const { data: newShift } = await supabase
           .from("driver_shifts")
           .insert([
@@ -699,6 +728,18 @@ const createTrip = async (payload, userId = 1) => {
           ])
           .select()
           .maybeSingle();
+=======
+        const newShift = await prisma.driver_shifts.create({
+          data: {
+            driver_id: bigDriverId,
+            date: new Date(`${todayVnStr}T00:00:00.000Z`),
+            status: 'Approved',
+            start_time: new Date(`${todayVnStr}T06:00:00+07:00`),
+            end_time: new Date(`${todayVnStr}T22:00:00+07:00`),
+            note: 'Ca làm việc tạo tự động cho chuyến xe',
+          },
+        });
+>>>>>>> Stashed changes
 
         if (newShift) {
           approvedShift = newShift;
@@ -836,16 +877,15 @@ const createTrip = async (payload, userId = 1) => {
   if (targetDriverIds.length > 0 && allocation_type !== "VENDOR") {
     try {
       const driverModel = require("../models/driverModel");
-      const supabase = require("../config/supabase");
+      const prisma = require("../config/prisma");
       for (const dId of targetDriverIds) {
-        const { data: driverProf } = await supabase
-          .from("driver_profiles")
-          .select("user_account_id")
-          .eq("id", dId)
-          .single();
+        const driverProf = await prisma.driver_profiles.findUnique({
+          where: { id: BigInt(Number(dId)) },
+          select: { user_account_id: true },
+        });
         if (driverProf?.user_account_id) {
           await driverModel.createSystemNotification({
-            userAccountId: driverProf.user_account_id,
+            userAccountId: Number(driverProf.user_account_id),
             targetType: "TRIP",
             targetId: tripRecord?.id,
             message: `Bạn được điều phối chuyến xe mới ${tripCode} (${cleanPlate || "Xe tải"}). Hãy kiểm tra lộ trình và sẵn sàng nhận chuyến! (MSG17)`,

@@ -16,10 +16,12 @@ export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommen
   const [aiInsight, setAiInsight] = useState(null);
 
   useEffect(() => {
-    if (open && order) {
-      const desc = `${order.cargo_name || currentCargo || 'Hàng hóa'} (${order.cargo_type || 'GENERAL'}), SL: ${order.package_count || 1} ${order.package_unit || 'kiện'}, nặng ${order.weight || order.actual_weight_kg || 0} kg, lộ trình từ ${order.pickup_address || order.pickup || 'Nội Bài'} đi ${order.delivery_address || order.dropoff || 'kho khách hàng'}`;
+    if (!open || !order) return undefined;
+    const desc = `${order.cargo_name || currentCargo || 'Hàng hóa'} (${order.cargo_type || 'GENERAL'}), SL: ${order.package_count || 1} ${order.package_unit || 'kiện'}, nặng ${order.weight || order.actual_weight_kg || 0} kg, lộ trình từ ${order.pickup_address || order.pickup || 'Nội Bài'} đi ${order.delivery_address || order.dropoff || 'kho khách hàng'}`;
+    const timerId = setTimeout(() => {
       setCargoDesc(desc);
-    }
+    }, 0);
+    return () => clearTimeout(timerId);
   }, [open, order, currentCargo]);
 
   const handleSelectPresetCategory = (catKey) => {

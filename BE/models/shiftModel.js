@@ -1,81 +1,81 @@
-const supabase = require("../config/supabase");
+const prisma = require("../config/prisma");
+const { serializePrisma, toBigInt, formatDateOnly } = require("../utils/prismaHelper");
+
+const toDateObj = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return dateStr;
+  const clean = String(dateStr).split("T")[0].trim();
+  return new Date(`${clean}T00:00:00.000Z`);
+};
+
+const formatShiftRow = (row) => {
+  if (!row) return null;
+  const s = serializePrisma(row);
+  return {
+    ...s,
+    date: formatDateOnly(row.date),
+  };
+};
 
 // ==========================================
 // DRIVER SHIFTS
 // ==========================================
 
-const getDriverShifts = async (
-  driverProfileId,
-  { from = null, to = null } = {},
-) => {
-  let query = supabase
-    .from("driver_shifts")
-    .select(
-      `
-      id,
-      driver_id,
-      date,
-      start_time,
-      end_time,
-      status,
-      note,
-      rejection_reason,
-      registered_by,
-      reviewed_by,
-      reviewed_at,
-      created_at
-    `,
-    )
-    .eq("driver_id", driverProfileId)
-    .order("date", { ascending: true })
-    .order("start_time", { ascending: true });
-
-  if (from) {
-    query = query.gte("date", from);
-  }
-  if (to) {
-    query = query.lte("date", to);
+const getDriverShifts = async (driverProfileId, { from = null, to = null } = {}) => {
+  const where = { driver_id: toBigInt(driverProfileId) };
+  if (from || to) {
+    where.date = {};
+    if (from) where.date.gte = toDateObj(from);
+    if (to) where.date.lte = toDateObj(to);
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error("getDriverShifts error:", error);
-    throw error;
-  }
-  return data || [];
+  const rows = await prisma.driver_shifts.findMany({
+    where,
+    select: {
+      id: true,
+      driver_id: true,
+      date: true,
+      start_time: true,
+      end_time: true,
+      status: true,
+      note: true,
+      rejection_reason: true,
+      registered_by: true,
+      reviewed_by: true,
+      reviewed_at: true,
+      created_at: true,
+    },
+    orderBy: [{ date: "asc" }, { start_time: "asc" }],
+  });
+
+  return rows.map(formatShiftRow);
 };
 
 const checkShiftOverlap = async (driverProfileId, date, startTime, endTime, excludeShiftId = null) => {
-  // Tìm các ca của tài xế vào ngày đó với trạng thái Requested hoặc Approved
-  let query = supabase
-    .from("driver_shifts")
-    .select("id, start_time, end_time, status")
-    .eq("driver_id", driverProfileId)
-    .eq("date", date)
-    .in("status", ["Requested", "Approved"]);
-
+  const where = {
+    driver_id: toBigInt(driverProfileId),
+    date: toDateObj(date),
+    status: { in: ["Requested", "Approved"] },
+  };
   if (excludeShiftId) {
-    query = query.neq("id", excludeShiftId);
+    where.id = { not: toBigInt(excludeShiftId) };
   }
 
-  const { data, error } = await query;
+  const rows = await prisma.driver_shifts.findMany({
+    where,
+    select: { id: true, start_time: true, end_time: true, status: true },
+  });
 
-  if (error) {
-    console.error("checkShiftOverlap error:", error);
-    throw error;
-  }
-
-  if (!data || data.length === 0) return false;
+  if (!rows || rows.length === 0) return false;
 
   const newStart = new Date(startTime).getTime();
   const newEnd = new Date(endTime).getTime();
 
-  for (const s of data) {
+  for (const s of rows) {
     const existingStart = new Date(s.start_time).getTime();
     const existingEnd = new Date(s.end_time).getTime();
-    // Giao thoa thời gian: max(start) < min(end)
     if (Math.max(newStart, existingStart) < Math.min(newEnd, existingEnd)) {
-      return true; // Bị trùng
+      return true;
     }
   }
 
@@ -90,291 +90,269 @@ const createDriverShift = async ({
   note = null,
   registeredBy,
 }) => {
-  const payload = {
-    driver_id: driverId,
-    date,
-    start_time: startTime,
-    end_time: endTime,
-    note,
-    status: "Requested",
-    registered_by: registeredBy,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
+  const now = new Date();
+  const created = await prisma.driver_shifts.create({
+    data: {
+      driver_id: toBigInt(driverId),
+      date: toDateObj(date),
+      start_time: new Date(startTime),
+      end_time: new Date(endTime),
+      note,
+      status: "Requested",
+      registered_by: toBigInt(registeredBy),
+      created_at: now,
+      updated_at: now,
+    },
+  });
+  return formatShiftRow(created);
+};
 
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .insert([payload])
-    .select();
-
-  if (error) {
-    console.error("createDriverShift error:", error);
-    throw error;
-  }
-  return data && data.length > 0 ? data[0]: null;
+const SHIFT_WITH_DRIVER_SELECT = {
+  id: true,
+  driver_id: true,
+  date: true,
+  start_time: true,
+  end_time: true,
+  status: true,
+  note: true,
+  rejection_reason: true,
+  created_by: true,
+  registered_by: true,
+  reviewed_by: true,
+  reviewed_at: true,
+  created_at: true,
+  updated_at: true,
+  driver_profiles: {
+    select: {
+      id: true,
+      user_account_id: true,
+      license_number: true,
+      license_class: true,
+      users: {
+        select: {
+          id: true,
+          full_name: true,
+          phone: true,
+          username: true,
+        },
+      },
+    },
+  },
 };
 
 const getShiftsWithDriverInfo = async ({ from = null, to = null, status = null, driverId = null } = {}) => {
-  let query = supabase
-    .from("driver_shifts")
-    .select(`
-      id,
-      driver_id,
-      date,
-      start_time,
-      end_time,
-      status,
-      note,
-      rejection_reason,
-      created_by,
-      registered_by,
-      reviewed_by,
-      reviewed_at,
-      created_at,
-      updated_at,
-      driver_profiles (
-        id,
-        user_account_id,
-        license_number,
-        license_class,
-        users (
-          id,
-          full_name,
-          phone,
-          username
-        )
-      )
-    `)
-    .order("date", { ascending: true })
-    .order("start_time", { ascending: true });
-
-  if (from) query = query.gte("date", from);
-  if (to) query = query.lte("date", to);
-  if (status && status !== "ALL") query = query.eq("status", status);
-  if (driverId) query = query.eq("driver_id", driverId);
-
-  const { data, error } = await query;
-  if (error) {
-    console.error("getShiftsWithDriverInfo error:", error);
-    throw error;
+  const where = {};
+  if (from || to) {
+    where.date = {};
+    if (from) where.date.gte = toDateObj(from);
+    if (to) where.date.lte = toDateObj(to);
   }
-  return data || [];
+  if (status && status !== "ALL") where.status = status;
+  if (driverId) where.driver_id = toBigInt(driverId);
+
+  const rows = await prisma.driver_shifts.findMany({
+    where,
+    select: SHIFT_WITH_DRIVER_SELECT,
+    orderBy: [{ date: "asc" }, { start_time: "asc" }],
+  });
+  return rows.map(formatShiftRow);
 };
 
 const getShiftById = async (id) => {
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .select(`
-      id,
-      driver_id,
-      date,
-      start_time,
-      end_time,
-      status,
-      note,
-      rejection_reason,
-      created_by,
-      registered_by,
-      reviewed_by,
-      reviewed_at,
-      created_at,
-      updated_at,
-      driver_profiles (
-        id,
-        user_account_id,
-        license_number,
-        license_class,
-        users (
-          id,
-          full_name,
-          phone,
-          username
-        )
-      )
-    `)
-    .eq("id", id)
-    .single();
-
-  if (error) {
-    console.error("getShiftById error:", error);
-    return null;
-  }
-  return data;
+  const shiftId = toBigInt(id);
+  if (shiftId === null) return null;
+  const row = await prisma.driver_shifts.findUnique({
+    where: { id: shiftId },
+    select: SHIFT_WITH_DRIVER_SELECT,
+  });
+  return formatShiftRow(row);
 };
 
 const insertShiftRecord = async (shiftData) => {
-  const payload = {
-    ...shiftData,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+  const now = new Date();
+  const dataPayload = {
+    driver_id: toBigInt(shiftData.driver_id),
+    date: toDateObj(shiftData.date),
+    start_time: new Date(shiftData.start_time),
+    end_time: new Date(shiftData.end_time),
+    status: shiftData.status || "Requested",
+    note: shiftData.note ?? null,
+    rejection_reason: shiftData.rejection_reason ?? null,
+    created_by: toBigInt(shiftData.created_by),
+    registered_by: toBigInt(shiftData.registered_by),
+    reviewed_by: toBigInt(shiftData.reviewed_by),
+    reviewed_at: shiftData.reviewed_at ? new Date(shiftData.reviewed_at) : null,
+    created_at: now,
+    updated_at: now,
   };
 
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .insert([payload])
-    .select(`
-      *,
-      driver_profiles (
-        id,
-        user_account_id,
-        license_number,
-        license_class,
-        users (full_name, phone, username)
-      )
-    `)
-    .single();
-
-  if (error) {
-    console.error("insertShiftRecord error:", error);
-    throw error;
-  }
-  return data;
+  const row = await prisma.driver_shifts.create({
+    data: dataPayload,
+    select: SHIFT_WITH_DRIVER_SELECT,
+  });
+  return formatShiftRow(row);
 };
 
 const updateDriverShift = async (id, updateFields) => {
-  const payload = {
-    ...updateFields,
-    updated_at: new Date().toISOString(),
-  };
-
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .update(payload)
-    .eq("id", id)
-    .select(`
-      *,
-      driver_profiles (
-        id,
-        user_account_id,
-        license_number,
-        license_class,
-        users (full_name, phone, username)
-      )
-    `)
-    .single();
-
-  if (error) {
-    console.error("updateDriverShift error:", error);
-    throw error;
+  const dataPayload = { updated_at: new Date() };
+  if (updateFields.driver_id !== undefined) dataPayload.driver_id = toBigInt(updateFields.driver_id);
+  if (updateFields.date !== undefined) dataPayload.date = toDateObj(updateFields.date);
+  if (updateFields.start_time !== undefined) dataPayload.start_time = new Date(updateFields.start_time);
+  if (updateFields.end_time !== undefined) dataPayload.end_time = new Date(updateFields.end_time);
+  if (updateFields.status !== undefined) dataPayload.status = updateFields.status;
+  if (updateFields.note !== undefined) dataPayload.note = updateFields.note;
+  if (updateFields.rejection_reason !== undefined) dataPayload.rejection_reason = updateFields.rejection_reason;
+  if (updateFields.registered_by !== undefined) dataPayload.registered_by = toBigInt(updateFields.registered_by);
+  if (updateFields.reviewed_by !== undefined) dataPayload.reviewed_by = toBigInt(updateFields.reviewed_by);
+  if (updateFields.reviewed_at !== undefined) {
+    dataPayload.reviewed_at = updateFields.reviewed_at ? new Date(updateFields.reviewed_at) : null;
   }
-  return data;
+
+  const row = await prisma.driver_shifts.update({
+    where: { id: toBigInt(id) },
+    data: dataPayload,
+    select: SHIFT_WITH_DRIVER_SELECT,
+  });
+  return formatShiftRow(row);
 };
 
 const deleteDriverShift = async (id) => {
-  const { error } = await supabase
-    .from("driver_shifts")
-    .delete()
-    .eq("id", id);
-
-  if (error) {
-    console.error("deleteDriverShift error:", error);
-    throw error;
-  }
+  await prisma.driver_shifts.delete({
+    where: { id: toBigInt(id) },
+  });
   return true;
 };
 
 const calculateDriverDailyHours = async (driverProfileId, date) => {
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .select("start_time, end_time")
-    .eq("driver_id", driverProfileId)
-    .eq("date", date)
-    .eq("status", "Approved");
+  try {
+    const rows = await prisma.driver_shifts.findMany({
+      where: {
+        driver_id: toBigInt(driverProfileId),
+        date: toDateObj(date),
+        status: "Approved",
+      },
+      select: { start_time: true, end_time: true },
+    });
 
-  if (error) {
+    let totalHours = 0;
+    (rows || []).forEach((sh) => {
+      try {
+        const diff = (new Date(sh.end_time) - new Date(sh.start_time)) / (1000 * 60 * 60);
+        if (diff > 0) totalHours += diff;
+      } catch {
+        // ignore
+      }
+    });
+    return Number(totalHours.toFixed(1));
+  } catch (error) {
     console.error("calculateDriverDailyHours error:", error);
     return 0;
   }
-
-  let totalHours = 0;
-  (data || []).forEach((sh) => {
-    try {
-      const diff = (new Date(sh.end_time) - new Date(sh.start_time)) / (1000 * 60 * 60);
-      if (diff > 0) totalHours += diff;
-    } catch {
-      // ignore
-    }
-  });
-
-  return Number(totalHours.toFixed(1));
 };
 
 const bulkInsertDriverShifts = async (shiftPayloads) => {
   if (!Array.isArray(shiftPayloads) || shiftPayloads.length === 0) return [];
-  const nowIso = new Date().toISOString();
-  const rows = shiftPayloads.map((p) => ({
-    ...p,
-    created_at: p.created_at || nowIso,
-    updated_at: p.updated_at || nowIso,
-  }));
+  const now = new Date();
 
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .insert(rows)
-    .select();
-
-  if (error) {
-    console.error("bulkInsertDriverShifts error:", error);
-    throw error;
-  }
-  return data || [];
+  const created = await prisma.$transaction(
+    shiftPayloads.map((p) =>
+      prisma.driver_shifts.create({
+        data: {
+          driver_id: toBigInt(p.driver_id),
+          date: toDateObj(p.date),
+          start_time: new Date(p.start_time),
+          end_time: new Date(p.end_time),
+          status: p.status || "Requested",
+          note: p.note ?? null,
+          rejection_reason: p.rejection_reason ?? null,
+          created_by: toBigInt(p.created_by),
+          registered_by: toBigInt(p.registered_by),
+          reviewed_by: toBigInt(p.reviewed_by),
+          reviewed_at: p.reviewed_at ? new Date(p.reviewed_at) : null,
+          created_at: p.created_at ? new Date(p.created_at) : now,
+          updated_at: p.updated_at ? new Date(p.updated_at) : now,
+        },
+      })
+    )
+  );
+  return created.map(formatShiftRow);
 };
 
 const getShiftsInRange = async (driverProfileId, startDate, endDate) => {
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .select("id, driver_id, date, start_time, end_time, status, note, registered_by, created_by")
-    .eq("driver_id", driverProfileId)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .in("status", ["Requested", "Approved"]);
-
-  if (error) {
-    console.error("getShiftsInRange error:", error);
-    throw error;
-  }
-  return data || [];
+  const rows = await prisma.driver_shifts.findMany({
+    where: {
+      driver_id: toBigInt(driverProfileId),
+      date: {
+        gte: toDateObj(startDate),
+        lte: toDateObj(endDate),
+      },
+      status: { in: ["Requested", "Approved"] },
+    },
+    select: {
+      id: true,
+      driver_id: true,
+      date: true,
+      start_time: true,
+      end_time: true,
+      status: true,
+      note: true,
+      registered_by: true,
+      created_by: true,
+    },
+  });
+  return rows.map(formatShiftRow);
 };
 
 const getAllActiveDriverProfiles = async () => {
-  const { data, error } = await supabase
-    .from("driver_profiles")
-    .select(`
-      id,
-      user_account_id,
-      status,
-      users (
-        id,
-        full_name,
-        username,
-        status
-      )
-    `)
-    .not("status", "in", '("INACTIVE","Inactive","LOCKED","Locked","Suspended","SUSPENDED")');
+  const rows = await prisma.driver_profiles.findMany({
+    where: {
+      status: {
+        notIn: ["INACTIVE", "Inactive", "LOCKED", "Locked", "Suspended", "SUSPENDED"],
+      },
+    },
+    select: {
+      id: true,
+      user_account_id: true,
+      status: true,
+      users: {
+        select: {
+          id: true,
+          full_name: true,
+          username: true,
+          status: true,
+        },
+      },
+    },
+  });
 
-  if (error) {
-    console.error("getAllActiveDriverProfiles error:", error);
-    throw error;
-  }
-  return (data || []).filter((d) => {
+  return serializePrisma(rows).filter((d) => {
     const uStatus = String(d.users?.status || "ACTIVE").toUpperCase();
     return uStatus !== "INACTIVE" && uStatus !== "LOCKED";
   });
 };
 
 const getAllShiftsBetweenDates = async (fromDate, toDate) => {
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .select("id, driver_id, date, start_time, end_time, status, note, registered_by, created_by")
-    .gte("date", fromDate)
-    .lte("date", toDate)
-    .in("status", ["Requested", "Approved"]);
-
-  if (error) {
-    console.error("getAllShiftsBetweenDates error:", error);
-    throw error;
-  }
-  return data || [];
+  const rows = await prisma.driver_shifts.findMany({
+    where: {
+      date: {
+        gte: toDateObj(fromDate),
+        lte: toDateObj(toDate),
+      },
+      status: { in: ["Requested", "Approved"] },
+    },
+    select: {
+      id: true,
+      driver_id: true,
+      date: true,
+      start_time: true,
+      end_time: true,
+      status: true,
+      note: true,
+      registered_by: true,
+      created_by: true,
+    },
+  });
+  return rows.map(formatShiftRow);
 };
 
 const getWeekMondaySundayFromDateStr = (dateStr) => {
@@ -391,14 +369,15 @@ const getWeekMondaySundayFromDateStr = (dateStr) => {
 };
 
 const cancelDriverShiftRequest = async (shiftId, driverProfileId) => {
-  const { data: existing, error: findError } = await supabase
-    .from("driver_shifts")
-    .select("id, status, driver_id, date, note, registered_by")
-    .eq("id", shiftId)
-    .eq("driver_id", driverProfileId)
-    .single();
+  const existing = await prisma.driver_shifts.findFirst({
+    where: {
+      id: toBigInt(shiftId),
+      driver_id: toBigInt(driverProfileId),
+    },
+    select: { id: true, status: true, driver_id: true, date: true, note: true, registered_by: true },
+  });
 
-  if (findError || !existing) {
+  if (!existing) {
     throw new Error("Không tìm thấy ca làm việc hoặc bạn không có quyền hủy.");
   }
 
@@ -416,7 +395,7 @@ const cancelDriverShiftRequest = async (shiftId, driverProfileId) => {
     throw new Error("Chỉ có thể hủy ca làm việc đang ở trạng thái Chờ duyệt.");
   }
 
-  const { weekStart, weekEnd } = getWeekMondaySundayFromDateStr(existing.date);
+  const { weekStart, weekEnd } = getWeekMondaySundayFromDateStr(formatDateOnly(existing.date));
   const weekShifts = await getShiftsInRange(driverProfileId, weekStart, weekEnd);
   const hasLockedShift = weekShifts.some(
     (sh) =>
@@ -430,57 +409,57 @@ const cancelDriverShiftRequest = async (shiftId, driverProfileId) => {
     throw err;
   }
 
-  const { data: deletedRows, error: deleteError } = await supabase
-    .from("driver_shifts")
-    .delete()
-    .eq("driver_id", driverProfileId)
-    .gte("date", weekStart)
-    .lte("date", weekEnd)
-    .eq("status", "Requested")
-    .select("id");
-
-  if (deleteError) {
-    console.error("cancelDriverShiftRequest error:", deleteError);
-    throw deleteError;
-  }
-  return { deletedCount: (deletedRows || []).length, weekStart, weekEnd };
+  const deletedRes = await prisma.driver_shifts.deleteMany({
+    where: {
+      driver_id: toBigInt(driverProfileId),
+      date: { gte: toDateObj(weekStart), lte: toDateObj(weekEnd) },
+      status: "Requested",
+    },
+  });
+  return { deletedCount: deletedRes.count || 0, weekStart, weekEnd };
 };
 
 const bulkApproveDriverShiftsInRange = async (driverProfileId, startDate, endDate, reviewerId) => {
-  const nowIso = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("driver_shifts")
-    .update({
-      status: "Approved",
-      reviewed_by: reviewerId,
-      reviewed_at: nowIso,
-      updated_at: nowIso,
-    })
-    .eq("driver_id", driverProfileId)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .eq("status", "Requested")
-    .select();
+  const now = new Date();
+  const where = {
+    driver_id: toBigInt(driverProfileId),
+    date: { gte: toDateObj(startDate), lte: toDateObj(endDate) },
+    status: "Requested",
+  };
 
-  if (error) {
-    console.error("bulkApproveDriverShiftsInRange error:", error);
-    throw error;
-  }
-  return data || [];
+  const targetIds = (
+    await prisma.driver_shifts.findMany({ where, select: { id: true } })
+  ).map((r) => r.id);
+
+  if (targetIds.length === 0) return [];
+
+  await prisma.driver_shifts.updateMany({
+    where: { id: { in: targetIds } },
+    data: {
+      status: "Approved",
+      reviewed_by: toBigInt(reviewerId),
+      reviewed_at: now,
+      updated_at: now,
+    },
+  });
+
+  const updated = await prisma.driver_shifts.findMany({
+    where: { id: { in: targetIds } },
+  });
+  return updated.map(formatShiftRow);
 };
 
 const getSystemSettingValue = async (key) => {
-  const { data, error } = await supabase
-    .from("system_settings")
-    .select("value")
-    .eq("key", key)
-    .maybeSingle();
-
-  if (error) {
+  try {
+    const row = await prisma.system_settings.findUnique({
+      where: { key },
+      select: { value: true },
+    });
+    return row ? row.value : null;
+  } catch (error) {
     console.error("getSystemSettingValue error:", error);
     return null;
   }
-  return data ? data.value : null;
 };
 
 module.exports = {
@@ -502,4 +481,3 @@ module.exports = {
   calculateDriverDailyHours,
   cancelDriverShiftRequest,
 };
-

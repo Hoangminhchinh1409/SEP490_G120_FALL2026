@@ -1,6 +1,6 @@
-const EventEmitter = require('events');
-const supabase = require('../config/supabase');
-const pool = require('../config/db');
+const EventEmitter = require("events");
+const pool = require("../config/db");
+const prisma = require("../config/prisma");
 
 /**
  * Distributed Background Queue & In-Memory Fallback Adapter
@@ -35,14 +35,21 @@ class BackgroundQueueAdapter extends EventEmitter {
       try {
         // Kiểm tra xem bullmq hoặc ioredis có sẵn không
         // Nếu có, đánh dấu isRedisMode = true
-        console.log(`[QueueAdapter] Phát hiện REDIS_URL: ${this.redisUrl.replace(/:[^:@]+@/, ':***@')}. Khởi động chế độ Distributed Queue.`);
+        console.log(
+          `[QueueAdapter] Phát hiện REDIS_URL: ${this.redisUrl.replace(/:[^:@]+@/, ":***@")}. Khởi động chế độ Distributed Queue.`,
+        );
         this.isRedisMode = true;
       } catch (e) {
-        console.warn('[QueueAdapter] Không thể kết nối Redis, chuyển sang In-Memory Queue with PostgreSQL Lock.', e.message);
+        console.warn(
+          "[QueueAdapter] Không thể kết nối Redis, chuyển sang In-Memory Queue with PostgreSQL Lock.",
+          e.message,
+        );
         this.isRedisMode = false;
       }
     } else {
-      console.log('[QueueAdapter] Khởi chạy chế độ In-Memory Queue + PG Advisory Lock (Không yêu cầu Redis, non-blocking).');
+      console.log(
+        "[QueueAdapter] Khởi chạy chế độ In-Memory Queue + PG Advisory Lock (Không yêu cầu Redis, non-blocking).",
+      );
       this.isRedisMode = false;
     }
 
@@ -60,7 +67,7 @@ class BackgroundQueueAdapter extends EventEmitter {
     if (this.isRedisMode) {
       // Hỗ trợ dispatch sang Redis khi triển khai
       this.emit(`job:${queueName}`, payload);
-      return { success: true, mode: 'redis', queue: queueName };
+      return { success: true, mode: "redis", queue: queueName };
     }
 
     // In-memory non-blocking execution via setImmediate / setTimeout
@@ -69,12 +76,12 @@ class BackgroundQueueAdapter extends EventEmitter {
       this.emit(`job:${queueName}`, payload);
     }, delay);
 
-    return { success: true, mode: 'memory', queue: queueName };
+    return { success: true, mode: "memory", queue: queueName };
   }
 
   /**
    * Đăng ký worker xử lý tác vụ từ hàng đợi
-   * @param {string} queueName 
+   * @param {string} queueName
    * @param {Function} handler Hàm async (data) => Promise<void>
    */
   process(queueName, handler) {
@@ -82,10 +89,15 @@ class BackgroundQueueAdapter extends EventEmitter {
       try {
         await handler(payload);
       } catch (err) {
-        console.error(`[QueueAdapter] Lỗi xử lý job trên queue "${queueName}":`, err.message);
+        console.error(
+          `[QueueAdapter] Lỗi xử lý job trên queue "${queueName}":`,
+          err.message,
+        );
       }
     });
-    console.log(`[QueueAdapter] Đã đăng ký worker lắng nghe queue: "${queueName}"`);
+    console.log(
+      `[QueueAdapter] Đã đăng ký worker lắng nghe queue: "${queueName}"`,
+    );
   }
 
   /**
@@ -102,11 +114,16 @@ class BackgroundQueueAdapter extends EventEmitter {
       if (pool && pool.connect) {
         try {
           client = await pool.connect();
-          const res = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [lockKey]);
+          const res = await client.query(
+            "SELECT pg_try_advisory_lock($1) AS acquired",
+            [lockKey],
+          );
           lockAcquired = res.rows && res.rows[0]?.acquired === true;
         } catch (dbErr) {
           // Nếu kết nối DB trực tiếp gặp sự cố, fallback chạy bình thường để không làm gián đoạn tác vụ
-          console.warn(`[QueueAdapter] Không thể lấy advisory lock cho [${jobName}] (${dbErr.message}), chuyển sang fallback thực thi.`);
+          console.warn(
+            `[QueueAdapter] Không thể lấy advisory lock cho [${jobName}] (${dbErr.message}), chuyển sang fallback thực thi.`,
+          );
           lockAcquired = true;
         }
       } else {
@@ -122,12 +139,15 @@ class BackgroundQueueAdapter extends EventEmitter {
       // Đã nắm lock độc quyền: thực thi tác vụ
       await taskFunction();
     } catch (err) {
-      console.warn(`[QueueAdapter] Lỗi thực thi tác vụ [${jobName}]:`, err.message);
+      console.warn(
+        `[QueueAdapter] Lỗi thực thi tác vụ [${jobName}]:`,
+        err.message,
+      );
     } finally {
       if (client) {
         try {
           if (lockAcquired) {
-            await client.query('SELECT pg_advisory_unlock($1)', [lockKey]);
+            await client.query("SELECT pg_advisory_unlock($1)", [lockKey]);
           }
         } catch (e) {
           // Bỏ qua lỗi unlock
@@ -151,8 +171,7 @@ class BackgroundQueueAdapter extends EventEmitter {
       longitude: point.longitude,
       speed_kmh: point.speed_kmh || 0,
       recorded_time: point.recorded_time || new Date().toISOString(),
-      outside_radius_flag: point.outside_radius_flag || false,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
     });
 
     // Nếu buffer tích lũy quá 200 điểm, xả ngay lập tức
@@ -162,7 +181,7 @@ class BackgroundQueueAdapter extends EventEmitter {
   }
 
   /**
-   * Xả bộ đệm GPS xuống Supabase / PostgreSQL theo batch
+   * Xả bộ đệm GPS xuống PostgreSQL theo batch bằng Prisma
    */
   async flushGpsBuffer() {
     if (this.gpsBuffer.length === 0) return;
@@ -171,16 +190,16 @@ class BackgroundQueueAdapter extends EventEmitter {
     this.gpsBuffer = [];
 
     try {
-      const { error } = await supabase
-        .from('trip_track_points')
-        .insert(batch);
-
-      if (error) {
-        console.warn(`[QueueAdapter:GPS] Lỗi ghi batch ${batch.length} điểm GPS:`, error.message);
-      } else {
-        // Ghi thành công
-        // console.log(`[QueueAdapter:GPS] Đã lưu thành công lô ${batch.length} tọa độ GPS vào cơ sở dữ liệu.`);
-      }
+      await prisma.trip_track_points.createMany({
+        data: batch.map((p) => ({
+          trip_id: BigInt(p.trip_id),
+          latitude: p.latitude,
+          longitude: p.longitude,
+          speed_kmh: p.speed_kmh || 0,
+          recorded_time: p.recorded_time ? new Date(p.recorded_time) : new Date(),
+          created_at: p.created_at ? new Date(p.created_at) : new Date(),
+        })),
+      });
     } catch (err) {
       console.warn(`[QueueAdapter:GPS] Ngoại lệ khi ghi lô GPS:`, err.message);
     }

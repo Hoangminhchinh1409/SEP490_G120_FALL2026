@@ -45,14 +45,9 @@ export default function OrderOverviewTab({
   onOpenSplitModal
 }) {
   const cleanPhone = (order.customer_phone || '').replace(/[^0-9]/g, '');
-  const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
   const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
-  const isLocked = isClosed || ['READY_FOR_PLANNING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(order.status);
-  const canEditPrice = (order.status === 'DRAFT' || isNegotiating) && !isClosed && !isLocked;
-  const negotiation = order.web_workflow?.negotiation;
-  const negotiationHistory = Array.isArray(order.web_workflow?.negotiation_history)
-    ? order.web_workflow.negotiation_history
-    : [];
+  const isLocked = isClosed || ['READY_FOR_PLANNING', 'ASSIGNED', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'HANDED_OVER_VENDOR', 'DELIVERED', 'DELIVERED_EXCEPTION'].includes(order.status);
+  const canEditPrice = order.status === 'DRAFT' && !isClosed && !isLocked;
 
   const currentProposedSpec = getVehicleSpecByKey(proposedVehicleType || order.vehicle_type_required || 'TRUCK_2.5T') || VEHICLE_SPECS[1];
   const customerInitialSpec = vehicleRecommendation?.customerSpec || getVehicleSpecByKey(order.customer_requested_vehicle || order.vehicle_type_required || 'TRUCK_2.5T') || VEHICLE_SPECS[1];
@@ -133,120 +128,8 @@ export default function OrderOverviewTab({
 
   return (
     <div className="space-y-4">
-      {/* 1. Khối Khách hàng muốn thương lượng lại giá & phương án xe */}
-      {isNegotiating && negotiation && (
-        <div className="p-4 bg-amber-50 rounded-xl border-2 border-amber-300 text-xs space-y-2.5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
-            <span className="font-bold text-amber-950 text-sm flex items-center gap-1.5">
-              <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-              <span>Khách hàng yêu cầu thương lượng lại giá cước / phương án xe{negotiation.round > 1 ? ` (Lần ${negotiation.round})` : ''}:</span>
-            </span>
-            <span className="text-xs bg-amber-200/80 text-amber-900 px-2.5 py-0.5 rounded-full font-bold border border-amber-300">
-              Đang thương lượng
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-gray-800">
-            <div>
-              • Lý do khách yêu cầu: <b className="text-amber-950">{negotiation.feedback_reason || 'Giá cước vượt ngân sách'}</b>
-            </div>
-            {negotiation.request_split_trucks && negotiation.split_details && (
-              <div className="sm:col-span-2 p-2.5 bg-indigo-50/90 rounded-lg border border-indigo-200 flex flex-wrap items-center justify-between gap-2">
-                <div className="space-y-0.5">
-                  <span className="font-bold text-indigo-950 flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-indigo-600">call_split</span>
-                    Khách yêu cầu tách thành {negotiation.split_details.split_count || 2} xe {negotiation.split_details.vehicle_target_label || '2.5T'}
-                  </span>
-                  <span className="text-[11px] text-indigo-800 block">
-                    Lý do: <b>{negotiation.split_details.reason || 'Đường kho hẹp/cấm xe to'}</b> · Ước tính ~{negotiation.split_details.est_weight_per_truck} kg/xe
-                  </span>
-                </div>
-                {onOpenSplitModal && (
-                  <Button
-                    size="small"
-                    type="primary"
-                    onClick={onOpenSplitModal}
-                    className="bg-indigo-600 hover:bg-indigo-700 font-bold text-xs"
-                  >
-                    Mở chia tách xe ngay
-                  </Button>
-                )}
-              </div>
-            )}
-            {negotiation.proposed_price ? (
-              <div className="flex items-center flex-wrap gap-1.5">
-                <span>• Giá khách mong muốn:</span>
-                <b className="text-emerald-700 text-sm font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  {Number(negotiation.proposed_price).toLocaleString('vi-VN')} đ
-                </b>
-                <button
-                  type="button"
-                  onClick={() => setCurrentAgreedPrice(negotiation.proposed_price)}
-                  className="text-[11px] text-indigo-600 underline font-bold hover:text-indigo-800 cursor-pointer"
-                >
-                  [Áp dụng mức giá này]
-                </button>
-              </div>
-            ) : (
-              <div>• Giá báo trước đó: <b className="font-mono">{(order.agreed_price || 0).toLocaleString('vi-VN')} đ</b></div>
-            )}
-            {negotiation.proposed_vehicle_type && (
-              <div className="flex items-center flex-wrap gap-1.5">
-                <span>• Loại xe khách đề xuất:</span>
-                <b className="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                  {getVehicleSpecByKey(negotiation.proposed_vehicle_type)?.label || negotiation.proposed_vehicle_type}
-                </b>
-                {setProposedVehicleType && (
-                  <button
-                    type="button"
-                    onClick={() => setProposedVehicleType(negotiation.proposed_vehicle_type)}
-                    className="text-[11px] text-indigo-600 underline font-bold hover:text-indigo-800 cursor-pointer"
-                  >
-                    [Chọn theo xe khách đề xuất]
-                  </button>
-                )}
-              </div>
-            )}
-            {negotiation.proposed_pickup_date && (
-              <div>• Ngày lấy hàng khách đề xuất: <b>{negotiation.proposed_pickup_date}</b></div>
-            )}
-            {negotiation.customer_note && (
-              <div className="sm:col-span-2 bg-white p-2.5 rounded-lg border border-amber-200 text-gray-700">
-                <span className="font-semibold text-amber-900 not-italic mr-1">Ghi chú từ khách hàng:</span>
-                <span className="italic">&ldquo;{negotiation.customer_note}&rdquo;</span>
-              </div>
-            )}
-          </div>
-
-          {/* Lịch sử các lần thương lượng trước */}
-          {negotiationHistory.length > 0 && (
-            <div className="pt-2 border-t border-amber-200/70 space-y-1">
-              <div className="text-[11px] font-bold text-amber-900">Lịch sử thương lượng trước đó ({negotiationHistory.length} lần):</div>
-              <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
-                {negotiationHistory.map((item, idx) => (
-                  <div key={idx} className="text-[11px] bg-white/80 px-2.5 py-1.5 rounded border border-amber-100 flex flex-wrap justify-between gap-2">
-                    <span>
-                      <b>Lần {item.round || idx + 1}:</b> Khách đề xuất{' '}
-                      <b className="text-emerald-700">
-                        {item.customer_proposed_price ? `${Number(item.customer_proposed_price).toLocaleString('vi-VN')} đ` : 'điều chỉnh'}
-                      </b>{' '}
-                      ({item.customer_feedback_reason})
-                    </span>
-                    <span>
-                      → Đã chốt lại: <b className="text-indigo-700">{Number(item.dispatcher_new_price || 0).toLocaleString('vi-VN')} đ</b>{' '}
-                      {item.dispatcher_proposed_vehicle ? `[${getVehicleSpecByKey(item.dispatcher_proposed_vehicle)?.shortLabel || item.dispatcher_proposed_vehicle}] ` : ''}
-                      <span className="italic text-gray-500">({item.dispatcher_adjustment_reason})</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Banner hướng dẫn luồng xử lý đối với đơn DRAFT */}
-      {order.status === 'DRAFT' && !isNegotiating && (
+      {order.status === 'DRAFT' && (
         <div className="space-y-2">
           {/* Thông báo nếu khách yêu cầu chia xe ngay từ lúc tạo đơn */}
           {(order.request_split_trucks || order.web_workflow?.request_split_trucks || order.split_details || order.web_workflow?.split_details) && (
@@ -359,7 +242,7 @@ export default function OrderOverviewTab({
               </div>
               <div>
                 <div className="text-xs font-bold text-gray-800 flex items-center gap-2 flex-wrap">
-                  <span>{isNegotiating ? 'Điều chỉnh & Chốt lại giá cước:' : 'Giá cước thỏa thuận (kèm phương án xe):'}</span>
+                  <span>Giá cước thỏa thuận (kèm phương án xe):</span>
                   <Tag color="geekblue" className="m-0 text-[10px] font-semibold">
                     Phương án xe: {currentProposedSpec.label}
                   </Tag>
@@ -456,15 +339,11 @@ export default function OrderOverviewTab({
                     type="primary" 
                     size="middle" 
                     loading={savingPrice}
-                    icon={isNegotiating ? <RefreshCw size={14} /> : <CheckCircle2 size={14} />}
-                    className={
-                      isNegotiating
-                        ? 'bg-amber-600 hover:bg-amber-700 border-amber-600 font-bold text-xs shadow-xs'
-                        : 'bg-indigo-600 hover:bg-indigo-700 font-semibold text-xs shadow-xs'
-                    }
+                    icon={<CheckCircle2 size={14} />}
+                    className="bg-indigo-600 hover:bg-indigo-700 font-semibold text-xs shadow-xs"
                     onClick={handleConfirmPriceAndOrder}
                   >
-                    {isNegotiating ? 'Chốt lại giá & Xe' : 'Chốt xe & Xác nhận giá'}
+                    Chốt xe &amp; Xác nhận giá
                   </Button>
                 </>
               ) : (
@@ -489,25 +368,8 @@ export default function OrderOverviewTab({
             </div>
           </div>
 
-          {/* Ô bắt buộc nhập Lý do điều chỉnh lại giá */}
-          {isNegotiating && (
-            <div className="pt-2.5 border-t border-indigo-50 space-y-1.5">
-              <label className="text-xs font-bold text-amber-900 flex items-center gap-1">
-                <span>Lý do điều chỉnh lại giá cước / phương án xe</span>
-                <span className="text-red-500">* (Bắt buộc)</span>
-              </label>
-              <Input
-                value={adjustmentReason}
-                onChange={(e) => setAdjustmentReason(e.target.value)}
-                placeholder="Nhập rõ lý do điều chỉnh hoặc phản hồi báo giá & phương án xe cho khách..."
-                className="text-xs border-amber-300 focus:border-amber-500"
-              />
-            </div>
-          )}
-        </div>
-
         {/* Danh mục chứng từ chuẩn bị trước khi gửi báo giá */}
-        {(order.status === 'DRAFT' || isNegotiating) && (
+        {order.status === 'DRAFT' && (
           <OrderOverviewPreDocsBox
             documents={documents}
             onOpenAssistant={onOpenAssistant}
@@ -519,6 +381,7 @@ export default function OrderOverviewTab({
             handleAddOverviewCustomDoc={handleAddOverviewCustomDoc}
           />
         )}
+        </div>
       </div>
 
       {/* Bản đồ hình ảnh tuyến đường & Số km ước tính */}
@@ -558,10 +421,7 @@ export default function OrderOverviewTab({
         <div>
           <span className="text-gray-400 block mb-1 font-medium">Khách hàng:</span>
           <span className="font-bold text-gray-800 text-sm block">{order.customer || order.customer_name}</span>
-          <span className="text-gray-500 block mt-0.5">
-            Mã HAWB: <b className="text-indigo-600 font-mono">{order.hawb || '—'}</b>
-          </span>
-          <span className="text-gray-500 block">SĐT: {order.customer_phone || 'Chưa có'} | Email: {order.customer_email || 'Chưa có'}</span>
+          <span className="text-gray-500 block mt-0.5">SĐT: {order.customer_phone || 'Chưa có'} | Email: {order.customer_email || 'Chưa có'}</span>
         </div>
         <div>
           <span className="text-gray-400 block mb-1 font-medium">Địa điểm giao nhận:</span>

@@ -1,142 +1,93 @@
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
 const crypto = require('crypto');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const cloudinaryService = require('./cloudinaryService');
+const { toBigInt } = require('../utils/prismaHelper');
 
 const META_NOTE_PREFIX = '[META_JSON]:';
 const META_CHUNK_PREFIX = '[META_CHUNK_';
 // Cột content của bảng order_notes là VARCHAR(500), giới hạn mỗi phần <= 450 ký tự để an toàn tuyệt đối
 const MAX_NOTE_CHUNK_LEN = 450;
 
-// Lưu tệp đính kèm base64 ở thư mục tạm hệ thống (.dat) để nodemon trong BE/ không bao giờ tự restart khi upload file
-const ATTACHMENTS_FILE = path.join(os.tmpdir(), 'nexlog_order_attachments.dat');
-
-const readAttachmentsStore = () => {
-  try {
-    if (fs.existsSync(ATTACHMENTS_FILE)) {
-      return JSON.parse(fs.readFileSync(ATTACHMENTS_FILE, 'utf8'));
-    }
-  } catch (e) {
-    // ignore
-  }
-  return {};
-};
-
-const writeAttachmentsStore = (store) => {
-  try {
-    fs.writeFileSync(ATTACHMENTS_FILE, JSON.stringify(store), 'utf8');
-  } catch (e) {
-    console.warn('writeAttachmentsStore warning:', e.message);
-  }
-};
-
-// Tách dữ liệu base64 nặng ra file cục bộ để không làm tràn cột VARCHAR(500) của order_notes
-const extractHeavyFields = (orderId, metaObj) => {
+// Đẩy các tệp đính kèm Data URI lên Cloudinary thay vì lưu file tạm cục bộ
+const uploadMetaAttachmentsToCloudinary = async (orderId, metaObj) => {
   if (!orderId || !metaObj) return metaObj;
   const clone = JSON.parse(JSON.stringify(metaObj));
-  const store = readAttachmentsStore();
-  const key = String(orderId);
-  if (!store[key]) store[key] = { docs: {} };
-  let changed = false;
+  const folder = `nexlog/orders/${orderId}`;
 
-  if (clone.contract_file_data && clone.contract_file_data.length > 200) {
-    store[key].contract_file_data = clone.contract_file_data;
-    clone.contract_file_data = '__STORED_LOCAL__';
-    changed = true;
+  if (typeof clone.contract_file_data === 'string' && clone.contract_file_data.trim().startsWith('data:')) {
+    clone.contract_file_data = await cloudinaryService.uploadDataUriIfNeeded(clone.contract_file_data, `${folder}/contract`);
   }
 
-  if (clone.web_workflow?.signed_contract?.signature_data && clone.web_workflow.signed_contract.signature_data.length > 200) {
-    store[key].signature_data = clone.web_workflow.signed_contract.signature_data;
-    clone.web_workflow.signed_contract.signature_data = '__STORED_LOCAL__';
-    changed = true;
+  if (
+    typeof clone.web_workflow?.signed_contract?.signature_data === 'string' &&
+    clone.web_workflow.signed_contract.signature_data.trim().startsWith('data:')
+  ) {
+    clone.web_workflow.signed_contract.signature_data = await cloudinaryService.uploadDataUriIfNeeded(
+      clone.web_workflow.signed_contract.signature_data,
+      `${folder}/contract`
+    );
   }
 
-  const processDocsArray = (arr) => {
+  const processDocsArray = async (arr) => {
     if (!Array.isArray(arr)) return;
-    arr.forEach((doc) => {
-      if (doc && doc.key && typeof doc.file_data === 'string' && doc.file_data.length > 200 && doc.file_data !== '__STORED_LOCAL__') {
-        store[key].docs[doc.key] = doc.file_data;
-        doc.file_data = '__STORED_LOCAL__';
-        changed = true;
+    for (const doc of arr) {
+      if (!doc) continue;
+      if (typeof doc.file_url === 'string' && doc.file_url.trim().startsWith('data:')) {
+        const uploadedUrl = await cloudinaryService.uploadDataUriIfNeeded(doc.file_url, `${folder}/docs`);
+        doc.file_url = uploadedUrl;
+        doc.file_data = uploadedUrl;
+      } else if (typeof doc.file_data === 'string' && doc.file_data.trim().startsWith('data:')) {
+        const uploadedUrl = await cloudinaryService.uploadDataUriIfNeeded(doc.file_data, `${folder}/docs`);
+        doc.file_data = uploadedUrl;
+        if (!doc.file_url) doc.file_url = uploadedUrl;
       }
-    });
+    }
   };
 
-  processDocsArray(clone.documents);
-  processDocsArray(clone.web_workflow?.documents);
-  processDocsArray(clone.web_workflow?.approved_documents);
+  await processDocsArray(clone.documents);
+  await processDocsArray(clone.web_workflow?.documents);
+  await processDocsArray(clone.web_workflow?.approved_documents);
 
-  if (changed) {
-    writeAttachmentsStore(store);
-  }
   return clone;
 };
 
-// Khôi phục dữ liệu base64 nặng khi đọc metadata
-const hydrateHeavyFields = (orderId, metaObj) => {
-  if (!orderId || !metaObj) return metaObj;
-  const store = readAttachmentsStore();
-  const saved = store[String(orderId)];
-  if (!saved) return metaObj;
-
-  if (metaObj.contract_file_data === '__STORED_LOCAL__' && saved.contract_file_data) {
-    metaObj.contract_file_data = saved.contract_file_data;
-  }
-
-  if (metaObj.web_workflow?.signed_contract?.signature_data === '__STORED_LOCAL__' && saved.signature_data) {
-    metaObj.web_workflow.signed_contract.signature_data = saved.signature_data;
-  }
-
-  const restoreDocsArray = (arr) => {
-    if (!Array.isArray(arr) || !saved.docs) return;
-    arr.forEach((doc) => {
-      if (doc && doc.key && doc.file_data === '__STORED_LOCAL__' && saved.docs[doc.key]) {
-        doc.file_data = saved.docs[doc.key];
-      }
-    });
-  };
-
-  restoreDocsArray(metaObj.documents);
-  restoreDocsArray(metaObj.web_workflow?.documents);
-  restoreDocsArray(metaObj.web_workflow?.approved_documents);
-
-  return metaObj;
-};
-
-// Helper map status từ DB sang FE
+// Helper map status từ DB sang chuẩn trạng thái Figure 20 (không còn NEGOTIATING)
 const mapDbStatusToFe = (dbStatus, order, meta = null) => {
-  const upperStatus = (dbStatus || '').toUpperCase().replace(/\s+/g, '_');
+  const upperStatus = (dbStatus || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
 
+  if (upperStatus === 'CLOSED') {
+    return 'CLOSED';
+  }
   if (
     upperStatus === 'CANCELLED' ||
+    upperStatus === 'CANCELED' ||
     upperStatus === 'CANCELLED_RETURNING' ||
     (order?.cancelled_at && order?.cancel_reason)
   ) {
-    return 'CANCELLED';
+    return order?.is_closed ? 'CLOSED' : 'CANCELLED';
   }
-
-  // Ưu tiên các trạng thái sau bước xếp xe (ASSIGNED, IN_TRANSIT, DELIVERED, CLOSED)
-  if (upperStatus === 'CLOSED' || (order?.is_closed && upperStatus === 'DELIVERED')) {
-    return 'CLOSED';
+  if (
+    upperStatus === 'DELIVERED_EXCEPTION' ||
+    upperStatus === 'DELIVERED_EXCEPTION_'
+  ) {
+    return order?.is_closed ? 'CLOSED' : 'DELIVERED_EXCEPTION';
   }
   if (upperStatus === 'DELIVERED') {
-    return 'DELIVERED';
+    return order?.is_closed ? 'CLOSED' : 'DELIVERED';
   }
-  if (
-    upperStatus === 'HANDED_OVER_TO_VENDOR' ||
-    upperStatus === 'PICKED_UP' ||
-    upperStatus === 'IN_TRANSIT' ||
-    upperStatus === 'IN_PROGRESS'
-  ) {
+  if (upperStatus === 'HANDED_OVER_VENDOR' || upperStatus === 'HANDED_OVER_TO_VENDOR') {
+    return 'HANDED_OVER_VENDOR';
+  }
+  if (upperStatus === 'IN_TRANSIT' || upperStatus === 'IN_PROGRESS') {
     return 'IN_TRANSIT';
   }
-  if (
-    upperStatus === 'PLANNED' ||
-    upperStatus === 'ASSIGNED' ||
-    upperStatus === 'ACCEPTED' ||
-    upperStatus === 'DISPATCHED'
-  ) {
+  if (upperStatus === 'PICKED_UP') {
+    return 'PICKED_UP';
+  }
+  if (upperStatus === 'ACCEPTED') {
+    return 'ACCEPTED';
+  }
+  if (upperStatus === 'PLANNED' || upperStatus === 'ASSIGNED' || upperStatus === 'DISPATCHED') {
     return 'ASSIGNED';
   }
   if (upperStatus === 'READY_FOR_PLANNING') {
@@ -144,9 +95,6 @@ const mapDbStatusToFe = (dbStatus, order, meta = null) => {
   }
 
   const resolvedMeta = meta || parseOrderMeta(order);
-  if (resolvedMeta?.web_workflow?.stage === 'CUSTOMER_NEGOTIATING') {
-    return 'NEGOTIATING';
-  }
 
   if (
     resolvedMeta?.web_workflow?.stage === 'CONTRACT_SIGNED' ||
@@ -176,9 +124,6 @@ const mapDbStatusToFe = (dbStatus, order, meta = null) => {
       ) {
         return 'CONFIRMED';
       }
-      if (resolvedMeta?.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' && order?.agreed_price > 0) {
-        return 'DRAFT';
-      }
       return 'DRAFT';
   }
 };
@@ -186,6 +131,23 @@ const mapDbStatusToFe = (dbStatus, order, meta = null) => {
 // Helper sinh tracking token 43 ký tự
 const generateTrackingToken = () => {
   return crypto.randomBytes(32).toString('base64url').padEnd(43, 'x').slice(0, 43);
+};
+
+// Kiểm tra locationId có hợp lệ và thuộc hệ thống kho ALS thực tế hay không
+const resolveAlsLocationIdIfValid = async (locationId) => {
+  const numericId = Number(locationId);
+  if (!Number.isInteger(numericId) || numericId <= 0) return null;
+  try {
+    const loc = await prisma.locations.findFirst({
+      where: { id: BigInt(numericId), customer_id: null },
+      select: { id: true, type: true, customer_id: true }
+    });
+    if (!loc) return null;
+    const normalizedType = String(loc.type || '').trim().toUpperCase().replace(/\s+/g, '_');
+    return normalizedType === 'ALS_WAREHOUSE' ? Number(loc.id) : null;
+  } catch {
+    return null;
+  }
 };
 
 // Helper tìm hoặc tạo Location theo chuẩn schema mới (locations)
@@ -202,41 +164,59 @@ const getOrCreateLocation = async ({
 }) => {
   try {
     const cleanAddr = (address || '').trim();
+    const bigCustomerId = customerId ? toBigInt(customerId) : null;
 
-    // 1. Kiểm tra xem địa chỉ này có thuộc kho / ga ALS có sẵn không
+    // 1. Kiểm tra xem địa chỉ này có thuộc 6 kho thực tế của ALS hay không
     const cleanAddrLower = cleanAddr.toLowerCase();
     if (
       cleanAddrLower.includes('nhà ga hàng hóa als nội bài') ||
       cleanAddrLower.includes('ga hàng hóa als') ||
       cleanAddrLower.includes('als nội bài') ||
-      cleanAddrLower.includes('cảng hkqt nội bài')
+      cleanAddrLower.includes('cảng hkqt nội bài') ||
+      cleanAddrLower.includes('cảng hàng không quốc tế nội bài') ||
+      cleanAddrLower.includes('sân bay quốc tế nội bài') ||
+      cleanAddrLower.includes('alsc')
     ) {
-      const { data: alsNb } = await supabase.from('locations').select('id').eq('id', 1).limit(1);
-      if (alsNb && alsNb.length > 0) return alsNb[0].id;
+      const alsNb = await prisma.locations.findFirst({
+        where: { id: 1n, type: 'ALS Warehouse', customer_id: null },
+        select: { id: true }
+      });
+      if (alsNb) return Number(alsNb.id);
     }
     if (cleanAddrLower.includes('als bắc ninh') || cleanAddrLower.includes('alsb') || (cleanAddrLower.includes('yên phong') && cleanAddrLower.includes('als'))) {
-      const { data: alsBn } = await supabase.from('locations').select('id').ilike('name', '%Bắc Ninh (ALSB)%').limit(1);
-      if (alsBn && alsBn.length > 0) return alsBn[0].id;
+      const alsBn = await prisma.locations.findFirst({
+        where: { type: 'ALS Warehouse', customer_id: null, name: { contains: 'ALSB', mode: 'insensitive' } },
+        select: { id: true }
+      });
+      if (alsBn) return Number(alsBn.id);
+    }
+    if (cleanAddrLower.includes('als đông hà nội') || cleanAddrLower.includes('alse') || (cleanAddrLower.includes('vsip') && cleanAddrLower.includes('als'))) {
+      const alsDn = await prisma.locations.findFirst({
+        where: { type: 'ALS Warehouse', customer_id: null, name: { contains: 'ALSE', mode: 'insensitive' } },
+        select: { id: true }
+      });
+      if (alsDn) return Number(alsDn.id);
     }
     if (cleanAddrLower.includes('als thái nguyên') || cleanAddrLower.includes('alst') || (cleanAddrLower.includes('yên bình') && cleanAddrLower.includes('als'))) {
-      const { data: alsTn } = await supabase.from('locations').select('id').ilike('name', '%Thái Nguyên (ALST)%').limit(1);
-      if (alsTn && alsTn.length > 0) return alsTn[0].id;
+      const alsTn = await prisma.locations.findFirst({
+        where: { type: 'ALS Warehouse', customer_id: null, name: { contains: 'ALST', mode: 'insensitive' } },
+        select: { id: true }
+      });
+      if (alsTn) return Number(alsTn.id);
     }
-    if (cleanAddrLower.includes('als hải phòng') || cleanAddrLower.includes('alsh') || (cleanAddrLower.includes('nam cầu kiền') && cleanAddrLower.includes('als'))) {
-      const { data: alsHp } = await supabase.from('locations').select('id').ilike('name', '%Hải Phòng (ALSH)%').limit(1);
-      if (alsHp && alsHp.length > 0) return alsHp[0].id;
+    if (cleanAddrLower.includes('mỹ đình') && (cleanAddrLower.includes('icd') || cleanAddrLower.includes('als'))) {
+      const alsMd = await prisma.locations.findFirst({
+        where: { type: 'ALS Warehouse', customer_id: null, name: { contains: 'Mỹ Đình', mode: 'insensitive' } },
+        select: { id: true }
+      });
+      if (alsMd) return Number(alsMd.id);
     }
-    if (cleanAddrLower.includes('hữu nghị') && (cleanAddrLower.includes('lạng sơn') || cleanAddrLower.includes('cửa khẩu'))) {
-      const { data: alsHn } = await supabase.from('locations').select('id').ilike('name', '%Hữu Nghị%').limit(1);
-      if (alsHn && alsHn.length > 0) return alsHn[0].id;
-    }
-    if (cleanAddrLower.includes('lào cai') || cleanAddrLower.includes('kim thành')) {
-      const { data: alsLc } = await supabase.from('locations').select('id').ilike('name', '%Kim Thành%').limit(1);
-      if (alsLc && alsLc.length > 0) return alsLc[0].id;
-    }
-    if (cleanAddrLower.includes('mỹ đình') && cleanAddrLower.includes('icd')) {
-      const { data: alsMd } = await supabase.from('locations').select('id').ilike('name', '%Mỹ Đình%').limit(1);
-      if (alsMd && alsMd.length > 0) return alsMd[0].id;
+    if ((cleanAddrLower.includes('gia lâm') && cleanAddrLower.includes('als')) || (cleanAddrLower.includes('nguyễn sơn') && cleanAddrLower.includes('als')) || cleanAddrLower.includes('als long biên')) {
+      const alsGl = await prisma.locations.findFirst({
+        where: { type: 'ALS Warehouse', customer_id: null, name: { contains: 'Gia Lâm', mode: 'insensitive' } },
+        select: { id: true }
+      });
+      if (alsGl) return Number(alsGl.id);
     }
 
     // 2. Tự động bóc tách Tỉnh/Thành từ địa chỉ nếu có
@@ -256,14 +236,17 @@ const getOrCreateLocation = async ({
 
     // 3. Kiểm tra xem địa chỉ này đã tồn tại trong database chưa (với cùng khách hàng hoặc chung)
     if (cleanAddr) {
-      let query = supabase.from('locations').select('id, name, customer_id, latitude, longitude, province').eq('address', cleanAddr);
-      if (customerId) {
-        query = query.or(`customer_id.eq.${customerId},customer_id.is.null`);
-      }
-      const { data: existing } = await query.limit(1);
+      const matchedLoc = await prisma.locations.findFirst({
+        where: {
+          address: cleanAddr,
+          ...(bigCustomerId !== null
+            ? { OR: [{ customer_id: bigCustomerId }, { customer_id: null }] }
+            : {})
+        },
+        select: { id: true, name: true, customer_id: true, latitude: true, longitude: true, province: true }
+      });
 
-      if (existing && existing.length > 0) {
-        const matchedLoc = existing[0];
+      if (matchedLoc) {
         const updateFields = {};
         if (lat && lng && (!matchedLoc.latitude || !matchedLoc.longitude)) {
           updateFields.latitude = parseFloat(lat);
@@ -273,12 +256,12 @@ const getOrCreateLocation = async ({
           updateFields.province = detectedProvince;
         }
         if (Object.keys(updateFields).length > 0) {
-          await supabase
-            .from('locations')
-            .update(updateFields)
-            .eq('id', matchedLoc.id);
+          await prisma.locations.update({
+            where: { id: matchedLoc.id },
+            data: updateFields
+          });
         }
-        return matchedLoc.id;
+        return Number(matchedLoc.id);
       }
     }
 
@@ -290,25 +273,24 @@ const getOrCreateLocation = async ({
 
     const fallbackName = cleanName || (cleanAddr || 'Địa chỉ khách hàng');
 
-    const { data: newLoc } = await supabase
-      .from('locations')
-      .insert([{
+    const newLoc = await prisma.locations.create({
+      data: {
         name: fallbackName,
-        type: customerId ? 'Customer Site' : 'Warehouse',
-        customer_id: customerId || null,
+        type: 'Customer Site',
+        customer_id: bigCustomerId,
         address: cleanAddr || 'Hà Nội',
         province: detectedProvince,
         latitude: lat ? parseFloat(lat) : 21.0285,
         longitude: lng ? parseFloat(lng) : 105.8542,
         contact_name: contactName || null,
         contact_phone: contactPhone || null,
-        geofence_radius: 200,
-        created_by: 1
-      }])
-      .select();
+        created_by: 1n
+      },
+      select: { id: true }
+    });
 
-    if (newLoc && newLoc.length > 0) {
-      return newLoc[0].id;
+    if (newLoc) {
+      return Number(newLoc.id);
     }
 
     return 1;
@@ -377,30 +359,7 @@ const parseOrderMeta = (order) => {
     meta = assembleMetaFromNotes(order.order_notes);
   }
 
-  // Khôi phục thông tin đàm phán nếu trước đó chỉ lưu vào note [Khách hàng phản hồi đàm phán]
-  if (Array.isArray(order.order_notes)) {
-    const negotiateNotes = order.order_notes.filter(
-      (n) => typeof n?.content === 'string' && n.content.startsWith('[Khách hàng phản hồi đàm phán]')
-    );
-    if (negotiateNotes.length > 0 && !meta.web_workflow?.stage) {
-      const latestNote = negotiateNotes[negotiateNotes.length - 1];
-      const text = latestNote.content || '';
-      const reasonMatch = text.match(/Lý do:\s*([^.]+)\./);
-      const priceMatch = text.match(/Giá khách đề xuất:\s*([\d.,]+)\s*đ/);
-      const noteMatch = text.match(/Ghi chú:\s*(.+)$/);
-
-      if (!meta.web_workflow) meta.web_workflow = {};
-      meta.web_workflow.stage = 'CUSTOMER_NEGOTIATING';
-      meta.web_workflow.negotiation = {
-        feedback_reason: reasonMatch ? reasonMatch[1].trim() : 'Giá cước vượt ngân sách',
-        proposed_price: priceMatch ? parseInt(priceMatch[1].replace(/[.,]/g, ''), 10) : null,
-        customer_note: noteMatch ? noteMatch[1].trim() : '',
-        submitted_at: latestNote.created_at || new Date().toISOString()
-      };
-    }
-  }
-
-  return hydrateHeavyFields(order.id, meta);
+  return meta;
 };
 
 // Tải metadata từ DB theo orderId
@@ -411,11 +370,11 @@ const loadOrderMeta = async (orderId, orderObj = null) => {
 
   if (!orderId) return {};
   try {
-    const { data: notes } = await supabase
-      .from('order_notes')
-      .select('id, content, created_at')
-      .eq('order_id', orderId)
-      .order('id', { ascending: true });
+    const notes = await prisma.order_notes.findMany({
+      where: { order_id: toBigInt(orderId) },
+      select: { id: true, content: true, created_at: true },
+      orderBy: { id: 'asc' }
+    });
 
     if (notes && notes.length > 0) {
       return parseOrderMeta({ id: orderId, order_notes: notes });
@@ -430,11 +389,12 @@ const loadOrderMeta = async (orderId, orderObj = null) => {
 const saveOrderMeta = async (orderId, meta) => {
   if (!orderId || !meta) return;
   try {
-    const { data: allNotes } = await supabase
-      .from('order_notes')
-      .select('id, content, created_at')
-      .eq('order_id', orderId)
-      .order('id', { ascending: true });
+    const bigOrderId = toBigInt(orderId);
+    const allNotes = await prisma.order_notes.findMany({
+      where: { order_id: bigOrderId },
+      select: { id: true, content: true, created_at: true },
+      orderBy: { id: 'asc' }
+    });
 
     const existingMeta = parseOrderMeta({ id: orderId, order_notes: allNotes || [] });
     const mergedMeta = {
@@ -446,10 +406,9 @@ const saveOrderMeta = async (orderId, meta) => {
       }
     };
 
-    const lightweightMeta = extractHeavyFields(orderId, mergedMeta);
+    const lightweightMeta = await uploadMetaAttachmentsToCloudinary(orderId, mergedMeta);
     const jsonStr = JSON.stringify(lightweightMeta);
 
-    // Xóa các dòng meta cũ của đơn hàng này trước khi ghi bộ mới
     const oldMetaIds = (allNotes || [])
       .filter(
         (n) =>
@@ -458,31 +417,38 @@ const saveOrderMeta = async (orderId, meta) => {
       )
       .map((n) => n.id);
 
-    if (oldMetaIds.length > 0) {
-      await supabase.from('order_notes').delete().in('id', oldMetaIds);
-    }
-
-    if (META_NOTE_PREFIX.length + jsonStr.length <= 490) {
-      await supabase.from('order_notes').insert([
-        {
-          order_id: orderId,
-          content: `${META_NOTE_PREFIX}${jsonStr}`,
-          created_by: 1
-        }
-      ]);
-    } else {
-      const chunks = [];
-      for (let i = 0, idx = 0; i < jsonStr.length; i += MAX_NOTE_CHUNK_LEN, idx++) {
-        const piece = jsonStr.slice(i, i + MAX_NOTE_CHUNK_LEN);
-        chunks.push({
-          order_id: orderId,
-          content: `[META_CHUNK_${idx}]:${piece}`,
-          created_by: 1
+    await prisma.$transaction(async (tx) => {
+      if (oldMetaIds.length > 0) {
+        await tx.order_notes.deleteMany({
+          where: { id: { in: oldMetaIds } }
         });
       }
-      await supabase.from('order_notes').insert(chunks);
-    }
+
+      if (META_NOTE_PREFIX.length + jsonStr.length <= 490) {
+        await tx.order_notes.create({
+          data: {
+            order_id: bigOrderId,
+            content: `${META_NOTE_PREFIX}${jsonStr}`,
+            created_by: 1n
+          }
+        });
+      } else {
+        const chunks = [];
+        for (let i = 0, idx = 0; i < jsonStr.length; i += MAX_NOTE_CHUNK_LEN, idx++) {
+          const piece = jsonStr.slice(i, i + MAX_NOTE_CHUNK_LEN);
+          chunks.push({
+            order_id: bigOrderId,
+            content: `[META_CHUNK_${idx}]:${piece}`,
+            created_by: 1n
+          });
+        }
+        await tx.order_notes.createMany({ data: chunks });
+      }
+    });
   } catch (err) {
+    if (err?.statusCode) {
+      throw err;
+    }
     console.warn('saveOrderMeta warning:', err.message);
   }
 };
@@ -578,6 +544,7 @@ module.exports = {
   META_CHUNK_PREFIX,
   mapDbStatusToFe,
   generateTrackingToken,
+  resolveAlsLocationIdIfValid,
   getOrCreateLocation,
   parseOrderMeta,
   loadOrderMeta,

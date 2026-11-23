@@ -1,9 +1,37 @@
-const supabase = require("../config/supabase");
+const prisma = require("../config/prisma");
+const { serializePrisma, toBigInt, toNum } = require("../utils/prismaHelper");
 
-// Helper to sanitize input strings for PostgREST query parameters (prevent filter injection)
+// Helper to sanitize input strings (preserve legacy API export)
 const sanitizePostgrestParam = (str) => {
-    if (!str || typeof str !== "string") return "";
-    return str.replace(/[,()"\\]/g, " ").replace(/\s+/g, " ").trim();
+  if (!str || typeof str !== "string") return "";
+  return str.replace(/[,()"\\]/g, " ").replace(/\s+/g, " ").trim();
+};
+
+const USER_PUBLIC_SELECT = {
+  id: true,
+  username: true,
+  full_name: true,
+  email: true,
+  phone: true,
+  zalo_link: true,
+  role_id: true,
+  status: true,
+  last_login_at: true,
+  created_at: true,
+  updated_at: true,
+  roles: {
+    select: { id: true, name: true },
+  },
+};
+
+const mapUserWithRole = (row) => {
+  if (!row) return null;
+  const serialized = serializePrisma(row);
+  const { roles: roleObj, ...rest } = serialized;
+  return {
+    ...rest,
+    role: roleObj || null,
+  };
 };
 
 // ==========================================
@@ -11,110 +39,110 @@ const sanitizePostgrestParam = (str) => {
 // ==========================================
 
 const getActivityLogs = async ({
-    page = 1,
-    limit = 20,
-    actorId = null,
-    action = null,
-    targetType = null,
-    startDate = null,
-    endDate = null,
-    keyword = null
+  page = 1,
+  limit = 20,
+  actorId = null,
+  action = null,
+  targetType = null,
+  startDate = null,
+  endDate = null,
+  keyword = null,
 }) => {
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
+  const where = {};
 
-    let query = supabase
-        .from("activity_logs")
-        .select("*, actor:users(id, username, full_name, email, role_id)", { count: "exact" })
-        .order("created_time", { ascending: false });
+  if (actorId) where.actor_id = toBigInt(actorId);
+  if (action && action !== "ALL") where.action = action;
+  if (targetType && targetType !== "ALL") where.target_type = targetType;
 
-    if (actorId) {
-        query = query.eq("actor_id", actorId);
+  if (startDate || endDate) {
+    where.created_time = {};
+    if (startDate) where.created_time.gte = new Date(startDate);
+    if (endDate) where.created_time.lte = new Date(endDate);
+  }
+
+  if (keyword && typeof keyword === "string") {
+    const cleanKw = sanitizePostgrestParam(keyword);
+    if (cleanKw) {
+      where.OR = [
+        { action: { contains: cleanKw, mode: "insensitive" } },
+        { target_type: { contains: cleanKw, mode: "insensitive" } },
+        { reason: { contains: cleanKw, mode: "insensitive" } },
+      ];
     }
+  }
 
-    if (action && action !== "ALL") {
-        query = query.eq("action", action);
-    }
+  const [rows, total] = await Promise.all([
+    prisma.activity_logs.findMany({
+      where,
+      include: {
+        users: {
+          select: { id: true, username: true, full_name: true, email: true, role_id: true },
+        },
+      },
+      orderBy: { created_time: "desc" },
+      skip,
+      take,
+    }),
+    prisma.activity_logs.count({ where }),
+  ]);
 
-    if (targetType && targetType !== "ALL") {
-        query = query.eq("target_type", targetType);
-    }
-
-    if (startDate) {
-        query = query.gte("created_time", startDate);
-    }
-
-    if (endDate) {
-        query = query.lte("created_time", endDate);
-    }
-
-    if (keyword && typeof keyword === "string") {
-        const cleanKw = sanitizePostgrestParam(keyword);
-        if (cleanKw) {
-            query = query.or(`action.ilike.%${cleanKw}%,target_type.ilike.%${cleanKw}%,reason.ilike.%${cleanKw}%`);
-        }
-    }
-
-    const { data, count, error } = await query.range(from, to);
-
-    if (error) {
-        throw error;
-    }
-
+  const logs = serializePrisma(rows).map((item) => {
+    const { users: actorObj, ...rest } = item;
     return {
-        logs: data || [],
-        total: count || 0,
-        page: Number(page),
-        limit: Number(limit)
+      ...rest,
+      actor: actorObj || null,
     };
+  });
+
+  return {
+    logs,
+    total: total || 0,
+    page: Number(page),
+    limit: Number(limit),
+  };
 };
 
 const createActivityLog = async ({
-    actorId = null,
-    actorType = "USER",
-    action,
-    targetType,
-    targetId = 0,
-    changes = null,
-    reason = null,
-    ipAddress = null
+  actorId = null,
+  actorType = "USER",
+  action,
+  targetType,
+  targetId = 0,
+  changes = null,
+  reason = null,
+  ipAddress = null,
 }) => {
-    const numericTargetId = isNaN(Number(targetId)) ? 0: Number(targetId);
+  const numericTargetId = isNaN(Number(targetId)) ? 0 : Number(targetId);
 
-    // BUG-ADM-14: Sanitize IP to ensure single valid address for PostgreSQL inet column
-    let cleanIp = ipAddress;
-    if (cleanIp && typeof cleanIp === "string") {
-        if (cleanIp.includes(",")) {
-            cleanIp = cleanIp.split(",")[0].trim();
-        }
-        if (cleanIp === "::1" || cleanIp === "::ffff:127.0.0.1") {
-            cleanIp = "127.0.0.1";
-        } else if (cleanIp.startsWith("::ffff:")) {
-            cleanIp = cleanIp.replace("::ffff:", "");
-        }
+  let cleanIp = ipAddress;
+  if (cleanIp && typeof cleanIp === "string") {
+    if (cleanIp.includes(",")) {
+      cleanIp = cleanIp.split(",")[0].trim();
     }
-
-    const { data, error } = await supabase
-        .from("activity_logs")
-        .insert({
-            actor_id: actorId ? Number(actorId): null,
-            actor_type: actorType,
-            action,
-            target_type: targetType,
-            target_id: numericTargetId,
-            changes: changes ? (typeof changes === "object" ? JSON.stringify(changes): changes): null,
-            reason,
-            ip_address: cleanIp,
-            created_time: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-    if (error) {
-        throw error;
+    if (cleanIp === "::1" || cleanIp === "::ffff:127.0.0.1") {
+      cleanIp = "127.0.0.1";
+    } else if (cleanIp.startsWith("::ffff:")) {
+      cleanIp = cleanIp.replace("::ffff:", "");
     }
+  }
 
-    return data;
+  const created = await prisma.activity_logs.create({
+    data: {
+      actor_id: actorId ? toBigInt(actorId) : null,
+      actor_type: actorType,
+      action,
+      target_type: targetType,
+      target_id: BigInt(numericTargetId),
+      changes: changes ?? undefined,
+      reason,
+      ip_address: cleanIp || null,
+      created_time: new Date(),
+    },
+  });
+
+  return serializePrisma(created);
 };
 
 // ==========================================
@@ -122,214 +150,209 @@ const createActivityLog = async ({
 // ==========================================
 
 const getUsers = async ({
-    page = 1,
-    limit = 20,
-    roleId = null,
-    status = null,
-    keyword = null
+  page = 1,
+  limit = 20,
+  roleId = null,
+  status = null,
+  keyword = null,
 }) => {
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
+  const where = {};
 
-    let query = supabase
-        .from("users")
-        .select("id, username, full_name, email, phone, zalo_link, role_id, status, last_login_at, created_at, updated_at, role:roles(id, name)", { count: "exact" })
-        .order("created_at", { ascending: false });
-
-    if (roleId && roleId !== "ALL") {
-        query = query.eq("role_id", Number(roleId));
+  if (roleId && roleId !== "ALL") {
+    where.role_id = toBigInt(roleId);
+  }
+  if (status && status !== "ALL") {
+    where.status = status;
+  }
+  if (keyword && typeof keyword === "string") {
+    const cleanKw = sanitizePostgrestParam(keyword);
+    if (cleanKw) {
+      where.OR = [
+        { username: { contains: cleanKw, mode: "insensitive" } },
+        { full_name: { contains: cleanKw, mode: "insensitive" } },
+        { email: { contains: cleanKw, mode: "insensitive" } },
+        { phone: { contains: cleanKw, mode: "insensitive" } },
+      ];
     }
+  }
 
-    if (status && status !== "ALL") {
-        query = query.eq("status", status);
-    }
+  const [rows, total] = await Promise.all([
+    prisma.users.findMany({
+      where,
+      select: USER_PUBLIC_SELECT,
+      orderBy: { created_at: "desc" },
+      skip,
+      take,
+    }),
+    prisma.users.count({ where }),
+  ]);
 
-    if (keyword && typeof keyword === "string") {
-        const cleanKw = sanitizePostgrestParam(keyword);
-        if (cleanKw) {
-            query = query.or(`username.ilike.%${cleanKw}%,full_name.ilike.%${cleanKw}%,email.ilike.%${cleanKw}%,phone.ilike.%${cleanKw}%`);
-        }
-    }
-
-    const { data, count, error } = await query.range(from, to);
-
-    if (error) {
-        throw error;
-    }
-
-    return {
-        users: data || [],
-        total: count || 0,
-        page: Number(page),
-        limit: Number(limit)
-    };
+  return {
+    users: rows.map(mapUserWithRole),
+    total: total || 0,
+    page: Number(page),
+    limit: Number(limit),
+  };
 };
 
 const getUserById = async (id) => {
-    const numId = Number(id);
-    if (!Number.isSafeInteger(numId) || numId <= 0) {
-        return null;
-    }
+  const numId = Number(id);
+  if (!Number.isSafeInteger(numId) || numId <= 0) {
+    return null;
+  }
 
-    const { data, error } = await supabase
-        .from("users")
-        .select("id, username, full_name, email, phone, zalo_link, role_id, status, last_login_at, created_at, updated_at, role:roles(id, name)")
-        .eq("id", numId)
-        .maybeSingle();
+  const row = await prisma.users.findUnique({
+    where: { id: BigInt(numId) },
+    select: USER_PUBLIC_SELECT,
+  });
 
-    if (error) {
-        throw error;
-    }
-
-    return data;
+  return mapUserWithRole(row);
 };
 
 const findUserByUsernameOrEmail = async (username, email, excludeId = null) => {
-    const conditions = [];
+  const orConditions = [];
 
-    if (username && typeof username === "string" && username.trim()) {
-        const cleanUsername = sanitizePostgrestParam(username.trim());
-        if (cleanUsername) {
-            conditions.push(`username.ilike.${cleanUsername}`);
-        }
+  if (username && typeof username === "string" && username.trim()) {
+    const cleanUsername = sanitizePostgrestParam(username.trim());
+    if (cleanUsername) {
+      orConditions.push({ username: { equals: cleanUsername, mode: "insensitive" } });
     }
+  }
 
-    if (email && typeof email === "string" && email.trim()) {
-        const cleanEmail = sanitizePostgrestParam(email.trim());
-        if (cleanEmail) {
-            conditions.push(`email.ilike.${cleanEmail}`);
-        }
+  if (email && typeof email === "string" && email.trim()) {
+    const cleanEmail = sanitizePostgrestParam(email.trim());
+    if (cleanEmail) {
+      orConditions.push({ email: { equals: cleanEmail, mode: "insensitive" } });
     }
+  }
 
-    if (conditions.length === 0) {
-        return null;
-    }
+  if (orConditions.length === 0) {
+    return null;
+  }
 
-    let query = supabase
-        .from("users")
-        .select("id, username, email")
-        .or(conditions.join(","));
+  const where = { OR: orConditions };
+  if (excludeId && !isNaN(Number(excludeId))) {
+    where.id = { not: BigInt(Number(excludeId)) };
+  }
 
-    if (excludeId) {
-        const numExcludeId = Number(excludeId);
-        if (!isNaN(numExcludeId)) {
-            query = query.neq("id", numExcludeId);
-        }
-    }
+  const row = await prisma.users.findFirst({
+    where,
+    select: { id: true, username: true, email: true },
+  });
 
-    const { data, error } = await query;
-
-    if (error) {
-        throw error;
-    }
-
-    return data && data.length > 0 ? data[0]: null;
+  return serializePrisma(row);
 };
 
 const createUser = async ({
-    username,
-    password_hash,
-    full_name,
-    email,
-    phone = null,
-    zalo_link = null,
-    role_id,
-    status = "ACTIVE"
+  username,
+  password_hash,
+  full_name,
+  email,
+  phone = null,
+  zalo_link = null,
+  role_id,
+  status = "ACTIVE",
 }) => {
-    const now = new Date().toISOString();
-    const { data, error } = await supabase
-        .from("users")
-        .insert({
-            username,
-            password_hash,
-            full_name,
-            email,
-            phone,
-            zalo_link,
-            role_id: Number(role_id),
-            status,
-            created_at: now,
-            updated_at: now
-        })
-        .select("id, username, full_name, email, phone, zalo_link, role_id, status, created_at, updated_at")
-        .single();
+  const now = new Date();
+  const created = await prisma.users.create({
+    data: {
+      username,
+      password_hash,
+      full_name,
+      email,
+      phone,
+      zalo_link,
+      role_id: BigInt(Number(role_id)),
+      status,
+      created_at: now,
+      updated_at: now,
+    },
+    select: {
+      id: true,
+      username: true,
+      full_name: true,
+      email: true,
+      phone: true,
+      zalo_link: true,
+      role_id: true,
+      status: true,
+      created_at: true,
+      updated_at: true,
+    },
+  });
 
-    if (error) {
-        throw error;
-    }
-
-    return data;
+  return serializePrisma(created);
 };
 
 const updateUser = async (id, updateFields) => {
-    const numId = Number(id);
-    if (!Number.isSafeInteger(numId) || numId <= 0) {
-        return null;
-    }
+  const numId = Number(id);
+  if (!Number.isSafeInteger(numId) || numId <= 0) {
+    return null;
+  }
 
-    const fieldsToUpdate = {
-        ...updateFields,
-        updated_at: new Date().toISOString()
-    };
+  const fieldsToUpdate = {
+    ...updateFields,
+    updated_at: new Date(),
+  };
+  if (fieldsToUpdate.role_id !== undefined) {
+    fieldsToUpdate.role_id = BigInt(Number(fieldsToUpdate.role_id));
+  }
 
-    const { data, error } = await supabase
-        .from("users")
-        .update(fieldsToUpdate)
-        .eq("id", numId)
-        .select("id, username, full_name, email, phone, zalo_link, role_id, status, last_login_at, created_at, updated_at, role:roles(id, name)")
-        .maybeSingle();
-
-    if (error) {
-        throw error;
-    }
-
-    return data;
+  try {
+    const updated = await prisma.users.update({
+      where: { id: BigInt(numId) },
+      data: fieldsToUpdate,
+      select: USER_PUBLIC_SELECT,
+    });
+    return mapUserWithRole(updated);
+  } catch (err) {
+    if (err.code === "P2025") return null;
+    throw err;
+  }
 };
 
 const updateUserStatus = async (id, status) => {
-    const numId = Number(id);
-    if (!Number.isSafeInteger(numId) || numId <= 0) {
-        return null;
-    }
+  const numId = Number(id);
+  if (!Number.isSafeInteger(numId) || numId <= 0) {
+    return null;
+  }
 
-    const { data, error } = await supabase
-        .from("users")
-        .update({
-            status,
-            updated_at: new Date().toISOString()
-        })
-        .eq("id", numId)
-        .select("id, username, full_name, email, role_id, status, updated_at")
-        .maybeSingle();
-
-    if (error) {
-        throw error;
-    }
-
-    return data;
+  try {
+    const updated = await prisma.users.update({
+      where: { id: BigInt(numId) },
+      data: {
+        status,
+        updated_at: new Date(),
+      },
+      select: {
+        id: true,
+        username: true,
+        full_name: true,
+        email: true,
+        role_id: true,
+        status: true,
+        updated_at: true,
+      },
+    });
+    return serializePrisma(updated);
+  } catch (err) {
+    if (err.code === "P2025") return null;
+    throw err;
+  }
 };
 
 const countActiveAdmins = async (excludeId = null) => {
-    let query = supabase
-        .from("users")
-        .select("id", { count: "exact", head: true })
-        .eq("role_id", 1)
-        .eq("status", "ACTIVE");
+  const where = {
+    role_id: 1n,
+    status: "ACTIVE",
+  };
+  if (excludeId && !isNaN(Number(excludeId))) {
+    where.id = { not: BigInt(Number(excludeId)) };
+  }
 
-    if (excludeId) {
-        const numExcludeId = Number(excludeId);
-        if (!isNaN(numExcludeId)) {
-            query = query.neq("id", numExcludeId);
-        }
-    }
-
-    const { count, error } = await query;
-
-    if (error) {
-        throw error;
-    }
-
-    return count || 0;
+  return (await prisma.users.count({ where })) || 0;
 };
 
 // ==========================================
@@ -337,16 +360,11 @@ const countActiveAdmins = async (excludeId = null) => {
 // ==========================================
 
 const getRoles = async () => {
-    const { data, error } = await supabase
-        .from("roles")
-        .select("id, name")
-        .order("id", { ascending: true });
-
-    if (error) {
-        throw error;
-    }
-
-    return data || [];
+  const rows = await prisma.roles.findMany({
+    select: { id: true, name: true },
+    orderBy: { id: "asc" },
+  });
+  return serializePrisma(rows || []);
 };
 
 // ==========================================
@@ -354,63 +372,48 @@ const getRoles = async () => {
 // ==========================================
 
 const getDashboardStats = async () => {
-    const { count: totalUsers, error: errUsers } = await supabase
-        .from("users")
-        .select("*", { count: "exact", head: true });
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    if (errUsers) throw errUsers;
+  const [totalUsers, activeUsers, lockedUsers, recentLogs, roleCounts] = await Promise.all([
+    prisma.users.count(),
+    prisma.users.count({ where: { status: "ACTIVE" } }),
+    prisma.users.count({ where: { status: "LOCKED" } }),
+    prisma.activity_logs.count({ where: { created_time: { gte: yesterday } } }),
+    prisma.users.findMany({
+      select: { role_id: true, roles: { select: { name: true } } },
+    }),
+  ]);
 
-    const { count: activeUsers, error: errActive } = await supabase
-        .from("users")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "ACTIVE");
+  const usersByRole = {
+    ADMINISTRATOR: 0,
+    MANAGER: 0,
+    DISPATCHER: 0,
+    DRIVER: 0,
+  };
 
-    if (errActive) throw errActive;
-
-    const { count: lockedUsers, error: errLocked } = await supabase
-        .from("users")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "LOCKED");
-
-    if (errLocked) throw errLocked;
-
-    // Logs in the last 24 hours
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { count: recentLogs, error: errLogs } = await supabase
-        .from("activity_logs")
-        .select("*", { count: "exact", head: true })
-        .gte("created_time", yesterday);
-
-    if (errLogs) throw errLogs;
-
-    // Users by role
-    const { data: roleCounts, error: errRoleCounts } = await supabase
-        .from("users")
-        .select("role_id, roles(name)");
-
-    const usersByRole = {
-        ADMINISTRATOR: 0,
-        MANAGER: 0,
-        DISPATCHER: 0,
-        DRIVER: 0
-    };
-
-    if (!errRoleCounts && roleCounts) {
-        for (const u of roleCounts) {
-            const roleName = u.roles?.name || (u.role_id === 1 ? "ADMINISTRATOR": u.role_id === 2 ? "MANAGER": u.role_id === 3 ? "DISPATCHER": "DRIVER");
-            if (usersByRole[roleName] !== undefined) {
-                usersByRole[roleName]++;
-            }
-        }
+  for (const u of roleCounts || []) {
+    const roleIdNum = toNum(u.role_id);
+    const roleName =
+      u.roles?.name ||
+      (roleIdNum === 1
+        ? "ADMINISTRATOR"
+        : roleIdNum === 2
+        ? "MANAGER"
+        : roleIdNum === 3
+        ? "DISPATCHER"
+        : "DRIVER");
+    if (usersByRole[roleName] !== undefined) {
+      usersByRole[roleName]++;
     }
+  }
 
-    return {
-        totalUsers: totalUsers || 0,
-        activeUsers: activeUsers || 0,
-        lockedUsers: lockedUsers || 0,
-        recentLogs24h: recentLogs || 0,
-        usersByRole
-    };
+  return {
+    totalUsers: totalUsers || 0,
+    activeUsers: activeUsers || 0,
+    lockedUsers: lockedUsers || 0,
+    recentLogs24h: recentLogs || 0,
+    usersByRole,
+  };
 };
 
 // ==========================================
@@ -418,56 +421,61 @@ const getDashboardStats = async () => {
 // ==========================================
 
 const getSystemSettings = async () => {
-    const { data, error } = await supabase
-        .from("system_settings")
-        .select("*")
-        .order("key", { ascending: true });
-
-    if (error) {
-        throw error;
-    }
-
-    return data || [];
+  const rows = await prisma.system_settings.findMany({
+    orderBy: { key: "asc" },
+  });
+  return serializePrisma(rows || []);
 };
 
 const upsertSystemSetting = async (key, value, updatedBy = null) => {
-    const { data, error } = await supabase
-        .from("system_settings")
-        .upsert({
-            key,
-            value: String(value),
-            updated_by: updatedBy ? Number(updatedBy) : null,
-            updated_time: new Date().toISOString()
-        })
-        .select("key, value, updated_time")
-        .single();
+  const now = new Date();
+  const strVal = String(value);
+  const bigUpdatedBy = updatedBy ? toBigInt(updatedBy) : null;
 
-    if (error) {
-        throw error;
-    }
+  const row = await prisma.system_settings.upsert({
+    where: { key },
+    create: {
+      key,
+      value: strVal,
+      updated_by: bigUpdatedBy,
+      updated_time: now,
+    },
+    update: {
+      value: strVal,
+      updated_by: bigUpdatedBy,
+      updated_time: now,
+    },
+    select: { key: true, value: true, updated_time: true },
+  });
 
-    return data;
+  return serializePrisma(row);
 };
 
 const upsertSystemSettingsBulk = async (settingsArray, updatedBy = null) => {
-    const now = new Date().toISOString();
-    const rows = settingsArray.map(s => ({
-        key: s.key,
-        value: String(s.value),
-        updated_by: updatedBy ? Number(updatedBy) : null,
-        updated_time: now
-    }));
+  const now = new Date();
+  const bigUpdatedBy = updatedBy ? toBigInt(updatedBy) : null;
 
-    const { data, error } = await supabase
-        .from("system_settings")
-        .upsert(rows, { onConflict: "key" })
-        .select("key, value, updated_time");
+  const results = await prisma.$transaction(
+    settingsArray.map((s) =>
+      prisma.system_settings.upsert({
+        where: { key: s.key },
+        create: {
+          key: s.key,
+          value: String(s.value),
+          updated_by: bigUpdatedBy,
+          updated_time: now,
+        },
+        update: {
+          value: String(s.value),
+          updated_by: bigUpdatedBy,
+          updated_time: now,
+        },
+        select: { key: true, value: true, updated_time: true },
+      })
+    )
+  );
 
-    if (error) {
-        throw error;
-    }
-
-    return data;
+  return serializePrisma(results);
 };
 
 // ==========================================
@@ -475,98 +483,70 @@ const upsertSystemSettingsBulk = async (settingsArray, updatedBy = null) => {
 // ==========================================
 
 const getPermissionsMatrix = async () => {
-    const [rolesRes, permsRes, rolePermsRes] = await Promise.all([
-        supabase.from("roles").select("id, name").order("id", { ascending: true }),
-        supabase.from("permissions").select("id, key").order("id", { ascending: true }),
-        supabase.from("role_permissions").select("role_id, permission_id")
-    ]);
+  const [roles, permissions, rolePermissions] = await Promise.all([
+    prisma.roles.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } }),
+    prisma.permissions.findMany({ select: { id: true, key: true }, orderBy: { id: "asc" } }),
+    prisma.role_permissions.findMany({ select: { role_id: true, permission_id: true } }),
+  ]);
 
-    if (rolesRes.error) throw rolesRes.error;
-    if (permsRes.error) throw permsRes.error;
-    if (rolePermsRes.error) throw rolePermsRes.error;
-
-    return {
-        roles: rolesRes.data || [],
-        permissions: permsRes.data || [],
-        rolePermissions: rolePermsRes.data || []
-    };
+  return {
+    roles: serializePrisma(roles || []),
+    permissions: serializePrisma(permissions || []),
+    rolePermissions: serializePrisma(rolePermissions || []),
+  };
 };
 
 const getExistingPermissionIds = async (ids = []) => {
-    if (!ids || ids.length === 0) return [];
-    const { data, error } = await supabase
-        .from("permissions")
-        .select("id")
-        .in("id", ids);
+  if (!ids || ids.length === 0) return [];
+  const bigIds = ids.map((id) => toBigInt(id)).filter((v) => v !== null);
+  if (bigIds.length === 0) return [];
 
-    if (error) throw error;
-    return (data || []).map(r => r.id);
+  const rows = await prisma.permissions.findMany({
+    where: { id: { in: bigIds } },
+    select: { id: true },
+  });
+  return rows.map((r) => Number(r.id));
 };
 
 const updateRolePermissions = async (roleId, permissionIds = []) => {
-    const numRoleId = Number(roleId);
+  const numRoleId = Number(roleId);
+  const bigRoleId = BigInt(numRoleId);
 
-    // Lưu lại quyền cũ để hỗ trợ rollback nếu có lỗi bất ngờ khi insert
-    const { data: oldPerms, error: fetchErr } = await supabase
-        .from("role_permissions")
-        .select("permission_id")
-        .eq("role_id", numRoleId);
+  await prisma.$transaction(async (tx) => {
+    await tx.role_permissions.deleteMany({
+      where: { role_id: bigRoleId },
+    });
 
-    if (fetchErr) throw fetchErr;
-
-    // Xóa toàn bộ quyền cũ của vai trò này
-    const { error: delError } = await supabase
-        .from("role_permissions")
-        .delete()
-        .eq("role_id", numRoleId);
-
-    if (delError) throw delError;
-
-    // Chèn danh sách quyền mới (nếu có)
     if (permissionIds.length > 0) {
-        const rowsToInsert = permissionIds.map(pId => ({
-            role_id: numRoleId,
-            permission_id: Number(pId)
-        }));
-
-        const { error: insError } = await supabase
-            .from("role_permissions")
-            .insert(rowsToInsert);
-
-        if (insError) {
-            // Rollback khôi phục quyền cũ để đảm bảo tính atomic
-            if (oldPerms && oldPerms.length > 0) {
-                await supabase
-                    .from("role_permissions")
-                    .insert(oldPerms.map(r => ({
-                        role_id: numRoleId,
-                        permission_id: r.permission_id
-                    })));
-            }
-            throw insError;
-        }
+      await tx.role_permissions.createMany({
+        data: permissionIds.map((pId) => ({
+          role_id: bigRoleId,
+          permission_id: BigInt(Number(pId)),
+        })),
+      });
     }
+  });
 
-    return { roleId: numRoleId, permissionIds };
+  return { roleId: numRoleId, permissionIds };
 };
 
 module.exports = {
-    getExistingPermissionIds,
-    sanitizePostgrestParam,
-    countActiveAdmins,
-    getActivityLogs,
-    createActivityLog,
-    getUsers,
-    getUserById,
-    findUserByUsernameOrEmail,
-    createUser,
-    updateUser,
-    updateUserStatus,
-    getRoles,
-    getDashboardStats,
-    getSystemSettings,
-    upsertSystemSetting,
-    upsertSystemSettingsBulk,
-    getPermissionsMatrix,
-    updateRolePermissions
+  getExistingPermissionIds,
+  sanitizePostgrestParam,
+  countActiveAdmins,
+  getActivityLogs,
+  createActivityLog,
+  getUsers,
+  getUserById,
+  findUserByUsernameOrEmail,
+  createUser,
+  updateUser,
+  updateUserStatus,
+  getRoles,
+  getDashboardStats,
+  getSystemSettings,
+  upsertSystemSetting,
+  upsertSystemSettingsBulk,
+  getPermissionsMatrix,
+  updateRolePermissions,
 };

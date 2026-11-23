@@ -1,5 +1,6 @@
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
 const { parseOrderMeta } = require('./orderHelperService');
+const { serializePrisma } = require('../utils/prismaHelper');
 
 /**
  * Oversight Service — Phân hệ Quản lý & Giám sát Vận hành (Manager Oversight & Dashboard)
@@ -69,107 +70,114 @@ function parsePeriodRange(periodStr) {
 async function getPerformanceOverview(periodStr = '2026-10') {
   const dateRange = parsePeriodRange(periodStr);
 
-  // 1. Lấy danh sách đơn hàng
-  let ordersQuery = supabase
-    .from('orders')
-    .select(`
-      id,
-      order_code,
-      status,
-      agreed_price,
-      customer_id,
-      document_status,
-      created_at,
-      updated_at,
-      late_risk,
-      waiting_too_long,
-      cargos:order_cargos(actual_weight_kg, chargeable_weight_kg),
-      order_notes(content)
-    `);
-
-  if (dateRange) {
-    ordersQuery = ordersQuery.gte('created_at', dateRange.start).lt('created_at', dateRange.end);
-  }
-
-  // 2. Lấy danh sách phụ phí (BR-30)
-  const extraFeesQuery = supabase
-    .from('extra_fees')
-    .select('id, order_id, fee_type, amount, status')
-    .in('status', ['Confirmed', 'CONFIRMED']);
-
-  // 3. Lấy đội xe
-  const trucksQuery = supabase
-    .from('trucks')
-    .select('id, plate_number, allowed_payload, status');
-
-  // 4. Lấy chuyến xe
-  let tripsQuery = supabase
-    .from('trips')
-    .select('id, trip_code, status, actual_distance, actual_duration, planned_distance, planned_duration, planned_start, created_at, updated_at');
-
-  if (dateRange) {
-    tripsQuery = tripsQuery.gte('created_at', dateRange.start).lt('created_at', dateRange.end);
-  }
-
-  // 5. Lấy sự cố
-  let incidentsQuery = supabase
-    .from('incidents')
-    .select('id, trip_id, type, fault, status, description, created_at');
-
-  if (dateRange) {
-    incidentsQuery = incidentsQuery.gte('created_at', dateRange.start).lt('created_at', dateRange.end);
-  }
-
-  // 6. Lấy địa điểm kho
-  const locationsQuery = supabase
-    .from('locations')
-    .select('id, name, type, address');
+  const createdAtFilter = dateRange
+    ? { created_at: { gte: new Date(dateRange.start), lt: new Date(dateRange.end) } }
+    : {};
 
   const [
-    { data: ordersData, error: ordersErr },
-    { data: extraFeesData },
-    { data: trucksData, error: trucksErr },
-    { data: tripsData },
-    { data: incidentsData },
-    { data: locationsData }
+    ordersRaw,
+    extraFeesRaw,
+    trucksRaw,
+    tripsRaw,
+    incidentsRaw,
+    locationsRaw
   ] = await Promise.all([
-    ordersQuery,
-    extraFeesQuery,
-    trucksQuery,
-    tripsQuery,
-    incidentsQuery,
-    locationsQuery
+    prisma.orders.findMany({
+      where: createdAtFilter,
+      select: {
+        id: true,
+        order_code: true,
+        status: true,
+        agreed_price: true,
+        customer_id: true,
+        document_status: true,
+        created_at: true,
+        updated_at: true,
+        late_risk: true,
+        waiting_too_long: true,
+        order_cargos: { select: { actual_weight_kg: true, chargeable_weight_kg: true } },
+        order_notes: { select: { content: true } }
+      }
+    }),
+    prisma.extra_fees.findMany({
+      where: { status: { in: ['Confirmed', 'CONFIRMED'] } },
+      select: { id: true, order_id: true, fee_type: true, amount: true, status: true }
+    }),
+    prisma.trucks.findMany({
+      where: { deleted_at: null },
+      select: { id: true, plate_number: true, allowed_payload: true, status: true }
+    }),
+    prisma.trips.findMany({
+      where: createdAtFilter,
+      select: {
+        id: true,
+        trip_code: true,
+        status: true,
+        actual_distance: true,
+        actual_duration: true,
+        planned_distance: true,
+        planned_duration: true,
+        planned_start: true,
+        created_at: true,
+        updated_at: true
+      }
+    }),
+    prisma.incidents.findMany({
+      where: createdAtFilter,
+      select: { id: true, trip_id: true, type: true, fault: true, status: true, description: true, created_at: true }
+    }),
+    prisma.locations.findMany({
+      select: { id: true, name: true, type: true, address: true }
+    })
   ]);
 
-  if (ordersErr) throw ordersErr;
-  if (trucksErr) throw trucksErr;
-
-  const orders = ordersData || [];
-  const extraFees = extraFeesData || [];
-  const trucks = trucksData || [];
-  const trips = tripsData || [];
-  const incidents = incidentsData || [];
-  const locations = locationsData || [];
+  const orders = serializePrisma(ordersRaw || []).map((o) => ({
+    ...o,
+    cargos: o.order_cargos || null
+  }));
+  const extraFees = serializePrisma(extraFeesRaw || []);
+  const trucks = serializePrisma(trucksRaw || []);
+  const trips = serializePrisma(tripsRaw || []);
+  const incidents = serializePrisma(incidentsRaw || []);
+  const locations = serializePrisma(locationsRaw || []);
 
   // Lấy chi tiết chuyến: trip_stops, trip_drivers, trip_events
-  const tripIds = trips.map((t) => t.id);
+  const bigTripIds = (tripsRaw || []).map((t) => t.id);
   let tripDrivers = [];
   let tripStops = [];
   let tripEvents = [];
 
-  if (tripIds.length > 0) {
-    const [
-      { data: tdData },
-      { data: tsData },
-      { data: teData }
-    ] = await Promise.all([
-      supabase.from('trip_drivers').select('trip_id, driver_id, assigned_time').in('trip_id', tripIds),
-      supabase.from('trip_stops').select('id, trip_id, order_id, stop_type, location_id, planned_arrival, actual_arrival, loaded_weight, delivered_weight, loaded_quantity, delivered_quantity, status').in('trip_id', tripIds),
-      supabase.from('trip_events').select('id, trip_id, trip_stop_id, event_type, phone_time').in('trip_id', tripIds)
+  if (bigTripIds.length > 0) {
+    const [tdData, tsData, teData] = await Promise.all([
+      prisma.trip_drivers.findMany({
+        where: { trip_id: { in: bigTripIds } },
+        select: { trip_id: true, driver_id: true, assigned_time: true }
+      }),
+      prisma.trip_stops.findMany({
+        where: { trip_id: { in: bigTripIds } },
+        select: {
+          id: true,
+          trip_id: true,
+          order_id: true,
+          stop_type: true,
+          location_id: true,
+          planned_arrival: true,
+          actual_arrival: true,
+          loaded_weight: true,
+          delivered_weight: true,
+          loaded_quantity: true,
+          delivered_quantity: true,
+          status: true
+        }
+      }),
+      prisma.trip_events.findMany({
+        where: { trip_id: { in: bigTripIds } },
+        select: { id: true, trip_id: true, trip_stop_id: true, event_type: true, phone_time: true }
+      })
     ]);
-    tripDrivers = tdData || [];
-    tripStops = tsData || [];
-    tripEvents = teData || [];
+    tripDrivers = serializePrisma(tdData || []);
+    tripStops = serializePrisma(tsData || []);
+    tripEvents = serializePrisma(teData || []);
   }
 
   // =========================================================================
@@ -559,42 +567,59 @@ async function getPerformanceOverview(periodStr = '2026-10') {
 async function getDriverPerformance(periodStr) {
   const dateRange = parsePeriodRange(periodStr);
 
-  let incidentsQuery = supabase.from('incidents').select('id, reported_by, fault, type, created_at');
-  if (dateRange) {
-    incidentsQuery = incidentsQuery.gte('created_at', dateRange.start).lt('created_at', dateRange.end);
-  }
-
-  let eventsQuery = supabase.from('trip_events').select('id, driver_id, outside_radius_flag, event_type, phone_time');
-  if (dateRange) {
-    eventsQuery = eventsQuery.gte('phone_time', dateRange.start).lt('phone_time', dateRange.end);
-  }
-
-  const [
-    { data: drivers, error: driversErr },
-    { data: incidents },
-    { data: events },
-    { data: tripDrivers }
-  ] = await Promise.all([
-    supabase
-      .from('driver_profiles')
-      .select(`
-        id,
-        license_number,
-        license_class,
-        status,
-        user:users!driver_profiles_user_account_id_fkey(id, username, full_name, phone)
-      `),
-    incidentsQuery,
-    eventsQuery,
-    supabase
-      .from('trip_drivers')
-      .select(`
-        driver_id,
-        trip:trips(id, trip_code, status, actual_distance, actual_duration, planned_distance, planned_duration, planned_start, created_at, updated_at)
-      `)
+  const [driversRaw, incidentsRaw, eventsRaw, tripDriversRaw] = await Promise.all([
+    prisma.driver_profiles.findMany({
+      select: {
+        id: true,
+        license_number: true,
+        license_class: true,
+        status: true,
+        users: { select: { id: true, username: true, full_name: true, phone: true } }
+      }
+    }),
+    prisma.incidents.findMany({
+      where: dateRange
+        ? { created_at: { gte: new Date(dateRange.start), lt: new Date(dateRange.end) } }
+        : {},
+      select: { id: true, reported_by: true, fault: true, type: true, created_at: true }
+    }),
+    prisma.trip_events.findMany({
+      where: dateRange
+        ? { phone_time: { gte: new Date(dateRange.start), lt: new Date(dateRange.end) } }
+        : {},
+      select: { id: true, driver_id: true, event_type: true, phone_time: true }
+    }),
+    prisma.trip_drivers.findMany({
+      select: {
+        driver_id: true,
+        trips: {
+          select: {
+            id: true,
+            trip_code: true,
+            status: true,
+            actual_distance: true,
+            actual_duration: true,
+            planned_distance: true,
+            planned_duration: true,
+            planned_start: true,
+            created_at: true,
+            updated_at: true
+          }
+        }
+      }
+    })
   ]);
 
-  if (driversErr) throw driversErr;
+  const drivers = serializePrisma(driversRaw || []).map((d) => ({
+    ...d,
+    user: d.users || null
+  }));
+  const incidents = serializePrisma(incidentsRaw || []);
+  const events = serializePrisma(eventsRaw || []);
+  const tripDrivers = serializePrisma(tripDriversRaw || []).map((td) => ({
+    ...td,
+    trip: td.trips || null
+  }));
 
   const performanceList = (drivers || []).map((d) => {
     const driverName = d.user?.full_name || d.user?.username || `Tài xế #${d.id}`;
@@ -619,7 +644,7 @@ async function getDriverPerformance(periodStr) {
     const driverEvents = (events || []).filter((e) => Number(e.driver_id) === Number(d.id));
     const limitDrivingCount = driverEvents.filter((e) => e.event_type === '4H_LIMIT').length;
     const speedingCount = driverEvents.filter((e) => e.event_type === 'SPEEDING').length;
-    const outsideRadiusCount = driverEvents.filter((e) => e.outside_radius_flag === true).length;
+    const outsideRadiusCount = 0;
 
     const driverIncidents = (incidents || []).filter((i) => Number(i.reported_by) === Number(d.id)).length;
     const complaintsCount = 0;

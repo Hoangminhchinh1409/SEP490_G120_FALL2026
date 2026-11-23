@@ -5,9 +5,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { VIETMAP_TILE_URL } from '../../utils/roadRouting';
 
-const SAFE_VIETMAP_TILE_URL =
-  VIETMAP_TILE_URL ||
-  'https://maps.vietmap.vn/api/tm/{z}/{x}/{y}@2x.png?apikey=6ad933d27ec1ae2fb5a5fd36902c817d1c912263116e4644';
+const SAFE_VIETMAP_TILE_URL = VIETMAP_TILE_URL;
 
 // Component cập nhật khung nhìn bản đồ, phóng to vừa vặn toàn tuyến & hỗ trợ pan tới điểm chọn
 function MapReplayController({ boundsPositions, centerOverride, incidentLocation, isIncidentMode }) {
@@ -287,9 +285,9 @@ export default function InnerReplayMap({
           );
         })}
 
-        {/* 4. Marker Sự cố / Vi phạm bán kính Geofence (nếu có) */}
+        {/* 4. Marker Sự cố (nếu có) */}
         {events
-          .filter((e) => e.outside_radius_flag || e.event_type === 'INCIDENT' || e.event_type === 'CLAIM')
+          .filter((e) => e.event_type === 'INCIDENT' || e.event_type === 'CLAIM')
           .map((ev, idx) => {
             const lat = Number(ev.latitude);
             const lng = Number(ev.longitude);
@@ -299,7 +297,7 @@ export default function InnerReplayMap({
               <Marker key={`ev-${ev.id || idx}`} position={[lat, lng]} icon={incidentIcon}>
                 <Tooltip permanent direction="bottom" offset={[0, 16]}>
                   <span className="text-[10px] font-bold text-red-600">
-                    {ev.outside_radius_flag ? 'Vi phạm bán kính Geofence' : 'Điểm ghi nhận sự cố'}
+                    Điểm ghi nhận sự cố
                   </span>
                 </Tooltip>
                 <Popup>

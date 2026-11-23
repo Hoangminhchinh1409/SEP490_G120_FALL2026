@@ -21,6 +21,7 @@ import {
 } from '../../data/dispatcherPresets';
 import { orderApi } from '../../api/orderApi';
 import { aiApi } from '../../api/aiApi';
+import { uploadApi } from '../../api/uploadApi';
 
 // Subcomponents đã được tách module
 import OrderOverviewTab from './orderDetails/OrderOverviewTab';
@@ -58,13 +59,12 @@ export default function OrderDetailsModal({ open, order, onCancel, onUpdateOrder
 
 function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOnly = false }) {
   const router = useRouter();
-  const isNegotiating = order.status === 'NEGOTIATING' || order.web_workflow?.stage === 'CUSTOMER_NEGOTIATING';
   const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
-  const isLocked = isClosed || ['READY_FOR_PLANNING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(order.status);
+  const isLocked = isClosed || ['READY_FOR_PLANNING', 'ASSIGNED', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'HANDED_OVER_VENDOR', 'DELIVERED', 'DELIVERED_EXCEPTION'].includes(order.status);
 
   // Xác định tab mặc định dựa trên trạng thái đơn hàng
   const defaultTab = order.targetTab || (
-    (order.status === 'DRAFT' || isNegotiating) ? '1' :
+    order.status === 'DRAFT' ? '1' :
     order.status === 'CONFIRMED' ? '2' : '1'
   );
 
@@ -307,11 +307,6 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       return;
     }
 
-    if (isNegotiating && !adjustmentReason.trim()) {
-      message.error('Vui lòng ghi rõ lý do điều chỉnh lại giá cước (Bắt buộc)!');
-      return;
-    }
-
     try {
       setSavingPrice(true);
       await orderApi.uploadOrderDocuments(order.id || order.order_id, documents).catch(console.error);
@@ -347,10 +342,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       };
 
       onUpdateOrder?.(updatedOrder);
-      if (isNegotiating) {
-        message.success(`Đã chốt lại phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ (Lý do: ${adjustmentReason.trim()}) và gửi lại cho khách hàng!`);
-        setAdjustmentReason('');
-      } else if (isWebOrder) {
+      if (isWebOrder) {
         message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ, đồng thời gửi email báo giá và yêu cầu chứng từ cho khách hàng!`);
       } else {
         message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ! Đơn đã chuyển sang trạng thái Cần xác nhận chứng từ.`);
@@ -373,7 +365,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
     }
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !uploadingDocKey) return;
 
@@ -382,17 +374,18 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       : `${Math.round(file.size / 1024)} KB`;
 
     const nowFormatted = new Date().toLocaleDateString('vi-VN');
+    const orderId = order.id || order.order_id;
+    const currentDocKey = uploadingDocKey;
 
-    const reader = new FileReader();
-    reader.onload = async (uploadEvent) => {
-      const base64Data = uploadEvent.target?.result;
-
+    try {
+      const uploaded = await uploadApi.uploadToCloudinary(file, `nexlog/orders/${orderId}/docs`);
       const updatedDocs = documents.map(d => {
-        if (d.key === uploadingDocKey) {
+        if (d.key === currentDocKey) {
           return {
             ...d,
             file: file.name,
-            file_data: base64Data,
+            file_url: uploaded.url,
+            file_data: uploaded.url,
             size: sizeFormatted,
             uploadDate: nowFormatted,
             status: 'PENDING_REVIEW',
@@ -405,24 +398,21 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       setDocuments(updatedDocs);
       setUploadingDocKey(null);
 
-      try {
-        await orderApi.uploadOrderDocuments(order.id || order.order_id, updatedDocs);
-        onUpdateOrder?.({
-          ...order,
-          documents: updatedDocs,
-          web_workflow: {
-            ...(order.web_workflow || {}),
-            documents: updatedDocs
-          }
-        });
-        message.success(`Đã tải lên và lưu tệp chứng từ: ${file.name}`);
-      } catch (err) {
-        console.error('Lỗi lưu chứng từ:', err);
-        message.warning(`Đã đính kèm tệp ${file.name} nhưng chưa lưu được vào máy chủ.`);
-      }
-    };
-
-    reader.readAsDataURL(file);
+      await orderApi.uploadOrderDocuments(orderId, updatedDocs);
+      onUpdateOrder?.({
+        ...order,
+        documents: updatedDocs,
+        web_workflow: {
+          ...(order.web_workflow || {}),
+          documents: updatedDocs
+        }
+      });
+      message.success(`Đã tải lên Cloudinary và lưu tệp chứng từ: ${file.name}`);
+    } catch (err) {
+      console.error('Lỗi tải/lưu chứng từ:', err);
+      message.error(err.message || `Không thể tải tệp ${file.name} lên Cloudinary.`);
+      setUploadingDocKey(null);
+    }
   };
 
   // 2b. Xử lý Tải lên tệp hợp đồng
@@ -436,63 +426,50 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
 
     try {
       setUploadingContract(true);
-      const reader = new FileReader();
-      reader.onload = async (uploadEvent) => {
-        const base64Data = uploadEvent.target?.result;
+      const orderId = order.id || order.order_id;
+      const uploaded = await uploadApi.uploadToCloudinary(file, `nexlog/orders/${orderId}/contract`);
+      const contractUrl = uploaded.url;
 
-        try {
-          const res = await orderApi.uploadContractFile(order.id || order.order_id, {
-            file_name: file.name,
-            file_data: base64Data,
-            file_size: sizeFormatted
-          });
+      const res = await orderApi.uploadContractFile(orderId, {
+        file_name: file.name,
+        file_data: contractUrl,
+        file_url: contractUrl,
+        file_size: sizeFormatted
+      });
 
-          setContractUploaded(true);
-          setContractFile(file.name);
-          setContractFileData(base64Data);
-          setContractUploadedAt(res.contract_uploaded_at || new Date().toISOString());
+      setContractUploaded(true);
+      setContractFile(file.name);
+      setContractFileData(contractUrl);
+      setContractUploadedAt(res.contract_uploaded_at || new Date().toISOString());
 
-          const nextStatus = res?.order?.status || (isDocsApprovedStage ? 'READY_FOR_PLANNING' : order.status);
-          const updatedOrder = {
-            ...order,
-            status: nextStatus,
-            contract_uploaded: true,
-            contract_file: file.name,
-            contract_file_data: base64Data,
-            contract_uploaded_at: res.contract_uploaded_at || new Date().toISOString(),
-            web_workflow: res?.web_workflow || {
-              ...(order.web_workflow || {}),
-              stage: 'CONTRACT_SIGNED',
-              signed_contract: {
-                signed_at: res.contract_uploaded_at || new Date().toISOString(),
-                signer_name: 'Hai bên ký trực tiếp (Bản Scan PDF)',
-                contract_file: file.name
-              }
-            }
-          };
-
-          onUpdateOrder?.(updatedOrder);
-          message.success(
-            res?.message ||
-              `Đã đính kèm bản scan hợp đồng [${file.name}] vào hồ sơ đơn hàng thành công!`
-          );
-        } catch (apiErr) {
-          console.error('Upload contract api error:', apiErr);
-          message.error(apiErr.message || 'Lỗi khi lưu tệp hợp đồng lên máy chủ');
-        } finally {
-          setUploadingContract(false);
+      const nextStatus = res?.order?.status || (isDocsApprovedStage ? 'READY_FOR_PLANNING' : order.status);
+      const updatedOrder = {
+        ...order,
+        status: nextStatus,
+        contract_uploaded: true,
+        contract_file: file.name,
+        contract_file_data: contractUrl,
+        contract_uploaded_at: res.contract_uploaded_at || new Date().toISOString(),
+        web_workflow: res?.web_workflow || {
+          ...(order.web_workflow || {}),
+          stage: 'CONTRACT_SIGNED',
+          signed_contract: {
+            signed_at: res.contract_uploaded_at || new Date().toISOString(),
+            signer_name: 'Hai bên ký trực tiếp (Bản Scan PDF)',
+            contract_file: file.name
+          }
         }
       };
 
-      reader.onerror = () => {
-        message.error('Không thể đọc dữ liệu tệp hợp đồng');
-        setUploadingContract(false);
-      };
-
-      reader.readAsDataURL(file);
+      onUpdateOrder?.(updatedOrder);
+      message.success(
+        res?.message ||
+          `Đã đính kèm bản scan hợp đồng [${file.name}] vào hồ sơ đơn hàng thành công!`
+      );
     } catch (err) {
-      console.error('Upload error:', err);
-      message.error('Lỗi khi tải tệp');
+      console.error('Upload contract api error:', err);
+      message.error(err.message || 'Lỗi khi tải tệp hợp đồng lên Cloudinary');
+    } finally {
       setUploadingContract(false);
     }
   };
@@ -836,13 +813,13 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
             setSelected3DVehicleType(vType || proposedVehicleType);
             setIs3DModalOpen(true);
           }}
-          onOpenSplitModal={(!isLocked && !isClosed && (order.status === 'DRAFT' || isNegotiating)) ? () => setSplitModalOpen(true) : null}
+          onOpenSplitModal={(!isLocked && !isClosed && order.status === 'DRAFT') ? () => setSplitModalOpen(true) : null}
         />
       )
     }
   ];
 
-  if (order.status !== 'DRAFT' && !isNegotiating) {
+  if (order.status !== 'DRAFT') {
     tabItems.push({
       key: '2',
       label: <span className="font-semibold text-xs">Kiểm duyệt Chứng từ</span>,
@@ -972,17 +949,30 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
                 </Tag>
               )}
               <Tag color={
-                isNegotiating ? 'warning' :
                 order.status === 'DELIVERED' ? 'green' : 
+                order.status === 'DELIVERED_EXCEPTION' ? 'error' :
+                order.status === 'HANDED_OVER_VENDOR' ? 'volcano' :
+                order.status === 'IN_TRANSIT' ? 'purple' :
+                order.status === 'PICKED_UP' ? 'gold' :
+                order.status === 'ACCEPTED' ? 'geekblue' :
+                order.status === 'ASSIGNED' ? 'orange' :
                 order.status === 'CANCELLED' ? 'red' : 
                 order.status === 'READY_FOR_PLANNING' ? 'cyan' : 
                 hasRejectedDocs || order.web_workflow?.stage === 'DOCS_REJECTED' ? 'error' :
                 isDocsApprovedStage ? 'success' :
                 order.status === 'CONFIRMED' ? 'blue' : 'default'
               } className="px-3 py-1 font-semibold text-xs rounded-full">
-                {isNegotiating ? 'ĐANG THƯƠNG LƯỢNG' :
-                 order.status === 'DRAFT' ? 'ĐƠN NHÁP' : 
+                {order.status === 'DRAFT' ? 'ĐƠN NHÁP' : 
                  order.status === 'READY_FOR_PLANNING' ? 'SẴN SÀNG XẾP XE' :
+                 order.status === 'ASSIGNED' ? 'ĐÃ GÁN XE' :
+                 order.status === 'ACCEPTED' ? 'TÀI XẾ ĐÃ NHẬN' :
+                 order.status === 'PICKED_UP' ? 'ĐÃ LẤY HÀNG' :
+                 order.status === 'IN_TRANSIT' ? 'ĐANG VẬN CHUYỂN' :
+                 order.status === 'HANDED_OVER_VENDOR' ? 'GIAO NHÀ XE NGOÀI' :
+                 order.status === 'DELIVERED' ? 'ĐÃ GIAO HÀNG' :
+                 order.status === 'DELIVERED_EXCEPTION' ? 'TỪ CHỐI NHẬN HÀNG' :
+                 order.status === 'CANCELLED' ? 'ĐÃ HỦY' :
+                 order.status === 'CLOSED' ? 'ĐÃ ĐÓNG' :
                  hasRejectedDocs || order.web_workflow?.stage === 'DOCS_REJECTED' ? 'CHỜ KHÁCH UPLOAD LẠI CHỨNG TỪ' :
                  isDocsApprovedStage ? 'ĐÃ DUYỆT CHỨNG TỪ - CHỜ ĐÍNH KÈM HỢP ĐỒNG PDF' :
                  order.status === 'CONFIRMED' ? 'CẦN XÁC NHẬN CHỨNG TỪ' : order.status}
@@ -998,22 +988,18 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
             <Button key="close" type="primary" onClick={onCancel}>Đóng</Button>
           ] : [
           <Button key="close" onClick={onCancel}>Đóng</Button>,
-          (order.status === 'DRAFT' || isNegotiating) && (
+          order.status === 'DRAFT' && (
             <Button 
               key="confirmPrice" 
               type="primary" 
               loading={savingPrice}
-              className={
-                isNegotiating
-                  ? 'bg-amber-600 hover:bg-amber-700 border-amber-600 font-bold'
-                  : 'bg-indigo-600 hover:bg-indigo-700 font-semibold'
-              }
+              className="bg-indigo-600 hover:bg-indigo-700 font-semibold"
               onClick={handleConfirmPriceAndOrder}
             >
-              {isNegotiating ? 'Chốt lại giá' : 'Chốt giá & Xác nhận đơn'}
+              Chốt giá &amp; Xác nhận đơn
             </Button>
           ),
-          order.status === 'CONFIRMED' && !isNegotiating && !isDocsApprovedStage && (
+          order.status === 'CONFIRMED' && !isDocsApprovedStage && (
             <Button 
               key="confirmDocs" 
               type="primary" 
@@ -1033,7 +1019,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
                   : 'Xác nhận chứng từ & Chuyển sang Hợp đồng PDF'}
             </Button>
           ),
-          order.status === 'CONFIRMED' && !isNegotiating && isDocsApprovedStage && !contractUploaded && (
+          order.status === 'CONFIRMED' && isDocsApprovedStage && !contractUploaded && (
             <Button
               key="uploadScannedContract"
               type="primary"
@@ -1064,7 +1050,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
               Chuyển sang Xếp chuyến &amp; Điều xe
             </Button>
           ),
-          ['DRAFT', 'NEGOTIATING', 'CONFIRMED'].includes(order.status) && (
+          ['DRAFT', 'CONFIRMED', 'READY_FOR_PLANNING', 'ASSIGNED', 'ACCEPTED'].includes(order.status) && (
             <Button key="cancel" danger onClick={() => setCancelModalOpen(true)}>
               Hủy đơn
             </Button>

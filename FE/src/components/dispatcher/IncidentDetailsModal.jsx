@@ -17,10 +17,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, isRe
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open || !incident) return;
-    setMode('RESOLVE');
-    setResolutionNote(incident.resolution_note || '');
-    setEscalationReason(incident.escalation_reason || 'Sự cố nghiêm trọng vượt thẩm quyền Điều phối viên, đề xuất Quản lý phê duyệt phương án xử lý / bồi thường.');
+    if (!open || !incident) return undefined;
 
     let active = true;
     Promise.all([
@@ -28,6 +25,9 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, isRe
       dispatcherApi.getDrivers().catch(() => [])
     ]).then(([tList, dList]) => {
       if (!active) return;
+      setMode('RESOLVE');
+      setResolutionNote(incident.resolution_note || '');
+      setEscalationReason(incident.escalation_reason || 'Sự cố nghiêm trọng vượt thẩm quyền Điều phối viên, đề xuất Quản lý phê duyệt phương án xử lý / bồi thường.');
       if (Array.isArray(tList) && tList.length > 0) {
         setTrucks(tList);
         const availTruck = tList.find(t => t.plate !== incident.truck && (t.status === 'AVAILABLE' || t.status === 'Available'));

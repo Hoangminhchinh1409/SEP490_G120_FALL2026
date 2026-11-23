@@ -43,7 +43,6 @@ export const createConsultationOrderFromWeb = (data) => {
   const newOrder = {
     key: Date.now().toString(),
     order_id: newOrderId,
-    hawb_code: data.hawb_code || `WEB-${randomNum.toString().slice(-4)}`,
     customer: data.customer_name || 'Khách hàng trực tuyến',
     customer_phone: data.customer_phone || '',
     customer_email: data.customer_email || '',

@@ -41,7 +41,7 @@ export default function OrderDocumentsTab({
     (order.web_workflow?.stage === 'DOCS_APPROVED' || order.web_workflow?.stage === 'CONTRACT_SIGNED');
   const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
   // Khi đơn đã hoàn tất ký HĐ/sẵn sàng xếp xe, gán xe, vận chuyển, đã giao hoặc đã đóng: khóa toàn bộ thao tác duyệt/từ chối/thêm/xóa chứng từ
-  const isLocked = isClosed || isDocsApprovedStage || ['READY_FOR_PLANNING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(order.status);
+  const isLocked = isClosed || isDocsApprovedStage || ['READY_FOR_PLANNING', 'ASSIGNED', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'HANDED_OVER_VENDOR', 'DELIVERED', 'DELIVERED_EXCEPTION'].includes(order.status);
 
   const docColumns = [
     { 

@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
 const userModel = require('../models/userModel');
 
 let maintenanceCache = {
@@ -13,12 +13,11 @@ const isMaintenanceActive = async () => {
         return maintenanceCache.value;
     }
     try {
-        const { data } = await supabase
-            .from("system_settings")
-            .select("value")
-            .eq("key", "maintenance_mode")
-            .maybeSingle();
-        maintenanceCache.value = data && (data.value === "true" || data.value === true);
+        const setting = await prisma.system_settings.findUnique({
+            where: { key: "maintenance_mode" },
+            select: { value: true }
+        });
+        maintenanceCache.value = Boolean(setting && (setting.value === "true" || setting.value === true));
         maintenanceCache.timestamp = now;
         return maintenanceCache.value;
     } catch (err) {
@@ -138,23 +137,19 @@ const requireRole = (roles, permissionKey = null) => {
         if (permissionKey && (req.method === 'GET' || req.method === 'HEAD')) {
             try {
                 const keys = Array.isArray(permissionKey) ? permissionKey : [permissionKey];
-                const { data: perms } = await supabase
-                    .from('permissions')
-                    .select('id')
-                    .in('key', keys);
+                const rolePerms = await prisma.role_permissions.findMany({
+                    where: {
+                        role_id: BigInt(userRoleId),
+                        permissions: {
+                            key: { in: keys }
+                        }
+                    },
+                    select: { permission_id: true }
+                });
 
-                if (perms && perms.length > 0) {
-                    const permIds = perms.map(p => p.id);
-                    const { data: rolePerms } = await supabase
-                        .from('role_permissions')
-                        .select('permission_id')
-                        .eq('role_id', userRoleId)
-                        .in('permission_id', permIds);
-
-                    if (rolePerms && rolePerms.length > 0) {
-                        req.isReadOnly = true;
-                        return next();
-                    }
+                if (rolePerms && rolePerms.length > 0) {
+                    req.isReadOnly = true;
+                    return next();
                 }
             } catch (permErr) {
                 console.warn('Cross-role permission check error:', permErr.message);

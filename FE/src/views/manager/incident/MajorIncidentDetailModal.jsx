@@ -15,6 +15,7 @@ import {
   Tooltip
 } from 'antd';
 import { managerApi } from '../../../api/managerApi';
+import { uploadApi } from '../../../api/uploadApi';
 import TripReplayModal from '../../../components/common/TripReplayModal';
 import {
   calculateAutoCompensation as calcCompensation,
@@ -76,58 +77,69 @@ export default function MajorIncidentDetailModal({
   const [requestInfoNote, setRequestInfoNote] = useState('');
 
   useEffect(() => {
-    if (!open || !incident) {
-      setDetail(null);
-      return;
-    }
+    let active = true;
 
-    const initStatus = determineIncidentStatus(incident);
-    setFault(incident.fault || 'COMPANY');
-    setResolutionNote(incident.resolution_note || '');
-    setDamagePercentage(Number(incident.damage_percentage || 30));
-    setGoodsHandlingMethod(incident.goods_handling_method || 'CUSTOMER_RETAIN');
-    setContractClauseRef(incident.contract_clause_ref || 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)');
-    setSurveyOrgReport(incident.survey_org_report || 'Giám định ABC - BB-2026-118');
-    setPaymentProofUrl(incident.payment_proof_url || '');
-    if (incident.payment_date) setPaymentDate(incident.payment_date);
-    if (incident.transaction_code) setTransactionCode(incident.transaction_code);
-    setCompensationAmount(Number(incident.approved_compensation_amount || incident.proposed_compensation_amount || incident.claim_amount || (initStatus.isDone ? 0 : 36000000)));
+    Promise.resolve().then(() => {
+      if (!active) return;
+      if (!open || !incident) {
+        setDetail(null);
+        return;
+      }
 
-    // Tải chi tiết sự cố và hồ sơ liên quan
-    setLoading(true);
-    const incId = incident.id || incident.raw_id;
-    managerApi.getIncidentById(incId)
-      .then((res) => {
-        const data = res || incident;
-        const dataStatus = determineIncidentStatus(data);
-        setDetail(data);
-        if (data.fault) setFault(data.fault);
-        if (data.resolution_note) setResolutionNote(data.resolution_note);
-        if (data.damage_percentage) setDamagePercentage(Number(data.damage_percentage));
-        if (data.goods_handling_method) setGoodsHandlingMethod(data.goods_handling_method);
-        if (data.contract_clause_ref) setContractClauseRef(data.contract_clause_ref);
-        if (data.survey_org_report) setSurveyOrgReport(data.survey_org_report);
-        if (data.rejection_reason) setRejectionReason(data.rejection_reason);
-        if (data.payment_date) setPaymentDate(data.payment_date);
-        if (data.transaction_code) setTransactionCode(data.transaction_code);
-        if (data.payment_proof_url) setPaymentProofUrl(data.payment_proof_url);
-        if (
-          data.approved_compensation_amount !== undefined &&
-          data.approved_compensation_amount !== null &&
-          (Number(data.approved_compensation_amount) > 0 || dataStatus.isDone)
-        ) {
-          setCompensationAmount(Number(data.approved_compensation_amount));
-        } else if (data.proposed_compensation_amount) {
-          setCompensationAmount(Number(data.proposed_compensation_amount));
-        }
-      })
-      .catch((err) => {
-        console.warn('Lỗi lấy chi tiết sự cố:', err);
-        setDetail(incident);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      const initStatus = determineIncidentStatus(incident);
+      setFault(incident.fault || 'COMPANY');
+      setResolutionNote(incident.resolution_note || '');
+      setDamagePercentage(Number(incident.damage_percentage || 30));
+      setGoodsHandlingMethod(incident.goods_handling_method || 'CUSTOMER_RETAIN');
+      setContractClauseRef(incident.contract_clause_ref || 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)');
+      setSurveyOrgReport(incident.survey_org_report || 'Giám định ABC - BB-2026-118');
+      setPaymentProofUrl(incident.payment_proof_url || '');
+      if (incident.payment_date) setPaymentDate(incident.payment_date);
+      if (incident.transaction_code) setTransactionCode(incident.transaction_code);
+      setCompensationAmount(Number(incident.approved_compensation_amount || incident.proposed_compensation_amount || incident.claim_amount || (initStatus.isDone ? 0 : 36000000)));
+
+      // Tải chi tiết sự cố và hồ sơ liên quan
+      setLoading(true);
+      const incId = incident.id || incident.raw_id;
+      managerApi.getIncidentById(incId)
+        .then((res) => {
+          if (!active) return;
+          const data = res || incident;
+          const dataStatus = determineIncidentStatus(data);
+          setDetail(data);
+          if (data.fault) setFault(data.fault);
+          if (data.resolution_note) setResolutionNote(data.resolution_note);
+          if (data.damage_percentage) setDamagePercentage(Number(data.damage_percentage));
+          if (data.goods_handling_method) setGoodsHandlingMethod(data.goods_handling_method);
+          if (data.contract_clause_ref) setContractClauseRef(data.contract_clause_ref);
+          if (data.survey_org_report) setSurveyOrgReport(data.survey_org_report);
+          if (data.rejection_reason) setRejectionReason(data.rejection_reason);
+          if (data.payment_date) setPaymentDate(data.payment_date);
+          if (data.transaction_code) setTransactionCode(data.transaction_code);
+          if (data.payment_proof_url) setPaymentProofUrl(data.payment_proof_url);
+          if (
+            data.approved_compensation_amount !== undefined &&
+            data.approved_compensation_amount !== null &&
+            (Number(data.approved_compensation_amount) > 0 || dataStatus.isDone)
+          ) {
+            setCompensationAmount(Number(data.approved_compensation_amount));
+          } else if (data.proposed_compensation_amount) {
+            setCompensationAmount(Number(data.proposed_compensation_amount));
+          }
+        })
+        .catch((err) => {
+          if (!active) return;
+          console.warn('Lỗi lấy chi tiết sự cố:', err);
+          setDetail(incident);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    });
+
+    return () => {
+      active = false;
+    };
   }, [open, incident]);
 
   if (!open || !incident) return null;
@@ -244,22 +256,22 @@ export default function MajorIncidentDetailModal({
     }
   };
 
-  const handlePaymentProofFileChange = (e) => {
+  const handlePaymentProofFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       message.warning('Vui lòng chọn tệp hình ảnh (JPG, PNG, WEBP) cho biên lai chuyển khoản!');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setPaymentProofUrl(reader.result);
-        message.success(`Đã tải lên chứng từ: ${file.name}`);
-      }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    try {
+      const uploaded = await uploadApi.uploadToCloudinary(file, 'nexlog/claims');
+      setPaymentProofUrl(uploaded.url);
+      message.success(`Đã tải lên Cloudinary chứng từ: ${file.name}`);
+    } catch (err) {
+      message.error(err.message || 'Không thể tải ảnh chứng từ lên Cloudinary');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   // Nút 17: Phê duyệt bồi thường

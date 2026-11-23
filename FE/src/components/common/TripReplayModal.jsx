@@ -252,12 +252,12 @@ export default function TripReplayModal({
         };
       }
     }
-    const incEvent = (events || []).find(e => (e.event_type === 'INCIDENT' || e.outside_radius_flag) && e.latitude && e.longitude);
+    const incEvent = (events || []).find(e => e.event_type === 'INCIDENT' && e.latitude && e.longitude);
     if (incEvent) {
       return {
         lat: Number(incEvent.latitude),
         lng: Number(incEvent.longitude),
-        address: incEvent.payload?.location || incidentInfo?.location || (incEvent.outside_radius_flag ? 'Điểm vi phạm bán kính' : 'Điểm ghi nhận sự cố'),
+        address: incEvent.payload?.location || incidentInfo?.location || 'Điểm ghi nhận sự cố',
         reported_time: incEvent.phone_time || incidentInfo?.reported_time
       };
     }
@@ -295,7 +295,7 @@ export default function TripReplayModal({
               <p className="text-xs text-slate-500 font-normal">
                 {isIncidentMode
                   ? 'Xác định tọa độ GPS nơi tài xế gửi báo cáo sự cố & đối chiếu với lộ trình vận chuyển của chuyến xe'
-                  : 'Đối chiếu quỹ đạo GPS thiết bị hộp đen với kế hoạch lộ trình & kiểm tra vi phạm bán kính Geofence'}
+                  : 'Đối chiếu quỹ đạo GPS thiết bị hộp đen với kế hoạch lộ trình thực tế'}
               </p>
             </div>
           </div>
@@ -595,7 +595,6 @@ export default function TripReplayModal({
                             <th className="py-1.5 px-2">Loại</th>
                             <th className="py-1.5 px-2">Kế hoạch</th>
                             <th className="py-1.5 px-2">Thực tế</th>
-                            <th className="py-1.5 px-2">Bán kính Geofence</th>
                             <th className="py-1.5 px-2 text-right">Xem trên bản đồ</th>
                           </tr>
                         </thead>
@@ -618,11 +617,6 @@ export default function TripReplayModal({
                                 </td>
                                 <td className="py-1.5 px-2 font-mono text-blue-600 font-semibold">
                                   {st.actual_arrival || st.actual || '--:--'}
-                                </td>
-                                <td className="py-1.5 px-2">
-                                  <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
-                                    <CheckCircle2 size={12} /> Hợp lệ (&lt;200m)
-                                  </span>
                                 </td>
                                 <td className="py-1.5 px-2 text-right">
                                   {lat && lng ? (
@@ -658,7 +652,7 @@ export default function TripReplayModal({
                   <div className="p-3 max-h-48 overflow-y-auto space-y-2">
                     {events.length === 0 ? (
                       <div className="py-3 text-slate-500 text-[11px] italic">
-                        Không phát hiện sự kiện bất thường hay vi phạm bán kính trên chuyến xe. Tín hiệu thiết bị GPS ổn định, chu kỳ đồng bộ 30 giây/lần.
+                        Không phát hiện sự kiện bất thường trên chuyến xe. Tín hiệu thiết bị GPS ổn định.
                       </div>
                     ) : (
                       events.map((ev, i) => (
@@ -667,7 +661,7 @@ export default function TripReplayModal({
                           className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200"
                         >
                           <div className="flex items-center gap-2">
-                            {ev.outside_radius_flag ? (
+                            {ev.event_type === 'INCIDENT' ? (
                               <AlertTriangle size={14} className="text-red-500 shrink-0" />
                             ) : (
                               <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />

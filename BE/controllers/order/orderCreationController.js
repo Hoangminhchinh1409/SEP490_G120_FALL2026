@@ -1,7 +1,16 @@
 const adminModel = require('../../models/adminModel');
 const { getClientIp } = require('../../utils/ipHelper');
-const supabase = require('../../config/supabase');
-const { generateTrackingToken, getOrCreateLocation, saveOrderMeta, getNextDispatcherForWebOrder } = require('../../services/orderHelperService');
+const prisma = require('../../config/prisma');
+const { serializePrisma, toBigInt } = require('../../utils/prismaHelper');
+const { generateTrackingToken, resolveAlsLocationIdIfValid, getOrCreateLocation, saveOrderMeta, getNextDispatcherForWebOrder } = require('../../services/orderHelperService');
+
+const toDateObj = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return val;
+  const s = String(val).split('T')[0].trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return new Date(`${s}T00:00:00.000Z`);
+};
 
 // Bảng thông số tải trọng xe chuẩn ALS
 const VEHICLE_MAX_PAYLOAD = {
@@ -72,47 +81,52 @@ const createConsultationOrder = async (req, res) => {
     const cleanPhone = (customer_phone || '').replace(/[^0-9]/g, '');
     const taxCode = customer_tax_code || cleanPhone.slice(-10) || '0988123456';
 
-    const { data: existingCust } = await supabase
-      .from('customers')
-      .select('id')
-      .or(`email.eq.${customer_email || 'none@none.com'},tax_code.eq.${taxCode}`)
-      .limit(1);
+    const existingCust = await prisma.customers.findFirst({
+      where: {
+        OR: [
+          { email: customer_email || 'none@none.com' },
+          { tax_code: taxCode }
+        ]
+      },
+      select: { id: true }
+    });
 
     let isNewCustomer = false;
-    if (existingCust && existingCust.length > 0) {
-      customerId = existingCust[0].id;
+    if (existingCust) {
+      customerId = Number(existingCust.id);
     } else {
       isNewCustomer = true;
-      const { data: newCust, error: custErr } = await supabase
-        .from('customers')
-        .insert([{
-          company_name: customer_name || 'Khách hàng trực tuyến',
-          contact_person: customer_name || 'Khách hàng',
-          phone: cleanPhone || '0988123456',
-          tax_code: taxCode,
-          registered_address: pickup_address || delivery_address || 'Hà Nội',
-          email: customer_email || 'client@nexlog.vn',
-          created_by: 1
-        }])
-        .select();
-
-      if (custErr) {
+      try {
+        const newCust = await prisma.customers.create({
+          data: {
+            company_name: customer_name || 'Khách hàng trực tuyến',
+            contact_person: customer_name || 'Khách hàng',
+            phone: cleanPhone || '0988123456',
+            tax_code: taxCode,
+            registered_address: pickup_address || delivery_address || 'Hà Nội',
+            email: customer_email || 'client@nexlog.vn',
+            created_by: 1n
+          },
+          select: { id: true }
+        });
+        if (newCust) {
+          customerId = Number(newCust.id);
+        }
+      } catch (custErr) {
         console.error('Error creating customer:', custErr);
-      }
-      if (newCust && newCust.length > 0) {
-        customerId = newCust[0].id;
       }
     }
 
-    const finalPickupAddress = (pickup_address || '').trim() || 'Nhà Ga Hàng Hóa ALS Nội Bài';
+    const finalPickupAddress = (pickup_address || '').trim() || 'Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội';
     const finalDeliveryAddress = (delivery_address || '').trim() || 'KCN Tiên Sơn, Bắc Ninh';
 
     // 2. Lấy hoặc tạo Location cho điểm lấy và điểm giao
-    const pickupLocationId = await getOrCreateLocation({
+    const validatedPickupAlsId = await resolveAlsLocationIdIfValid(req.body.pickup_location_id);
+    const pickupLocationId = validatedPickupAlsId || await getOrCreateLocation({
       name: finalPickupAddress,
       address: finalPickupAddress,
       customerId: pickup_address ? customerId : null,
-      type: pickup_address ? 'CUSTOMER_SITE' : 'WAREHOUSE',
+      type: 'CUSTOMER_SITE',
       lat: pickup_coords?.lat,
       lng: pickup_coords?.lng,
       contactName: customer_name,
@@ -120,11 +134,12 @@ const createConsultationOrder = async (req, res) => {
       isNewCustomer
     });
 
-    const deliveryLocationId = await getOrCreateLocation({
+    const validatedDeliveryAlsId = await resolveAlsLocationIdIfValid(req.body.delivery_location_id);
+    const deliveryLocationId = validatedDeliveryAlsId || await getOrCreateLocation({
       name: finalDeliveryAddress,
       address: finalDeliveryAddress,
       customerId: delivery_address ? customerId : null,
-      type: delivery_address ? 'CUSTOMER_SITE' : 'WAREHOUSE',
+      type: 'CUSTOMER_SITE',
       lat: delivery_coords?.lat,
       lng: delivery_coords?.lng,
       contactName: customer_name,
@@ -224,24 +239,22 @@ const createConsultationOrder = async (req, res) => {
     const assignedDispatcherId = await getNextDispatcherForWebOrder();
 
     // 5. Insert vào bảng orders
-    const { data: newOrder, error: orderErr } = await supabase
-      .from('orders')
-      .insert([{
+    const createdOrderRaw = await prisma.orders.create({
+      data: {
         order_code: randomCode,
-        hawb_number: randomCode,
         order_type: req.body.shipping_direction === 'EXPORT' ? 'Export' : 'Import',
-        customer_id: customerId,
+        customer_id: BigInt(customerId),
         tracking_token: token,
-        pickup_location_id: pickupLocationId,
-        delivery_location_id: deliveryLocationId,
+        pickup_location_id: BigInt(Number(pickupLocationId)),
+        delivery_location_id: BigInt(Number(deliveryLocationId)),
         receiver_name: (receiver_name && (receiver_name + '').trim()) || customer_name || 'Khách hàng trực tuyến',
         receiver_phone: (receiver_phone && (receiver_phone + '').replace(/[^0-9]/g, '')) || cleanPhone || '0988123456',
-        agreed_price: 0,
-        status: 'Draft',
+        agreed_price: 0n,
+        status: 'DRAFT',
         source: 'Web',
-        responsible_dispatcher_id: assignedDispatcherId,
-        created_by: assignedDispatcherId,
-        requested_pickup_date: required_pickup_date || flight_arrival_date || null,
+        responsible_dispatcher_id: BigInt(Number(assignedDispatcherId)),
+        created_by: BigInt(Number(assignedDispatcherId)),
+        requested_pickup_date: toDateObj(required_pickup_date || req.body.flight_arrival_date),
         truck_type_requested: vehicle_type_required || 'TRUCK_2.5T',
         loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
         warehouse_type: 'ALS warehouse',
@@ -250,37 +263,32 @@ const createConsultationOrder = async (req, res) => {
         is_closed: false,
         waiting_too_long: false,
         late_risk: false
-      }])
-      .select();
+      }
+    });
 
-    if (orderErr) {
-      console.error('createConsultationOrder Insert Error:', orderErr);
-      return res.status(500).json({ message: 'Không thể tạo đơn hàng trên Supabase', error: orderErr });
-    }
-
-    const createdOrder = newOrder[0];
+    const createdOrder = serializePrisma(createdOrderRaw);
     await saveOrderMeta(createdOrder.id, metadata);
 
     // 5. Insert vào bảng order_cargos
-    const { error: cargoErr } = await supabase
-      .from('order_cargos')
-      .insert([{
-        order_id: createdOrder.id,
-        cargo_type: cargo_type === 'BULK' ? 'Bulk' : (cargo_type === 'PALLET' ? 'Pallet' : 'General'),
-        cargo_name: finalCargoDesc,
-        quantity: totalPackages,
-        unit: package_unit || 'Kiện',
-        actual_weight_kg: actualWeight,
-        length_cm: l,
-        width_cm: w,
-        height_cm: h,
-        stackable: true,
-        chargeable_weight_kg: parseFloat(chargeableWeight.toFixed(2)),
-        declared_value: declared_value_usd ? parseFloat(declared_value_usd) * 25000 : 0,
-        special_request_note: notes || null
-      }]);
-
-    if (cargoErr) {
+    try {
+      await prisma.order_cargos.create({
+        data: {
+          order_id: createdOrderRaw.id,
+          cargo_type: cargo_type === 'BULK' ? 'Bulk' : (cargo_type === 'PALLET' ? 'Pallet' : 'General'),
+          cargo_name: finalCargoDesc,
+          quantity: totalPackages,
+          unit: package_unit || 'Kiện',
+          actual_weight_kg: actualWeight,
+          length_cm: l,
+          width_cm: w,
+          height_cm: h,
+          stackable: true,
+          chargeable_weight_kg: parseFloat(chargeableWeight.toFixed(2)),
+          declared_value: declared_value_usd ? BigInt(Math.round(parseFloat(declared_value_usd) * 25000)) : 0n,
+          special_request_note: notes || null
+        }
+      });
+    } catch (cargoErr) {
       console.error('createConsultationOrder Cargo Insert Error:', cargoErr);
     }
 
@@ -292,11 +300,13 @@ const createConsultationOrder = async (req, res) => {
     }
 
     if (initialNoteContent.length > 0) {
-      await supabase.from('order_notes').insert([{
-        order_id: createdOrder.id,
-        content: initialNoteContent.slice(0, 480),
-        created_by: 1
-      }]);
+      await prisma.order_notes.create({
+        data: {
+          order_id: createdOrderRaw.id,
+          content: initialNoteContent.slice(0, 480),
+          created_by: 1n
+        }
+      });
     }
 
     return res.status(201).json({
@@ -326,7 +336,6 @@ const createDirectOrder = async (req, res) => {
       customer_email,
       customer_address,
       is_new_customer,
-      hawb_code,
       pickup_address,
       delivery_address,
       length_cm,
@@ -347,7 +356,6 @@ const createDirectOrder = async (req, res) => {
       required_pickup_date,
       vehicle_type_required,
       loading_unloading_required,
-      hawb_number,
       declared_value_usd,
       authorized_bank,
       accounting_email
@@ -358,48 +366,53 @@ const createDirectOrder = async (req, res) => {
     const cleanPhone = (customer_phone || '').replace(/[^0-9]/g, '');
 
     if (!is_new_customer) {
-      const { data: existingCust } = await supabase
-        .from('customers')
-        .select('id')
-        .or(`company_name.eq.${customer_name || 'none'},tax_code.eq.${cleanPhone || 'none'}`)
-        .limit(1);
+      const existingCust = await prisma.customers.findFirst({
+        where: {
+          OR: [
+            { company_name: customer_name || 'none' },
+            { tax_code: cleanPhone || 'none' }
+          ]
+        },
+        select: { id: true }
+      });
 
-      if (existingCust && existingCust.length > 0) {
-        customerId = existingCust[0].id;
+      if (existingCust) {
+        customerId = Number(existingCust.id);
       }
     }
 
     if (is_new_customer || customerId === 16) {
-      const { data: newCust, error: custErr } = await supabase
-        .from('customers')
-        .insert([{
-          company_name: customer_name || 'Khách hàng mới',
-          contact_person: customer_name || 'Khách hàng',
-          phone: cleanPhone || '0988123456',
-          tax_code: cleanPhone.slice(-10) || '0988123456',
-          registered_address: customer_address || delivery_address || 'Hà Nội',
-          email: customer_email || 'client@nexlog.vn',
-          created_by: 1
-        }])
-        .select();
-
-      if (custErr) {
+      try {
+        const newCust = await prisma.customers.create({
+          data: {
+            company_name: customer_name || 'Khách hàng mới',
+            contact_person: customer_name || 'Khách hàng',
+            phone: cleanPhone || '0988123456',
+            tax_code: cleanPhone.slice(-10) || `TX${Date.now().toString().slice(-8)}`,
+            registered_address: customer_address || delivery_address || 'Hà Nội',
+            email: customer_email || 'client@nexlog.vn',
+            created_by: 1n
+          },
+          select: { id: true }
+        });
+        if (newCust) {
+          customerId = Number(newCust.id);
+        }
+      } catch (custErr) {
         console.error('Error creating customer in direct order:', custErr);
-      }
-      if (newCust && newCust.length > 0) {
-        customerId = newCust[0].id;
       }
     }
 
-    const finalPickupAddress = (pickup_address || '').trim() || 'Nhà Ga Hàng Hóa ALS Nội Bài';
+    const finalPickupAddress = (pickup_address || '').trim() || 'Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội';
     const finalDeliveryAddress = (delivery_address || customer_address || '').trim() || 'KCN Tiên Sơn, Bắc Ninh';
 
     const isNew = Boolean(is_new_customer || customerId === 16);
-    const pickupLocationId = await getOrCreateLocation({
+    const validatedPickupAlsId = await resolveAlsLocationIdIfValid(req.body.pickup_location_id);
+    const pickupLocationId = validatedPickupAlsId || await getOrCreateLocation({
       name: finalPickupAddress,
       address: finalPickupAddress,
       customerId: pickup_address ? customerId : null,
-      type: pickup_address ? 'CUSTOMER_SITE' : 'WAREHOUSE',
+      type: 'CUSTOMER_SITE',
       lat: pickup_coords?.lat,
       lng: pickup_coords?.lng,
       contactName: customer_name,
@@ -407,11 +420,12 @@ const createDirectOrder = async (req, res) => {
       isNewCustomer: isNew
     });
 
-    const deliveryLocationId = await getOrCreateLocation({
+    const validatedDeliveryAlsId = await resolveAlsLocationIdIfValid(req.body.delivery_location_id);
+    const deliveryLocationId = validatedDeliveryAlsId || await getOrCreateLocation({
       name: finalDeliveryAddress,
       address: finalDeliveryAddress,
       customerId: delivery_address ? customerId : null,
-      type: delivery_address ? 'CUSTOMER_SITE' : 'WAREHOUSE',
+      type: 'CUSTOMER_SITE',
       lat: delivery_coords?.lat,
       lng: delivery_coords?.lng,
       contactName: customer_name,
@@ -419,7 +433,7 @@ const createDirectOrder = async (req, res) => {
       isNewCustomer: isNew
     });
 
-    const orderCode = hawb_code?.trim() || `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
+    const orderCode = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
     const token = generateTrackingToken();
 
     const isBulk = cargo_type === 'BULK';
@@ -469,24 +483,22 @@ const createDirectOrder = async (req, res) => {
     // Nếu điều phối viên đang đăng nhập trực tiếp tạo đơn, gán chính điều phối viên đó
     const directDispatcherId = req.body.dispatcher_id || req.user?.id || 1;
 
-    const { data: newOrder, error: orderErr } = await supabase
-      .from('orders')
-      .insert([{
+    const createdOrderRaw = await prisma.orders.create({
+      data: {
         order_code: orderCode,
-        hawb_number: hawb_number || orderCode,
         order_type: req.body.shipping_direction === 'EXPORT' ? 'Export' : 'Import',
-        customer_id: customerId,
+        customer_id: BigInt(customerId),
         tracking_token: token,
-        pickup_location_id: pickupLocationId,
-        delivery_location_id: deliveryLocationId,
+        pickup_location_id: BigInt(Number(pickupLocationId)),
+        delivery_location_id: BigInt(Number(deliveryLocationId)),
         receiver_name: (receiver_name && (receiver_name + '').trim()) || customer_name || 'Người nhận',
         receiver_phone: (receiver_phone && (receiver_phone + '').replace(/[^0-9]/g, '')) || cleanPhone || '0988123456',
-        agreed_price: parseInt(agreed_price, 10) || 0,
-        status: hasUploadedDocs ? 'Confirmed' : 'READY_FOR_PLANNING',
+        agreed_price: BigInt(parseInt(agreed_price, 10) || 0),
+        status: hasUploadedDocs ? 'CONFIRMED' : 'READY_FOR_PLANNING',
         source: 'Direct',
-        responsible_dispatcher_id: directDispatcherId,
-        created_by: directDispatcherId,
-        requested_pickup_date: required_pickup_date || req.body.flight_arrival_date || null,
+        responsible_dispatcher_id: BigInt(Number(directDispatcherId)),
+        created_by: BigInt(Number(directDispatcherId)),
+        requested_pickup_date: toDateObj(required_pickup_date || req.body.flight_arrival_date),
         truck_type_requested: vehicle_type_required || 'TRUCK_2.5T',
         loading_request: (loading_unloading_required === true || loading_unloading_required === 'true') ? 'YES' : 'NO',
         warehouse_type: 'ALS warehouse',
@@ -495,75 +507,39 @@ const createDirectOrder = async (req, res) => {
         is_closed: false,
         waiting_too_long: false,
         late_risk: false,
-        ready_for_planning_at: new Date().toISOString()
-      }])
-      .select();
+        ready_for_planning_at: new Date()
+      }
+    });
 
-    if (orderErr) {
-      console.error('createDirectOrder Error:', orderErr);
-      return res.status(500).json({ message: 'Không thể tạo đơn hàng', error: orderErr });
-    }
-
-    const createdOrder = newOrder[0];
+    const createdOrder = serializePrisma(createdOrderRaw);
     await saveOrderMeta(createdOrder.id, directMeta);
 
-    // Insert cargo - LƯU TỪNG MẶT HÀNG RIÊNG BIỆT (BR-02, BR-40, IT-ORD-003)
-    if (Array.isArray(req.body.items) && req.body.items.length > 0) {
-      const cargoInserts = req.body.items.map((it, idx) => {
-        const itemBulk = it.cargo_type === 'BULK';
-        const itemUnitWeight = parseFloat(it.weight) || 0;
-        const itemQty = parseInt(it.package_count || it.quantity, 10) || 1;
-        const itemTotalWeight = itemUnitWeight * (it.package_count ? itemQty : 1);
-        const itemL = itemBulk ? 0 : (parseFloat(it.length_cm) || 0);
-        const itemW = itemBulk ? 0 : (parseFloat(it.width_cm) || 0);
-        const itemH = itemBulk ? 0 : (parseFloat(it.height_cm) || 0);
-        const itemVolWeight = itemBulk ? itemTotalWeight : ((itemL * itemW * itemH) / 5000) * (it.package_count ? itemQty : 1);
-        const itemChargeable = Math.max(itemTotalWeight, itemVolWeight);
-
-        return {
-          order_id: createdOrder.id,
-          cargo_type: itemBulk ? 'Bulk' : (it.cargo_type === 'PALLET' ? 'Pallet' : 'General'),
-          cargo_name: it.cargo_name || `Mặt hàng #${idx + 1}`,
-          quantity: itemQty,
-          unit: it.package_unit || (itemBulk ? 'Chuyến' : 'Kiện'),
-          actual_weight_kg: itemTotalWeight,
-          length_cm: itemL,
-          width_cm: itemW,
-          height_cm: itemH,
-          stackable: it.stackable !== false,
-          chargeable_weight_kg: parseFloat(itemChargeable.toFixed(2)),
-          declared_value: declared_value_usd ? Math.round((parseFloat(declared_value_usd) * 25000) / req.body.items.length) : 0,
-          special_request_note: it.special_request_note || order_notes || null
-        };
-      });
-
-      const { error: cargoErr } = await supabase.from('order_cargos').insert(cargoInserts);
-      if (cargoErr) {
-        console.error('createDirectOrder Multiple Cargos Error:', cargoErr);
-      }
-    } else {
-      // Đơn có 1 dòng mặt hàng duy nhất
-      const { error: cargoErr } = await supabase
-        .from('order_cargos')
-        .insert([{
-          order_id: createdOrder.id,
-          cargo_type: isBulk ? 'Bulk' : (cargo_type === 'PALLET' ? 'Pallet' : 'General'),
-          cargo_name: cargo_name || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện'),
-          quantity: parseInt(package_count, 10) || 1,
-          unit: package_unit || (isBulk ? 'Chuyến' : 'Kiện'),
+    // Insert cargo - Bảng order_cargos có quan hệ 1-1 (order_id @unique); chi tiết từng mặt hàng đã nằm trong directMeta.items
+    try {
+      const hasItemsArr = Array.isArray(req.body.items) && req.body.items.length > 0;
+      const firstIt = hasItemsArr ? req.body.items[0] : null;
+      const firstIsBulk = (firstIt?.cargo_type || cargo_type) === 'BULK';
+      await prisma.order_cargos.create({
+        data: {
+          order_id: createdOrderRaw.id,
+          cargo_type: firstIsBulk ? 'Bulk' : ((firstIt?.cargo_type || cargo_type) === 'PALLET' ? 'Pallet' : 'General'),
+          cargo_name: hasItemsArr
+            ? req.body.items.map((it, idx) => it.cargo_name || `Mặt hàng #${idx + 1}`).join(', ').slice(0, 255)
+            : (cargo_name || (isBulk ? 'Hàng rời tính theo trọng tải' : 'Hàng bách hóa / Linh kiện')),
+          quantity: parseInt(package_count, 10) || (hasItemsArr ? req.body.items.reduce((s, it) => s + (parseInt(it.package_count || it.quantity, 10) || 1), 0) : 1),
+          unit: package_unit || firstIt?.package_unit || (firstIsBulk ? 'Chuyến' : 'Kiện'),
           actual_weight_kg: actualWeight,
           length_cm: l,
           width_cm: w,
           height_cm: h,
           stackable: true,
           chargeable_weight_kg: parseFloat(finalChargeable.toFixed(2)),
-          declared_value: declared_value_usd ? parseFloat(declared_value_usd) * 25000 : 0,
+          declared_value: declared_value_usd ? BigInt(Math.round(parseFloat(declared_value_usd) * 25000)) : 0n,
           special_request_note: order_notes || null
-        }]);
-
-      if (cargoErr) {
-        console.error('createDirectOrder Cargo Error:', cargoErr);
-      }
+        }
+      });
+    } catch (cargoErr) {
+      console.error('createDirectOrder Cargo Error:', cargoErr);
     }
 
     const noteParts = [
@@ -578,11 +554,13 @@ const createDirectOrder = async (req, res) => {
     ].filter(Boolean);
 
     if (noteParts.length > 0) {
-      await supabase.from('order_notes').insert([{
-        order_id: createdOrder.id,
-        content: noteParts.join(' | '),
-        created_by: 1
-      }]);
+      await prisma.order_notes.create({
+        data: {
+          order_id: createdOrderRaw.id,
+          content: noteParts.join(' | ').slice(0, 500),
+          created_by: 1n
+        }
+      });
     }
 
     return res.status(201).json({

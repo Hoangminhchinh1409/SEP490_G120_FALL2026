@@ -154,47 +154,31 @@ export default function DriverDashboard() {
   const [activeStopTarget, setActiveStopTarget] = useState(null);
 
   // Form Inputs for Pickup (BR-11, BR-33)
-  const [cargoPhotoUrl, setCargoPhotoUrl] = useState(
-    "https://cdn.nexlog.vn/cargo-check-sample.jpg",
-  );
-  const [loadedCargoPhotoUrl, setLoadedCargoPhotoUrl] = useState(
-    "https://cdn.nexlog.vn/cargo-loaded-sample.jpg",
-  );
-  const [sealPhotoUrl, setSealPhotoUrl] = useState(
-    "https://cdn.nexlog.vn/seal-sample.jpg",
-  );
+  const [cargoPhotoUrl, setCargoPhotoUrl] = useState("");
+  const [loadedCargoPhotoUrl, setLoadedCargoPhotoUrl] = useState("");
+  const [sealPhotoUrl, setSealPhotoUrl] = useState("");
   const [sealNumber, setSealNumber] = useState("");
   const [loadedPackages, setLoadedPackages] = useState(50);
   const [loadedWeight, setLoadedWeight] = useState(500);
 
   // Form Inputs for POD & Delivery (BR-12)
-  const [podPhotoUrl, setPodPhotoUrl] = useState(
-    "https://cdn.nexlog.vn/pod-sample.jpg",
-  );
-  const [cutSealPhotoUrl, setCutSealPhotoUrl] = useState(
-    "https://cdn.nexlog.vn/cut-seal-sample.jpg",
-  );
-  const [unloadedCargoPhotoUrl, setUnloadedCargoPhotoUrl] = useState(
-    "https://cdn.nexlog.vn/unloaded-sample.jpg",
-  );
+  const [podPhotoUrl, setPodPhotoUrl] = useState("");
+  const [cutSealPhotoUrl, setCutSealPhotoUrl] = useState("");
+  const [unloadedCargoPhotoUrl, setUnloadedCargoPhotoUrl] = useState("");
   const [receiverName, setReceiverName] = useState("");
   const [docsHandedOver, setDocsHandedOver] = useState(true);
   const [deliveredPackages, setDeliveredPackages] = useState(50);
 
   // Form Inputs for Customer Refusal (BR-57)
   const [refusalReason, setRefusalReason] = useState("");
-  const [refusalCargoPhoto, setRefusalCargoPhoto] = useState(
-    "https://cdn.nexlog.vn/refusal-sample.jpg",
-  );
+  const [refusalCargoPhoto, setRefusalCargoPhoto] = useState("");
   const [refusalNote, setRefusalNote] = useState("");
 
   // Form Inputs for Extra Fee (BR-30)
   const [feeType, setFeeType] = useState("Bốc xếp thêm");
   const [feeAmount, setFeeAmount] = useState(200000);
   const [feeReason, setFeeReason] = useState("");
-  const [feePhotoUrl, setFeePhotoUrl] = useState(
-    "https://cdn.nexlog.vn/fee-receipt.jpg",
-  );
+  const [feePhotoUrl, setFeePhotoUrl] = useState("");
 
   const formatTripDateTime = (dateStr) => {
     if (!dateStr) return null;
@@ -590,6 +574,12 @@ export default function DriverDashboard() {
   const handleSubmitPickup = async () => {
     const targetTrip = getActiveDisplayedTrip();
     if (!activeStopTarget || !targetTrip?.id) return;
+    if (!cargoPhotoUrl.trim() || !loadedCargoPhotoUrl.trim() || !sealPhotoUrl.trim()) {
+      message.error(
+        "Vui lòng chụp/tải đủ 3 ảnh (hàng trước bốc, trên xe, niêm chì & biển số)!",
+      );
+      return;
+    }
     if (!sealNumber.trim()) {
       message.error(
         "Hãy chụp rõ số chì và biển số xe, rồi nhập số chì",
@@ -848,6 +838,7 @@ export default function DriverDashboard() {
       }
       setRefusalModalOpen(false);
       setRefusalReason("");
+      setRefusalCargoPhoto("");
       setRefusalNote("");
     } catch (err) {
       message.error(err.message || "Lỗi khi gửi báo cáo từ chối nhận hàng");
@@ -902,6 +893,7 @@ export default function DriverDashboard() {
       }
       setExtraFeeModalOpen(false);
       setFeeReason("");
+      setFeePhotoUrl("");
     } catch (err) {
       message.error(err.message || "Lỗi khi gửi đề xuất phụ phí");
     } finally {

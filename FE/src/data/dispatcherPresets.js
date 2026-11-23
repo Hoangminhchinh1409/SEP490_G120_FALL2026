@@ -169,6 +169,25 @@ export const ALS_NOI_BAI_TERMINAL = {
   lng: 105.8042
 };
 
+export const DEFAULT_ALS_WAREHOUSE = {
+  raw_id: 1,
+  name: 'Kho ALS Cảng HKQT Nội Bài (ALSC)',
+  address: 'Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội',
+  province: 'Hà Nội',
+  lat: 21.2187,
+  lng: 105.8042,
+  is_als_hub: true
+};
+
+export const formatAlsWarehouseOptionLabel = (loc) => {
+  const name = (loc?.name || '').trim();
+  const province = (loc?.province || '').trim();
+  if (!province || name.toLowerCase().includes(province.toLowerCase())) {
+    return `🏢 ${name}`;
+  }
+  return `🏢 ${name} (${province})`;
+};
+
 // 4 kho hàng của ALS tại Nội Bài phân bổ hàng hóa
 export const ALS_NOI_BAI_WAREHOUSES = [
   { id: 'WH-1', name: 'Kho ALS 1 (Nội Bài Cargo Terminal 1)', code: 'ALS-NB-01' },

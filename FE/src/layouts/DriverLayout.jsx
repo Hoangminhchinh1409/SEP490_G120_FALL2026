@@ -153,7 +153,7 @@ const DriverLayout = ({ children }) => {
                 <AlertTriangle size={14} /> Chú ý: Chưa đồng bộ hết dữ liệu
               </p>
               <p className="text-[11px] leading-relaxed text-amber-200/90">
-                Bạn đang có <b>{pendingOfflineCount} thao tác ngoại tuyến</b> chưa gửi lên máy chủ. Bạn nên bấm <b>"Đồng bộ ngay"</b> trên trang chủ trước khi đăng xuất để tránh chậm trễ báo cáo.
+                Bạn đang có <b>{pendingOfflineCount} thao tác ngoại tuyến</b> chưa gửi lên máy chủ. Bạn nên bấm <b>&ldquo;Đồng bộ ngay&rdquo;</b> trên trang chủ trước khi đăng xuất để tránh chậm trễ báo cáo.
               </p>
             </div>
           )}

@@ -1,7 +1,22 @@
 const adminModel = require('../../models/adminModel');
 const { getClientIp } = require('../../utils/ipHelper');
-const supabase = require('../../config/supabase');
+const prisma = require('../../config/prisma');
+const { serializePrisma, formatDateOnly } = require('../../utils/prismaHelper');
 const { saveOrderMeta } = require('../../services/orderHelperService');
+
+const buildOrderWhere = (idParam) => {
+  const clean = String(idParam || '').trim();
+  return /^\d+$/.test(clean) ? { id: BigInt(clean) } : { order_code: clean };
+};
+
+const serializeOrderRow = (row) => {
+  if (!row) return null;
+  const serialized = serializePrisma(row);
+  if (row.requested_pickup_date) {
+    serialized.requested_pickup_date = formatDateOnly(row.requested_pickup_date);
+  }
+  return serialized;
+};
 
 // 5. XÁC NHẬN ĐƠN HÀNG (CHUYỂN SANG READY_FOR_PLANNING)
 const confirmOrder = async (req, res) => {
@@ -10,52 +25,46 @@ const confirmOrder = async (req, res) => {
     const { agreed_price } = req.body || {};
 
     // 1. Kiểm tra đơn hàng hiện tại
-    let findQuery = supabase.from('orders').select('*').limit(1);
-    if (/^\d+$/.test(id)) {
-      findQuery = findQuery.eq('id', parseInt(id, 10));
-    } else {
-      findQuery = findQuery.eq('order_code', id);
-    }
-    const { data: foundOrders, error: findErr } = await findQuery;
-    if (findErr || !foundOrders || foundOrders.length === 0) {
+    const currentOrder = await prisma.orders.findFirst({
+      where: buildOrderWhere(id)
+    });
+    if (!currentOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
-    const currentOrder = foundOrders[0];
     const upperSt = (currentOrder.status || '').toUpperCase();
     if (upperSt === 'CANCELLED' || upperSt === 'CLOSED') {
       return res.status(400).json({ message: 'Không thể xác nhận đơn hàng đã bị hủy hoặc đã đóng' });
     }
 
-    const nowIso = new Date().toISOString();
+    const nowDate = new Date();
+    const nowIso = nowDate.toISOString();
     const updates = {
       status: 'READY_FOR_PLANNING',
       document_status: 'APPROVED',
-      ready_for_planning_at: nowIso,
-      updated_at: nowIso,
+      ready_for_planning_at: nowDate,
+      updated_at: nowDate,
       waiting_too_long: false
     };
 
-    if (agreed_price && parseInt(agreed_price) > 0) {
-      updates.agreed_price = parseInt(agreed_price);
+    if (agreed_price && parseInt(agreed_price, 10) > 0) {
+      updates.agreed_price = parseInt(agreed_price, 10);
     }
 
-    let query = supabase.from('orders').update(updates);
-    if (/^\d+$/.test(id)) {
-      query = query.eq('id', parseInt(id));
-    } else {
-      query = query.eq('order_code', id);
-    }
-    query = query.neq('status', 'CANCELLED').neq('status', 'CLOSED');
+    const resUpdate = await prisma.orders.updateMany({
+      where: {
+        id: currentOrder.id,
+        status: { notIn: ['CANCELLED', 'CLOSED'] }
+      },
+      data: updates
+    });
 
-    const { data, error } = await query.select();
-
-    if (error) {
-      console.error('confirmOrder Error:', error);
-      return res.status(500).json({ message: 'Không thể xác nhận đơn hàng', error });
+    if (resUpdate.count === 0) {
+      return res.status(400).json({ message: 'Không thể xác nhận đơn hàng đã bị hủy hoặc đã đóng' });
     }
 
-    const updatedOrder = data?.[0];
+    const updatedRow = await prisma.orders.findUnique({ where: { id: currentOrder.id } });
+    const updatedOrder = serializeOrderRow(updatedRow);
     if (updatedOrder?.id) {
       await saveOrderMeta(updatedOrder.id, {
         docs_confirmed_at: nowIso,
@@ -78,27 +87,24 @@ const confirmOrder = async (req, res) => {
 const assignTrip = async (req, res) => {
   try {
     const { id } = req.params;
-
-    let query = supabase.from('orders').update({
-      status: 'ASSIGNED',
-      updated_at: new Date().toISOString()
+    const found = await prisma.orders.findFirst({
+      where: { ...buildOrderWhere(id), status: 'READY_FOR_PLANNING' },
+      select: { id: true }
     });
 
-    if (/^\d+$/.test(id)) {
-      query = query.eq('id', parseInt(id));
-    } else {
-      query = query.eq('order_code', id);
-    }
-    query = query.eq('status', 'READY_FOR_PLANNING');
-
-    const { data, error } = await query.select();
-
-    if (error) {
-      console.error('assignTrip Error:', error);
-      return res.status(500).json({ message: 'Không thể gán xe cho đơn', error });
+    let updatedOrder;
+    if (found) {
+      const updatedRow = await prisma.orders.update({
+        where: { id: found.id },
+        data: {
+          status: 'ASSIGNED',
+          updated_at: new Date()
+        }
+      });
+      updatedOrder = serializeOrderRow(updatedRow);
     }
 
-    return res.json({ message: 'Đã gán xe thành công!', order: data?.[0] });
+    return res.json({ message: 'Đã gán xe thành công!', order: updatedOrder });
   } catch (err) {
     console.error('assignTrip Exception:', err);
     return res.status(500).json({ message: 'Internal Server Error' });
@@ -124,94 +130,91 @@ const cancelOrder = async (req, res) => {
     }
 
     // 1. Tìm đơn hàng hiện tại để kiểm tra trạng thái hủy
-    let findQuery = supabase.from('orders').select('*').limit(1);
-    if (/^\d+$/.test(id)) {
-      findQuery = findQuery.eq('id', parseInt(id, 10));
-    } else {
-      findQuery = findQuery.eq('order_code', id);
-    }
-    const { data: foundOrders, error: findErr } = await findQuery;
-    if (findErr || !foundOrders || foundOrders.length === 0) {
+    const currentOrder = await prisma.orders.findFirst({
+      where: buildOrderWhere(id)
+    });
+    if (!currentOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng cần hủy' });
     }
 
-    const currentOrder = foundOrders[0];
     const upperSt = (currentOrder.status || '').toUpperCase();
 
-    // BR-17: Chỉ được hủy đơn trước khi hàng được bốc lên xe. Sau khi đã lấy hàng (Picked Up / In Transit / Delivered) cấm hủy!
-    if (['PICKED_UP', 'IN_TRANSIT', 'IN_PROGRESS', 'DELIVERED', 'CLOSED'].includes(upperSt)) {
+    // BR-17 / Figure 20: Chỉ được hủy đơn trước khi hàng được bốc lên xe (DRAFT, CONFIRMED, READY_FOR_PLANNING, ASSIGNED, ACCEPTED).
+    const blockedStatuses = ['PICKED_UP', 'IN_TRANSIT', 'IN_PROGRESS', 'HANDED_OVER_VENDOR', 'HANDED_OVER_TO_VENDOR', 'DELIVERED', 'DELIVERED_EXCEPTION', 'CANCELLED', 'CLOSED'];
+    if (blockedStatuses.includes(upperSt)) {
       return res.status(400).json({
-        message: 'Không thể hủy đơn hàng sau khi hàng đã được bốc xếp hoặc đang trên đường vận chuyển (BR-17)!'
+        message: 'Không thể hủy đơn hàng sau khi hàng đã được bốc xếp hoặc đã chốt hoàn tất (BR-17)!'
       });
     }
 
-    const nowIso = new Date().toISOString();
+    const nowDate = new Date();
+    const nowIso = nowDate.toISOString();
     const feeVal = cancellation_fee !== undefined && cancellation_fee !== null ? parseInt(cancellation_fee, 10) : 0;
+    const actorId = Number(req.user?.id || 3);
     const updates = {
       status: 'CANCELLED',
       cancellation_reason: cancellation_reason.trim(),
       cancellation_fee: feeVal,
-      updated_at: nowIso
+      updated_at: nowDate
     };
 
-    let updateQuery = supabase.from('orders').update(updates);
-    if (/^\d+$/.test(id)) {
-      updateQuery = updateQuery.eq('id', parseInt(id, 10));
-    } else {
-      updateQuery = updateQuery.eq('order_code', id);
-    }
-    updateQuery = updateQuery.not('status', 'in', '("PICKED_UP","IN_TRANSIT","IN_PROGRESS","DELIVERED","CLOSED")');
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      const updRes = await tx.orders.updateMany({
+        where: {
+          id: currentOrder.id,
+          status: { notIn: blockedStatuses }
+        },
+        data: updates
+      });
+      const freshOrder = updRes.count > 0
+        ? await tx.orders.findUnique({ where: { id: currentOrder.id } })
+        : currentOrder;
 
-    const { data: updatedData, error: updateErr } = await updateQuery.select();
-    if (updateErr) {
-      console.error('cancelOrder Supabase Error:', updateErr);
-      return res.status(500).json({ message: updateErr.message || 'Không thể hủy đơn hàng trên hệ thống' });
-    }
+      // Ghi order_notes
+      await tx.order_notes.create({
+        data: {
+          order_id: currentOrder.id,
+          content: `[ĐƠN HÀNG ĐÃ HỦY] Lý do: ${cancellation_reason.trim()}. Phí hủy: ${feeVal.toLocaleString('vi-VN')} VNĐ.`,
+          created_by: actorId
+        }
+      });
 
-    const updatedOrder = updatedData?.[0] || currentOrder;
+      // BR-43 / IT-ORD-008: Nếu đơn đã được gán chuyến (ASSIGNED) -> Hủy chuyến liên quan và giải phóng xe về AVAILABLE
+      const relatedStops = await tx.trip_stops.findMany({
+        where: { order_id: currentOrder.id },
+        select: { trip_id: true }
+      });
+
+      const tripIds = [...new Set((relatedStops || []).map(s => s.trip_id).filter(Boolean))];
+      for (const tId of tripIds) {
+        await tx.trips.updateMany({
+          where: { id: tId },
+          data: { status: 'CANCELLED', updated_at: nowDate }
+        });
+
+        const tripTrucks = await tx.trip_trucks.findMany({
+          where: { trip_id: tId },
+          select: { truck_id: true }
+        });
+
+        const truckIds = (tripTrucks || []).map(tt => tt.truck_id).filter(Boolean);
+        if (truckIds.length > 0) {
+          await tx.trucks.updateMany({
+            where: { id: { in: truckIds }, deleted_at: null },
+            data: { status: 'AVAILABLE', updated_at: nowDate }
+          });
+        }
+      }
+
+      return serializeOrderRow(freshOrder);
+    });
 
     // Lưu metadata
-    await saveOrderMeta(currentOrder.id, {
+    await saveOrderMeta(Number(currentOrder.id), {
       cancel_reason: cancellation_reason.trim(),
       cancel_fee: feeVal,
       cancelled_at: nowIso
-    }, req.user?.id || 3);
-
-    // Ghi order_notes
-    await supabase.from('order_notes').insert([{
-      order_id: currentOrder.id,
-      content: `[ĐƠN HÀNG ĐÃ HỦY] Lý do: ${cancellation_reason.trim()}. Phí hủy: ${feeVal.toLocaleString('vi-VN')} VNĐ.`,
-      created_by: req.user?.id || 3
-    }]);
-
-    // BR-43 / IT-ORD-008: Nếu đơn đã được gán chuyến (ASSIGNED) -> Hủy chuyến liên quan và giải phóng xe về AVAILABLE
-    const { data: relatedStops } = await supabase
-      .from('trip_stops')
-      .select('trip_id')
-      .eq('order_id', currentOrder.id);
-
-    const tripIds = [...new Set((relatedStops || []).map(s => s.trip_id).filter(Boolean))];
-    for (const tId of tripIds) {
-      // Cập nhật trip sang CANCELLED
-      await supabase
-        .from('trips')
-        .update({ status: 'CANCELLED', updated_at: nowIso })
-        .eq('id', tId);
-
-      // Tìm xe của trip này để trả về AVAILABLE
-      const { data: tripTrucks } = await supabase
-        .from('trip_trucks')
-        .select('truck_id')
-        .eq('trip_id', tId);
-
-      const truckIds = (tripTrucks || []).map(tt => tt.truck_id).filter(Boolean);
-      if (truckIds.length > 0) {
-        await supabase
-          .from('trucks')
-          .update({ status: 'AVAILABLE', updated_at: nowIso })
-          .in('id', truckIds);
-      }
-    }
+    }, actorId);
 
     return res.json({
       message: 'Đã hủy đơn hàng thành công!',
@@ -235,45 +238,36 @@ const closeOrder = async (req, res) => {
     const { id } = req.params;
 
     // 1. Kiểm tra đơn hàng hiện tại
-    let findQuery = supabase.from('orders').select('*').limit(1);
-    if (/^\d+$/.test(id)) {
-      findQuery = findQuery.eq('id', parseInt(id, 10));
-    } else {
-      findQuery = findQuery.eq('order_code', id);
-    }
-    const { data: foundOrders, error: findErr } = await findQuery;
-    if (findErr || !foundOrders || foundOrders.length === 0) {
+    const currentOrder = await prisma.orders.findFirst({
+      where: buildOrderWhere(id)
+    });
+    if (!currentOrder) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng cần đóng' });
     }
 
-    const currentOrder = foundOrders[0];
-    const upperSt = (currentOrder.status || '').toUpperCase();
-    if (upperSt !== 'DELIVERED') {
-      return res.status(400).json({ message: 'Chỉ có thể đóng đơn hàng sau khi đã giao hàng thành công (DELIVERED)' });
+    const upperSt = (currentOrder.status || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+    if (!['DELIVERED', 'DELIVERED_EXCEPTION', 'CANCELLED'].includes(upperSt)) {
+      return res.status(400).json({
+        message: 'Chỉ có thể đóng đơn hàng từ trạng thái DELIVERED, DELIVERED_EXCEPTION hoặc CANCELLED'
+      });
     }
 
-    const nowIso = new Date().toISOString();
-    const updates = {
-      status: 'CLOSED',
-      updated_at: nowIso
-    };
+    const nowDate = new Date();
+    const nowIso = nowDate.toISOString();
+    const updRes = await prisma.orders.updateMany({
+      where: { id: currentOrder.id, status: currentOrder.status },
+      data: {
+        status: 'CLOSED',
+        is_closed: true,
+        updated_at: nowDate
+      }
+    });
 
-    let query = supabase.from('orders').update(updates);
-    if (/^\d+$/.test(id)) {
-      query = query.eq('id', parseInt(id));
-    } else {
-      query = query.eq('order_code', id);
-    }
-    query = query.eq('status', 'DELIVERED');
+    const updatedRow = updRes.count > 0
+      ? await prisma.orders.findUnique({ where: { id: currentOrder.id } })
+      : null;
+    const updatedOrder = serializeOrderRow(updatedRow);
 
-    const { data, error } = await query.select();
-
-    if (error) {
-      console.error('closeOrder Error:', error);
-      return res.status(500).json({ message: 'Không thể đóng đơn hàng trên hệ thống', error: error.message });
-    }
-
-    const updatedOrder = data?.[0];
     if (updatedOrder?.id) {
       await saveOrderMeta(updatedOrder.id, {
         closed_at: nowIso
@@ -302,25 +296,26 @@ const splitOrder = async (req, res) => {
     }
 
     // 1. Tìm đơn hàng gốc
-    let orderQuery = supabase
-      .from('orders')
-      .select('*, order_cargos(*), order_notes(*), customer:customers(*)')
-      .limit(1);
-
     const cleanId = (id || '').toString().trim();
-    if (/^\d+$/.test(cleanId)) {
-      orderQuery = orderQuery.eq('id', parseInt(cleanId, 10));
-    } else {
-      orderQuery = orderQuery.eq('order_code', cleanId);
-    }
+    const parentRow = await prisma.orders.findFirst({
+      where: buildOrderWhere(cleanId),
+      include: {
+        order_cargos: true,
+        order_notes: true,
+        customers: true
+      }
+    });
 
-    const { data: foundOrders, error: findErr } = await orderQuery;
-    if (findErr || !foundOrders || foundOrders.length === 0) {
+    if (!parentRow) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng cần tách' });
     }
 
-    const parentOrder = foundOrders[0];
-    if (['CANCELLED', 'CLOSED', 'DELIVERED', 'IN_TRANSIT'].includes(parentOrder.status)) {
+    const parentOrder = {
+      ...serializeOrderRow(parentRow),
+      customer: serializePrisma(parentRow.customers) || null
+    };
+
+    if (['CANCELLED', 'CLOSED', 'DELIVERED', 'DELIVERED_EXCEPTION', 'IN_TRANSIT', 'PICKED_UP', 'ACCEPTED', 'HANDED_OVER_VENDOR', 'HANDED_OVER_TO_VENDOR'].includes(String(parentOrder.status || '').toUpperCase())) {
       return res.status(400).json({
         message: `Không thể tách đơn hàng đang ở trạng thái "${parentOrder.status}". Chỉ được tách khi đơn chưa lăn bánh!`
       });
@@ -328,12 +323,13 @@ const splitOrder = async (req, res) => {
 
     const { parseOrderMeta, generateTrackingToken } = require('../../services/orderHelperService');
     const parentMeta = parseOrderMeta(parentOrder);
-    const nowIso = new Date().toISOString();
-    const dispatcherId = req.user?.id || parentOrder.responsible_dispatcher_id || 3;
+    const nowDate = new Date();
+    const nowIso = nowDate.toISOString();
+    const dispatcherId = Number(req.user?.id || parentOrder.responsible_dispatcher_id || 3);
 
-    const baseCargo = Array.isArray(parentOrder.order_cargos) && parentOrder.order_cargos.length > 0
-      ? parentOrder.order_cargos[0]
-      : {};
+    const baseCargo = Array.isArray(parentOrder.order_cargos)
+      ? (parentOrder.order_cargos[0] || {})
+      : (parentOrder.order_cargos || {});
 
     const createdChildOrders = [];
 
@@ -378,68 +374,69 @@ const splitOrder = async (req, res) => {
 
       const childOrderPayload = {
         order_code: childOrderCode,
-        hawb_number: childOrderCode,
-        order_type: parentOrder.order_type || 'Import',
-        customer_id: parentOrder.customer_id,
+        order_type: parentRow.order_type || 'Import',
+        customer_id: parentRow.customer_id,
         tracking_token: childTrackingToken,
-        pickup_location_id: parentOrder.pickup_location_id,
-        delivery_location_id: parentOrder.delivery_location_id,
-        receiver_name: parentOrder.receiver_name,
-        receiver_phone: parentOrder.receiver_phone,
+        pickup_location_id: parentRow.pickup_location_id,
+        delivery_location_id: parentRow.delivery_location_id,
+        receiver_name: parentRow.receiver_name,
+        receiver_phone: parentRow.receiver_phone,
         agreed_price: childPrice,
-        status: parentOrder.status === 'READY_FOR_PLANNING' ? 'READY_FOR_PLANNING' : 'CONFIRMED',
-        source: parentOrder.source || 'Direct',
+        status: parentRow.status === 'READY_FOR_PLANNING' ? 'READY_FOR_PLANNING' : 'CONFIRMED',
+        source: parentRow.source || 'Direct',
         responsible_dispatcher_id: dispatcherId,
         created_by: dispatcherId,
-        requested_pickup_date: parentOrder.requested_pickup_date || parentOrder.required_pickup_date,
+        requested_pickup_date: parentRow.requested_pickup_date || null,
         truck_type_requested: childVehicle,
-        loading_request: parentOrder.loading_request || 'NO',
-        warehouse_type: parentOrder.warehouse_type || 'ALS warehouse',
+        loading_request: parentRow.loading_request || 'NO',
+        warehouse_type: parentRow.warehouse_type || 'ALS warehouse',
         customer_agrees_to_grouping: false,
-        document_status: parentOrder.document_status || 'Approved',
+        document_status: parentRow.document_status || 'Approved',
         is_closed: false,
         waiting_too_long: false,
         late_risk: false,
-        ready_for_planning_at: nowIso,
-        updated_at: nowIso
+        ready_for_planning_at: nowDate,
+        updated_at: nowDate
       };
 
-      const { data: insertedChild, error: insertChildErr } = await supabase
-        .from('orders')
-        .insert([childOrderPayload])
-        .select();
-
-      if (insertChildErr || !insertedChild?.[0]) {
+      let newChildRow;
+      try {
+        newChildRow = await prisma.orders.create({ data: childOrderPayload });
+      } catch (insertChildErr) {
         console.error('splitOrder insert child error:', insertChildErr);
         continue;
       }
 
-      const newChild = insertedChild[0];
+      const newChild = serializeOrderRow(newChildRow);
       await saveOrderMeta(newChild.id, childMeta);
 
       // Thêm cargo cho đơn con
-      await supabase.from('order_cargos').insert([{
-        order_id: newChild.id,
-        cargo_type: baseCargo.cargo_type || 'General',
-        cargo_name: `${baseCargo.cargo_name || 'Hàng hóa'} (Lô ${childSuffix}/${splits.length})`,
-        quantity: childPackages,
-        unit: baseCargo.unit || 'Kiện',
-        actual_weight_kg: childWeight,
-        length_cm: baseCargo.length_cm || 0,
-        width_cm: baseCargo.width_cm || 0,
-        height_cm: baseCargo.height_cm || 0,
-        stackable: true,
-        chargeable_weight_kg: childChargeable,
-        declared_value: baseCargo.declared_value ? Math.round(baseCargo.declared_value / splits.length) : 0,
-        special_request_note: `Tách từ đơn gốc ${parentOrder.order_code} - Xe ${childSuffix}/${splits.length}`
-      }]);
+      await prisma.order_cargos.create({
+        data: {
+          order_id: newChildRow.id,
+          cargo_type: baseCargo.cargo_type || 'General',
+          cargo_name: `${baseCargo.cargo_name || 'Hàng hóa'} (Lô ${childSuffix}/${splits.length})`,
+          quantity: childPackages,
+          unit: baseCargo.unit || 'Kiện',
+          actual_weight_kg: childWeight,
+          length_cm: baseCargo.length_cm || 0,
+          width_cm: baseCargo.width_cm || 0,
+          height_cm: baseCargo.height_cm || 0,
+          stackable: true,
+          chargeable_weight_kg: childChargeable,
+          declared_value: baseCargo.declared_value ? Math.round(baseCargo.declared_value / splits.length) : 0,
+          special_request_note: `Tách từ đơn gốc ${parentOrder.order_code} - Xe ${childSuffix}/${splits.length}`
+        }
+      });
 
       // Thêm ghi chú
-      await supabase.from('order_notes').insert([{
-        order_id: newChild.id,
-        content: `Đơn con tách từ ${parentOrder.order_code} cho xe ${childVehicle}. Lý do: ${reason || 'Yêu cầu xe nhỏ'}`,
-        created_by: dispatcherId
-      }]);
+      await prisma.order_notes.create({
+        data: {
+          order_id: newChildRow.id,
+          content: `Đơn con tách từ ${parentOrder.order_code} cho xe ${childVehicle}. Lý do: ${reason || 'Yêu cầu xe nhỏ'}`,
+          created_by: dispatcherId
+        }
+      });
 
       createdChildOrders.push({
         ...newChild,
@@ -453,14 +450,14 @@ const splitOrder = async (req, res) => {
 
     // 3. Đánh dấu đơn gốc thành CANCELLED (hoặc ghi nhận đã tách sang các đơn con)
     const childCodesStr = createdChildOrders.map(c => c.order_code).join(', ');
-    await supabase
-      .from('orders')
-      .update({
+    await prisma.orders.update({
+      where: { id: parentRow.id },
+      data: {
         status: 'CANCELLED',
         cancellation_reason: `Đã tách thành ${createdChildOrders.length} đơn con cho nhiều xe nhỏ: ${childCodesStr}. Lý do: ${reason || 'Cung đường hẹp/yêu cầu xe nhỏ'}`,
-        updated_at: nowIso
-      })
-      .eq('id', parentOrder.id);
+        updated_at: nowDate
+      }
+    });
 
     await saveOrderMeta(parentOrder.id, {
       ...parentMeta,
@@ -469,11 +466,13 @@ const splitOrder = async (req, res) => {
       cancel_reason: `Đã tách thành ${createdChildOrders.length} đơn xe nhỏ: ${childCodesStr}`
     }, dispatcherId);
 
-    await supabase.from('order_notes').insert([{
-      order_id: parentOrder.id,
-      content: `[TÁCH ĐƠN THÀNH CÔNG] Đơn này đã được chia thành ${createdChildOrders.length} đơn con: ${childCodesStr} để xếp vào các xe tải nhỏ hơn.`,
-      created_by: dispatcherId
-    }]);
+    await prisma.order_notes.create({
+      data: {
+        order_id: parentRow.id,
+        content: `[TÁCH ĐƠN THÀNH CÔNG] Đơn này đã được chia thành ${createdChildOrders.length} đơn con: ${childCodesStr} để xếp vào các xe tải nhỏ hơn.`,
+        created_by: dispatcherId
+      }
+    });
 
     return res.status(201).json({
       message: `Đã tách đơn hàng ${parentOrder.order_code} thành ${createdChildOrders.length} đơn con (${childCodesStr}) thành công! Mỗi đơn sẵn sàng xếp lên 1 xe riêng biệt.`,

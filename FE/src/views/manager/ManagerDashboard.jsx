@@ -1074,7 +1074,6 @@ export default function ManagerDashboard() {
                     <th className="py-3 px-4 text-center">Giờ lái (GPS)</th>
                     <th className="py-3 px-4 text-center">Chạm giới hạn lái</th>
                     <th className="py-3 px-4 text-center">Quá tốc độ</th>
-                    <th className="py-3 px-4 text-center">Ngoài bán kính</th>
                     <th className="py-3 px-4 text-center">Ở điểm (TB)</th>
                     <th className="py-3 px-4 text-center">Sự cố · khiếu nại</th>
                   </tr>
@@ -1131,18 +1130,6 @@ export default function ManagerDashboard() {
                           <span className="inline-block px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 font-extrabold">
                             {d.speeding_count}
                           </span>
-                        ) : (
-                          <span className="text-on-surface-variant">0</span>
-                        )}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-center">
-                        {d.outside_radius_count > 0 ? (
-                          <Tooltip title="Check-in/Check-out ngoài bán kính Geofence hợp lệ">
-                            <span className="inline-block px-2 py-0.5 rounded-full bg-error/10 text-error font-extrabold">
-                              {d.outside_radius_count}
-                            </span>
-                          </Tooltip>
                         ) : (
                           <span className="text-on-surface-variant">0</span>
                         )}

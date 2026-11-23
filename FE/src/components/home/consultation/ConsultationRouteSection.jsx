@@ -2,6 +2,7 @@ import React from 'react';
 import { Form, Select, Input } from 'antd';
 import { MapPin, PlaneLanding, PlaneTakeoff } from 'lucide-react';
 import LocationSearchInput from '../../common/LocationSearchInput';
+import { formatAlsWarehouseOptionLabel } from '../../../data/dispatcherPresets';
 
 const { Option } = Select;
 
@@ -21,6 +22,7 @@ export function ConsultationRouteSection({
 }) {
   const watchedPickupAddress = Form.useWatch('pickup_address', form);
   const watchedDeliveryAddress = Form.useWatch('delivery_address', form);
+  const alsWarehouses = (dbLocations || []).filter((loc) => loc.is_als_hub === true);
 
   return (
     <div>
@@ -84,9 +86,9 @@ export function ConsultationRouteSection({
                   placeholder="Chọn kho ALS lấy hàng..."
                 >
                   <Select.OptGroup label="Hệ thống Kho &amp; Ga hàng không kéo dài ALS">
-                    {dbLocations.filter(loc => loc.is_als_hub || loc.name?.toUpperCase().includes('ALS') || !loc.customer_id).map(loc => (
+                    {alsWarehouses.map(loc => (
                       <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
-                        🏢 {loc.name} {loc.province ? `(${loc.province})` : ''}
+                        {formatAlsWarehouseOptionLabel(loc)}
                       </Option>
                     ))}
                   </Select.OptGroup>
@@ -116,9 +118,9 @@ export function ConsultationRouteSection({
                     />
                   </Form.Item>
                 ) : (
-                  <div className="text-xs text-blue-950 font-medium bg-white p-2 rounded border border-blue-100">
-                    {watchedPickupAddress || 'Kho ALS Cảng HKQT Nội Bài'}
-                  </div>
+                  <Form.Item name="pickup_address" hidden>
+                    <Input />
+                  </Form.Item>
                 )}
               </div>
             ) : (
@@ -232,9 +234,9 @@ export function ConsultationRouteSection({
                   placeholder="Chọn kho ALS giao hàng xuất..."
                 >
                   <Select.OptGroup label="Hệ thống Kho &amp; Ga hàng không kéo dài ALS">
-                    {dbLocations.filter(loc => loc.is_als_hub || loc.name?.toUpperCase().includes('ALS') || !loc.customer_id).map(loc => (
+                    {alsWarehouses.map(loc => (
                       <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
-                        🏢 {loc.name} {loc.province ? `(${loc.province})` : ''}
+                        {formatAlsWarehouseOptionLabel(loc)}
                       </Option>
                     ))}
                   </Select.OptGroup>
@@ -264,9 +266,9 @@ export function ConsultationRouteSection({
                     />
                   </Form.Item>
                 ) : (
-                  <div className="text-xs text-indigo-950 font-medium bg-white p-2 rounded border border-indigo-100">
-                    {watchedDeliveryAddress || 'Kho ALS tại Sân Bay Nội Bài'}
-                  </div>
+                  <Form.Item name="delivery_address" hidden>
+                    <Input />
+                  </Form.Item>
                 )}
               </div>
             ) : (

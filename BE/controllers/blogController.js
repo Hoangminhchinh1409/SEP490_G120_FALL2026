@@ -1,4 +1,6 @@
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
+const cloudinaryService = require('../services/cloudinaryService');
+const { serializePrisma, toBigInt, toNum } = require('../utils/prismaHelper');
 
 const blogViewLocks = new Map();
 
@@ -23,7 +25,7 @@ const withBlogViewLock = async (blogId, fn) => {
 };
 
 const isValidBlogId = (id) => /^[1-9]\d*$/.test(String(id ?? '').trim());
-const isNotFoundDbError = (err) => err?.code === 'PGRST116' || err?.code === '22P02';
+const isNotFoundDbError = (err) => err?.code === 'P2025' || err?.code === 'PGRST116' || err?.code === '22P02';
 
 const normalizeStatus = (status) => {
   const upper = String(status || 'DRAFT').trim().toUpperCase();
@@ -40,40 +42,13 @@ const getStatusLabel = (status) => {
   return 'Bản nháp';
 };
 
-const extractMissingColumnName = (err) => {
-  if (!err) return null;
-  const msg = `${err.message || ''} ${err.details || ''} ${err.hint || ''}`;
-  const pgrstMatch = msg.match(/Could not find the '([^']+)' column/i);
-  if (pgrstMatch) return pgrstMatch[1];
-  const pgMatch = msg.match(/column "([^"]+)" (?:of relation "[^"]+" )?does not exist/i);
-  if (pgMatch) return pgMatch[1];
-  return null;
-};
-
-const isDuplicatePrimaryKeyError = (err) => {
-  if (!err) return false;
-  const msg = `${err.message || ''} ${err.details || ''}`;
-  return (
-    err.code === '23505' ||
-    /duplicate key value violates unique constraint/i.test(msg)
-  );
-};
-
-const isNullIdError = (err) => {
-  if (!err) return false;
-  const msg = `${err.message || ''} ${err.details || ''}`;
-  return err.code === '23502' && /\bid\b/i.test(msg);
-};
-
 const getNextNewsPostId = async () => {
   try {
-    const { data, error } = await supabase
-      .from('news_posts')
-      .select('id')
-      .order('id', { ascending: false })
-      .limit(1);
-    if (error) return null;
-    const maxId = Array.isArray(data) && data.length > 0 ? Number(data[0]?.id) || 0 : 0;
+    const latest = await prisma.news_posts.findFirst({
+      select: { id: true },
+      orderBy: { id: 'desc' }
+    });
+    const maxId = latest ? Number(latest.id) || 0 : 0;
     return maxId + 1;
   } catch {
     return null;
@@ -83,73 +58,41 @@ const getNextNewsPostId = async () => {
 const safeInsertNewsPost = async (payload) => {
   const currentPayload = { ...payload };
 
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const { data, error } = await supabase
-      .from('news_posts')
-      .insert(currentPayload)
-      .select('*, users(id, full_name, username)')
-      .single();
-
-    if (!error) {
-      return { data, error: null };
-    }
-
-    const missingCol = extractMissingColumnName(error);
-    if (missingCol && Object.prototype.hasOwnProperty.call(currentPayload, missingCol)) {
-      delete currentPayload[missingCol];
-      continue;
-    }
-
-    if (isDuplicatePrimaryKeyError(error) || isNullIdError(error)) {
-      const nextId = await getNextNewsPostId();
-      if (nextId !== null) {
-        currentPayload.id =
-          currentPayload.id !== undefined && Number(currentPayload.id) >= nextId
-            ? Number(currentPayload.id) + 1
-            : nextId;
-        continue;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const data = await prisma.news_posts.create({
+        data: currentPayload,
+        include: { users: { select: { id: true, full_name: true, username: true } } }
+      });
+      return { data: serializePrisma(data), error: null };
+    } catch (error) {
+      if (error?.code === 'P2002') {
+        const nextId = await getNextNewsPostId();
+        if (nextId !== null) {
+          const curNum = Number(currentPayload.id || 0);
+          currentPayload.id = BigInt(curNum >= nextId ? curNum + 1 : nextId);
+          continue;
+        }
       }
+      return { data: null, error };
     }
-
-    return { data: null, error };
   }
 
   return { data: null, error: new Error('Exceeded retries while inserting news post') };
 };
 
 const safeUpdateNewsPost = async (postId, payload) => {
-  const currentPayload = { ...payload };
-
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    if (Object.keys(currentPayload).length === 0) {
-      return await supabase
-        .from('news_posts')
-        .select('*, users(id, full_name, username)')
-        .eq('id', postId)
-        .single();
-    }
-
-    const { data, error } = await supabase
-      .from('news_posts')
-      .update(currentPayload)
-      .eq('id', postId)
-      .select('*, users(id, full_name, username)')
-      .single();
-
-    if (!error) {
-      return { data, error: null };
-    }
-
-    const missingCol = extractMissingColumnName(error);
-    if (missingCol && Object.prototype.hasOwnProperty.call(currentPayload, missingCol)) {
-      delete currentPayload[missingCol];
-      continue;
-    }
-
+  const bigId = BigInt(String(postId).trim());
+  try {
+    const data = await prisma.news_posts.update({
+      where: { id: bigId },
+      data: payload,
+      include: { users: { select: { id: true, full_name: true, username: true } } }
+    });
+    return { data: serializePrisma(data), error: null };
+  } catch (error) {
     return { data: null, error };
   }
-
-  return { data: null, error: new Error('Exceeded retries while updating news post') };
 };
 
 const resolveAuthorId = async (req) => {
@@ -159,14 +102,13 @@ const resolveAuthorId = async (req) => {
   }
 
   try {
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, role_id')
-      .in('role_id', [2, 1])
-      .order('id', { ascending: true })
-      .limit(1);
-    if (Array.isArray(users) && users.length > 0 && users[0]?.id) {
-      return Number(users[0].id);
+    const user = await prisma.users.findFirst({
+      where: { role_id: { in: [2n, 1n] } },
+      select: { id: true, role_id: true },
+      orderBy: { id: 'asc' }
+    });
+    if (user?.id) {
+      return Number(user.id);
     }
   } catch {
     return null;
@@ -189,8 +131,8 @@ const formatNewsPost = (b, viewsOverride) => {
   const image = b.cover_image_link ?? b.image_url ?? null;
 
   return {
-    id: b.id,
-    author_id: b.author_id,
+    id: toNum(b.id),
+    author_id: toNum(b.author_id),
     title: b.title,
     summary: b.summary,
     content: b.content,
@@ -215,12 +157,6 @@ const formatNewsPost = (b, viewsOverride) => {
   };
 };
 
-/**
- * Blog Controller — Nhóm chức năng Tin tức Website & Quản lý Bản tin
- * - Guest: Xem danh sách bài viết đã xuất bản (PUBLISHED) & Xem chi tiết bài viết.
- * - Manager: Quản lý bài viết trên bảng news_posts.
- */
-
 // ==========================================
 // A. PUBLIC WEBSITE NEWS
 // ==========================================
@@ -228,27 +164,31 @@ const formatNewsPost = (b, viewsOverride) => {
 const getPublicBlogs = async (req, res) => {
   try {
     const { category, search } = req.query;
-    let query = supabase
-      .from('news_posts')
-      .select('*, users(id, full_name, username)')
-      .in('status', ['PUBLISHED', 'Published'])
-      .order('id', { ascending: false });
+    const where = {
+      status: { in: ['PUBLISHED', 'Published'] }
+    };
 
     if (category && category !== 'ALL' && category !== 'Tất cả') {
-      query = query.eq('category', category);
+      where.category = category;
     }
 
     if (search) {
       const safeSearch = String(search).replace(/[,()]/g, ' ').trim();
       if (safeSearch) {
-        query = query.or(`title.ilike.%${safeSearch}%,summary.ilike.%${safeSearch}%`);
+        where.OR = [
+          { title: { contains: safeSearch, mode: 'insensitive' } },
+          { summary: { contains: safeSearch, mode: 'insensitive' } }
+        ];
       }
     }
 
-    const { data: blogs, error } = await query;
-    if (error) throw error;
+    const blogs = await prisma.news_posts.findMany({
+      where,
+      include: { users: { select: { id: true, full_name: true, username: true } } },
+      orderBy: { id: 'desc' }
+    });
 
-    const formatted = (blogs || []).map((b) => formatNewsPost(b));
+    const formatted = serializePrisma(blogs || []).map((b) => formatNewsPost(b));
 
     return res.json({
       success: true,
@@ -268,15 +208,16 @@ const getPublicBlogById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Bài viết không tồn tại' });
     }
     const blogId = String(id).trim();
+    const bigBlogId = BigInt(blogId);
 
     const result = await withBlogViewLock(blogId, async () => {
-      const { data: currentBlog, error: fetchErr } = await supabase
-        .from('news_posts')
-        .select('*, users(id, full_name, username)')
-        .eq('id', blogId)
-        .single();
-
-      if (fetchErr) {
+      let currentBlog;
+      try {
+        currentBlog = await prisma.news_posts.findUnique({
+          where: { id: bigBlogId },
+          include: { users: { select: { id: true, full_name: true, username: true } } }
+        });
+      } catch (fetchErr) {
         if (isNotFoundDbError(fetchErr)) {
           return { status: 404, body: { success: false, message: 'Bài viết không tồn tại' } };
         }
@@ -288,24 +229,20 @@ const getPublicBlogById = async (req, res) => {
         return { status: 404, body: { success: false, message: 'Bài viết không tồn tại' } };
       }
 
-      const currentViews = Number(currentBlog.view_count ?? currentBlog.views ?? 0) || 0;
+      const serializedBlog = serializePrisma(currentBlog);
+      const currentViews = Number(serializedBlog.view_count ?? serializedBlog.views ?? 0) || 0;
       let finalViews = currentViews;
       try {
-        const updateRes = await supabase
-          .from('news_posts')
-          .update({ view_count: currentViews + 1 })
-          .eq('id', blogId);
-        const updateErr = updateRes?.error;
-        if (updateErr) {
-          console.error('Update Blog Views Error:', updateErr);
-        } else {
-          finalViews = currentViews + 1;
-        }
+        await prisma.news_posts.update({
+          where: { id: bigBlogId },
+          data: { view_count: currentViews + 1 }
+        });
+        finalViews = currentViews + 1;
       } catch (updateEx) {
         console.error('Update Blog Views Exception:', updateEx);
       }
 
-      return { currentBlog, finalViews };
+      return { currentBlog: serializedBlog, finalViews };
     });
 
     if (result.status) {
@@ -317,19 +254,19 @@ const getPublicBlogById = async (req, res) => {
     let related = [];
     if (currentBlog.category) {
       try {
-        const { data: relatedBlogs, error: relatedErr } = await supabase
-          .from('news_posts')
-          .select('*, users(id, full_name, username)')
-          .in('status', ['PUBLISHED', 'Published'])
-          .eq('category', currentBlog.category)
-          .neq('id', currentBlog.id)
-          .order('id', { ascending: false })
-          .limit(3);
+        const relatedBlogs = await prisma.news_posts.findMany({
+          where: {
+            status: { in: ['PUBLISHED', 'Published'] },
+            category: currentBlog.category,
+            id: { not: bigBlogId }
+          },
+          include: { users: { select: { id: true, full_name: true, username: true } } },
+          orderBy: { id: 'desc' },
+          take: 3
+        });
 
-        if (relatedErr) {
-          console.error('Get Related Blogs Error:', relatedErr);
-        } else if (Array.isArray(relatedBlogs)) {
-          related = relatedBlogs.map((b) => formatNewsPost(b));
+        if (Array.isArray(relatedBlogs)) {
+          related = serializePrisma(relatedBlogs).map((b) => formatNewsPost(b));
         }
       } catch (relEx) {
         console.error('Get Related Blogs Exception:', relEx);
@@ -354,26 +291,25 @@ const getPublicBlogById = async (req, res) => {
 const getBlogs = async (req, res) => {
   try {
     const { status, category, search } = req.query;
-
-    let query = supabase
-      .from('news_posts')
-      .select('*, users(id, full_name, username)')
-      .order('id', { ascending: false });
+    const where = {};
 
     if (status && status !== 'ALL') {
-      query = query.ilike('status', status);
+      where.status = { equals: String(status).trim(), mode: 'insensitive' };
     }
     if (category && category !== 'ALL') {
-      query = query.eq('category', category);
+      where.category = category;
     }
     if (search) {
-      query = query.ilike('title', `%${search}%`);
+      where.title = { contains: String(search).trim(), mode: 'insensitive' };
     }
 
-    const { data: blogsList, error } = await query;
-    if (error) throw error;
+    const blogsList = await prisma.news_posts.findMany({
+      where,
+      include: { users: { select: { id: true, full_name: true, username: true } } },
+      orderBy: { id: 'desc' }
+    });
 
-    const formatted = (blogsList || []).map((b) => formatNewsPost(b));
+    const formatted = serializePrisma(blogsList || []).map((b) => formatNewsPost(b));
 
     const totalBlogs = formatted.length;
     const publishedBlogs = formatted.filter((b) => b.status === 'PUBLISHED').length;
@@ -403,24 +339,17 @@ const getBlogById = async (req, res) => {
     if (!isValidBlogId(id)) {
       return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
     }
-    const { data: blog, error } = await supabase
-      .from('news_posts')
-      .select('*, users(id, full_name, username)')
-      .eq('id', String(id).trim())
-      .single();
 
-    if (error) {
-      if (isNotFoundDbError(error)) {
-        return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
-      }
-      throw error;
-    }
+    const blog = await prisma.news_posts.findUnique({
+      where: { id: BigInt(String(id).trim()) },
+      include: { users: { select: { id: true, full_name: true, username: true } } }
+    });
 
     if (!blog) {
       return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
     }
 
-    return res.json({ blog: formatNewsPost(blog) });
+    return res.json({ blog: formatNewsPost(serializePrisma(blog)) });
   } catch (error) {
     console.error('getBlogById Error:', error);
     return res.status(500).json({ message: 'Lỗi tải chi tiết bài viết' });
@@ -446,7 +375,12 @@ const createBlog = async (req, res) => {
     if (category.trim().length > 50) {
       return res.status(400).json({ message: 'Chuyên mục không được vượt quá 50 ký tự.' });
     }
-    if (image && image.trim().length > 255) {
+
+    let resolvedImage = image?.trim() || null;
+    if (resolvedImage && resolvedImage.startsWith('data:')) {
+      resolvedImage = await cloudinaryService.uploadDataUriIfNeeded(resolvedImage, 'nexlog/blogs');
+    }
+    if (resolvedImage && resolvedImage.length > 255) {
       return res.status(400).json({ message: 'Link ảnh bìa không được vượt quá 255 ký tự.' });
     }
 
@@ -460,24 +394,23 @@ const createBlog = async (req, res) => {
       return res.status(400).json({ message: 'Không xác định được tài khoản tác giả.' });
     }
 
-    const nowIso = new Date().toISOString();
+    const now = new Date();
     const insertPayload = {
-      author_id: authorId,
+      author_id: toBigInt(authorId),
       title: title.trim(),
       summary: summary?.trim() || '',
       content: content.trim(),
       category: category.trim(),
-      cover_image_link: image?.trim() || null,
+      cover_image_link: resolvedImage,
       is_featured: Boolean(is_featured),
       view_count: 0,
-      published_time: rawStatus === 'PUBLISHED' ? nowIso : null,
+      published_time: rawStatus === 'PUBLISHED' ? now : null,
       status: rawStatus,
-      created_at: nowIso,
-      updated_at: nowIso
+      created_at: now,
+      updated_at: now
     };
 
     const { data: newBlog, error } = await safeInsertNewsPost(insertPayload);
-
     if (error) throw error;
 
     return res.status(201).json({
@@ -486,7 +419,7 @@ const createBlog = async (req, res) => {
     });
   } catch (error) {
     console.error('createBlog Error:', error);
-    return res.status(500).json({ message: 'Lỗi tạo bài viết' });
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi tạo bài viết' });
   }
 };
 
@@ -514,7 +447,12 @@ const updateBlog = async (req, res) => {
     if (category && category.trim().length > 50) {
       return res.status(400).json({ message: 'Chuyên mục không được vượt quá 50 ký tự.' });
     }
-    if (image && image.trim().length > 255) {
+
+    let resolvedImage = image?.trim() || null;
+    if (resolvedImage && resolvedImage.startsWith('data:')) {
+      resolvedImage = await cloudinaryService.uploadDataUriIfNeeded(resolvedImage, 'nexlog/blogs');
+    }
+    if (resolvedImage && resolvedImage.length > 255) {
       return res.status(400).json({ message: 'Link ảnh bìa không được vượt quá 255 ký tự.' });
     }
     if (content !== undefined && !content?.trim()) {
@@ -529,17 +467,17 @@ const updateBlog = async (req, res) => {
       }
     }
 
-    const nowIso = new Date().toISOString();
-    const updatePayload = { updated_at: nowIso };
+    const now = new Date();
+    const updatePayload = { updated_at: now };
     if (title !== undefined) updatePayload.title = title.trim();
     if (summary !== undefined) updatePayload.summary = summary.trim();
     if (content !== undefined) updatePayload.content = content.trim();
     if (category !== undefined) updatePayload.category = category.trim();
     if (normalizedStatus !== undefined) {
       updatePayload.status = normalizedStatus;
-      if (normalizedStatus === 'PUBLISHED') updatePayload.published_time = nowIso;
+      if (normalizedStatus === 'PUBLISHED') updatePayload.published_time = now;
     }
-    if (image !== undefined) updatePayload.cover_image_link = image?.trim() || null;
+    if (image !== undefined) updatePayload.cover_image_link = resolvedImage;
     if (is_featured !== undefined) updatePayload.is_featured = Boolean(is_featured);
 
     const { data: updatedBlog, error } = await safeUpdateNewsPost(blogId, updatePayload);
@@ -561,7 +499,7 @@ const updateBlog = async (req, res) => {
     });
   } catch (error) {
     console.error('updateBlog Error:', error);
-    return res.status(500).json({ message: 'Lỗi cập nhật bài viết' });
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi cập nhật bài viết' });
   }
 };
 
@@ -577,14 +515,14 @@ const updateBlogStatus = async (req, res) => {
       return res.status(400).json({ message: 'Trạng thái bài viết không hợp lệ.' });
     }
 
-    const nowIso = new Date().toISOString();
+    const now = new Date();
     const updateData = {
       status: rawStatus,
-      updated_at: nowIso
+      updated_at: now
     };
 
     if (rawStatus === 'PUBLISHED') {
-      updateData.published_time = nowIso;
+      updateData.published_time = now;
     }
 
     const { data: updated, error } = await safeUpdateNewsPost(String(id).trim(), updateData);
@@ -604,8 +542,8 @@ const updateBlogStatus = async (req, res) => {
       rawStatus === 'PUBLISHED'
         ? 'Đã xuất bản bài viết lên trang tin tức NEXLOG thành công!'
         : rawStatus === 'UNPUBLISHED'
-        ? 'Đã gỡ bài viết khỏi trang tin tức (có thể đăng lại bất kỳ lúc nào).'
-        : 'Đã chuyển bài viết về Bản nháp.';
+          ? 'Đã gỡ bài viết khỏi trang tin tức (có thể đăng lại bất kỳ lúc nào).'
+          : 'Đã chuyển bài viết về Bản nháp.';
 
     return res.json({ message: msg, blog: formatNewsPost(updated) });
   } catch (error) {
@@ -625,12 +563,15 @@ const deleteBlog = async (req, res) => {
     if (!isValidBlogId(id)) {
       return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
     }
-    const blogId = String(id).trim();
-    const { error } = await supabase.from('news_posts').delete().eq('id', blogId);
-    if (error) throw error;
+    await prisma.news_posts.delete({
+      where: { id: BigInt(String(id).trim()) }
+    });
 
     return res.json({ message: 'Đã xóa bài viết thành công.' });
   } catch (error) {
+    if (isNotFoundDbError(error)) {
+      return res.status(404).json({ message: 'Không tìm thấy bài viết.' });
+    }
     console.error('deleteBlog Error:', error);
     return res.status(500).json({ message: 'Lỗi xóa bài viết' });
   }

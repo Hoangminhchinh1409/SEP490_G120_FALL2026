@@ -16,7 +16,6 @@ BigInt.prototype.toJSON = function () {
     return Number.isSafeInteger(n) ? n : this.toString();
 };
 
-const supabase = require("./config/supabase");
 const prisma = require("./config/prisma");
 const apiRoutes = require("./routes");
 
@@ -72,14 +71,10 @@ const { initManagerJobs } = require("./jobs/managerJobs");
 
 app.listen(PORT, async () => {
     try {
-        const { error } = await supabase.from("orders").select("id").limit(1);
-        if (error) {
-            console.error("PostgreSQL (Supabase) connection failed:", error.message);
-        } else {
-            console.log("PostgreSQL (Supabase) connected successfully!");
-            // Khởi động các Background Jobs của Phân hệ Quản lý
-            initManagerJobs();
-        }
+        await prisma.$queryRaw`SELECT 1`;
+        console.log("PostgreSQL (Prisma) connected successfully!");
+        // Khởi động các Background Jobs của Phân hệ Quản lý
+        initManagerJobs();
     } catch (error) {
         console.error("PostgreSQL connection failed:", error.message);
     }

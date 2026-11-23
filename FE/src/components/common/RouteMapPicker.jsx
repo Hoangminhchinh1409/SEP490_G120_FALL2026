@@ -47,11 +47,18 @@ const RouteMapPicker = ({
     return null;
   }, [deliveryCoords, deliveryAddress]);
 
+  const hasBoth = Boolean(
+    effectivePickupCoords?.lat &&
+    effectivePickupCoords?.lng &&
+    effectiveDeliveryCoords?.lat &&
+    effectiveDeliveryCoords?.lng
+  );
+  const displayPolyline = hasBoth ? routePolyline : [];
+  const displayRouteInfo = hasBoth ? routeInfo : { distanceKm: 0, durationMins: 0 };
+
   // Tự động tính toán lộ trình đường bộ ngắn nhất ôm sát mặt đường giao thông
   useEffect(() => {
-    if (!effectivePickupCoords?.lat || !effectivePickupCoords?.lng || !effectiveDeliveryCoords?.lat || !effectiveDeliveryCoords?.lng) {
-      setRoutePolyline([]);
-      setRouteInfo({ distanceKm: 0, durationMins: 0 });
+    if (!hasBoth) {
       if (onRouteChange) onRouteChange({ distanceKm: 0, durationMins: 0 });
       return;
     }
@@ -102,14 +109,11 @@ const RouteMapPicker = ({
       controller.abort();
     };
   }, [
-    effectivePickupCoords?.lat, 
-    effectivePickupCoords?.lng, 
-    effectiveDeliveryCoords?.lat, 
-    effectiveDeliveryCoords?.lng, 
+    hasBoth,
+    effectivePickupCoords,
+    effectiveDeliveryCoords,
     onRouteChange
   ]);
-
-  const hasBoth = Boolean(effectivePickupCoords?.lat && effectiveDeliveryCoords?.lat);
 
   return (
     <div className="w-full space-y-2">
@@ -124,20 +128,20 @@ const RouteMapPicker = ({
           deliveryCoords={effectiveDeliveryCoords}
           pickupAddress={pickupAddress}
           deliveryAddress={deliveryAddress}
-          routePolyline={routePolyline}
+          routePolyline={displayPolyline}
         />
 
         {/* Badge Lộ trình nổi trên bản đồ */}
-        {hasBoth && routeInfo.distanceKm > 0 ? (
+        {hasBoth && displayRouteInfo.distanceKm > 0 ? (
           <div className="absolute top-2.5 right-2.5 z-[1000] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-md border border-gray-100 flex items-center gap-3 text-xs animate-in fade-in">
             <div className="flex items-center gap-1 font-bold text-indigo-700">
               <Route size={14} className="text-indigo-600" />
-              <span>{routeInfo.distanceKm} km (Đường bộ ngắn nhất)</span>
+              <span>{displayRouteInfo.distanceKm} km (Đường bộ ngắn nhất)</span>
             </div>
             <span className="text-gray-300">|</span>
             <div className="flex items-center gap-1 text-gray-700">
               <Clock size={13} className="text-gray-500" />
-              <span>~{routeInfo.durationMins} phút</span>
+              <span>~{displayRouteInfo.durationMins} phút</span>
             </div>
           </div>
         ) : (

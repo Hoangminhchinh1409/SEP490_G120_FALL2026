@@ -38,15 +38,16 @@ function mapOrderStatusToStep(rawStatus) {
   if (typeof rawStatus === 'number' && Number.isFinite(rawStatus)) {
     return Math.max(0, Math.min(3, rawStatus));
   }
-  const normalized = String(rawStatus || '').toUpperCase().replace(/\s+/g, '_');
-  if (['DELIVERED', 'CLOSED', 'COMPLETED'].includes(normalized)) return 3;
-  if (['IN_TRANSIT', 'PICKED_UP', 'IN_PROGRESS', 'HANDED_OVER_TO_VENDOR', 'INCIDENT'].includes(normalized)) return 2;
+  const normalized = String(rawStatus || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  if (['DELIVERED', 'DELIVERED_EXCEPTION', 'CLOSED', 'COMPLETED'].includes(normalized)) return 3;
+  if (['IN_TRANSIT', 'PICKED_UP', 'IN_PROGRESS', 'HANDED_OVER_VENDOR', 'HANDED_OVER_TO_VENDOR', 'INCIDENT'].includes(normalized)) return 2;
   if (['READY_FOR_PLANNING', 'ASSIGNED', 'PLANNED', 'ACCEPTED', 'DISPATCHED'].includes(normalized)) return 1;
   return 0;
 }
 
 function mapApiOrderToViewModel(apiOrder) {
   const phoneDigits = String(apiOrder.dispatcher_phone || '0988123456').replace(/[^0-9]/g, '');
+  const upperStatus = String(apiOrder.status || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
   return {
     id: apiOrder.order_code || String(apiOrder.id || ''),
     customer: apiOrder.customer_name || 'Quý khách hàng',
@@ -59,7 +60,7 @@ function mapApiOrderToViewModel(apiOrder) {
       phone: apiOrder.dispatcher_phone || '0988 123 456',
       zalo: apiOrder.dispatcher_zalo || `https://zalo.me/${phoneDigits || '0988123456'}`,
     },
-    isVendor: String(apiOrder.status || '').toUpperCase() === 'HANDED_OVER_TO_VENDOR',
+    isVendor: ['HANDED_OVER_VENDOR', 'HANDED_OVER_TO_VENDOR'].includes(upperStatus),
     vendorName: apiOrder.vendor_name || '',
     vendorTracking: apiOrder.vendor_tracking || '',
     sealImage: apiOrder.seal_image || null,

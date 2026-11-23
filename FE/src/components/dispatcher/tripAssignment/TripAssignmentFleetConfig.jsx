@@ -8,7 +8,6 @@ const { Option } = Select;
 export default function TripAssignmentFleetConfig({
   order,
   orderCode,
-  hawbCode,
   customerName,
   actualWeight,
   chargeableWeight,

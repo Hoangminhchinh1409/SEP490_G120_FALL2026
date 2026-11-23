@@ -1,4 +1,4 @@
-import { fetchWithAuth, fetchWithoutAuth } from './apiClient';
+import { fetchWithAuth } from './apiClient';
 
 export const dispatcherApi = {
   // --- 1. Fleet & Drivers & Vendors ---
@@ -78,6 +78,16 @@ export const dispatcherApi = {
       return data.locations || [];
     } catch (error) {
       console.warn('dispatcherApi.getLocations warn:', error?.message);
+      return [];
+    }
+  },
+
+  getAlsWarehouses: async () => {
+    try {
+      const data = await fetchWithAuth('/locations?als_only=true');
+      return data.locations || [];
+    } catch (error) {
+      console.warn('dispatcherApi.getAlsWarehouses warn:', error?.message);
       return [];
     }
   },
@@ -285,7 +295,7 @@ export const dispatcherApi = {
   getDashboardStats: async () => {
     try {
       const data = await fetchWithAuth('/dispatcher/dashboard-stats');
-      return data.stats;
+      return data?.kpi || data?.stats || data || null;
     } catch (error) {
       console.warn('dispatcherApi.getDashboardStats warn:', error?.message);
       return null;

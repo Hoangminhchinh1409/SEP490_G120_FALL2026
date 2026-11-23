@@ -3,6 +3,7 @@ import { Form, Input, Select, Checkbox } from 'antd';
 import { PlaneTakeoff, Calendar } from 'lucide-react';
 import RouteMapPicker from '../../common/RouteMapPicker';
 import LocationSearchInput from '../../common/LocationSearchInput';
+import { DEFAULT_ALS_WAREHOUSE, formatAlsWarehouseOptionLabel } from '../../../data/dispatcherPresets';
 
 const { Option } = Select;
 
@@ -26,6 +27,7 @@ export default function OrderFormRouteSection({
 }) {
   const watchedPickupAddress = Form.useWatch('pickup_address', form);
   const watchedDeliveryAddress = Form.useWatch('delivery_address', form);
+  const alsWarehouses = (dbLocations || []).filter((loc) => loc.is_als_hub === true);
 
   return (
     <>
@@ -99,9 +101,9 @@ export default function OrderFormRouteSection({
                   placeholder="Chọn kho ALS lấy hàng..."
                 >
                   <Select.OptGroup label="Hệ thống Kho &amp; Ga hàng không kéo dài ALS">
-                    {dbLocations.filter(loc => loc.is_als_hub || loc.name?.toUpperCase().includes('ALS') || !loc.customer_id).map(loc => (
+                    {alsWarehouses.map(loc => (
                       <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
-                        🏢 {loc.name} {loc.province ? `(${loc.province})` : ''}
+                        {formatAlsWarehouseOptionLabel(loc)}
                       </Option>
                     ))}
                   </Select.OptGroup>
@@ -121,9 +123,9 @@ export default function OrderFormRouteSection({
                     />
                   </Form.Item>
                 ) : (
-                  <div className="text-xs text-blue-950 font-medium bg-white p-2 rounded border border-blue-100">
-                    {watchedPickupAddress || 'Kho ALS tại Sân Bay Nội Bài'}
-                  </div>
+                  <Form.Item name="pickup_address" hidden>
+                    <Input />
+                  </Form.Item>
                 )}
               </div>
             ) : (
@@ -259,9 +261,9 @@ export default function OrderFormRouteSection({
                   placeholder="Chọn kho ALS giao hàng..."
                 >
                   <Select.OptGroup label="Hệ thống Kho &amp; Ga hàng không kéo dài ALS">
-                    {dbLocations.filter(loc => loc.is_als_hub || loc.name?.toUpperCase().includes('ALS') || !loc.customer_id).map(loc => (
+                    {alsWarehouses.map(loc => (
                       <Option key={loc.raw_id || loc.id} value={loc.raw_id || loc.id}>
-                        🏢 {loc.name} {loc.province ? `(${loc.province})` : ''}
+                        {formatAlsWarehouseOptionLabel(loc)}
                       </Option>
                     ))}
                   </Select.OptGroup>
@@ -281,9 +283,9 @@ export default function OrderFormRouteSection({
                     />
                   </Form.Item>
                 ) : (
-                  <div className="text-xs text-indigo-950 font-medium bg-white p-2 rounded border border-indigo-100">
-                    {watchedDeliveryAddress || 'Kho ALS tại Sân Bay Nội Bài'}
-                  </div>
+                  <Form.Item name="delivery_address" hidden>
+                    <Input />
+                  </Form.Item>
                 )}
               </div>
             ) : (
@@ -308,8 +310,8 @@ export default function OrderFormRouteSection({
         {/* Bản đồ định tuyến */}
         <div className="bg-white p-2 rounded-lg border border-gray-200">
           <RouteMapPicker
-            pickupAddress={form.getFieldValue('pickup_address') || (shippingDirection === 'IMPORT' ? 'Kho ALS tại Sân Bay Nội Bài' : '')}
-            deliveryAddress={form.getFieldValue('delivery_address') || (shippingDirection === 'EXPORT' ? 'Kho ALS tại Sân Bay Nội Bài' : '')}
+            pickupAddress={form.getFieldValue('pickup_address') || (shippingDirection === 'IMPORT' ? DEFAULT_ALS_WAREHOUSE.address : '')}
+            deliveryAddress={form.getFieldValue('delivery_address') || (shippingDirection === 'EXPORT' ? DEFAULT_ALS_WAREHOUSE.address : '')}
             pickupCoords={pickupCoords || (shippingDirection === 'IMPORT' ? { lat: 21.2187, lng: 105.8042 } : null)}
             deliveryCoords={deliveryCoords || (shippingDirection === 'EXPORT' ? { lat: 21.2187, lng: 105.8042 } : null)}
             height={220}

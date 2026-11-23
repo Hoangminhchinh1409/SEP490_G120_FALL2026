@@ -11,7 +11,6 @@ const {
   splitOrder,
   getOrderByToken,
   customerAgreeOrderPrice,
-  customerNegotiateOrder,
   customerUploadDocuments,
   rejectOrderDocument,
   approveWebOrderDocuments,
@@ -23,22 +22,15 @@ const {
 } = require('../controllers/orderController');
 
 const router = express.Router();
+const locationController = require('../controllers/locationController');
 const { requireAuth, requireRole } = require('../middlewares/authMiddleware');
 const requireDispatcherOrAdmin = [requireAuth, requireRole(['DISPATCHER', 3, 'ADMINISTRATOR', 1])];
 
 // 1. Lấy danh sách đơn hàng
 router.get('/', getAllOrders);
 
-// 1b. Khách hàng: Lấy danh sách địa điểm kho bãi công khai (Public)
-router.get('/public-locations', async (req, res) => {
-  try {
-    const locationService = require('../services/locationService');
-    const formattedLocations = await locationService.getAllLocations();
-    return res.json({ locations: formattedLocations });
-  } catch (err) {
-    return res.status(500).json({ message: 'Lỗi tải danh sách địa điểm công khai', error: err.message });
-  }
-});
+// 1b. Khách hàng: Lấy danh sách hệ thống kho ALS công khai (Public)
+router.get('/public-locations', locationController.getPublicAlsWarehouses);
 
 // 2. Khách hàng gửi tư vấn từ Homepage (Public)
 router.post('/consultation', createConsultationOrder);
@@ -48,9 +40,6 @@ router.get('/customer-view/:token', getOrderByToken);
 
 // 4. Khách hàng: Đồng ý chốt giá cước đơn hàng (Public)
 router.post('/customer-agree/:token', customerAgreeOrderPrice);
-
-// 4b. Khách hàng: Gửi yêu cầu đàm phán điều chỉnh giá / lịch trình (Public)
-router.post('/customer-negotiate/:token', customerNegotiateOrder);
 
 // 5. Khách hàng: Upload hồ sơ chứng từ liên quan (Public)
 router.post('/customer-upload-docs/:token', customerUploadDocuments);

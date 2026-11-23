@@ -1,4 +1,5 @@
-const supabase = require("../config/supabase");
+const prisma = require("../config/prisma");
+const { serializePrisma, toBigInt } = require("../utils/prismaHelper");
 
 const findUserByIdentifier = async (identifier) => {
   if (typeof identifier !== "string" || !identifier.trim() || identifier.trim().length > 100) {
@@ -13,31 +14,17 @@ const findUserByIdentifier = async (identifier) => {
     ? trimmedIdentifier.toLowerCase()
     : trimmedIdentifier;
 
-  const { data: usernameMatch, error: usernameError } = await supabase
-    .from("users")
-    .select("*")
-    .eq("username", normalizedIdentifier)
-    .maybeSingle();
-
-  if (usernameError) {
-    throw usernameError;
-  }
-
+  const usernameMatch = await prisma.users.findUnique({
+    where: { username: normalizedIdentifier },
+  });
   if (usernameMatch) {
-    return usernameMatch;
+    return serializePrisma(usernameMatch);
   }
 
-  const { data: emailMatch, error: emailError } = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", normalizedIdentifier)
-    .maybeSingle();
-
-  if (emailError) {
-    throw emailError;
-  }
-
-  return emailMatch;
+  const emailMatch = await prisma.users.findUnique({
+    where: { email: normalizedIdentifier },
+  });
+  return serializePrisma(emailMatch);
 };
 
 const findUserByEmail = async (email) => {
@@ -48,222 +35,187 @@ const findUserByEmail = async (email) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-
-  const { data, error } = await supabase
-    .from("users")
-    .select("id, email, full_name, status")
-    .eq("email", normalizedEmail)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Find user by email failed:", {
-      name: error.name,
-      code: error.code || null
-    });
-    throw error;
-  }
-
-  return data;
+  const user = await prisma.users.findUnique({
+    where: { email: normalizedEmail },
+    select: { id: true, email: true, full_name: true, status: true },
+  });
+  return serializePrisma(user);
 };
 
 const findUserById = async (id) => {
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+  const userId = toBigInt(id);
+  if (userId === null) return null;
+  const user = await prisma.users.findUnique({
+    where: { id: userId },
+  });
+  return serializePrisma(user);
 };
 
 const getAuthSessionState = async (id) => {
-  const { data, error } = await supabase
-    .from("users")
-    .select("id, status, password_changed_at, role_id, role:roles(id, name)")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+  const userId = toBigInt(id);
+  if (userId === null) return null;
+  const user = await prisma.users.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      status: true,
+      password_changed_at: true,
+      role_id: true,
+      roles: {
+        select: { id: true, name: true },
+      },
+    },
+  });
+  if (!user) return null;
+  const serialized = serializePrisma(user);
+  return {
+    ...serialized,
+    role: serialized.roles || null,
+  };
 };
 
 const createPasswordResetToken = async (userId, tokenHash, expiresAt) => {
-  // 1. Lưu trực tiếp lên cột password_reset_token & password_reset_expiry của bảng users (chuẩn schema DB)
-  const { data: userData, error: userErr } = await supabase
-    .from("users")
-    .update({
+  const bigUserId = toBigInt(userId);
+  const now = new Date();
+  const userData = await prisma.users.update({
+    where: { id: bigUserId },
+    data: {
       password_reset_token: tokenHash,
-      password_reset_expiry: expiresAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", userId)
-    .select("id")
-    .single();
+      password_reset_expiry: new Date(expiresAt),
+      updated_at: now,
+    },
+    select: { id: true },
+  });
 
-  if (userErr) {
-    throw userErr;
-  }
-
-  // 2. Đồng bộ sang bảng phụ password_reset_tokens nếu bảng không bị chặn RLS
   try {
-    await supabase
-      .from("password_reset_tokens")
-      .delete()
-      .or(`expires_at.lt.${new Date().toISOString()},user_id.eq.${userId}`);
-
-    await supabase.from("password_reset_tokens").insert({
-      user_id: userId,
-      token_hash: tokenHash,
-      expires_at: expiresAt,
+    await prisma.password_reset_tokens.deleteMany({
+      where: {
+        OR: [{ expires_at: { lt: now } }, { user_id: bigUserId }],
+      },
+    });
+    await prisma.password_reset_tokens.create({
+      data: {
+        user_id: bigUserId,
+        token_hash: tokenHash,
+        expires_at: new Date(expiresAt),
+      },
     });
   } catch {
-    // Bỏ qua nếu bảng phụ bật RLS
+    // Bỏ qua nếu bảng phụ bị hạn chế quyền
   }
 
-  return userData;
+  return serializePrisma(userData);
 };
 
 const consumePasswordResetToken = async (tokenHash) => {
-  const nowIso = new Date().toISOString();
+  const now = new Date();
 
-  // 1. Kiểm tra trên bảng users trước
-  const { data: matchedUser, error: findErr } = await supabase
-    .from("users")
-    .select("id, password_reset_expiry")
-    .eq("password_reset_token", tokenHash)
-    .gt("password_reset_expiry", nowIso)
-    .maybeSingle();
+  const matchedUser = await prisma.users.findFirst({
+    where: {
+      password_reset_token: tokenHash,
+      password_reset_expiry: { gt: now },
+    },
+    select: { id: true, password_reset_expiry: true },
+  });
 
-  if (!findErr && matchedUser) {
-    await supabase
-      .from("users")
-      .update({
+  if (matchedUser) {
+    await prisma.users.update({
+      where: { id: matchedUser.id },
+      data: {
         password_reset_token: null,
         password_reset_expiry: null,
-        updated_at: nowIso,
-      })
-      .eq("id", matchedUser.id);
-
-    return { user_id: matchedUser.id };
+        updated_at: now,
+      },
+    });
+    return { user_id: Number(matchedUser.id) };
   }
 
-  // 2. Fallback kiểm tra bảng phụ password_reset_tokens nếu có
-  const { data, error } = await supabase
-    .from("password_reset_tokens")
-    .delete()
-    .eq("token_hash", tokenHash)
-    .gt("expires_at", nowIso)
-    .select("user_id")
-    .maybeSingle();
-
-  if (error) {
+  try {
+    const tokenRow = await prisma.password_reset_tokens.findFirst({
+      where: {
+        token_hash: tokenHash,
+        expires_at: { gt: now },
+      },
+      select: { id: true, user_id: true },
+    });
+    if (!tokenRow) return null;
+    await prisma.password_reset_tokens.delete({
+      where: { id: tokenRow.id },
+    });
+    return { user_id: Number(tokenRow.user_id) };
+  } catch {
     return null;
   }
-
-  return data;
 };
 
 const updateLastLogin = async (id) => {
-  const { data, error } = await supabase
-    .from("users")
-    .update({
-      last_login_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+  const data = await prisma.users.update({
+    where: { id: toBigInt(id) },
+    data: { last_login_at: new Date() },
+  });
+  return serializePrisma(data);
 };
 
-const PROFILE_SELECT =
-  "id, username, full_name, email, phone, zalo_link, role_id, status, created_at, updated_at, last_login_at";
+const PROFILE_SELECT = {
+  id: true,
+  username: true,
+  full_name: true,
+  email: true,
+  phone: true,
+  zalo_link: true,
+  role_id: true,
+  status: true,
+  created_at: true,
+  updated_at: true,
+  last_login_at: true,
+};
 
 const updateProfile = async (id, payload) => {
   const fieldsToUpdate = {
     full_name: payload.full_name,
     phone: payload.phone,
-    updated_at: new Date().toISOString(),
+    updated_at: new Date(),
   };
 
   if (payload.zalo_link !== undefined) {
     fieldsToUpdate.zalo_link = payload.zalo_link;
   }
 
-  const runUpdate = async (fields, selectColumns) => {
-    const { data, error } = await supabase
-      .from("users")
-      .update(fields)
-      .eq("id", id)
-      .select(selectColumns)
-      .maybeSingle();
-
-    if (error) {
-      throw error;
-    }
-
-    return data;
-  };
-
   try {
-    const data = await runUpdate(fieldsToUpdate, PROFILE_SELECT);
-    if (data) return data;
+    const data = await prisma.users.update({
+      where: { id: toBigInt(id) },
+      data: fieldsToUpdate,
+      select: PROFILE_SELECT,
+    });
+    return serializePrisma(data);
   } catch (error) {
-    if (!/zalo_link/i.test(error.message || "")) {
-      throw error;
+    if (error.code === "P2025") {
+      const err = new Error("Không tìm thấy tài khoản để cập nhật");
+      err.statusCode = 404;
+      throw err;
     }
+    throw error;
   }
-
-  const { zalo_link, ...fieldsWithoutZalo } = fieldsToUpdate;
-  const data = await runUpdate(
-    fieldsWithoutZalo,
-    "id, username, full_name, email, phone, role_id, status, created_at, updated_at, last_login_at",
-  );
-
-  if (!data) {
-    const err = new Error("Không tìm thấy tài khoản để cập nhật");
-    err.statusCode = 404;
-    throw err;
-  }
-
-  return data;
 };
 
 const updatePassword = async (id, passwordHash) => {
-  const { data, error } = await supabase
-    .from("users")
-    .update({
+  const now = new Date();
+  const data = await prisma.users.update({
+    where: { id: toBigInt(id) },
+    data: {
       password_hash: passwordHash,
-      password_changed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select("id, password_changed_at")
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+      password_changed_at: now,
+      updated_at: now,
+    },
+    select: { id: true, password_changed_at: true },
+  });
+  return serializePrisma(data);
 };
 
 module.exports = {
   findUserByIdentifier,
   findUserByEmail,
   findUserById,
-  getAuthSessionState,
   getAuthSessionState,
   createPasswordResetToken,
   consumePasswordResetToken,

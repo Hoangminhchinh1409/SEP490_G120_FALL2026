@@ -1,9 +1,9 @@
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
 const customerService = require('../services/customerService');
+const { serializePrisma, toBigInt, toNum, formatDateOnly } = require('../utils/prismaHelper');
 
 /**
  * Contract & Vendor Controller — Nhóm chức năng Quản lý Nhà xe đối tác (3PL) & Hợp đồng Vận tải
- *
  */
 
 // ==========================================
@@ -22,7 +22,6 @@ const getAllContracts = async (req, res) => {
 
 const getOrderDocumentsBundle = async (req, res) => {
   try {
-    const prisma = require('../config/prisma');
     const { loadOrderMeta } = require('../services/orderHelperService');
 
     const orders = await prisma.orders.findMany({
@@ -58,14 +57,14 @@ const getOrderDocumentsBundle = async (req, res) => {
       const meta = await loadOrderMeta(o.id);
       const pickupLoc = o.locations_orders_pickup_location_idTolocations?.name || 'Điểm lấy hàng ALS';
       const deliveryLoc = o.locations_orders_delivery_location_idTolocations?.name || 'Điểm giao hàng';
-      
+
       let trip = null;
       if (o.trip_stops && o.trip_stops.length > 0) {
         trip = o.trip_stops[0].trips;
       }
 
       const driverName = trip?.trip_drivers?.[0]?.driver_profiles?.users?.full_name || 'Đang phân công';
-      const driverPhone = trip?.trip_drivers?.[0]?.driver_profiles?.users?.phone_number || '';
+      const driverPhone = trip?.trip_drivers?.[0]?.driver_profiles?.users?.phone || '';
       const truckPlate = trip?.trip_trucks?.[0]?.trucks?.plate_number || 'Đang phân công';
       const waybill = trip?.waybills?.[0];
 
@@ -134,39 +133,45 @@ const getAllCustomers = async (req, res) => {
 const getVendors = async (req, res) => {
   try {
     const { status } = req.query;
-
-    let query = supabase
-      .from('vendors')
-      .select(`
-        id,
-        company_name,
-        approval_status,
-        contact_person,
-        phone,
-        truck_types,
-        created_at,
-        updated_at,
-        transport_contracts(id, contract_number, liability_cap, valid_to, status)
-      `)
-      .order('id', { ascending: false });
-
+    const where = {};
     if (status && status !== 'ALL') {
-      query = query.eq('approval_status', status);
+      where.approval_status = status;
     }
 
-    const { data: vendorsList, error } = await query;
-    if (error) throw error;
+    const vendorsList = await prisma.vendors.findMany({
+      where,
+      select: {
+        id: true,
+        company_name: true,
+        approval_status: true,
+        contact_person: true,
+        phone: true,
+        truck_types: true,
+        created_at: true,
+        updated_at: true,
+        transport_contracts: {
+          select: {
+            id: true,
+            contract_number: true,
+            liability_cap: true,
+            valid_to: true,
+            status: true
+          }
+        }
+      },
+      orderBy: { id: 'desc' }
+    });
 
-    const formatted = (vendorsList || []).map((v) => {
+    const formatted = serializePrisma(vendorsList || []).map((v) => {
       const contracts = Array.isArray(v.transport_contracts)
         ? v.transport_contracts
         : v.transport_contracts
-        ? [v.transport_contracts]
-        : [];
+          ? [v.transport_contracts]
+          : [];
       const activeContract = contracts.find((c) => c.status === 'ACTIVE') || contracts[0];
 
       return {
-        id: v.id,
+        id: toNum(v.id),
         company_name: v.company_name,
         name: v.company_name,
         approval_status: v.approval_status || 'PENDING',
@@ -174,10 +179,10 @@ const getVendors = async (req, res) => {
         contact_person: v.contact_person || 'Chưa cập nhật',
         phone: v.phone || 'Chưa cập nhật',
         truck_types: v.truck_types || 'Xe tải 1.5T - 5T',
-        contract_id: activeContract?.id || null,
+        contract_id: activeContract?.id ? toNum(activeContract.id) : null,
         contract_number: activeContract?.contract_number || null,
-        liability_cap: activeContract?.liability_cap ? Number(activeContract.liability_cap): null,
-        contract_expiry: activeContract?.valid_to || null,
+        liability_cap: activeContract?.liability_cap ? Number(activeContract.liability_cap) : null,
+        contract_expiry: formatDateOnly(activeContract?.valid_to) || null,
         contract_status: activeContract?.status || 'NO_CONTRACT',
         created_at: v.created_at
       };
@@ -200,21 +205,21 @@ const getVendors = async (req, res) => {
 
 const getVendorById = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { data: vendor, error } = await supabase
-      .from('vendors')
-      .select(`
-        *,
-        transport_contracts(*)
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error || !vendor) {
+    const bigId = toBigInt(req.params.id);
+    if (bigId === null) {
       return res.status(404).json({ message: 'Không tìm thấy thông tin nhà xe.' });
     }
 
-    return res.json({ vendor });
+    const vendor = await prisma.vendors.findUnique({
+      where: { id: bigId },
+      include: { transport_contracts: true }
+    });
+
+    if (!vendor) {
+      return res.status(404).json({ message: 'Không tìm thấy thông tin nhà xe.' });
+    }
+
+    return res.json({ vendor: serializePrisma(vendor) });
   } catch (error) {
     console.error('getVendorById Error:', error);
     return res.status(500).json({ message: 'Lỗi lấy chi tiết nhà xe', error: error.message });
@@ -229,35 +234,31 @@ const createVendor = async (req, res) => {
       return res.status(400).json({ message: 'Tên công ty nhà xe là bắt buộc.' });
     }
 
-    const { data: existing } = await supabase
-      .from('vendors')
-      .select('id')
-      .ilike('company_name', company_name.trim())
-      .maybeSingle();
+    const existing = await prisma.vendors.findFirst({
+      where: { company_name: { equals: company_name.trim(), mode: 'insensitive' } },
+      select: { id: true }
+    });
 
     if (existing) {
       return res.status(400).json({ message: 'Tên công ty nhà xe đã tồn tại trong hệ thống.' });
     }
 
-    const { data: newVendor, error } = await supabase
-      .from('vendors')
-      .insert({
+    const now = new Date();
+    const newVendor = await prisma.vendors.create({
+      data: {
         company_name: company_name.trim(),
         contact_person: contact_person?.trim() || null,
-        phone: phone?.trim() || null,
+        phone: phone?.trim() || '',
         truck_types: truck_types?.trim() || 'Xe tải thùng kín',
         approval_status: 'PENDING',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
+        created_at: now,
+        updated_at: now
+      }
+    });
 
     return res.status(201).json({
       message: 'Thêm mới nhà xe đối tác thành công (trạng thái Chờ duyệt).',
-      vendor: newVendor
+      vendor: serializePrisma(newVendor)
     });
   } catch (error) {
     console.error('createVendor Error:', error);
@@ -267,25 +268,21 @@ const createVendor = async (req, res) => {
 
 const updateVendor = async (req, res) => {
   try {
-    const { id } = req.params;
+    const bigId = toBigInt(req.params.id);
     const { company_name, contact_person, phone, truck_types } = req.body;
 
-    const { data: updated, error } = await supabase
-      .from('vendors')
-      .update({
-        company_name: company_name?.trim(),
-        contact_person: contact_person?.trim(),
-        phone: phone?.trim(),
-        truck_types: truck_types?.trim(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
+    const data = { updated_at: new Date() };
+    if (company_name !== undefined) data.company_name = company_name?.trim();
+    if (contact_person !== undefined) data.contact_person = contact_person?.trim();
+    if (phone !== undefined) data.phone = phone?.trim();
+    if (truck_types !== undefined) data.truck_types = truck_types?.trim();
 
-    if (error) throw error;
+    const updated = await prisma.vendors.update({
+      where: { id: bigId },
+      data
+    });
 
-    return res.json({ message: 'Cập nhật thông tin nhà xe thành công.', vendor: updated });
+    return res.json({ message: 'Cập nhật thông tin nhà xe thành công.', vendor: serializePrisma(updated) });
   } catch (error) {
     console.error('updateVendor Error:', error);
     return res.status(500).json({ message: 'Lỗi cập nhật nhà xe', error: error.message });
@@ -296,45 +293,46 @@ const updateVendorStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const managerId = req.user?.id || null;
+    const managerId = req.user?.id ? toBigInt(req.user.id) : null;
+    const bigId = toBigInt(id);
 
     if (!['APPROVED', 'SUSPENDED', 'PENDING'].includes(status)) {
       return res.status(400).json({ message: 'Trạng thái không hợp lệ.' });
     }
 
-    const { data: updatedVendor, error } = await supabase
-      .from('vendors')
-      .update({
-        approval_status: status,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
+    const now = new Date();
+    const updatedVendor = await prisma.$transaction(async (tx) => {
+      const upd = await tx.vendors.update({
+        where: { id: bigId },
+        data: { approval_status: status, updated_at: now }
+      });
 
-    if (error) throw error;
+      if (status === 'APPROVED') {
+        await tx.transport_contracts.updateMany({
+          where: { vendor_id: bigId },
+          data: { status: 'ACTIVE', updated_at: now }
+        });
+      } else if (status === 'SUSPENDED') {
+        await tx.transport_contracts.updateMany({
+          where: { vendor_id: bigId },
+          data: { status: 'SUSPENDED', updated_at: now }
+        });
+      }
 
-    if (status === 'APPROVED') {
-      await supabase
-        .from('transport_contracts')
-        .update({ status: 'ACTIVE', updated_at: new Date().toISOString() })
-        .eq('vendor_id', id);
-    } else if (status === 'SUSPENDED') {
-      await supabase
-        .from('transport_contracts')
-        .update({ status: 'SUSPENDED', updated_at: new Date().toISOString() })
-        .eq('vendor_id', id);
-    }
+      return upd;
+    });
 
     try {
-      await supabase.from('activity_logs').insert({
-        actor_id: managerId,
-        actor_type: 'MANAGER',
-        action: status === 'APPROVED' ? 'APPROVE_VENDOR': 'SUSPEND_VENDOR',
-        target_type: 'VENDOR',
-        target_id: String(id),
-        changes: { status },
-        created_time: new Date().toISOString()
+      await prisma.activity_logs.create({
+        data: {
+          actor_id: managerId,
+          actor_type: 'MANAGER',
+          action: status === 'APPROVED' ? 'APPROVE_VENDOR' : 'SUSPEND_VENDOR',
+          target_type: 'VENDOR',
+          target_id: bigId,
+          changes: { status },
+          created_time: now
+        }
       });
     } catch (logErr) {
       console.warn('activity_logs warning:', logErr.message);
@@ -344,10 +342,10 @@ const updateVendorStatus = async (req, res) => {
       status === 'APPROVED'
         ? 'Đã phê duyệt nhà xe đối tác thành công (Có thể nhận chuyến).'
         : status === 'SUSPENDED'
-        ? 'Đã đình chỉ nhà xe đối tác (Dispatcher sẽ không thể gán đơn).'
-        : 'Đã chuyển trạng thái nhà xe về Chờ duyệt.';
+          ? 'Đã đình chỉ nhà xe đối tác (Dispatcher sẽ không thể gán đơn).'
+          : 'Đã chuyển trạng thái nhà xe về Chờ duyệt.';
 
-    return res.json({ message: msg, vendor: updatedVendor });
+    return res.json({ message: msg, vendor: serializePrisma(updatedVendor) });
   } catch (error) {
     console.error('updateVendorStatus Error:', error);
     return res.status(500).json({ message: 'Lỗi cập nhật trạng thái nhà xe', error: error.message });
@@ -355,52 +353,50 @@ const updateVendorStatus = async (req, res) => {
 };
 
 const approveVendor = (req, res) => {
-  req.body = {...req.body, status: 'APPROVED' };
+  req.body = { ...req.body, status: 'APPROVED' };
   return updateVendorStatus(req, res);
 };
 
 const getContracts = async (req, res) => {
   try {
-    const { data: contracts, error } = await supabase
-      .from('transport_contracts')
-      .select(`
-        id,
-        contract_number,
-        contract_type,
-        customer_id,
-        vendor_id,
-        terms_and_responsibilities,
-        pricing_conditions,
-        free_waiting_time,
-        waiting_fee_rate,
-        liability_cap,
-        compensation_terms,
-        valid_from,
-        valid_to,
-        attachment_link,
-        status,
-        vendor:vendors(id, company_name),
-        customer:customers(id, company_name)
-      `)
-      .order('id', { ascending: false });
+    const contracts = await prisma.transport_contracts.findMany({
+      select: {
+        id: true,
+        contract_number: true,
+        contract_type: true,
+        customer_id: true,
+        vendor_id: true,
+        terms_and_responsibilities: true,
+        pricing_conditions: true,
+        free_waiting_time: true,
+        waiting_fee_rate: true,
+        liability_cap: true,
+        compensation_terms: true,
+        valid_from: true,
+        valid_to: true,
+        attachment_link: true,
+        status: true,
+        vendors: { select: { id: true, company_name: true } },
+        customers: { select: { id: true, company_name: true } }
+      },
+      orderBy: { id: 'desc' }
+    });
 
-    if (error) throw error;
-
-    const formatted = (contracts || []).map((c) => ({
-      id: c.id,
+    const formatted = serializePrisma(contracts || []).map((c, idx) => ({
+      id: toNum(c.id),
       contract_number: c.contract_number,
-      contract_type: c.contract_type || (c.vendor_id ? 'VENDOR': 'CUSTOMER'),
-      partner_name: c.vendor?.company_name || c.customer?.company_name || 'Khách hàng / Đối tác',
-      partner_type: c.vendor_id ? 'VENDOR': 'CUSTOMER',
-      liability_cap: c.liability_cap ? Number(c.liability_cap): 0,
+      contract_type: c.contract_type || (c.vendor_id ? 'VENDOR' : 'CUSTOMER'),
+      partner_name: c.vendors?.company_name || c.customers?.company_name || 'Khách hàng / Đối tác',
+      partner_type: c.vendor_id ? 'VENDOR' : 'CUSTOMER',
+      liability_cap: c.liability_cap ? Number(c.liability_cap) : 0,
       free_waiting_minutes: c.free_waiting_time || 60,
-      waiting_fee_per_hour: c.waiting_fee_rate ? Number(c.waiting_fee_rate): 0,
+      waiting_fee_per_hour: c.waiting_fee_rate ? Number(c.waiting_fee_rate) : 0,
       terms: c.terms_and_responsibilities,
       pricing_conditions: c.pricing_conditions,
       compensation_rules: c.compensation_terms,
       attachment_link: c.attachment_link,
-      valid_from: c.valid_from,
-      valid_to: c.valid_to,
+      valid_from: formatDateOnly(contracts[idx].valid_from),
+      valid_to: formatDateOnly(contracts[idx].valid_to),
       status: c.status || 'ACTIVE'
     }));
 
@@ -415,13 +411,10 @@ const getContracts = async (req, res) => {
 };
 
 module.exports = {
-  // Dispatcher Contracts & Customers
   getAllContracts,
   getOrderDocumentsBundle,
   createContract,
   getAllCustomers,
-
-  // Manager Vendors & Read-only Contracts
   getVendors,
   getVendorById,
   createVendor,
@@ -430,4 +423,3 @@ module.exports = {
   approveVendor,
   getContracts
 };
-

@@ -23,7 +23,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
-  const fetchIncidents = async () => {
+  const fetchIncidents = React.useCallback(async () => {
     setLoading(true);
     try {
       const params = {};
@@ -41,11 +41,14 @@ export default function MajorIncidentListPage({ readOnly = false }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, typeFilter]);
 
   useEffect(() => {
-    fetchIncidents();
-  }, [statusFilter, typeFilter]);
+    const timer = setTimeout(() => {
+      fetchIncidents();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchIncidents]);
 
   const handleOpenDetail = (record) => {
     setSelectedIncident(record);

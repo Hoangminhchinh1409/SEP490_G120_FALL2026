@@ -1,10 +1,8 @@
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Select } from 'antd';
-import { MapPin, Search, Loader2, X, Navigation, CheckCircle2, AlertCircle, Building2 } from 'lucide-react';
-import { VIETMAP_API_KEY } from '../../utils/roadRouting';
-
-const SAFE_VIETMAP_KEY = VIETMAP_API_KEY || '35a2d42231542a9bd918f8fd7c97a5021cbf67d145a74e47';
+import { MapPin, Loader2, X, Navigation, CheckCircle2, AlertCircle, Building2 } from 'lucide-react';
+import { autocompleteVietmap, searchVietmap, fetchVietmapPlace } from '../../utils/roadRouting';
 
 // Danh mục chuẩn 34 Tỉnh / Thành phố Việt Nam mới nhất 2026 (mô hình chính quyền địa phương 2 cấp: Tỉnh/Thành phố -> Phường/Xã)
 export const VIETNAM_PROVINCES_2026 = [
@@ -58,18 +56,12 @@ async function resolveVietmapCityId(provName, signal) {
   }
 
   try {
-    const url = `https://maps.vietmap.vn/api/autocomplete/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(cleanName)}`;
-    const res = await fetch(url, { signal });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        for (const item of data) {
-          const b0 = item.boundaries?.find((b) => b.type === 0);
-          if (b0 && b0.id) {
-            vietmapCityIdCache.set(cleanName, b0.id);
-            return b0.id;
-          }
-        }
+    const data = await autocompleteVietmap(cleanName, { signal });
+    for (const item of data) {
+      const b0 = item.boundaries?.find((b) => b.type === 0);
+      if (b0 && b0.id) {
+        vietmapCityIdCache.set(cleanName, b0.id);
+        return b0.id;
       }
     }
   } catch {
@@ -225,13 +217,7 @@ const LocationSearchInput = ({
 
   // Tải danh sách Phường/Xã 2026 khi chọn Tỉnh/Thành phố
   useEffect(() => {
-    if (!selectedProvinceCode) {
-      setWardsList([]);
-      return;
-    }
-
-    if (provinceWardsCache.has(selectedProvinceCode)) {
-      setWardsList(provinceWardsCache.get(selectedProvinceCode));
+    if (!selectedProvinceCode || provinceWardsCache.has(selectedProvinceCode)) {
       return;
     }
 
@@ -262,12 +248,16 @@ const LocationSearchInput = ({
     };
   }, [selectedProvinceCode]);
 
+  const effectiveWardsList = selectedProvinceCode
+    ? provinceWardsCache.get(selectedProvinceCode) || wardsList
+    : [];
+
   // Ghép địa chỉ đầy đủ từ 3 thành phần: [Địa chỉ cụ thể], [Phường/Xã], [Tỉnh/Thành phố]
   const buildFullAddress = (detail, ward, province) => {
     return [detail?.trim(), ward?.trim(), province?.trim()].filter(Boolean).join(', ');
   };
 
-  // Tự động tra cứu tọa độ VietMap khi đã có đủ: Địa chỉ cụ thể + Phường/Xã + Tỉnh/Thành phố
+  // Tự động tra cứu tọa độ VietMap v4 khi đã có đủ: Địa chỉ cụ thể + Phường/Xã + Tỉnh/Thành phố
   useEffect(() => {
     const cleanDetail = (detailText || '').trim();
     if (!cleanDetail || cleanDetail.length < 2 || !selectedWardName || !selectedProvinceName) {
@@ -281,65 +271,46 @@ const LocationSearchInput = ({
     const geocodeTimer = setTimeout(async () => {
       try {
         setResolvingCoords(true);
-        const searchUrl = `https://maps.vietmap.vn/api/search/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(fullAddr)}`;
-        const searchRes = await fetch(searchUrl, { signal: controller.signal });
+        const searchData = await searchVietmap(fullAddr, { signal: controller.signal });
+        const first = searchData.length > 0 ? searchData[0] : null;
 
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          const first = Array.isArray(searchData) && searchData.length > 0 ? searchData[0] : null;
-
-          if (!isCancelled && first?.ref_id) {
-            const placeUrl = `https://maps.vietmap.vn/api/place/v3?apikey=${SAFE_VIETMAP_KEY}&refid=${encodeURIComponent(first.ref_id)}`;
-            const placeRes = await fetch(placeUrl, { signal: controller.signal });
-            if (placeRes.ok) {
-              const placeData = await placeRes.json();
-              if (!isCancelled && typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
-                setIsVerifiedCoords(true);
-                if (onSelectLocation) {
-                  onSelectLocation({
-                    address: fullAddr,
-                    mainName: cleanDetail,
-                    ward: selectedWardName,
-                    province: selectedProvinceName,
-                    lat: placeData.lat,
-                    lng: placeData.lng,
-                    verified: true
-                  });
-                }
-                return;
-              }
+        if (!isCancelled && first?.ref_id) {
+          const placeData = await fetchVietmapPlace(first.ref_id, { signal: controller.signal });
+          if (!isCancelled && typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
+            setIsVerifiedCoords(true);
+            if (onSelectLocation) {
+              onSelectLocation({
+                address: fullAddr,
+                mainName: cleanDetail,
+                ward: selectedWardName,
+                province: selectedProvinceName,
+                lat: placeData.lat,
+                lng: placeData.lng,
+                verified: true
+              });
             }
+            return;
           }
         }
 
-        // Nếu địa chỉ cụ thể quá chi tiết (VD số lô nội bộ), fallback lấy tọa độ trung tâm Phường/Xã + Tỉnh/Thành phố trên VietMap
+        // Nếu địa chỉ cụ thể quá chi tiết (VD số lô nội bộ), fallback lấy tọa độ trung tâm Phường/Xã + Tỉnh/Thành phố trên VietMap v4
         const wardFallbackQuery = `${selectedWardName}, ${selectedProvinceName}`;
-        const fbRes = await fetch(
-          `https://maps.vietmap.vn/api/search/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(wardFallbackQuery)}`,
-          { signal: controller.signal }
-        );
-        if (fbRes.ok) {
-          const fbData = await fbRes.json();
-          const fbFirst = Array.isArray(fbData) && fbData.length > 0 ? fbData[0] : null;
-          if (!isCancelled && fbFirst?.ref_id) {
-            const placeUrl = `https://maps.vietmap.vn/api/place/v3?apikey=${SAFE_VIETMAP_KEY}&refid=${encodeURIComponent(fbFirst.ref_id)}`;
-            const placeRes = await fetch(placeUrl, { signal: controller.signal });
-            if (placeRes.ok) {
-              const placeData = await placeRes.json();
-              if (!isCancelled && typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
-                setIsVerifiedCoords(true);
-                if (onSelectLocation) {
-                  onSelectLocation({
-                    address: fullAddr,
-                    mainName: cleanDetail,
-                    ward: selectedWardName,
-                    province: selectedProvinceName,
-                    lat: placeData.lat,
-                    lng: placeData.lng,
-                    verified: true
-                  });
-                }
-              }
+        const fbData = await searchVietmap(wardFallbackQuery, { signal: controller.signal });
+        const fbFirst = fbData.length > 0 ? fbData[0] : null;
+        if (!isCancelled && fbFirst?.ref_id) {
+          const placeData = await fetchVietmapPlace(fbFirst.ref_id, { signal: controller.signal });
+          if (!isCancelled && typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
+            setIsVerifiedCoords(true);
+            if (onSelectLocation) {
+              onSelectLocation({
+                address: fullAddr,
+                mainName: cleanDetail,
+                ward: selectedWardName,
+                province: selectedProvinceName,
+                lat: placeData.lat,
+                lng: placeData.lng,
+                verified: true
+              });
             }
           }
         }
@@ -357,13 +328,12 @@ const LocationSearchInput = ({
       clearTimeout(geocodeTimer);
       controller.abort();
     };
-  }, [detailText, selectedWardName, selectedProvinceName]);
+  }, [detailText, selectedWardName, selectedProvinceName, onSelectLocation]);
 
-  // Gợi ý VietMap Autocomplete khi người dùng đang gõ ở ô Địa chỉ cụ thể
+  // Gợi ý VietMap v4 Autocomplete khi người dùng đang gõ ở ô Địa chỉ cụ thể
   useEffect(() => {
     const query = detailText?.trim();
     if (!query || query.length < 2 || !isOpen) {
-      setApiSuggestions([]);
       return;
     }
 
@@ -384,7 +354,6 @@ const LocationSearchInput = ({
             const pNorm = normalizeVi(p.name).replace(/^(thanh pho|tinh)\s+/i, '').trim();
             if (pNorm && normQuery.includes(pNorm)) {
               effectiveProvName = p.name;
-              // Bóc tách tên tỉnh ra khỏi chuỗi để tìm kiếm địa chỉ cụ thể chính xác hơn
               const regex = new RegExp(`[,\\s]*(thành phố|thanh pho|tp\\.?|tp|tỉnh|tinh)?\\s*${pNorm}`, 'gi');
               cleanQuery = cleanQuery.replace(regex, '').trim();
               break;
@@ -392,7 +361,6 @@ const LocationSearchInput = ({
           }
         }
 
-        // Nếu đã có Tỉnh/Thành phố (từ dropdown hoặc bóc tách từ chuỗi gõ), lấy mã cityId chuẩn từ VietMap
         let cityId = null;
         if (effectiveProvName) {
           cityId = await resolveVietmapCityId(effectiveProvName, controller.signal);
@@ -400,23 +368,16 @@ const LocationSearchInput = ({
 
         const fetchAutocomplete = async (searchTxt, cId) => {
           if (!searchTxt) return [];
-          const cParam = cId ? `&cityId=${cId}` : '';
-          const url = `https://maps.vietmap.vn/api/autocomplete/v3?apikey=${SAFE_VIETMAP_KEY}&text=${encodeURIComponent(searchTxt)}${cParam}`;
-          const r = await fetch(url, { signal: controller.signal });
-          return r.ok ? await r.json() : [];
+          return autocompleteVietmap(searchTxt, { cityId: cId, signal: controller.signal });
         };
 
         const fetchTasks = [];
-
-        // 1. Luôn truy vấn nguyên văn chuỗi người dùng gõ
         fetchTasks.push(fetchAutocomplete(query, cityId));
 
-        // 2. Nếu chuỗi có bóc tách tên tỉnh (VD: '1 tôn thất thuyết, hà nội' -> '1 tôn thất thuyết' + cityId)
         if (cleanQuery && cleanQuery !== query && cityId) {
           fetchTasks.push(fetchAutocomplete(cleanQuery, cityId));
         }
 
-        // 3. Nếu người dùng gõ kèm số nhà (VD: '1 tôn thất thuyết') mà chưa có kết quả tốt, tìm thêm theo tên đường ('tôn thất thuyết')
         const withoutHouseNum = (cleanQuery || query).replace(/^\d+[\w\/-]*\s+/i, '').trim();
         if (withoutHouseNum && withoutHouseNum !== (cleanQuery || query)) {
           fetchTasks.push(fetchAutocomplete(withoutHouseNum, cityId));
@@ -562,12 +523,9 @@ const LocationSearchInput = ({
     if (item.ref_id) {
       try {
         setResolvingCoords(true);
-        const placeUrl = `https://maps.vietmap.vn/api/place/v3?apikey=${SAFE_VIETMAP_KEY}&refid=${encodeURIComponent(item.ref_id)}`;
-        const placeRes = await fetch(placeUrl);
-        if (placeRes.ok) {
-          const placeData = await placeRes.json();
-
-          // Nếu autocomplete chưa có phường/xã hoặc tỉnh, bổ sung trực tiếp từ chi tiết placeData của VietMap
+        const placeData = await fetchVietmapPlace(item.ref_id);
+        if (placeData) {
+          // Nếu autocomplete chưa có phường/xã hoặc tỉnh, bổ sung trực tiếp từ chi tiết placeData của VietMap v4
           if (!nextWard && placeData?.ward) {
             nextWard = placeData.ward;
             setSelectedWardName(nextWard);
@@ -623,6 +581,7 @@ const LocationSearchInput = ({
   };
 
   const isComplete = Boolean(detailText?.trim().length >= 2 && selectedProvinceCode && selectedWardName);
+  const visibleSuggestions = isOpen && (detailText?.trim().length >= 2) ? apiSuggestions : [];
 
   return (
     <div className="relative w-full space-y-2" ref={containerRef}>
@@ -697,8 +656,8 @@ const LocationSearchInput = ({
           )}
         </div>
 
-        {/* Dropdown gợi ý nhanh từ VietMap nếu khách gõ tên KCN/tòa nhà */}
-        {isOpen && (apiSuggestions.length > 0 || isLoading) && (
+        {/* Dropdown gợi ý nhanh từ VietMap v4 */}
+        {isOpen && (visibleSuggestions.length > 0 || isLoading) && (
           <div className="absolute left-0 right-0 top-full mt-1 z-[2500] bg-white rounded-xl shadow-2xl border border-gray-150 overflow-hidden max-h-60 overflow-y-auto">
             <div className="px-3 py-1.5 bg-indigo-50/70 border-b border-indigo-100 flex items-center justify-between text-[10px] text-indigo-800">
               <span className="font-bold flex items-center gap-1">
@@ -711,7 +670,7 @@ const LocationSearchInput = ({
               )}
             </div>
             <div className="divide-y divide-gray-50">
-              {apiSuggestions.map((item, idx) => (
+              {visibleSuggestions.map((item, idx) => (
                 <div
                   key={item.ref_id || idx}
                   onMouseDown={(e) => {
@@ -751,7 +710,7 @@ const LocationSearchInput = ({
               normalizeVi(option?.label || '').includes(normalizeVi(input))
             }
             className="w-full text-xs"
-            options={wardsList.map((w) => ({
+            options={effectiveWardsList.map((w) => ({
               value: w.name,
               label: w.name
             }))}

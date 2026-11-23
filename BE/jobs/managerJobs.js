@@ -1,5 +1,5 @@
 const fleetService = require("../services/fleetService");
-const supabase = require('../config/supabase');
+const prisma = require('../config/prisma');
 const queueAdapter = require('./queueAdapter');
 
 /**
@@ -25,30 +25,30 @@ const LOCK_KEYS = {
 // JOB-06: Tự động khóa xe hết hạn đăng kiểm sang Inactive (chạy mỗi sáng hoặc định kỳ)
 const runJob06_AutoLockExpiredTrucks = async () => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const todayDate = new Date(`${new Date().toISOString().split('T')[0]}T00:00:00.000Z`);
 
     // Tìm các xe có hạn đăng kiểm nhỏ hơn ngày hôm nay và đang không phải INACTIVE
-    const { data: expiredTrucks, error } = await supabase
-      .from('trucks')
-      .select('id, plate_number, inspection_expiry, status')
-      .lt('inspection_expiry', today)
-      .neq('status', 'INACTIVE')
-      .is('deleted_at', null);
-
-    if (error) throw error;
+    const expiredTrucks = await prisma.trucks.findMany({
+      where: {
+        inspection_expiry: { lt: todayDate },
+        status: { not: 'INACTIVE' },
+        deleted_at: null
+      },
+      select: { id: true, plate_number: true, inspection_expiry: true, status: true }
+    });
 
     if (expiredTrucks && expiredTrucks.length > 0) {
       console.log(`[JOB-06] Phát hiện ${expiredTrucks.length} xe hết hạn đăng kiểm:`, expiredTrucks.map(t => t.plate_number));
 
-      for (const truck of expiredTrucks) {
-        await supabase
-          .from('trucks')
-          .update({
-            status: 'INACTIVE',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', truck.id);
+      await prisma.trucks.updateMany({
+        where: { id: { in: expiredTrucks.map((t) => t.id) } },
+        data: {
+          status: 'INACTIVE',
+          updated_at: new Date()
+        }
+      });
 
+      for (const truck of expiredTrucks) {
         console.log(`[JOB-06] Đã tự động chuyển xe ${truck.plate_number} sang INACTIVE.`);
       }
     }
@@ -65,11 +65,10 @@ const runJob03_FlagOverdueOrders = async () => {
     // 1. Đọc giới hạn thời gian từ system_settings (mặc định 60 phút theo cấu hình)
     let limitMinutes = 60;
     try {
-      const { data: setting } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', 'waiting_too_long_minutes')
-        .maybeSingle();
+      const setting = await prisma.system_settings.findUnique({
+        where: { key: 'waiting_too_long_minutes' },
+        select: { value: true }
+      });
 
       if (setting && setting.value) {
         limitMinutes = Number(setting.value);
@@ -79,12 +78,18 @@ const runJob03_FlagOverdueOrders = async () => {
     }
 
     // 2. Tìm các đơn ở trạng thái chờ và kiểm tra thời gian (chỉ áp dụng với Draft và Confirmed theo SRS 11.3)
-    const { data: orders, error } = await supabase
-      .from('orders')
-      .select('id, order_code, status, document_status, created_at, ready_for_planning_at, waiting_too_long')
-      .in('status', ['DRAFT', 'CONFIRMED']);
-
-    if (error) throw error;
+    const orders = await prisma.orders.findMany({
+      where: { status: { in: ['DRAFT', 'CONFIRMED'] } },
+      select: {
+        id: true,
+        order_code: true,
+        status: true,
+        document_status: true,
+        created_at: true,
+        ready_for_planning_at: true,
+        waiting_too_long: true
+      }
+    });
 
     for (const o of orders || []) {
       const startTime = new Date(o.created_at);
@@ -101,45 +106,47 @@ const runJob03_FlagOverdueOrders = async () => {
       }
 
       if (shouldFlag && !o.waiting_too_long) {
-        await supabase
-          .from('orders')
-          .update({
+        await prisma.orders.update({
+          where: { id: o.id },
+          data: {
             waiting_too_long: true,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', o.id);
+            updated_at: new Date()
+          }
+        });
 
         console.log(`[JOB-03] Đã gắn cờ đơn ách tắc ${o.order_code || o.id} (chờ ${Math.round(ageMinutes)} phút > giới hạn ${limitMinutes}p -).`);
       } else if (!shouldFlag && o.waiting_too_long) {
-        await supabase
-          .from('orders')
-          .update({
+        await prisma.orders.update({
+          where: { id: o.id },
+          data: {
             waiting_too_long: false,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', o.id);
+            updated_at: new Date()
+          }
+        });
 
         console.log(`[JOB-03] Đã gỡ cờ đơn ${o.order_code || o.id} do đã được xử lý / chưa quá hạn.`);
       }
     }
 
     // 3. Gỡ cờ đối với các đơn đã rời khỏi nhóm trạng thái chờ (SRS 11.3 Step 3: đã sẵn sàng xếp xe hoặc đã gán chuyến)
-    const { data: ordersToUnflag } = await supabase
-      .from('orders')
-      .select('id, order_code')
-      .eq('waiting_too_long', true)
-      .not('status', 'in', '("DRAFT","CONFIRMED")');
+    const ordersToUnflag = await prisma.orders.findMany({
+      where: {
+        waiting_too_long: true,
+        status: { notIn: ['DRAFT', 'CONFIRMED'] }
+      },
+      select: { id: true, order_code: true }
+    });
 
     if (ordersToUnflag && ordersToUnflag.length > 0) {
-      for (const lo of ordersToUnflag) {
-        await supabase
-          .from('orders')
-          .update({
-            waiting_too_long: false,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', lo.id);
+      await prisma.orders.updateMany({
+        where: { id: { in: ordersToUnflag.map((lo) => lo.id) } },
+        data: {
+          waiting_too_long: false,
+          updated_at: new Date()
+        }
+      });
 
+      for (const lo of ordersToUnflag) {
         console.log(`[JOB-03] Đã gỡ cờ đơn ách tắc ${lo.order_code || lo.id} do đã chuyển trạng thái.`);
       }
     }
@@ -151,30 +158,25 @@ const runJob03_FlagOverdueOrders = async () => {
 // JOB-02: Kiểm tra hết ca của tài xế khi chuyến chưa xong & Lái 4h liên tục
 const runJob02_CheckDriverShiftOvertime = async () => {
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const nowTime = new Date().toTimeString().split(' ')[0]; // "HH:MM:SS"
+    const todayDate = new Date(`${new Date().toISOString().split('T')[0]}T00:00:00.000Z`);
+    const nowTime = new Date();
 
     // Lấy các chuyến đang chạy (IN_PROGRESS hoặc IN_TRANSIT)
-    const { data: activeTrips, error: tripErr } = await supabase
-      .from('trips')
-      .select('id, trip_code, status')
-      .in('status', ['IN_PROGRESS', 'IN_TRANSIT']);
-
-    if (tripErr) throw tripErr;
+    const activeTrips = await prisma.trips.findMany({
+      where: { status: { in: ['IN_PROGRESS', 'IN_TRANSIT'] } },
+      select: { id: true, trip_code: true, status: true }
+    });
 
     if (activeTrips && activeTrips.length > 0) {
       // Lấy các ca làm việc hôm nay đã kết thúc
-      const { data: endedShifts, error: shiftErr } = await supabase
-        .from('driver_shifts')
-        .select('id, driver_id, end_time, status')
-        .eq('date', today)
-        .eq('status', 'Approved')
-        .lt('end_time', nowTime);
-
-      if (!shiftErr && endedShifts && endedShifts.length > 0) {
-        // Ghi nhận cảnh báo
-        // console.log(`[JOB-02] Đã quét ${activeTrips.length} chuyến đang chạy, phát hiện ca tài xế đã hết.`);
-      }
+      await prisma.driver_shifts.findMany({
+        where: {
+          date: todayDate,
+          status: 'Approved',
+          end_time: { lt: nowTime }
+        },
+        select: { id: true, driver_id: true, end_time: true, status: true }
+      });
     }
   } catch (err) {
     console.warn('[JOB-02] Lỗi kiểm tra ca lái:', err.message);

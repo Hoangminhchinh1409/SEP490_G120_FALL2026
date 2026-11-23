@@ -207,7 +207,7 @@ export default function HomePage() {
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-space-md items-center">
                     <div className="md:col-span-8">
                       <label className="block font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">
-                        Mã vận đơn (Hawb / Mawb)
+                        Mã đơn hàng / Vận đơn
                       </label>
                       <div className="relative flex items-center">
                         <span className="absolute left-space-md material-symbols-outlined text-outline text-lg pointer-events-none">

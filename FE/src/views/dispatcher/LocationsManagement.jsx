@@ -1,10 +1,19 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Button, Input, Modal, Form, Select, InputNumber, Row, Col, Space, Card, message, Popconfirm, Tooltip } from 'antd';
-import { MapPin, Plus, Search, Edit3, Trash2, Phone, User, RefreshCw } from 'lucide-react';
+import { MapPin, Plus, Search, Edit3, Trash2, Phone, User, RefreshCw, Lock } from 'lucide-react';
 import { dispatcherApi } from '../../api/dispatcherApi';
+import LocationSearchInput, { VIETNAM_PROVINCES_2026 } from '../../components/common/LocationSearchInput';
 
 const { Option } = Select;
+
+const normalizeShortProvince = (rawName = '') => {
+  return String(rawName || '')
+    .replace(/^(Thành phố|Tỉnh)\s+/i, '')
+    .trim();
+};
+
+const PROVINCE_SHORT_OPTIONS = VIETNAM_PROVINCES_2026.map((p) => normalizeShortProvince(p.name));
 
 export default function LocationsManagement() {
   const [locations, setLocations] = useState([]);
@@ -73,8 +82,7 @@ export default function LocationsManagement() {
     setTimeout(() => {
       form.resetFields();
       form.setFieldsValue({
-        province: 'Hà Nội',
-        geofence_radius_m: 150
+        province: 'Hà Nội'
       });
     }, 0);
   };
@@ -84,7 +92,13 @@ export default function LocationsManagement() {
     setIsModalOpen(true);
     setTimeout(() => {
       form.setFieldsValue({
-        ...record,
+        name: record.name,
+        province: normalizeShortProvince(record.province) || 'Hà Nội',
+        contact_name: record.contact_name && record.contact_name !== 'Người liên hệ' ? record.contact_name : '',
+        contact_phone: record.contact_phone && record.contact_phone !== '---' ? record.contact_phone : '',
+        address: record.address,
+        lat: record.lat != null ? Number(record.lat) : undefined,
+        lng: record.lng != null ? Number(record.lng) : undefined,
         customer_id: record.customer_id
       });
     }, 0);
@@ -103,15 +117,37 @@ export default function LocationsManagement() {
     }
   };
 
+  const provinceFilterOptions = useMemo(() => {
+    const dynamicProvinces = new Set(PROVINCE_SHORT_OPTIONS);
+    locations.forEach((loc) => {
+      const clean = normalizeShortProvince(loc.province);
+      if (clean) dynamicProvinces.add(clean);
+    });
+    return Array.from(dynamicProvinces);
+  }, [locations]);
+
   const handleSubmit = () => {
     form.validateFields().then(async (values) => {
+      if (values.lat == null || values.lng == null) {
+        message.error('Vui lòng chọn địa chỉ từ gợi ý VietMap để tự động xác định tọa độ!');
+        return;
+      }
+      const cleanPayload = {
+        name: values.name,
+        province: normalizeShortProvince(values.province) || 'Hà Nội',
+        contact_name: values.contact_name?.trim() || null,
+        contact_phone: values.contact_phone?.trim() || null,
+        address: values.address,
+        lat: Number(values.lat),
+        lng: Number(values.lng)
+      };
       try {
         setLoading(true);
         if (editingLocation) {
-          await dispatcherApi.updateLocation(editingLocation.raw_id || editingLocation.id, values);
+          await dispatcherApi.updateLocation(editingLocation.raw_id || editingLocation.id, cleanPayload);
           message.success(`Cập nhật địa điểm [${values.name}] thành công!`);
         } else {
-          await dispatcherApi.createLocation(values);
+          await dispatcherApi.createLocation(cleanPayload);
           message.success(`Đã lưu địa điểm mới [${values.name}] vào cơ sở dữ liệu!`);
         }
         setIsModalOpen(false);
@@ -131,7 +167,7 @@ export default function LocationsManagement() {
       (item.address && item.address.toLowerCase().includes(searchText.toLowerCase())) ||
       (item.contact_name && item.contact_name.toLowerCase().includes(searchText.toLowerCase())) ||
       (item.contact_phone && item.contact_phone.includes(searchText));
-    const matchProvince = filterProvince === 'ALL' || item.province === filterProvince;
+    const matchProvince = filterProvince === 'ALL' || normalizeShortProvince(item.province) === normalizeShortProvince(filterProvince);
     return matchSearch && matchProvince;
   });
 
@@ -168,12 +204,17 @@ export default function LocationsManagement() {
       title: 'Người liên hệ',
       key: 'contact_name',
       width: '16%',
-      render: (_, r) => (
-        <div className="text-xs flex items-center gap-1.5 text-gray-700 font-medium">
-          <User size={13} className="text-indigo-500 shrink-0" />
-          <span>{r.contact_name || r.customer || '---'}</span>
-        </div>
-      )
+      render: (_, r) => {
+        const displayContact = (r.contact_name && r.contact_name !== 'Người liên hệ')
+          ? r.contact_name
+          : (r.customer || '—');
+        return (
+          <div className="text-xs flex items-center gap-1.5 text-gray-700 font-medium">
+            <User size={13} className="text-indigo-500 shrink-0" />
+            <span>{displayContact}</span>
+          </div>
+        );
+      }
     },
     {
       title: 'Số điện thoại',
@@ -182,7 +223,7 @@ export default function LocationsManagement() {
       render: (_, r) => (
         <div className="text-xs text-gray-700 flex items-center gap-1 font-mono">
           <Phone size={12} className="text-emerald-600 shrink-0" />
-          <span>{r.contact_phone || '---'}</span>
+          <span>{r.contact_phone && r.contact_phone !== '---' ? r.contact_phone : '—'}</span>
         </div>
       )
     },
@@ -258,16 +299,16 @@ export default function LocationsManagement() {
           </Col>
           <Col xs={24} sm={8} md={8}>
             <Select
+              showSearch
               className="w-full text-xs"
               value={filterProvince}
               onChange={setFilterProvince}
+              optionFilterProp="children"
             >
               <Option value="ALL">Tất cả tỉnh / thành</Option>
-              <Option value="Hà Nội">Hà Nội</Option>
-              <Option value="Bắc Ninh">Bắc Ninh</Option>
-              <Option value="Hải Phòng">Hải Phòng</Option>
-              <Option value="Vĩnh Phúc">Vĩnh Phúc</Option>
-              <Option value="Thái Nguyên">Thái Nguyên</Option>
+              {provinceFilterOptions.map((prov) => (
+                <Option key={prov} value={prov}>{prov}</Option>
+              ))}
             </Select>
           </Col>
         </Row>
@@ -317,12 +358,10 @@ export default function LocationsManagement() {
             </Col>
             <Col span={10}>
               <Form.Item name="province" label={<span className="text-xs font-bold text-gray-700">Tỉnh / Thành phố</span>} rules={[{ required: true, message: 'Vui lòng chọn tỉnh/thành' }]}>
-                <Select className="text-xs">
-                  <Option value="Hà Nội">Hà Nội</Option>
-                  <Option value="Bắc Ninh">Bắc Ninh</Option>
-                  <Option value="Hải Phòng">Hải Phòng</Option>
-                  <Option value="Vĩnh Phúc">Vĩnh Phúc</Option>
-                  <Option value="Thái Nguyên">Thái Nguyên</Option>
+                <Select showSearch className="text-xs" optionFilterProp="children">
+                  {provinceFilterOptions.map((prov) => (
+                    <Option key={prov} value={prov}>{prov}</Option>
+                  ))}
                 </Select>
               </Form.Item>
             </Col>
@@ -331,41 +370,65 @@ export default function LocationsManagement() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="contact_name" label={<span className="text-xs font-bold text-gray-700">Người liên hệ</span>}>
-                <Input placeholder="Họ và tên người liên hệ..." className="text-xs" />
+                <Input placeholder="Họ và tên người liên hệ (tùy chọn)..." className="text-xs" />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="contact_phone" label={<span className="text-xs font-bold text-gray-700">Số điện thoại</span>}>
-                <Input placeholder="09xx..." className="text-xs font-mono" />
+                <Input placeholder="09xx... (tùy chọn)" className="text-xs font-mono" />
               </Form.Item>
             </Col>
           </Row>
 
-          <Form.Item name="address" label={<span className="text-xs font-bold text-gray-700">Địa chỉ</span>} rules={[{ required: true, message: 'Vui lòng nhập địa chỉ' }]}>
-            <Input placeholder="Số nhà, đường, khu công nghiệp, phường/xã..." className="text-xs" />
+          <Form.Item
+            name="address"
+            label={<span className="text-xs font-bold text-gray-700">Tìm kiếm &amp; Chọn địa chỉ (VietMap v4)</span>}
+            rules={[{ required: true, message: 'Vui lòng tìm và chọn địa chỉ hợp lệ từ VietMap' }]}
+            extra={<span className="text-[11px] text-gray-500">Chọn gợi ý từ VietMap hoặc điền Địa chỉ + Phường/Xã + Tỉnh/TP để hệ thống tự động lấy Tọa độ.</span>}
+          >
+            <LocationSearchInput
+              placeholder="Gõ tên đường, khu công nghiệp, tòa nhà để tìm kiếm..."
+              onSelectLocation={(locData) => {
+                if (locData?.lat != null && locData?.lng != null) {
+                  const nextProv = normalizeShortProvince(locData.province);
+                  form.setFieldsValue({
+                    address: locData.address,
+                    ...(nextProv ? { province: nextProv } : {}),
+                    lat: Number(Number(locData.lat).toFixed(6)),
+                    lng: Number(Number(locData.lng).toFixed(6))
+                  });
+                } else {
+                  form.setFieldsValue({ lat: undefined, lng: undefined });
+                }
+              }}
+            />
           </Form.Item>
 
           <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="lat" label={<span className="text-xs font-bold text-gray-700">Tọa độ Vĩ độ (Lat)</span>} rules={[{ required: true, message: 'Nhập Lat' }]}>
-                <InputNumber className="w-full text-xs font-mono" step={0.0001} placeholder="21.0285" />
+            <Col span={12}>
+              <Form.Item
+                name="lat"
+                label={
+                  <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                    <Lock size={11} className="text-emerald-600" /> Vĩ độ tự động (Lat)
+                  </span>
+                }
+                rules={[{ required: true, message: 'Chọn địa chỉ VietMap để lấy Vĩ độ' }]}
+              >
+                <InputNumber className="w-full text-xs font-mono bg-gray-50" readOnly disabled placeholder="Tự động điền từ VietMap" />
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item name="lng" label={<span className="text-xs font-bold text-gray-700">Tọa độ Kinh độ (Lng)</span>} rules={[{ required: true, message: 'Nhập Lng' }]}>
-                <InputNumber className="w-full text-xs font-mono" step={0.0001} placeholder="105.8542" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label={<span className="text-xs font-bold text-gray-700">Bán kính Geofence (mét)</span>}>
-                <Space.Compact className="w-full">
-                  <Form.Item name="geofence_radius_m" noStyle rules={[{ required: true, message: 'Nhập bán kính' }]}>
-                    <InputNumber className="w-full text-xs font-mono" min={50} max={1000} step={50} placeholder="150" />
-                  </Form.Item>
-                  <Button disabled className="!bg-gray-50 !text-gray-500 !border-[#d9d9d9] text-xs font-mono cursor-default pointer-events-none">
-                    m
-                  </Button>
-                </Space.Compact>
+            <Col span={12}>
+              <Form.Item
+                name="lng"
+                label={
+                  <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                    <Lock size={11} className="text-emerald-600" /> Kinh độ tự động (Lng)
+                  </span>
+                }
+                rules={[{ required: true, message: 'Chọn địa chỉ VietMap để lấy Kinh độ' }]}
+              >
+                <InputNumber className="w-full text-xs font-mono bg-gray-50" readOnly disabled placeholder="Tự động điền từ VietMap" />
               </Form.Item>
             </Col>
           </Row>

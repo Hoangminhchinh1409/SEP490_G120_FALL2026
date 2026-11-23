@@ -275,6 +275,7 @@ export default function ShiftRegistrationPage() {
   }, [activeWeekShifts]);
 
   const now = dayjs();
+  const [nowMs] = useState(() => Date.now());
   const todayStr = useMemo(() => dayjs().format("YYYY-MM-DD"), []);
   const tomorrowStr = useMemo(
     () => dayjs().add(1, "day").format("YYYY-MM-DD"),
@@ -323,7 +324,6 @@ export default function ShiftRegistrationPage() {
   const affectedLeavePreviewTrips = useMemo(() => {
     const list = [];
     const seen = new Set();
-    const nowMs = Date.now();
     [...leaveDates].sort().forEach((dStr) => {
       (activeTripsByDate.get(dStr) || []).forEach((tr) => {
         if (!seen.has(tr.id)) {
@@ -336,7 +336,7 @@ export default function ShiftRegistrationPage() {
       });
     });
     return list;
-  }, [leaveDates, activeTripsByDate, todayStr]);
+  }, [leaveDates, activeTripsByDate, todayStr, nowMs]);
 
   const hasUrgentTrip = useMemo(() => {
     return affectedLeavePreviewTrips.some((t) => t.isUrgent);
