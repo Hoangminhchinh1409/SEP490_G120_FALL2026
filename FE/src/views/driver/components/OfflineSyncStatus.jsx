@@ -105,7 +105,7 @@ export default function OfflineSyncStatus({ onSyncCompleted }) {
           </div>
           <p className="text-[10px] text-slate-400 truncate">
             {pendingCount > 0
-              ? `${pendingCount} thao tác lưu tạm (BR-27)`
+              ? `${pendingCount} thao tác lưu tạm`
               : "Dữ liệu đã đồng bộ với máy chủ"}
           </p>
         </div>

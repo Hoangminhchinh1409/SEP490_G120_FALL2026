@@ -382,7 +382,7 @@ export default function UsersPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Quản lý Tài khoản (User Accounts)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Quản trị danh sách người dùng toàn hệ thống, gán vai trò quyền hạn và quản lý trạng thái kích hoạt (BR-28).
+            Quản trị danh sách người dùng toàn hệ thống, gán vai trò quyền hạn và quản lý trạng thái kích hoạt.
           </p>
         </div>
         <div className="flex items-center gap-2">

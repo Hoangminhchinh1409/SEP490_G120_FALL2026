@@ -312,7 +312,7 @@ export default function LogsPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Nhật ký Hoạt động (Activity Logs)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Ghi nhận vết thao tác toàn hệ thống theo thời gian thực (Dữ liệu chỉ thêm mới <b>Append-only</b> theo chuẩn bảo mật BR-28/BR-47).
+            Ghi nhận vết thao tác toàn hệ thống theo thời gian thực (Dữ liệu chỉ thêm mới <b>Append-only</b> đảm bảo tính toàn vẹn và bảo mật).
           </p>
         </div>
         <Button

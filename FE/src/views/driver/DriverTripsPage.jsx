@@ -17,7 +17,7 @@ import {
   ChevronRight,
   LogOut,
   Navigation,
-  X
+  X,
 } from "lucide-react";
 import dayjs from "dayjs";
 import "dayjs/locale/vi";
@@ -36,14 +36,14 @@ export default function DriverTripsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("UPCOMING"); // 'UPCOMING', 'HISTORY', 'ALL'
-  
+
   // Data
   const [upcomingTrips, setUpcomingTrips] = useState([]);
   const [historyTrips, setHistoryTrips] = useState([]);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   // Action states
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -58,11 +58,16 @@ export default function DriverTripsPage() {
 
     try {
       const [activeRes, historyRes] = await Promise.all([
-        driverApi.getActiveTrip().catch(() => ({ trip: null, upcomingTrips: [] })),
-        driverApi.getTripHistory({ page: 1, limit: 20 }).catch(() => ({ trips: [], total: 0 }))
+        driverApi
+          .getActiveTrip()
+          .catch(() => ({ trip: null, upcomingTrips: [] })),
+        driverApi
+          .getTripHistory({ page: 1, limit: 20 })
+          .catch(() => ({ trips: [], total: 0 })),
       ]);
 
-      const upcoming = activeRes?.upcomingTrips || (activeRes?.trip ? [activeRes.trip] : []);
+      const upcoming =
+        activeRes?.upcomingTrips || (activeRes?.trip ? [activeRes.trip] : []);
       setUpcomingTrips(upcoming);
 
       const history = historyRes?.trips || [];
@@ -79,13 +84,17 @@ export default function DriverTripsPage() {
           const matchUpcoming = upcoming.find(
             (t) =>
               (paramTripId && Number(t.id) === Number(paramTripId)) ||
-              (paramTripCode && String(t.trip_code || "").toUpperCase() === paramTripCode.toUpperCase())
+              (paramTripCode &&
+                String(t.trip_code || "").toUpperCase() ===
+                  paramTripCode.toUpperCase()),
           );
           const matchHistory = !matchUpcoming
             ? history.find(
                 (t) =>
                   (paramTripId && Number(t.id) === Number(paramTripId)) ||
-                  (paramTripCode && String(t.trip_code || "").toUpperCase() === paramTripCode.toUpperCase())
+                  (paramTripCode &&
+                    String(t.trip_code || "").toUpperCase() ===
+                      paramTripCode.toUpperCase()),
               )
             : null;
           const matched = matchUpcoming || matchHistory;
@@ -135,41 +144,41 @@ export default function DriverTripsPage() {
     switch (status) {
       case "Assigned":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 whitespace-nowrap shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
             Sắp tới
           </span>
         );
       case "Accepted":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0">
             <Check size={12} className="text-amber-400" />
             Đã nhận
           </span>
         );
       case "In Progress":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             Đang chạy
           </span>
         );
       case "Completed":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-700 text-slate-300 border border-slate-600">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-700 text-slate-300 border border-slate-600 whitespace-nowrap shrink-0">
             <CheckCircle size={12} className="text-emerald-400" />
             Đã hoàn thành
           </span>
         );
       case "Cancelled":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 whitespace-nowrap shrink-0">
             Đã hủy
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700 whitespace-nowrap shrink-0">
             {status || "Không xác định"}
           </span>
         );
@@ -181,20 +190,22 @@ export default function DriverTripsPage() {
     (t) =>
       !searchQuery.trim() ||
       t.trip_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.truck?.plate_number?.toLowerCase().includes(searchQuery.toLowerCase())
+      t.truck?.plate_number?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const filteredHistory = historyTrips.filter(
     (t) =>
       !searchQuery.trim() ||
       t.trip_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.truck_assignments?.[0]?.truck?.plate_number?.toLowerCase().includes(searchQuery.toLowerCase())
+      t.truck_assignments?.[0]?.truck?.plate_number
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase()),
   );
 
   const allTrips = [...upcomingTrips, ...historyTrips].filter(
     (t) =>
       !searchQuery.trim() ||
-      t.trip_code?.toLowerCase().includes(searchQuery.toLowerCase())
+      t.trip_code?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
@@ -217,7 +228,10 @@ export default function DriverTripsPage() {
                 Sổ Quản Lý Chuyến Xe
               </h1>
               <p className="text-[11px] text-slate-400">
-                Tài xế: <span className="text-blue-400 font-semibold">{user?.full_name || user?.username}</span>
+                Tài xế:{" "}
+                <span className="text-blue-400 font-semibold">
+                  {user?.full_name || user?.username}
+                </span>
               </p>
             </div>
           </div>
@@ -230,7 +244,10 @@ export default function DriverTripsPage() {
               className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-300 transition-colors disabled:opacity-50"
               title="Làm mới"
             >
-              <RefreshCw size={14} className={refreshing ? "animate-spin text-blue-400" : ""} />
+              <RefreshCw
+                size={14}
+                className={refreshing ? "animate-spin text-blue-400" : ""}
+              />
             </button>
             <button
               type="button"
@@ -245,7 +262,10 @@ export default function DriverTripsPage() {
 
         {/* Search input */}
         <div className="relative mb-3">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search
+            size={15}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
           <input
             type="text"
             value={searchQuery}
@@ -269,7 +289,9 @@ export default function DriverTripsPage() {
             <span>Sắp tới & Nhận</span>
             <span
               className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                activeTab === "UPCOMING" ? "bg-white/25 text-white" : "bg-slate-800 text-slate-400"
+                activeTab === "UPCOMING"
+                  ? "bg-white/25 text-white"
+                  : "bg-slate-800 text-slate-400"
               }`}
             >
               {upcomingTrips.length}
@@ -288,7 +310,9 @@ export default function DriverTripsPage() {
             <span>Lịch sử đã chạy</span>
             <span
               className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                activeTab === "HISTORY" ? "bg-white/25 text-white" : "bg-slate-800 text-slate-400"
+                activeTab === "HISTORY"
+                  ? "bg-white/25 text-white"
+                  : "bg-slate-800 text-slate-400"
               }`}
             >
               {historyTrips.length}
@@ -314,7 +338,9 @@ export default function DriverTripsPage() {
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center text-slate-400">
             <Spin size="large" />
-            <p className="mt-3 text-xs font-semibold">Đang tải danh sách chuyến...</p>
+            <p className="mt-3 text-xs font-semibold">
+              Đang tải danh sách chuyến...
+            </p>
           </div>
         ) : activeTab === "UPCOMING" ? (
           /* TAB 1: UPCOMING & PENDING ACCEPTANCE */
@@ -323,15 +349,24 @@ export default function DriverTripsPage() {
               <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-500 mx-auto mb-3">
                 <Truck size={24} />
               </div>
-              <h3 className="text-sm font-bold text-slate-300 mb-1">Không có chuyến xe sắp tới</h3>
+              <h3 className="text-sm font-bold text-slate-300 mb-1">
+                Không có chuyến xe sắp tới
+              </h3>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                Khi Điều phối viên gán chuyến mới cho bạn, chuyến sẽ hiển thị tại đây để bạn vào theo dõi và thực hiện.
+                Khi Điều phối viên gán chuyến mới cho bạn, chuyến sẽ hiển thị
+                tại đây để bạn vào theo dõi và thực hiện.
               </p>
             </div>
           ) : (
             filteredUpcoming.map((t, idx) => {
-              const truckPlate = t.truck?.plate_number || t.truck_assignments?.[0]?.truck?.plate_number || "Chưa gán xe";
-              const truckPayload = t.truck?.allowed_payload || t.truck_assignments?.[0]?.truck?.allowed_payload || "";
+              const truckPlate =
+                t.truck?.plate_number ||
+                t.truck_assignments?.[0]?.truck?.plate_number ||
+                "Chưa gán xe";
+              const truckPayload =
+                t.truck?.allowed_payload ||
+                t.truck_assignments?.[0]?.truck?.allowed_payload ||
+                "";
               const stops = t.stops || [];
               const isAssigned = t.status === "Assigned";
               const isInProgress = t.status === "In Progress";
@@ -347,27 +382,29 @@ export default function DriverTripsPage() {
                     isInProgress || idx === 0
                       ? "border-emerald-500/50 shadow-emerald-500/10"
                       : isAssigned
-                      ? "border-blue-500/50 shadow-blue-500/10"
-                      : "border-slate-700/80"
+                        ? "border-blue-500/50 shadow-blue-500/10"
+                        : "border-slate-700/80"
                   }`}
                 >
                   {/* Top Bar of Trip Card */}
-                  <div className="flex items-center justify-between mb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-black text-white tracking-wide">
+                  <div className="mb-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-sm font-black text-white tracking-wide whitespace-nowrap">
                         {t.trip_code || `TRIP-#${t.id}`}
                       </span>
+                      <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 font-mono whitespace-nowrap shrink-0">
+                        <Clock size={12} className="text-blue-400 shrink-0" />
+                        {t.planned_start ? dayjs(t.planned_start).format("HH:mm • DD/MM") : "Chưa có giờ"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {renderStatusBadge(t.status)}
                       {idx === 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-sans">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-sans whitespace-nowrap shrink-0">
                           Chuyến hiện tại
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 font-mono">
-                      <Clock size={12} className="text-blue-400" />
-                      {t.planned_start ? dayjs(t.planned_start).format("HH:mm • DD/MM") : "Chưa có giờ"}
-                    </span>
                   </div>
 
                   {/* Vehicle Info */}
@@ -375,7 +412,11 @@ export default function DriverTripsPage() {
                     <span className="flex items-center gap-1.5 text-slate-300 font-medium">
                       <Truck size={14} className="text-blue-400 shrink-0" />
                       <b className="text-white font-mono">{truckPlate}</b>
-                      {truckPayload && <span className="text-slate-400">({truckPayload} kg)</span>}
+                      {truckPayload && (
+                        <span className="text-slate-400">
+                          ({truckPayload} kg)
+                        </span>
+                      )}
                     </span>
                     <span className="text-slate-400 text-[11px] font-medium">
                       {stops.length} điểm dừng
@@ -386,10 +427,15 @@ export default function DriverTripsPage() {
                   {stops.length > 0 && (
                     <div className="space-y-1.5 mb-3 text-xs">
                       {stops.slice(0, 2).map((s, sIdx) => (
-                        <div key={s.id || sIdx} className="flex items-start gap-2">
+                        <div
+                          key={s.id || sIdx}
+                          className="flex items-start gap-2"
+                        >
                           <span
                             className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
-                              s.stop_type === "Pickup" ? "bg-blue-400" : "bg-emerald-400"
+                              s.stop_type === "Pickup"
+                                ? "bg-blue-400"
+                                : "bg-emerald-400"
                             }`}
                           />
                           <div className="flex-1 min-w-0">
@@ -397,7 +443,8 @@ export default function DriverTripsPage() {
                               {s.location?.name || `Điểm #${s.sequence}`}
                             </span>
                             <span className="text-[10px] text-slate-500 truncate block">
-                              {s.location?.address || "Địa chỉ cập nhật theo phiếu"}
+                              {s.location?.address ||
+                                "Địa chỉ cập nhật theo phiếu"}
                             </span>
                           </div>
                         </div>
@@ -411,7 +458,10 @@ export default function DriverTripsPage() {
                   )}
 
                   {/* Action Buttons */}
-                  <div className="pt-2 border-t border-slate-700/60 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="pt-2 border-t border-slate-700/60 flex items-center gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {idx === 0 ? (
                       <>
                         <button
@@ -459,14 +509,19 @@ export default function DriverTripsPage() {
               <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-500 mx-auto mb-3">
                 <CheckCircle size={24} />
               </div>
-              <h3 className="text-sm font-bold text-slate-300 mb-1">Chưa có lịch sử chuyến xe hoàn thành</h3>
+              <h3 className="text-sm font-bold text-slate-300 mb-1">
+                Chưa có lịch sử chuyến xe hoàn thành
+              </h3>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                Các chuyến xe sau khi bạn hoàn thành toàn bộ các điểm giao nhận và ký biên bản giao nhận (POD) sẽ được lưu trữ tại đây.
+                Các chuyến xe sau khi bạn hoàn thành toàn bộ các điểm giao nhận
+                và ký biên bản giao nhận (POD) sẽ được lưu trữ tại đây.
               </p>
             </div>
           ) : (
             filteredHistory.map((t, idx) => {
-              const truckPlate = t.truck_assignments?.[0]?.truck?.plate_number || "Xe đã hoàn thành";
+              const truckPlate =
+                t.truck_assignments?.[0]?.truck?.plate_number ||
+                "Xe đã hoàn thành";
               const stops = t.stops || [];
 
               return (
@@ -478,8 +533,8 @@ export default function DriverTripsPage() {
                   }}
                   className="bg-slate-800/80 hover:bg-slate-800 border border-slate-700/70 rounded-2xl p-3.5 shadow-md transition-all active:scale-[0.99] cursor-pointer"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-sm font-bold text-slate-100">
+                  <div className="flex items-center justify-between mb-2 gap-2">
+                    <span className="font-mono text-sm font-bold text-slate-100 whitespace-nowrap">
                       {t.trip_code || `#${t.id}`}
                     </span>
                     {renderStatusBadge(t.status)}
@@ -491,14 +546,17 @@ export default function DriverTripsPage() {
                       {truckPlate}
                     </span>
                     <span>
-                      {t.created_at ? dayjs(t.created_at).format("DD/MM/YYYY") : "—"}
+                      {t.created_at
+                        ? dayjs(t.created_at).format("DD/MM/YYYY")
+                        : "—"}
                     </span>
                   </div>
 
                   {stops.length > 0 && (
                     <div className="text-[11px] text-slate-300 p-2 bg-slate-900/60 rounded-xl border border-slate-700/50 flex items-center justify-between">
                       <span className="truncate max-w-[200px]">
-                        Lộ trình: {stops[0]?.location?.name || "Điểm đi"} → {stops[stops.length - 1]?.location?.name || "Điểm đến"}
+                        Lộ trình: {stops[0]?.location?.name || "Điểm đi"} →{" "}
+                        {stops[stops.length - 1]?.location?.name || "Điểm đến"}
                       </span>
                       <span className="text-slate-400 shrink-0 font-medium ml-1">
                         {stops.length} điểm
@@ -533,17 +591,19 @@ export default function DriverTripsPage() {
                 className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 shadow-md flex items-center justify-between cursor-pointer hover:border-slate-600"
               >
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-sm font-bold text-white">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="font-mono text-sm font-bold text-white whitespace-nowrap">
                       {t.trip_code || `#${t.id}`}
                     </span>
                     {renderStatusBadge(t.status)}
                   </div>
                   <span className="text-[11px] text-slate-400 block font-mono">
-                    {t.planned_start ? dayjs(t.planned_start).format("HH:mm • DD/MM/YYYY") : "—"}
+                    {t.planned_start
+                      ? dayjs(t.planned_start).format("HH:mm • DD/MM/YYYY")
+                      : "—"}
                   </span>
                 </div>
-                <ChevronRight size={16} className="text-slate-500" />
+                <ChevronRight size={16} className="text-slate-500 shrink-0" />
               </div>
             ))
           )
@@ -593,10 +653,15 @@ export default function DriverTripsPage() {
                     Xe vận chuyển:
                   </span>
                   <span className="text-xs font-bold text-white font-mono block">
-                    {selectedTrip.truck?.plate_number || selectedTrip.truck_assignments?.[0]?.truck?.plate_number || "Chưa có"}
+                    {selectedTrip.truck?.plate_number ||
+                      selectedTrip.truck_assignments?.[0]?.truck
+                        ?.plate_number ||
+                      "Chưa có"}
                   </span>
                   <span className="text-[10px] text-slate-400 font-mono block">
-                    {selectedTrip.truck?.allowed_payload ? `${selectedTrip.truck.allowed_payload} kg` : "Xe thùng kín"}
+                    {selectedTrip.truck?.allowed_payload
+                      ? `${selectedTrip.truck.allowed_payload} kg`
+                      : "Xe thùng kín"}
                   </span>
                 </div>
 
@@ -606,10 +671,14 @@ export default function DriverTripsPage() {
                     Khởi hành dự kiến:
                   </span>
                   <span className="text-xs font-bold text-blue-300 font-mono block">
-                    {selectedTrip.planned_start ? dayjs(selectedTrip.planned_start).format("HH:mm") : "—"}
+                    {selectedTrip.planned_start
+                      ? dayjs(selectedTrip.planned_start).format("HH:mm")
+                      : "—"}
                   </span>
                   <span className="text-[10px] text-slate-400 font-mono block">
-                    {selectedTrip.planned_start ? dayjs(selectedTrip.planned_start).format("DD/MM/YYYY") : ""}
+                    {selectedTrip.planned_start
+                      ? dayjs(selectedTrip.planned_start).format("DD/MM/YYYY")
+                      : ""}
                   </span>
                 </div>
               </div>
@@ -650,7 +719,9 @@ export default function DriverTripsPage() {
                                 : "bg-emerald-500/15 text-emerald-300 border border-emerald-400/25"
                             }`}
                           >
-                            {s.stop_type === "Pickup" ? "Lấy hàng" : "Giao hàng"}
+                            {s.stop_type === "Pickup"
+                              ? "Lấy hàng"
+                              : "Giao hàng"}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">
@@ -703,7 +774,9 @@ export default function DriverTripsPage() {
             <div className="w-12 h-12 bg-red-500/15 border border-red-500/30 text-red-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
               <LogOut size={22} />
             </div>
-            <h3 className="text-base font-bold text-white mb-1">Xác nhận đăng xuất</h3>
+            <h3 className="text-base font-bold text-white mb-1">
+              Xác nhận đăng xuất
+            </h3>
             <p className="text-slate-300 text-xs mb-4">
               Bạn có chắc chắn muốn đăng xuất khỏi tài khoản tài xế?
             </p>
@@ -731,4 +804,3 @@ export default function DriverTripsPage() {
     </div>
   );
 }
-
