@@ -1,8 +1,89 @@
 const prisma = require('../config/prisma');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const fleetService = require('../services/fleetService');
 const staffAccountService = require('../services/staffAccountService');
 const { serializePrisma, toBigInt, toNum, formatDateOnly } = require('../utils/prismaHelper');
+
+const VALID_TRUCK_STATUSES = ['AVAILABLE', 'MAINTENANCE', 'INACTIVE'];
+const VALID_LICENSE_CLASSES = ['B2', 'C', 'FC'];
+const VALID_DRIVER_PROFILE_STATUSES = ['ACTIVE', 'INACTIVE', 'RESTING', 'SUSPENDED', 'LEAVE'];
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^[0-9+() -]{9,15}$/;
+
+const createControllerError = (message, statusCode = 400) => {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+};
+
+const getTodayGMT7Str = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().split('T')[0];
+
+const parsePositiveNumber = (val, fieldLabel) => {
+  if (val === undefined || val === null || val === '' || typeof val === 'boolean') {
+    throw createControllerError(`${fieldLabel} là bắt buộc và phải là số lớn hơn 0.`, 400);
+  }
+  const num = Number(val);
+  if (!Number.isFinite(num) || num <= 0) {
+    throw createControllerError(`${fieldLabel} phải là số lớn hơn 0.`, 400);
+  }
+  return num;
+};
+
+const parseValidDateStr = (val, fieldLabel, { mustBeFutureOrToday = false } = {}) => {
+  if (typeof val !== 'string' || !val.trim()) {
+    throw createControllerError(`${fieldLabel} là bắt buộc và phải đúng định dạng ngày.`, 400);
+  }
+  const trimmed = val.trim();
+  const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  let isoDate;
+  if (ymdMatch) {
+    const y = Number(ymdMatch[1]);
+    const m = Number(ymdMatch[2]);
+    const d = Number(ymdMatch[3]);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
+      throw createControllerError(`${fieldLabel} không đúng định dạng ngày hợp lệ.`, 400);
+    }
+    isoDate = trimmed;
+  } else {
+    const parsedMs = Date.parse(trimmed);
+    if (Number.isNaN(parsedMs)) {
+      throw createControllerError(`${fieldLabel} không đúng định dạng ngày hợp lệ.`, 400);
+    }
+    isoDate = new Date(parsedMs).toISOString().split('T')[0];
+  }
+
+  if (mustBeFutureOrToday && isoDate < getTodayGMT7Str()) {
+    throw createControllerError(`${fieldLabel} không được nằm trong quá khứ.`, 400);
+  }
+  return isoDate;
+};
+
+const validateTruckStatusValue = (status) => {
+  if (typeof status !== 'string' || !status.trim()) {
+    throw createControllerError('Trạng thái xe không hợp lệ. Chỉ chấp nhận: AVAILABLE, MAINTENANCE, INACTIVE.', 400);
+  }
+  const normalized = status.trim().toUpperCase();
+  if (normalized === 'ON_TRIP') {
+    throw createControllerError('Không thể đặt trạng thái ON_TRIP thủ công. Trạng thái này do hệ thống tự động gán khi điều phối chuyến xe (BR-24).', 400);
+  }
+  if (!VALID_TRUCK_STATUSES.includes(normalized)) {
+    throw createControllerError('Trạng thái xe không hợp lệ. Chỉ chấp nhận: AVAILABLE, MAINTENANCE, INACTIVE.', 400);
+  }
+  return normalized;
+};
+
+const validateLicenseClassValue = (licenseClass) => {
+  if (typeof licenseClass !== 'string' || !licenseClass.trim()) {
+    throw createControllerError('Hạng bằng lái không hợp lệ (chỉ chấp nhận B2, C, FC).', 400);
+  }
+  const normalized = licenseClass.trim().toUpperCase();
+  if (!VALID_LICENSE_CLASSES.includes(normalized)) {
+    throw createControllerError('Hạng bằng lái không hợp lệ (chỉ chấp nhận B2, C, FC).', 400);
+  }
+  return normalized;
+};
 
 /**
  * Fleet Controller — Nhóm chức năng Quản lý Đội xe, Hồ sơ Tài xế, Lịch Phân ca & Tài khoản Nhân viên Vận hành
@@ -272,6 +353,7 @@ const getVehicles = async (req, res) => {
 
 const createTruck = async (req, res) => {
   try {
+    const body = req.body || {};
     const {
       plate_number,
       model,
@@ -285,13 +367,26 @@ const createTruck = async (req, res) => {
       insurance_expiry,
       gps_device_id,
       status = 'AVAILABLE'
-    } = req.body;
+    } = body;
 
-    if (!plate_number || !plate_number.trim()) {
+    if (typeof plate_number !== 'string' || !plate_number.trim()) {
       return res.status(400).json({ message: 'Biển số xe là bắt buộc.' });
     }
-
     const cleanPlate = plate_number.trim().toUpperCase();
+
+    const finalStatus = validateTruckStatusValue(status);
+    const rawPayload = allowed_payload !== undefined ? allowed_payload : payload_kg;
+    const payloadNum = parsePositiveNumber(rawPayload, 'Tải trọng cho phép (allowed_payload)');
+    const bLength = parsePositiveNumber(box_length, 'Chiều dài thùng xe (box_length)');
+    const bWidth = parsePositiveNumber(box_width, 'Chiều rộng thùng xe (box_width)');
+    const bHeight = parsePositiveNumber(box_height, 'Chiều cao thùng xe (box_height)');
+
+    const licClass = required_license_class !== undefined
+      ? validateLicenseClassValue(required_license_class)
+      : 'C';
+
+    const cleanInspectionExp = parseValidDateStr(inspection_expiry, 'Hạn đăng kiểm (inspection_expiry)');
+    const cleanInsuranceExp = parseValidDateStr(insurance_expiry, 'Hạn bảo hiểm (insurance_expiry)');
 
     const existingPlate = await prisma.trucks.findFirst({
       where: { plate_number: cleanPlate },
@@ -302,33 +397,27 @@ const createTruck = async (req, res) => {
       return res.status(409).json({ message: `Biển số xe ${cleanPlate} đã tồn tại trong hệ thống.` });
     }
 
-    const finalStatus = status;
-    if (inspection_expiry && new Date(inspection_expiry) < new Date()) {
-      if (finalStatus === 'AVAILABLE') {
-        return res.status(400).json({
-          message: 'Lỗi: Xe đã hết hạn đăng kiểm không được đặt trạng thái Sẵn sàng (Available). Vui lòng chọn Bảo dưỡng hoặc Ngưng hoạt động.'
-        });
-      }
+    if (finalStatus === 'AVAILABLE' && cleanInspectionExp < getTodayGMT7Str()) {
+      return res.status(400).json({
+        message: 'Lỗi: Xe đã hết hạn đăng kiểm không được đặt trạng thái Sẵn sàng (Available). Vui lòng chọn Bảo dưỡng hoặc Ngưng hoạt động.'
+      });
     }
 
-    const payloadNum = Number(allowed_payload || payload_kg || 5000);
-    const bLength = Number(box_length || 620);
-    const bWidth = Number(box_width || 210);
-    const bHeight = Number(box_height || 220);
-    const defaultExp = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+    const cleanModel = typeof model === 'string' && model.trim() ? model.trim() : 'Xe tải thùng kín';
+    const cleanGps = typeof gps_device_id === 'string' && gps_device_id.trim() ? gps_device_id.trim() : null;
 
     const newTruck = await prisma.trucks.create({
       data: {
         plate_number: cleanPlate,
-        model: model || 'Xe tải thùng kín',
+        model: cleanModel,
         allowed_payload: payloadNum,
         box_length: bLength,
         box_width: bWidth,
         box_height: bHeight,
-        required_license_class: required_license_class || 'C',
-        inspection_expiry: toDateObj(inspection_expiry) || defaultExp,
-        insurance_expiry: toDateObj(insurance_expiry) || defaultExp,
-        gps_device_id: gps_device_id || null,
+        required_license_class: licClass,
+        inspection_expiry: toDateObj(cleanInspectionExp),
+        insurance_expiry: toDateObj(cleanInsuranceExp),
+        gps_device_id: cleanGps,
         status: finalStatus
       }
     });
@@ -343,13 +432,14 @@ const createTruck = async (req, res) => {
     });
   } catch (error) {
     console.error('Create Truck Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi thêm mới xe tải', error: error.message });
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi thêm mới xe tải', error: error.message });
   }
 };
 
 const updateTruck = async (req, res) => {
   try {
     const bigId = toBigInt(req.params.id);
+    const body = req.body || {};
     const {
       plate_number,
       model,
@@ -363,11 +453,26 @@ const updateTruck = async (req, res) => {
       insurance_expiry,
       gps_device_id,
       status
-    } = req.body;
+    } = body;
+
+    if (bigId === null) {
+      return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
+    }
+
+    const currentTruck = await prisma.trucks.findUnique({
+      where: { id: bigId },
+      select: { id: true, status: true, inspection_expiry: true }
+    });
+    if (!currentTruck) {
+      return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
+    }
 
     const updateData = { updated_at: new Date() };
 
-    if (plate_number) {
+    if (plate_number !== undefined) {
+      if (typeof plate_number !== 'string' || !plate_number.trim()) {
+        return res.status(400).json({ message: 'Biển số xe không được để trống.' });
+      }
       const cleanPlate = plate_number.trim().toUpperCase();
       const dup = await prisma.trucks.findFirst({
         where: { plate_number: cleanPlate, id: { not: bigId } },
@@ -380,42 +485,53 @@ const updateTruck = async (req, res) => {
       updateData.plate_number = cleanPlate;
     }
 
-    if (model !== undefined) updateData.model = model;
+    if (model !== undefined) {
+      if (typeof model !== 'string' || !model.trim()) {
+        return res.status(400).json({ message: 'Model / dòng xe không hợp lệ.' });
+      }
+      updateData.model = model.trim();
+    }
+
     if (allowed_payload !== undefined || payload_kg !== undefined) {
-      updateData.allowed_payload = Number(allowed_payload || payload_kg);
+      const rawPayload = allowed_payload !== undefined ? allowed_payload : payload_kg;
+      updateData.allowed_payload = parsePositiveNumber(rawPayload, 'Tải trọng cho phép (allowed_payload)');
     }
-    if (box_length !== undefined) updateData.box_length = Number(box_length);
-    if (box_width !== undefined) updateData.box_width = Number(box_width);
-    if (box_height !== undefined) updateData.box_height = Number(box_height);
-    if (required_license_class !== undefined) updateData.required_license_class = required_license_class;
-    if (gps_device_id !== undefined) updateData.gps_device_id = gps_device_id;
+    if (box_length !== undefined) updateData.box_length = parsePositiveNumber(box_length, 'Chiều dài thùng xe (box_length)');
+    if (box_width !== undefined) updateData.box_width = parsePositiveNumber(box_width, 'Chiều rộng thùng xe (box_width)');
+    if (box_height !== undefined) updateData.box_height = parsePositiveNumber(box_height, 'Chiều cao thùng xe (box_height)');
 
-    if (inspection_expiry !== undefined && inspection_expiry) {
-      updateData.inspection_expiry = toDateObj(inspection_expiry);
-    }
-    if (insurance_expiry !== undefined && insurance_expiry) {
-      updateData.insurance_expiry = toDateObj(insurance_expiry);
+    if (required_license_class !== undefined) {
+      updateData.required_license_class = validateLicenseClassValue(required_license_class);
     }
 
-    const targetInspection = updateData.inspection_expiry || null;
+    if (gps_device_id !== undefined) {
+      updateData.gps_device_id = typeof gps_device_id === 'string' && gps_device_id.trim()
+        ? gps_device_id.trim()
+        : null;
+    }
+
+    if (inspection_expiry !== undefined) {
+      updateData.inspection_expiry = toDateObj(parseValidDateStr(inspection_expiry, 'Hạn đăng kiểm (inspection_expiry)'));
+    }
+    if (insurance_expiry !== undefined) {
+      updateData.insurance_expiry = toDateObj(parseValidDateStr(insurance_expiry, 'Hạn bảo hiểm (insurance_expiry)'));
+    }
 
     if (status !== undefined) {
-      if (status === 'AVAILABLE') {
-        let exp = targetInspection;
-        if (!exp) {
-          const cur = await prisma.trucks.findUnique({
-            where: { id: bigId },
-            select: { inspection_expiry: true }
-          });
-          exp = cur?.inspection_expiry;
-        }
-        if (exp && new Date(exp) < new Date()) {
-          return res.status(400).json({
-            message: 'Lỗi: Không thể chuyển trạng thái sang Sẵn sàng (Available) do xe đã hết hạn đăng kiểm.'
-          });
-        }
+      updateData.status = validateTruckStatusValue(status);
+    }
+
+    const effectiveStatus = updateData.status || String(currentTruck.status || '').toUpperCase();
+    const effectiveInspection = updateData.inspection_expiry !== undefined
+      ? updateData.inspection_expiry
+      : currentTruck.inspection_expiry;
+
+    if (effectiveStatus === 'AVAILABLE' && effectiveInspection) {
+      if (formatDateOnly(effectiveInspection) < getTodayGMT7Str()) {
+        return res.status(400).json({
+          message: 'Lỗi: Không thể chuyển trạng thái sang Sẵn sàng (Available) do xe đã hết hạn đăng kiểm.'
+        });
       }
-      updateData.status = status;
     }
 
     const updated = await prisma.trucks.update({
@@ -433,7 +549,7 @@ const updateTruck = async (req, res) => {
     });
   } catch (error) {
     console.error('Update Truck Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi cập nhật xe tải', error: error.message });
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi cập nhật xe tải', error: error.message });
   }
 };
 
@@ -504,12 +620,70 @@ const deleteTruck = async (req, res) => {
 
 const createDriver = async (req, res) => {
   try {
-    const { name, full_name, email, phone, license_number, license_class, expiry, password } = req.body;
-    const driverName = (full_name || name || '').trim();
-    const cleanPhone = (phone || '').trim();
+    const body = req.body || {};
+    const {
+      name,
+      full_name,
+      email,
+      phone,
+      license_number,
+      license_class,
+      license_expiry,
+      expiry,
+      password
+    } = body;
 
-    if (!driverName || !cleanPhone) {
-      return res.status(400).json({ message: 'Họ tên và số điện thoại là bắt buộc.' });
+    const rawName = full_name !== undefined ? full_name : name;
+    if (typeof rawName !== 'string' || !rawName.trim()) {
+      return res.status(400).json({ message: 'Họ và tên tài xế là bắt buộc.' });
+    }
+    const driverName = rawName.trim();
+
+    if (typeof phone !== 'string' || !phone.trim() || !PHONE_REGEX.test(phone.trim())) {
+      return res.status(400).json({ message: 'Số điện thoại là bắt buộc và phải đúng định dạng.' });
+    }
+    const cleanPhone = phone.trim();
+
+    let cleanEmailInput = null;
+    if (email !== undefined && email !== null && email !== '') {
+      if (typeof email !== 'string' || !EMAIL_REGEX.test(email.trim())) {
+        return res.status(400).json({ message: 'Định dạng email không hợp lệ.' });
+      }
+      cleanEmailInput = email.trim().toLowerCase();
+    }
+
+    if (typeof license_number !== 'string' || !license_number.trim()) {
+      return res.status(400).json({ message: 'Số giấy phép lái xe (license_number) là bắt buộc.' });
+    }
+    const licNum = license_number.trim();
+
+    const licClass = license_class !== undefined
+      ? validateLicenseClassValue(license_class)
+      : 'C';
+
+    const rawExpiry = license_expiry !== undefined ? license_expiry : expiry;
+    const licExpiry = parseValidDateStr(rawExpiry, 'Ngày hết hạn GPLX', { mustBeFutureOrToday: true });
+
+    // Kiểm tra trùng số GPLX trước khi thao tác bảng users (BUG-MGR-03)
+    const dupLicense = await prisma.driver_profiles.findFirst({
+      where: { license_number: licNum },
+      select: { id: true }
+    });
+    if (dupLicense) {
+      return res.status(409).json({ message: `Số GPLX ${licNum} đã tồn tại trong hệ thống.` });
+    }
+
+    const userSelect = { id: true, full_name: true, phone: true, username: true, email: true, role_id: true };
+
+    let existingUser = await prisma.users.findFirst({
+      where: { phone: cleanPhone },
+      select: userSelect
+    });
+    if (!existingUser && cleanEmailInput) {
+      existingUser = await prisma.users.findUnique({
+        where: { email: cleanEmailInput },
+        select: userSelect
+      });
     }
 
     let userId = null;
@@ -517,33 +691,38 @@ const createDriver = async (req, res) => {
     let finalEmail = '';
     let finalFullName = driverName;
     let finalPhone = cleanPhone;
-
-    const userByPhone = await prisma.users.findFirst({
-      where: { phone: cleanPhone },
-      select: { id: true, full_name: true, phone: true, username: true, email: true, role_id: true }
-    });
-
-    let existingUser = userByPhone;
-    if (!existingUser && email && email.trim()) {
-      existingUser = await prisma.users.findUnique({
-        where: { email: email.trim().toLowerCase() },
-        select: { id: true, full_name: true, phone: true, username: true, email: true, role_id: true }
-      });
-    }
+    let profileResult = null;
 
     if (existingUser) {
+      // BUG-MGR-01: Tuyệt đối không tự ý chuyển vai trò tài khoản khác thành Driver (BR-28)
+      if (Number(existingUser.role_id) !== 4) {
+        return res.status(409).json({ message: 'Tài khoản không phải Driver' });
+      }
+
+      // BUG-MGR-03: Không cho phép đăng ký lại tài xế đã có hồ sơ
+      const existingProfile = await prisma.driver_profiles.findUnique({
+        where: { user_account_id: existingUser.id },
+        select: { id: true }
+      });
+      if (existingProfile) {
+        return res.status(409).json({ message: 'Tài xế này đã có hồ sơ trong hệ thống.' });
+      }
+
       userId = existingUser.id;
       finalUsername = existingUser.username;
       finalEmail = existingUser.email;
       finalFullName = existingUser.full_name || driverName;
       finalPhone = existingUser.phone || cleanPhone;
 
-      if (Number(existingUser.role_id) !== 4) {
-        await prisma.users.update({
-          where: { id: userId },
-          data: { role_id: 4n }
-        });
-      }
+      profileResult = await prisma.driver_profiles.create({
+        data: {
+          user_account_id: userId,
+          license_number: licNum,
+          license_class: licClass,
+          license_expiry: toDateObj(licExpiry),
+          status: 'ACTIVE'
+        }
+      });
     } else {
       const phoneDigits = cleanPhone.replace(/\D/g, '').slice(-4) || Math.floor(Math.random() * 1000);
       let candidateUsername = `driver_${phoneDigits}_${Math.floor(10 + Math.random() * 90)}`;
@@ -556,74 +735,57 @@ const createDriver = async (req, res) => {
       }
       finalUsername = candidateUsername;
 
-      if (email && email.trim()) {
-        finalEmail = email.trim().toLowerCase();
-      } else {
-        finalEmail = `${finalUsername}@nexlog.vn`;
-      }
+      finalEmail = cleanEmailInput || `${finalUsername}@nexlog.vn`;
       const dupEmail = await prisma.users.findUnique({
         where: { email: finalEmail },
         select: { id: true }
       });
       if (dupEmail) {
+        if (cleanEmailInput) {
+          return res.status(409).json({ message: 'Email đã tồn tại trong hệ thống.' });
+        }
         finalEmail = `driver_${phoneDigits}_${Date.now()}@nexlog.vn`;
       }
 
-      const rawPassword = password || 'Nexlog@2026';
-      if (typeof rawPassword !== 'string' || Buffer.byteLength(rawPassword, 'utf8') > 72) {
-        return res.status(400).json({ message: 'Mật khẩu không được vượt quá 72 byte.' });
+      // Chính sách mật khẩu & không dùng mật khẩu hard-code (BUG-MGR-06)
+      let rawPassword;
+      if (password !== undefined && password !== null && password !== '') {
+        if (typeof password !== 'string' || password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
+          return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 8 ký tự và không vượt quá 72 byte.' });
+        }
+        rawPassword = password;
+      } else {
+        rawPassword = crypto.randomBytes(12).toString('base64url');
       }
       const password_hash = await bcrypt.hash(rawPassword, 10);
 
-      const newUser = await prisma.users.create({
-        data: {
-          username: finalUsername,
-          password_hash,
-          full_name: driverName,
-          email: finalEmail,
-          phone: cleanPhone,
-          role_id: 4n,
-          status: 'ACTIVE'
-        },
-        select: { id: true, full_name: true, phone: true, username: true, email: true }
+      // BUG-MGR-01: user + hồ sơ tài xế tạo trong CÙNG MỘT transaction (lỗi thì rollback, không để lại user mồ côi)
+      const txResult = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.users.create({
+          data: {
+            username: finalUsername,
+            password_hash,
+            full_name: driverName,
+            email: finalEmail,
+            phone: cleanPhone,
+            role_id: 4n,
+            status: 'ACTIVE'
+          },
+          select: { id: true }
+        });
+        const profile = await tx.driver_profiles.create({
+          data: {
+            user_account_id: newUser.id,
+            license_number: licNum,
+            license_class: licClass,
+            license_expiry: toDateObj(licExpiry),
+            status: 'ACTIVE'
+          }
+        });
+        return { userId: newUser.id, profile };
       });
-      userId = newUser.id;
-    }
-
-    const existingProfile = await prisma.driver_profiles.findUnique({
-      where: { user_account_id: userId },
-      select: { id: true }
-    });
-
-    const licNum = (license_number || '').trim() || `GPLX-${cleanPhone.slice(-6)}`;
-    const licClass = license_class || 'C';
-    const licExpiryStr = expiry
-      ? new Date(expiry).toISOString().split('T')[0]
-      : new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const licExpiryDate = toDateObj(licExpiryStr);
-
-    let profileResult = null;
-    if (existingProfile) {
-      profileResult = await prisma.driver_profiles.update({
-        where: { id: existingProfile.id },
-        data: {
-          license_number: licNum,
-          license_class: licClass,
-          license_expiry: licExpiryDate,
-          status: 'ACTIVE',
-          updated_at: new Date()
-        }
-      });
-    } else {
-      profileResult = await prisma.driver_profiles.create({
-        data: {
-          user_account_id: userId,
-          license_number: licNum,
-          license_class: licClass,
-          license_expiry: licExpiryDate,
-          status: 'ACTIVE'
-        }
-      });
+      userId = txResult.userId;
+      profileResult = txResult.profile;
     }
 
     return res.status(201).json({
@@ -639,44 +801,78 @@ const createDriver = async (req, res) => {
         license_class: profileResult.license_class,
         license_number: profileResult.license_number,
         expiry: formatDateOnly(profileResult.license_expiry),
+        license_expiry: formatDateOnly(profileResult.license_expiry),
         status: profileResult.status
       }
     });
   } catch (error) {
     console.error('Create Driver Error:', error);
-    return res.status(500).json({ message: 'Không thể thêm tài xế', error: error.message });
+    if (error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'Thông tin bị trùng (số GPLX, email hoặc SĐT đã tồn tại).' });
+    }
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Không thể thêm tài xế', error: error.message });
   }
 };
 
 const updateDriverProfile = async (req, res) => {
   try {
     const bigId = toBigInt(req.params.id);
-    const { license_number, license_class, license_expiry, status, full_name, phone, email } = req.body;
+    const body = req.body || {};
+    const { license_number, license_class, license_expiry, expiry, status } = body;
+
+    const existingProfile = bigId === null ? null : await prisma.driver_profiles.findUnique({
+      where: { id: bigId },
+      select: { id: true }
+    });
+    if (!existingProfile) {
+      return res.status(404).json({ message: 'Không tìm thấy hồ sơ tài xế.' });
+    }
 
     const profileUpdates = { updated_at: new Date() };
-    if (license_number !== undefined) profileUpdates.license_number = license_number;
-    if (license_class !== undefined) profileUpdates.license_class = license_class;
-    if (license_expiry !== undefined && license_expiry) {
-      profileUpdates.license_expiry = toDateObj(license_expiry);
-    }
-    if (status !== undefined) profileUpdates.status = status;
 
+    if (license_number !== undefined) {
+      if (typeof license_number !== 'string' || !license_number.trim()) {
+        return res.status(400).json({ message: 'Số GPLX không được để trống.' });
+      }
+      const cleanLicNum = license_number.trim();
+      const dupLic = await prisma.driver_profiles.findFirst({
+        where: { license_number: cleanLicNum, id: { not: bigId } },
+        select: { id: true }
+      });
+      if (dupLic) {
+        return res.status(409).json({ message: `Số GPLX ${cleanLicNum} đã tồn tại trong hệ thống.` });
+      }
+      profileUpdates.license_number = cleanLicNum;
+    }
+
+    if (license_class !== undefined) {
+      profileUpdates.license_class = validateLicenseClassValue(license_class);
+    }
+
+    // BUG-MGR-02: Chấp nhận cả license_expiry lẫn expiry
+    const rawExpiry = license_expiry !== undefined ? license_expiry : expiry;
+    if (rawExpiry !== undefined) {
+      profileUpdates.license_expiry = toDateObj(
+        parseValidDateStr(rawExpiry, 'Ngày hết hạn GPLX', { mustBeFutureOrToday: true })
+      );
+    }
+
+    if (status !== undefined) {
+      if (typeof status !== 'string' || !status.trim()) {
+        return res.status(400).json({ message: 'Trạng thái hồ sơ tài xế không hợp lệ.' });
+      }
+      const normStatus = status.trim().toUpperCase();
+      if (!VALID_DRIVER_PROFILE_STATUSES.includes(normStatus)) {
+        return res.status(400).json({ message: 'Trạng thái hồ sơ tài xế không hợp lệ.' });
+      }
+      profileUpdates.status = normStatus;
+    }
+
+    // BUG-MGR-03: Không cập nhật full_name / phone / email vào bảng users từ hồ sơ tài xế (SRS: chỉ đọc)
     const updatedProfile = await prisma.driver_profiles.update({
       where: { id: bigId },
       data: profileUpdates
     });
-
-    if ((full_name || phone || email) && updatedProfile.user_account_id) {
-      const userUpdates = { updated_at: new Date() };
-      if (full_name) userUpdates.full_name = full_name;
-      if (phone) userUpdates.phone = phone;
-      if (email) userUpdates.email = email;
-
-      await prisma.users.update({
-        where: { id: updatedProfile.user_account_id },
-        data: userUpdates
-      });
-    }
 
     const serialized = serializePrisma(updatedProfile);
     serialized.license_expiry = formatDateOnly(updatedProfile.license_expiry);
@@ -687,7 +883,10 @@ const updateDriverProfile = async (req, res) => {
     });
   } catch (error) {
     console.error('Update Driver Profile Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi cập nhật hồ sơ tài xế', error: error.message });
+    if (error && error.code === 'P2002') {
+      return res.status(409).json({ message: 'Số GPLX đã tồn tại trong hệ thống.' });
+    }
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi cập nhật hồ sơ tài xế', error: error.message });
   }
 };
 

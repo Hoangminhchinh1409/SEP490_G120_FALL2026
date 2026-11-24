@@ -204,22 +204,31 @@ export default function FleetPage({ readOnly = false }) {
   const handleSaveDriver = async (values) => {
     try {
       setSubmittingDriver(true);
-      const payload = {
-        name: values.full_name,
-        full_name: values.full_name,
-        email: values.email,
-        phone: values.phone,
-        license_number: values.license_number,
-        license_class: values.license_class,
-        expiry: values.expiry ? values.expiry.format('YYYY-MM-DD'): null,
-        status: values.status
-      };
+      const expiryStr = values.expiry ? values.expiry.format('YYYY-MM-DD') : null;
 
       if (editingDriver) {
-        await managerApi.updateDriverProfile(editingDriver.id, payload);
+        const updatePayload = {
+          license_number: values.license_number,
+          license_class: values.license_class,
+          expiry: expiryStr,
+          license_expiry: expiryStr,
+          status: values.status
+        };
+        await managerApi.updateDriverProfile(editingDriver.id, updatePayload);
         message.success('Cập nhật hồ sơ tài xế thành công.');
       } else {
-        await managerApi.createDriver(payload);
+        const createPayload = {
+          name: values.full_name,
+          full_name: values.full_name,
+          email: values.email,
+          phone: values.phone,
+          license_number: values.license_number,
+          license_class: values.license_class,
+          expiry: expiryStr,
+          license_expiry: expiryStr,
+          status: values.status
+        };
+        await managerApi.createDriver(createPayload);
         message.success('Đăng ký tài xế mới thành công.');
       }
 

@@ -338,13 +338,10 @@ export default function MajorIncidentListPage({ readOnly = false }) {
                 onChange={(e) => setTypeFilter(e.target.value)}
                 className="h-9 px-3 bg-surface-container-low border border-surface-container rounded-xl text-xs font-bold text-primary focus:outline-none cursor-pointer max-w-[220px]"
               >
-                <option value="ALL">Tất cả loại sự cố</option>
+                <option value="ALL">Tất cả loại sự cố cần duyệt bồi thường</option>
                 <option value="DAMAGED_LOST_CARGO">Hàng hư hỏng / mất (Damaged/Lost)</option>
                 <option value="TRAFFIC_ACCIDENT">Tai nạn giao thông (Traffic Accident)</option>
                 <option value="CARGO_HELD">Hàng bị giữ (Cargo Held)</option>
-                <option value="ENGINE_BREAKDOWN">Hỏng xe (Breakdown)</option>
-                <option value="ROAD_BAN">Cấm đường / Ùn tắc (Road Ban)</option>
-                <option value="OTHER">Khác (Other)</option>
               </select>
             </div>
           </div>

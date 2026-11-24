@@ -1,7 +1,29 @@
 const prisma = require('../config/prisma');
 const { serializePrisma, toBigInt, toNum } = require('../utils/prismaHelper');
 
-const INCIDENT_INCLUDE = {
+const INCIDENT_SAFE_SELECT = {
+  id: true,
+  trip_id: true,
+  trip_stop_id: true,
+  type: true,
+  description: true,
+  photos: true,
+  fault: true,
+  status: true,
+  reported_by: true,
+  reported_time: true,
+  escalated_by: true,
+  escalated_time: true,
+  escalation_reason: true,
+  resolution_note: true,
+  resolved_by: true,
+  resolved_time: true,
+  created_at: true,
+  updated_at: true
+};
+
+const INCIDENT_SELECT = {
+  ...INCIDENT_SAFE_SELECT,
   trips: {
     select: {
       id: true,
@@ -101,10 +123,20 @@ const mapIncident = (inc) => {
 
 const findAll = async () => {
   const incidents = await prisma.incidents.findMany({
-    include: INCIDENT_INCLUDE,
+    select: INCIDENT_SELECT,
     orderBy: { id: 'desc' }
   });
   return (incidents || []).map(mapIncident);
+};
+
+const findById = async (id) => {
+  const bigId = toBigInt(id);
+  if (bigId === null) return null;
+  const incident = await prisma.incidents.findUnique({
+    where: { id: bigId },
+    select: INCIDENT_SELECT
+  });
+  return mapIncident(incident);
 };
 
 const findTripIdByCode = async (tripCode) => {
@@ -151,7 +183,7 @@ const create = async (incidentData) => {
 
   const created = await prisma.incidents.create({
     data,
-    include: INCIDENT_INCLUDE
+    select: INCIDENT_SELECT
   });
   return mapIncident(created);
 };
@@ -189,7 +221,7 @@ const update = async (id, updateData) => {
   const updated = await prisma.incidents.update({
     where: { id: BigInt(numId) },
     data,
-    include: INCIDENT_INCLUDE
+    select: INCIDENT_SELECT
   });
   return mapIncident(updated);
 };
@@ -210,7 +242,8 @@ const dispatchReplacementWithTransaction = async ({
 
   const incident = await prisma.incidents.findUnique({
     where: { id: bigIncId },
-    include: {
+    select: {
+      ...INCIDENT_SAFE_SELECT,
       trips: {
         include: {
           trip_trucks: true,
@@ -372,7 +405,7 @@ const dispatchReplacementWithTransaction = async ({
         resolved_time: now,
         updated_at: now
       },
-      include: INCIDENT_INCLUDE
+      select: INCIDENT_SELECT
     });
   });
 
@@ -412,6 +445,7 @@ const dispatchReplacementWithTransaction = async ({
 
 module.exports = {
   findAll,
+  findById,
   findTripIdByCode,
   findFirstTripId,
   create,

@@ -1,6 +1,16 @@
 import React from 'react';
 import { Modal, Form, Input, Select, DatePicker } from 'antd';
 
+const positiveNumberRule = (label) => ({
+  validator: (_, val) => {
+    const num = Number(val);
+    if (val === undefined || val === null || val === '' || !Number.isFinite(num) || num <= 0) {
+      return Promise.reject(new Error(`${label} phải lớn hơn 0`));
+    }
+    return Promise.resolve();
+  }
+});
+
 export function FleetTruckModal({
   open,
   onCancel,
@@ -49,10 +59,13 @@ export function FleetTruckModal({
           <Form.Item
             name="allowed_payload"
             label={<span className="font-semibold text-slate-700">Tải trọng tối đa (kg)</span>}
-            rules={[{ required: true, message: 'Nhập tải trọng cho phép' }]}
+            rules={[
+              { required: true, message: 'Nhập tải trọng cho phép' },
+              positiveNumberRule('Tải trọng cho phép')
+            ]}
             extra="Giới hạn tải trọng tối đa khi gán đơn hàng."
           >
-            <Input type="number" placeholder="5000" className="h-10 rounded-lg font-mono font-bold" />
+            <Input type="number" min={1} placeholder="5000" className="h-10 rounded-lg font-mono font-bold" />
           </Form.Item>
 
           <Form.Item
@@ -77,14 +90,38 @@ export function FleetTruckModal({
             Kích thước thùng xe (cm)
           </span>
           <div className="grid grid-cols-3 gap-3">
-            <Form.Item name="box_length" label="Chiều Dài (cm)" className="mb-0" rules={[{ required: true }]}>
-              <Input type="number" placeholder="620" className="rounded-lg font-mono" />
+            <Form.Item
+              name="box_length"
+              label="Chiều Dài (cm)"
+              className="mb-0"
+              rules={[
+                { required: true, message: 'Nhập chiều dài' },
+                positiveNumberRule('Chiều dài')
+              ]}
+            >
+              <Input type="number" min={1} placeholder="620" className="rounded-lg font-mono" />
             </Form.Item>
-            <Form.Item name="box_width" label="Chiều Rộng (cm)" className="mb-0" rules={[{ required: true }]}>
-              <Input type="number" placeholder="210" className="rounded-lg font-mono" />
+            <Form.Item
+              name="box_width"
+              label="Chiều Rộng (cm)"
+              className="mb-0"
+              rules={[
+                { required: true, message: 'Nhập chiều rộng' },
+                positiveNumberRule('Chiều rộng')
+              ]}
+            >
+              <Input type="number" min={1} placeholder="210" className="rounded-lg font-mono" />
             </Form.Item>
-            <Form.Item name="box_height" label="Chiều Cao (cm)" className="mb-0" rules={[{ required: true }]}>
-              <Input type="number" placeholder="220" className="rounded-lg font-mono" />
+            <Form.Item
+              name="box_height"
+              label="Chiều Cao (cm)"
+              className="mb-0"
+              rules={[
+                { required: true, message: 'Nhập chiều cao' },
+                positiveNumberRule('Chiều cao')
+              ]}
+            >
+              <Input type="number" min={1} placeholder="220" className="rounded-lg font-mono" />
             </Form.Item>
           </div>
         </div>
@@ -93,6 +130,7 @@ export function FleetTruckModal({
           <Form.Item
             name="inspection_expiry"
             label={<span className="font-semibold text-slate-700">Hạn đăng kiểm</span>}
+            rules={[{ required: true, message: 'Vui lòng chọn hạn đăng kiểm' }]}
             extra="Nếu hết hạn, xe tự động bị khóa không thể bật Sẵn sàng."
           >
             <DatePicker className="w-full h-10 rounded-lg" format="DD/MM/YYYY" placeholder="Chọn ngày hết hạn" />
@@ -101,6 +139,7 @@ export function FleetTruckModal({
           <Form.Item
             name="insurance_expiry"
             label={<span className="font-semibold text-slate-700">Hạn bảo hiểm trách nhiệm</span>}
+            rules={[{ required: true, message: 'Vui lòng chọn hạn bảo hiểm' }]}
           >
             <DatePicker className="w-full h-10 rounded-lg" format="DD/MM/YYYY" placeholder="Chọn ngày hết hạn" />
           </Form.Item>
@@ -181,26 +220,26 @@ export function FleetDriverModal({
         <Form.Item
           name="full_name"
           label={<span className="font-semibold text-slate-700">Họ và tên tài xế</span>}
-          rules={[{ required: true, message: 'Vui lòng nhập họ tên' }]}
+          rules={editingDriver ? [] : [{ required: true, message: 'Vui lòng nhập họ tên' }]}
         >
-          <Input placeholder="Nguyễn Văn A" className="h-10 rounded-lg" />
+          <Input placeholder="Nguyễn Văn A" disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
         </Form.Item>
 
         <Form.Item
           name="phone"
           label={<span className="font-semibold text-slate-700">Số điện thoại liên lạc</span>}
-          rules={[{ required: true, message: 'Vui lòng nhập SĐT' }]}
+          rules={editingDriver ? [] : [{ required: true, message: 'Vui lòng nhập SĐT' }]}
         >
-          <Input placeholder="0912345678" className="h-10 rounded-lg" />
+          <Input placeholder="0912345678" disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
         </Form.Item>
 
         <Form.Item
           name="email"
           label={<span className="font-semibold text-slate-700">Email (Tùy chọn)</span>}
-          rules={[{ type: 'email', message: 'Email không đúng định dạng' }]}
-          extra="Nếu để trống, hệ thống sẽ tự sinh email đăng nhập theo số điện thoại."
+          rules={editingDriver ? [] : [{ type: 'email', message: 'Email không đúng định dạng' }]}
+          extra={editingDriver ? "Họ tên, SĐT và email tài khoản chỉ đọc tại hồ sơ tài xế." : "Nếu để trống, hệ thống sẽ tự sinh email đăng nhập theo số điện thoại."}
         >
-          <Input placeholder="taixe@nexlog.vn" className="h-10 rounded-lg" />
+          <Input placeholder="taixe@nexlog.vn" disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
         </Form.Item>
 
         <div className="grid grid-cols-2 gap-3">

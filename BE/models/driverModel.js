@@ -670,6 +670,20 @@ const createIncident = async ({
       created_at: now,
       updated_at: now,
     },
+    select: {
+      id: true,
+      trip_id: true,
+      trip_stop_id: true,
+      type: true,
+      description: true,
+      photos: true,
+      fault: true,
+      status: true,
+      reported_by: true,
+      reported_time: true,
+      created_at: true,
+      updated_at: true,
+    },
   });
   return {
     ...serializePrisma(created),

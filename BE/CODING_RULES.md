@@ -419,6 +419,11 @@ await pool.query(`SELECT * FROM trucks WHERE deleted_at IS NULL`);
 'DRAFT', 'ACTIVE', 'EXPIRED', 'TERMINATED'
 ```
 
+### 10.4 Cấm tự động tạo bảng Database mới (No Auto-Creating Tables — BẮT BUỘC)
+- ❌ **TUYỆT ĐỐI CẤM** thực thi các câu lệnh DDL tự động tạo bảng hoặc thay đổi cấu trúc bảng (`CREATE TABLE`, `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE`, `DROP TABLE`) bên trong mã nguồn ứng dụng (Controller, Service, Model, Middleware, Job Worker, hoặc khi khởi tạo `server.js`).
+- ❌ **TUYỆT ĐỐI CẤM** tự ý định nghĩa thêm `model` (bảng) mới trong `prisma/schema.prisma` hoặc tự động chạy lệnh `prisma db push` / `prisma migrate` để tạo bảng mới khi chưa được yêu cầu và phê duyệt rõ ràng.
+- ✅ Mọi tính năng và luồng nghiệp vụ bắt buộc phải ánh xạ và sử dụng đúng các bảng hiện có trong schema chuẩn của hệ thống.
+
 ---
 
 ## 11. Authentication & Security Rules
@@ -463,7 +468,7 @@ return res.status(400).json({
 Khi phát triển thêm tính năng hoặc phân hệ mới (ví dụ: `documents`, `claims`), tuân thủ thứ tự:
 
 1. Xác định vị trí phân tầng: **Entry Module**, **Business Module** hay **Base Module**.
-2. Kiểm tra/Tạo migration database: Cập nhật schema trong `prisma/schema.prisma` hoặc bảng PostgreSQL.
+2. Đối chiếu với các bảng hiện có trong `prisma/schema.prisma` (**TUYỆT ĐỐI KHÔNG** tự động tạo bảng database mới).
 3. Tạo Data Access: `models/{module}Model.js`.
 4. Tạo Business Logic: `services/{module}Service.js`.
 5. Tạo Controller xử lý API: `controllers/{module}Controller.js`.

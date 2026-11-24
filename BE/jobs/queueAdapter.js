@@ -25,6 +25,9 @@ class BackgroundQueueAdapter extends EventEmitter {
     this.isRedisMode = false;
     this.queues = new Map();
     this.inMemoryJobs = new Map();
+    this.activeInMemoryLocks = new Set();
+    this.pgLockDisabled = false;
+    this.pgLockWarned = false;
     this.gpsBuffer = [];
     this.gpsFlushTimer = null;
     this.init();
@@ -108,35 +111,54 @@ class BackgroundQueueAdapter extends EventEmitter {
    */
   async runWithAdvisoryLock(lockKey, jobName, taskFunction) {
     let client = null;
-    let lockAcquired = false;
+    let pgLockAcquired = false;
+    let usedInMemoryFallback = false;
+
+    const dbConnStr = process.env.DIRECT_URL || process.env.DATABASE_URL || '';
+    const isTransactionPooler =
+      !process.env.DIRECT_URL &&
+      (dbConnStr.includes('pgbouncer=true') || /:6543(\/|\?|$)/.test(dbConnStr));
+
+    if (!dbConnStr || isTransactionPooler || this.pgLockDisabled) {
+      usedInMemoryFallback = true;
+      if (!this.pgLockWarned && isTransactionPooler) {
+        this.pgLockWarned = true;
+        console.info(
+          `[QueueAdapter] Phát hiện PgBouncer transaction pooler (port 6543) không hỗ trợ session advisory lock. Chuyển sang In-Memory Lock cho các background jobs.`
+        );
+      }
+    }
 
     try {
-      if (pool && pool.connect) {
+      if (!usedInMemoryFallback && pool && pool.connect) {
         try {
           client = await pool.connect();
-          const res = await client.query(
-            "SELECT pg_try_advisory_lock($1) AS acquired",
-            [lockKey],
-          );
-          lockAcquired = res.rows && res.rows[0]?.acquired === true;
+          const res = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [lockKey]);
+          pgLockAcquired = res.rows && res.rows[0]?.acquired === true;
+          if (!pgLockAcquired) {
+            return;
+          }
         } catch (dbErr) {
-          // Nếu kết nối DB trực tiếp gặp sự cố, fallback chạy bình thường để không làm gián đoạn tác vụ
-          console.warn(
-            `[QueueAdapter] Không thể lấy advisory lock cho [${jobName}] (${dbErr.message}), chuyển sang fallback thực thi.`,
-          );
-          lockAcquired = true;
+          this.pgLockDisabled = true;
+          usedInMemoryFallback = true;
+          if (!this.pgLockWarned) {
+            this.pgLockWarned = true;
+            console.warn(
+              `[QueueAdapter] Không thể lấy PostgreSQL advisory lock (${dbErr.code || dbErr.message}). Đã chuyển sang In-Memory Lock fallback.`
+            );
+          }
         }
       } else {
-        // Fallback nếu không có pg pool trực tiếp: chạy bình thường
-        lockAcquired = true;
+        usedInMemoryFallback = true;
       }
 
-      if (!lockAcquired) {
-        // Node khác đang nắm lock, bỏ qua lần chạy này
-        return;
+      if (usedInMemoryFallback) {
+        if (this.activeInMemoryLocks.has(lockKey)) {
+          return;
+        }
+        this.activeInMemoryLocks.add(lockKey);
       }
 
-      // Đã nắm lock độc quyền: thực thi tác vụ
       await taskFunction();
     } catch (err) {
       console.warn(
@@ -144,12 +166,15 @@ class BackgroundQueueAdapter extends EventEmitter {
         err.message,
       );
     } finally {
+      if (usedInMemoryFallback) {
+        this.activeInMemoryLocks.delete(lockKey);
+      }
       if (client) {
         try {
-          if (lockAcquired) {
-            await client.query("SELECT pg_advisory_unlock($1)", [lockKey]);
+          if (pgLockAcquired) {
+            await client.query('SELECT pg_advisory_unlock($1)', [lockKey]);
           }
-        } catch (e) {
+        } catch {
           // Bỏ qua lỗi unlock
         }
         client.release();

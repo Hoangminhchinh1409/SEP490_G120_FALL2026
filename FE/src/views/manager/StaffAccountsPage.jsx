@@ -8,10 +8,12 @@ import {
   Modal, 
   Form, 
   Switch, 
+  DatePicker,
   message, 
   Tooltip, 
   Popconfirm
 } from 'antd';
+import dayjs from 'dayjs';
 import { 
   Search, 
   Plus, 
@@ -47,6 +49,7 @@ export default function StaffAccountsPage() {
   const [statusTogglingId, setStatusTogglingId] = useState(null);
 
   const [form] = Form.useForm();
+  const watchedRole = Form.useWatch('role', form);
 
   // Load danh sách tài khoản
   const fetchAccounts = React.useCallback(async () => {
@@ -104,7 +107,8 @@ export default function StaffAccountsPage() {
       form.resetFields();
       form.setFieldsValue({
         role: 'DISPATCHER',
-        status: true
+        status: true,
+        license_class: 'C'
       });
     }, 0);
   };
@@ -116,6 +120,7 @@ export default function StaffAccountsPage() {
     setIsModalOpen(true);
     setTimeout(() => {
       form.resetFields();
+      const dp = account.driver_profile || null;
       form.setFieldsValue({
         id: account.id,
         username: account.username,
@@ -123,7 +128,10 @@ export default function StaffAccountsPage() {
         email: account.email,
         phone: account.phone,
         role: account.role_id === 3 ? 'DISPATCHER': 'DRIVER',
-        status: account.status === 'ACTIVE'
+        status: account.status === 'ACTIVE',
+        license_number: dp?.license_number || undefined,
+        license_class: dp?.license_class || 'C',
+        license_expiry: dp?.license_expiry ? dayjs(dp.license_expiry) : undefined
       });
     }, 0);
   };
@@ -143,6 +151,12 @@ export default function StaffAccountsPage() {
         status: values.status ? 'ACTIVE': 'LOCKED'
       };
 
+      if (values.role === 'DRIVER') {
+        payload.license_number = values.license_number;
+        payload.license_class = values.license_class || 'C';
+        payload.license_expiry = values.license_expiry ? values.license_expiry.format('YYYY-MM-DD') : undefined;
+      }
+
       if (values.password && values.password.trim() !== '') {
         payload.password = values.password.trim();
       }
@@ -151,8 +165,8 @@ export default function StaffAccountsPage() {
         await managerApi.updateStaffAccount(selectedAccount.id, payload);
         message.success(`Cập nhật thông tin tài khoản "${values.username}" thành công!`);
       } else {
-        const res = await managerApi.createStaffAccount(payload);
-        message.success(`Đã tạo tài khoản "${values.username}" thành công! Mật khẩu khởi tạo: ${res.account?.initial_password || 'Nexlog@2026'}`);
+        await managerApi.createStaffAccount(payload);
+        message.success(`Đã tạo tài khoản "${values.username}" thành công!`);
       }
 
       setIsModalOpen(false);
@@ -618,18 +632,68 @@ export default function StaffAccountsPage() {
             />
           </Form.Item>
 
-          {/* Password (Tùy chọn) */}
+          {/* Driver License Fields when role === DRIVER */}
+          {watchedRole === 'DRIVER' && (
+            <div className="bg-emerald-50/60 p-4 rounded-xl border border-emerald-200 space-y-2 mb-2">
+              <span className="font-semibold text-emerald-900 text-xs uppercase tracking-wider block">
+                Thông tin Bằng lái xe (Bắt buộc cho Tài xế)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Form.Item
+                  name="license_number"
+                  label={<span className="font-semibold text-slate-700">Số GPLX</span>}
+                  rules={[{ required: true, message: 'Vui lòng nhập số GPLX' }]}
+                  className="mb-1"
+                >
+                  <Input placeholder="VD: GPLX-012345" className="rounded-xl h-10 font-mono" />
+                </Form.Item>
+                <Form.Item
+                  name="license_class"
+                  label={<span className="font-semibold text-slate-700">Hạng bằng lái</span>}
+                  rules={[{ required: true, message: 'Vui lòng chọn hạng bằng' }]}
+                  className="mb-1"
+                >
+                  <Select
+                    className="rounded-xl h-10"
+                    options={[
+                      { value: 'B2', label: 'B2' },
+                      { value: 'C', label: 'C' },
+                      { value: 'FC', label: 'FC' }
+                    ]}
+                  />
+                </Form.Item>
+              </div>
+              <Form.Item
+                name="license_expiry"
+                label={<span className="font-semibold text-slate-700">Ngày hết hạn GPLX</span>}
+                rules={[{ required: true, message: 'Vui lòng chọn ngày hết hạn GPLX' }]}
+                className="mb-0"
+              >
+                <DatePicker className="w-full h-10 rounded-xl" format="DD/MM/YYYY" placeholder="Chọn ngày hết hạn GPLX" />
+              </Form.Item>
+            </div>
+          )}
+
+          {/* Password (Chính sách >= 8 ký tự) */}
           <Form.Item
             name="password"
             label={
               <span className="font-semibold text-slate-700">
-                {isEditMode ? 'Đặt lại mật khẩu mới (Để trống nếu không đổi)': 'Mật khẩu ban đầu (Tùy chọn)'}
+                {isEditMode ? 'Đặt lại mật khẩu mới (Để trống nếu không đổi)' : 'Mật khẩu khởi tạo (Bắt buộc)'}
               </span>
             }
-            extra={isEditMode ? null: "Nếu để trống, mật khẩu mặc định khởi tạo sẽ là: Nexlog@2026"}
+            rules={
+              isEditMode
+                ? [{ min: 8, message: 'Mật khẩu mới phải có ít nhất 8 ký tự' }]
+                : [
+                    { required: true, message: 'Vui lòng nhập mật khẩu khởi tạo' },
+                    { min: 8, message: 'Mật khẩu phải có ít nhất 8 ký tự' }
+                  ]
+            }
+            extra={isEditMode ? "Để trống nếu giữ nguyên mật khẩu hiện tại. Tối thiểu 8 ký tự nếu đổi." : "Mật khẩu phải có ít nhất 8 ký tự."}
           >
             <Input.Password 
-              placeholder={isEditMode ? "Nhập mật khẩu mới nếu muốn đổi": "Mặc định: Nexlog@2026"} 
+              placeholder={isEditMode ? "Nhập mật khẩu mới (ít nhất 8 ký tự)" : "Nhập mật khẩu ít nhất 8 ký tự"} 
               className="rounded-xl h-10"
             />
           </Form.Item>

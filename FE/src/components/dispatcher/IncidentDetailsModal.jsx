@@ -45,6 +45,21 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, isRe
   if (!open || !incident) return null;
 
   const isAlreadyResolved = incident.status === 'RESOLVED';
+  const normalizedRawType = String(incident.raw_type || '').trim().toUpperCase().replace(/\s+/g, '_');
+  const canEscalateToManager =
+    incident.can_escalate_to_manager !== undefined
+      ? Boolean(incident.can_escalate_to_manager)
+      : [
+          'DAMAGED_LOST_CARGO',
+          'DAMAGED_CARGO',
+          'CARGO_DAMAGED',
+          'CARGO_LOST',
+          'ACCIDENT',
+          'TRAFFIC_ACCIDENT',
+          'CARGO_HELD',
+          'HELD_BY_AUTHORITIES',
+          'SEIZED_BY_AUTHORITY'
+        ].includes(normalizedRawType);
 
   const handleDispatchReplacement = async () => {
     if (!replacementReason.trim()) {
@@ -130,7 +145,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, isRe
         <Button key="back" type="primary" onClick={onCancel}>Đóng</Button>
       ] : [
         <Button key="back" onClick={onCancel}>Đóng</Button>,
-        !isAlreadyResolved && mode !== 'ESCALATE' && (
+        !isAlreadyResolved && canEscalateToManager && mode !== 'ESCALATE' && (
           <Button
             key="escalateMode"
             danger
@@ -140,7 +155,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, isRe
             Chuyển tiếp Quản lý
           </Button>
         ),
-        !isAlreadyResolved && mode === 'ESCALATE' && (
+        !isAlreadyResolved && canEscalateToManager && mode === 'ESCALATE' && (
           <Button
             key="confirmEscalate"
             type="primary"

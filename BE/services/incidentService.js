@@ -1,5 +1,22 @@
 const incidentModel = require('../models/incidentModel');
 
+const COMPENSATION_ELIGIBLE_NORMALIZED_TYPES = [
+  'DAMAGED_LOST_CARGO',
+  'DAMAGED_CARGO',
+  'CARGO_DAMAGED',
+  'CARGO_LOST',
+  'ACCIDENT',
+  'TRAFFIC_ACCIDENT',
+  'CARGO_HELD',
+  'HELD_BY_AUTHORITIES',
+  'SEIZED_BY_AUTHORITY'
+];
+
+const isCompensationEligibleType = (type) => {
+  const normalized = String(type || '').trim().toUpperCase().replace(/\s+/g, '_');
+  return COMPENSATION_ELIGIBLE_NORMALIZED_TYPES.includes(normalized);
+};
+
 const formatIncident = (inc) => {
   const typeDisplayMap = {
     BREAKDOWN: 'HỎNG XE GIỮA ĐƯỜNG',
@@ -46,6 +63,7 @@ const formatIncident = (inc) => {
     phone: driverObj.phone || null,
     type: typeDisplayMap[upperType] || inc.type,
     raw_type: inc.type,
+    can_escalate_to_manager: isCompensationEligibleType(inc.type),
     severity: upperType === 'ACCIDENT' || upperType === 'BREAKDOWN' || upperType === 'CARGO_DAMAGED' ? 'HIGH' : 'MEDIUM',
     status: feStatus,
     db_status: inc.status,
@@ -188,8 +206,21 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
     };
   }
 
-  // 2. Chuyển tiếp sự cố nghiêm trọng lên Quản lý (UC-16)
+  // 2. Chuyển tiếp sự cố nghiêm trọng lên Quản lý (UC-16) — chỉ áp dụng cho sự cố có thể phát sinh bồi thường
   if (rawAction === 'ESCALATED' || rawAction === 'ESCALATED_TO_MANAGER' || rawAction === 'ESCALATE') {
+    const existingIncident = await incidentModel.findById(realId);
+    if (!existingIncident) {
+      const error = new Error('Không tìm thấy sự cố.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (!isCompensationEligibleType(existingIncident.raw_type || existingIncident.type)) {
+      const error = new Error('Sự cố này không phát sinh duyệt bồi thường hàng hóa (thuộc thẩm quyền Điều phối viên xử lý tại chỗ hoặc điều xe thay thế), không thể chuyển lên Quản lý.');
+      error.statusCode = 400;
+      throw error;
+    }
+
     const updated = await incidentModel.update(realId, {
       status: 'Escalated',
       escalated_time: new Date(),

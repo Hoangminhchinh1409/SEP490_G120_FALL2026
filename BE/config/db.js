@@ -2,8 +2,10 @@ const { Pool } = require("pg");
 
 // Làm sạch tham số sslmode trong connectionString để tránh việc pg-connection-string
 // ghi đè object ssl { rejectUnauthorized: false } bằng chế độ verify-full mặc định của Supabase
-const rawConnectionString = process.env.DATABASE_URL || "";
-const cleanConnectionString = rawConnectionString.replace(/([?&])sslmode=[^&]*/, "");
+const rawConnectionString = process.env.DIRECT_URL || process.env.DATABASE_URL || "";
+const cleanConnectionString = rawConnectionString
+  .replace(/([?&])sslmode=[^&]*&?/i, (match, prefix) => (prefix === "?" ? "?" : ""))
+  .replace(/[?&]$/, "");
 
 const isLocalhost = cleanConnectionString.includes("localhost") || cleanConnectionString.includes("127.0.0.1");
 

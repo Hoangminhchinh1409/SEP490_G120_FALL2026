@@ -8,6 +8,27 @@ const {
   sendIncidentCompensationRejectionEmail
 } = require('../services/emailService');
 
+const INCIDENT_SAFE_SELECT = {
+  id: true,
+  trip_id: true,
+  trip_stop_id: true,
+  type: true,
+  description: true,
+  photos: true,
+  fault: true,
+  status: true,
+  reported_by: true,
+  reported_time: true,
+  escalated_by: true,
+  escalated_time: true,
+  escalation_reason: true,
+  resolution_note: true,
+  resolved_by: true,
+  resolved_time: true,
+  created_at: true,
+  updated_at: true
+};
+
 const mapOrderSummaryAliases = (orderRow) => {
   if (!orderRow) return null;
   const s = serializePrisma(orderRow);
@@ -94,11 +115,51 @@ const updateIncidentStatus = async (req, res) => {
 // B. MANAGER MAJOR INCIDENTS & COMPENSATION CLAIMS
 // ==========================================
 
+const COMPENSATION_ELIGIBLE_DB_TYPES = [
+  'DAMAGED_LOST_CARGO',
+  'DAMAGED_CARGO',
+  'CARGO_DAMAGED',
+  'CARGO_LOST',
+  'Cargo Damaged',
+  'Cargo Lost',
+  'TRAFFIC_ACCIDENT',
+  'ACCIDENT',
+  'Accident',
+  'CARGO_HELD',
+  'SEIZED_BY_AUTHORITY',
+  'HELD_BY_AUTHORITIES'
+];
+
 const getIncidents = async (req, res) => {
   try {
     const { status, type } = req.query;
 
-    const where = {};
+    const where = {
+      AND: [
+        { type: { in: COMPENSATION_ELIGIBLE_DB_TYPES } },
+        {
+          OR: [
+            {
+              status: {
+                in: [
+                  'ESCALATED', 'Escalated',
+                  'APPROVED', 'Approved',
+                  'RESOLVED', 'Resolved',
+                  'DONE', 'Done',
+                  'CLOSED', 'Closed',
+                  'REJECTED', 'Rejected',
+                  'IN_PROGRESS'
+                ]
+              }
+            },
+            { escalated_time: { not: null } },
+            { resolved_by: { not: null } },
+            { compensation_claims: { some: {} } }
+          ]
+        }
+      ]
+    };
+
     if (status && status !== 'ALL') {
       const s = status.toUpperCase();
       if (s === 'ESCALATED') {
@@ -115,29 +176,24 @@ const getIncidents = async (req, res) => {
     }
 
     if (type && type !== 'ALL') {
-      // Hỗ trợ map nhóm sự cố mở rộng
+      // Hỗ trợ map nhóm sự cố cần duyệt bồi thường
       const t = type.toUpperCase();
       if (t === 'DAMAGED_LOST_CARGO' || t === 'DAMAGED_CARGO') {
-        where.type = { in: ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'Cargo Damaged', 'Cargo Lost'] };
+        where.type = { in: ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'CARGO_LOST', 'Cargo Damaged', 'Cargo Lost'] };
       } else if (t === 'TRAFFIC_ACCIDENT') {
         where.type = { in: ['TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident'] };
       } else if (t === 'CARGO_HELD') {
         where.type = { in: ['CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES'] };
-      } else if (t === 'ENGINE_BREAKDOWN' || t === 'BREAKDOWN') {
-        where.type = { in: ['ENGINE_BREAKDOWN', 'BREAKDOWN', 'Vehicle Issue', 'Breakdown'] };
-      } else if (t === 'ROAD_BAN') {
-        where.type = { in: ['ROAD_BAN', 'Traffic', 'Road Ban'] };
-      } else if (t === 'OTHER') {
-        where.type = { in: ['OTHER', 'Other'] };
       } else {
-        where.type = type;
+        where.type = { in: [] };
       }
     }
 
     const rawIncidents = await prisma.incidents.findMany({
       where,
       orderBy: { id: 'desc' },
-      include: {
+      select: {
+        ...INCIDENT_SAFE_SELECT,
         trips: {
           select: {
             id: true,
@@ -370,9 +426,13 @@ const getIncidentById = async (req, res) => {
     const { id } = req.params;
     const rawIncident = await prisma.incidents.findUnique({
       where: { id: BigInt(id) },
-      include: {
+      select: {
+        ...INCIDENT_SAFE_SELECT,
         trips: {
-          include: {
+          select: {
+            id: true,
+            trip_code: true,
+            status: true,
             trip_trucks: {
               select: { trucks: { select: { id: true, plate_number: true } } }
             },
@@ -801,7 +861,8 @@ const resolveIncident = async (req, res) => {
         resolved_by: resolvedByInt,
         resolved_time: nowDate,
         updated_at: nowDate
-      }
+      },
+      select: INCIDENT_SAFE_SELECT
     });
     const updatedInc = serializePrisma(updatedIncRow);
 
@@ -954,7 +1015,8 @@ const decideIncidentCompensation = async (req, res) => {
     try {
       const updatedIncRow = await prisma.incidents.update({
         where: { id: BigInt(id) },
-        data: corePayload
+        data: corePayload,
+        select: INCIDENT_SAFE_SELECT
       });
       updatedInc = serializePrisma(updatedIncRow);
     } catch (incErr) {
@@ -965,7 +1027,8 @@ const decideIncidentCompensation = async (req, res) => {
           data: {
             ...corePayload,
             status: isApprove ? 'ESCALATED' : isRequestMoreInfo ? 'ESCALATED' : 'RESOLVED'
-          }
+          },
+          select: INCIDENT_SAFE_SELECT
         });
         updatedInc = serializePrisma(retryRow);
       } catch (retryErr) {
@@ -1322,7 +1385,8 @@ const closeIncidentCase = async (req, res) => {
     try {
       const updatedIncRow = await prisma.incidents.update({
         where: { id: BigInt(id) },
-        data: coreClosePayload
+        data: coreClosePayload,
+        select: INCIDENT_SAFE_SELECT
       });
       updatedInc = serializePrisma(updatedIncRow);
     } catch (incErr) {
@@ -1333,7 +1397,8 @@ const closeIncidentCase = async (req, res) => {
           data: {
             ...coreClosePayload,
             status: 'RESOLVED'
-          }
+          },
+          select: INCIDENT_SAFE_SELECT
         });
         updatedInc = serializePrisma(retryRow);
       } catch (retryErr) {
@@ -1708,7 +1773,8 @@ const decideClaim = async (req, res) => {
           data: {
             status: isApprove ? 'RESOLVED' : 'CLOSED',
             updated_at: nowDate
-          }
+          },
+          select: { id: true }
         });
       } catch (incErr) {
         await prisma.incidents.update({
@@ -1716,7 +1782,8 @@ const decideClaim = async (req, res) => {
           data: {
             status: 'RESOLVED',
             updated_at: nowDate
-          }
+          },
+          select: { id: true }
         }).catch(() => {});
       }
     }
@@ -1768,7 +1835,8 @@ const sendIncidentDecisionEmail = async (req, res) => {
 
     const rawIncident = await prisma.incidents.findUnique({
       where: { id: BigInt(id) },
-      include: {
+      select: {
+        ...INCIDENT_SAFE_SELECT,
         trips: { select: { id: true, trip_code: true } },
         compensation_claims: true
       }
