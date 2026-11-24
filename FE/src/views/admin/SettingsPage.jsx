@@ -147,11 +147,7 @@ export default function SettingsPage() {
               {maintenanceOn && (
                 <div className="mt-3.5 p-3 bg-amber-100/70 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium flex items-center gap-2">
                   <AlertTriangle size={16} className="text-amber-700 shrink-0" />
-<<<<<<< Updated upstream
-                  <span>Cảnh báo: Toàn bộ nhân viên không phải Quản trị viên khi đăng nhập sẽ nhìn thấy: <i>"Hệ thống đang bảo trì. Vui lòng quay lại sau."</i></span>
-=======
                   <span>Cảnh báo: Toàn bộ nhân viên không phải Quản trị viên khi đăng nhập sẽ nhìn thấy: <i>&ldquo;Hệ thống đang bảo trì. Vui lòng quay lại sau.&rdquo;</i> (MSG86)</span>
->>>>>>> Stashed changes
                 </div>
               )}
             </div>
@@ -218,13 +214,6 @@ export default function SettingsPage() {
           <Form.Item name="order_code_prefix" label="Tiền tố mã đơn hàng (Order Code Prefix)" extra="Mặc định là ALS (ví dụ: ALS260930-0001)">
             <Input className="h-10 rounded-lg w-40 font-mono font-bold" />
           </Form.Item>
-<<<<<<< Updated upstream
-
-          <Form.Item name="default_geofence_radius_meters" label="Bán kính hàng rào địa lý kho (mét)" extra="Khoảng cách cho phép để tài xế bấm xác nhận Đến kho (mặc định 500m)">
-            <InputNumber min={50} max={2000} className="w-36 h-10 rounded-lg" />
-          </Form.Item>
-=======
->>>>>>> Stashed changes
         </div>
 
         {/* KHỐI 4: LƯU TRỮ DỮ LIỆU & BẢO MẬT */}

@@ -49,7 +49,6 @@ async function getZaloApi() {
 function formatTripMessage(trip) {
   const tripCode = trip.tripCode || trip.trip_code || "TRIP-DEMO";
   const orderCode = trip.orderCode || trip.order_code || "ORD-DEMO";
-  const hawb = trip.hawbNumber || trip.hawb_number || "HAWB-AUTO";
   const truck = trip.truckPlate || trip.truck_plate || "Xe tải 2.5T";
   const truckModel = trip.truckModel || "Xe tải thùng kín";
   const driver = trip.driverName || trip.driver_name || "Bác tài";
@@ -80,7 +79,6 @@ Mã chuyến: ${tripCode} | Đơn: ${orderCode}
 • SĐT Bác tài: ${driverPhone} (Bấm để gọi)
 
 📋 THỦ TỤC HÀNG HÓA KHO ALS:
-• Mã HAWB: ${hawb}
 • Trọng lượng: ${weight}
 • Trạng thái hồ sơ: Đã duyệt Hải quan trực tuyến
 

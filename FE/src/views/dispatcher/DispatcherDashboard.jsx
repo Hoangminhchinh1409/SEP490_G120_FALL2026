@@ -96,32 +96,34 @@ const isOrderCancelled = (o) => {
   return st === 'CANCELLED' || Boolean(o?.cancel_reason) || Boolean(o?.cancellation_reason);
 };
 
+// Cache ngắn hạn ở FE giúp chuyển tab / quay lại Dashboard hiển thị tức thì (stale-while-revalidate)
+const DISPATCHER_SWF_TTL_MS = 15000;
+const dispatcherDashboardCache = new Map();
+
 export default function DispatcherDashboard() {
   const router = useRouter();
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `disp_${user?.id || 'default'}`;
+  const initialCache = dispatcherDashboardCache.get(cacheKey);
+
+  const [loading, setLoading] = useState(!initialCache);
+  const [refreshing, setRefreshing] = useState(false);
   const [periodMode, setPeriodMode] = useState('ALL'); // 'ALL' | 'MONTH'
   const [selectedMonth, setSelectedMonth] = useState(dayjs());
   const [activeTab, setActiveTab] = useState('OVERVIEW'); // 'OVERVIEW' | 'QUEUE'
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const [orders, setOrders] = useState([]);
-  const [dbStats, setDbStats] = useState(null);
-  const [trucks, setTrucks] = useState([]);
-  const [trips, setTrips] = useState([]);
-  const [incidents, setIncidents] = useState([]);
-  const [leaveReassignments, setLeaveReassignments] = useState([]);
+  const [orders, setOrders] = useState(() => initialCache?.userOrders || []);
+  const [dbStats, setDbStats] = useState(() => initialCache?.statsRes || null);
+  const [leaveReassignments, setLeaveReassignments] = useState(
+    () => initialCache?.leaveReassignments || []
+  );
 
-  const fetchAllData = useCallback(async () => {
-    const [ordersRes, statsRes, trucksRes, tripsRes, incidentsRes, leaveReassignRes] =
-      await Promise.all([
-        orderApi.getAllOrders().catch(() => []),
-        dispatcherApi.getDashboardStats().catch(() => null),
-        dispatcherApi.getTrucks().catch(() => []),
-        dispatcherApi.getTrips().catch(() => []),
-        dispatcherApi.getIncidents().catch(() => []),
-        dispatcherApi.getLeaveReassignments().catch(() => ({ reassignments: [] }))
-      ]);
+  const fetchAllData = useCallback(async ({ refresh = false } = {}) => {
+    const [ordersRes, statsRes] = await Promise.all([
+      orderApi.getAllOrders().catch(() => []),
+      dispatcherApi.getDashboardStats({ refresh }).catch(() => null),
+    ]);
 
     const currentUserId = user?.id ? Number(user.id) : null;
     const isDispatcher =
@@ -149,25 +151,56 @@ export default function DispatcherDashboard() {
         route: `${getCleanShortName(o.pickup, 'Kho ALS')} → ${getCleanShortName(o.dropoff, 'Điểm giao')}`
       })),
       statsRes,
-      trucksRes: Array.isArray(trucksRes) ? trucksRes : [],
-      tripsRes: Array.isArray(tripsRes) ? tripsRes : [],
-      incidentsRes: Array.isArray(incidentsRes) ? incidentsRes : [],
-      leaveReassignments: leaveReassignRes?.reassignments || []
     };
   }, [user]);
 
   useEffect(() => {
     let ignore = false;
+    const cached = dispatcherDashboardCache.get(cacheKey);
+
+    const loadLeaveBannerAsync = (forceRefresh = false) => {
+      dispatcherApi
+        .getLeaveReassignments({ refresh: forceRefresh })
+        .then((leaveRes) => {
+          if (ignore) return;
+          const items = leaveRes?.reassignments || [];
+          setLeaveReassignments(items);
+          const cur = dispatcherDashboardCache.get(cacheKey);
+          if (cur) {
+            dispatcherDashboardCache.set(cacheKey, { ...cur, leaveReassignments: items });
+          }
+        })
+        .catch(() => {});
+    };
+
     async function initLoad() {
+      if (cached) {
+        await Promise.resolve();
+        if (ignore) return;
+        setOrders(cached.userOrders);
+        setDbStats(cached.statsRes);
+        setLeaveReassignments(cached.leaveReassignments || []);
+        setLoading(false);
+        if (Date.now() - cached.updatedAt < DISPATCHER_SWF_TTL_MS) {
+          loadLeaveBannerAsync(false);
+          return;
+        }
+      }
+
+      loadLeaveBannerAsync(false);
+
       try {
-        const res = await fetchAllData();
+        const res = await fetchAllData({ refresh: false });
         if (!ignore) {
           setOrders(res.userOrders);
           setDbStats(res.statsRes);
-          setTrucks(res.trucksRes);
-          setTrips(res.tripsRes);
-          setIncidents(res.incidentsRes);
-          setLeaveReassignments(res.leaveReassignments);
+          const prev = dispatcherDashboardCache.get(cacheKey);
+          dispatcherDashboardCache.set(cacheKey, {
+            userOrders: res.userOrders,
+            statsRes: res.statsRes,
+            leaveReassignments: prev?.leaveReassignments || [],
+            updatedAt: Date.now()
+          });
         }
       } catch (err) {
         if (!ignore) {
@@ -184,23 +217,42 @@ export default function DispatcherDashboard() {
     return () => {
       ignore = true;
     };
-  }, [fetchAllData]);
+  }, [fetchAllData, cacheKey]);
 
   const handleManualRefresh = async () => {
-    setLoading(true);
+    if (orders.length === 0 && !dbStats) {
+      setLoading(true);
+    }
+    setRefreshing(true);
+    dispatcherApi
+      .getLeaveReassignments({ refresh: true })
+      .then((leaveRes) => {
+        const items = leaveRes?.reassignments || [];
+        setLeaveReassignments(items);
+        const cur = dispatcherDashboardCache.get(cacheKey);
+        if (cur) {
+          dispatcherDashboardCache.set(cacheKey, { ...cur, leaveReassignments: items });
+        }
+      })
+      .catch(() => {});
+
     try {
-      const res = await fetchAllData();
+      const res = await fetchAllData({ refresh: true });
       setOrders(res.userOrders);
       setDbStats(res.statsRes);
-      setTrucks(res.trucksRes);
-      setTrips(res.tripsRes);
-      setIncidents(res.incidentsRes);
-      setLeaveReassignments(res.leaveReassignments);
+      const prev = dispatcherDashboardCache.get(cacheKey);
+      dispatcherDashboardCache.set(cacheKey, {
+        userOrders: res.userOrders,
+        statsRes: res.statsRes,
+        leaveReassignments: prev?.leaveReassignments || [],
+        updatedAt: Date.now()
+      });
     } catch (err) {
       console.error('DispatcherDashboard refresh error:', err);
       message.error('Không thể làm mới dữ liệu điều phối.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -255,27 +307,17 @@ export default function DispatcherDashboard() {
       0
     );
 
-    const totalTrucks =
-      trucks.length > 0 ? trucks.length : Number(dbStats?.total_trucks || 0);
-    const availableTrucks =
-      trucks.length > 0
-        ? trucks.filter((t) =>
-            ['AVAILABLE', 'Available', 'Active'].includes(String(t.status || ''))
-          ).length
-        : Number(dbStats?.available_trucks || 0);
+    const totalTrucks = Number(dbStats?.total_trucks || 0);
+    const availableTrucks = Number(dbStats?.available_trucks || 0);
+    const activeTripsCount = Number(dbStats?.active_trips || 0);
 
-    const activeTripsCount =
-      trips.length > 0
-        ? trips.filter((t) =>
-            ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'IN_TRANSIT', 'Assigned', 'Accepted', 'In Progress'].includes(
-              String(t.status || '')
-            )
-          ).length
-        : Number(dbStats?.active_trips || 0);
+    const incidentsList = Array.isArray(dbStats?.incidentsSummary)
+      ? dbStats.incidentsSummary
+      : [];
 
     const openIncidentsCount =
-      incidents.length > 0
-        ? incidents.filter(
+      incidentsList.length > 0
+        ? incidentsList.filter(
             (inc) => !['RESOLVED', 'DONE', 'CLOSED'].includes(String(inc.status || '').toUpperCase())
           ).length
         : Number(dbStats?.open_incidents || 0);
@@ -327,9 +369,9 @@ export default function DispatcherDashboard() {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    // Incident donut
+    // Incident donut (dữ liệu từ dbStats.incidentsSummary, không cần gọi /incidents 368KB)
     const incMap = new Map();
-    incidents.forEach((inc) => {
+    incidentsList.forEach((inc) => {
       const key = String(inc.type || 'OTHER').toUpperCase();
       const meta = INCIDENT_TYPE_LABELS[key] || { label: inc.type || 'Khác', color: '#64748B' };
       const existing = incMap.get(meta.label) || { label: meta.label, color: meta.color, count: 0 };
@@ -410,7 +452,7 @@ export default function DispatcherDashboard() {
       incidentsChart,
       trendBuckets
     };
-  }, [periodOrders, trucks, trips, incidents, dbStats, periodMode, selectedMonth]);
+  }, [periodOrders, dbStats, periodMode, selectedMonth]);
 
   const getGaugeOptions = (label, color, subLabel) => ({
     chart: {
@@ -810,12 +852,13 @@ export default function DispatcherDashboard() {
 
           <button
             onClick={handleManualRefresh}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container-low text-primary text-xs font-bold hover:bg-surface-container transition-colors cursor-pointer"
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container-low text-primary text-xs font-bold hover:bg-surface-container transition-colors cursor-pointer disabled:opacity-60"
             type="button"
             title="Làm mới dữ liệu từ Database"
           >
-            <span className="material-symbols-outlined text-[16px]">refresh</span>
-            <span>Làm mới</span>
+            <span className={`material-symbols-outlined text-[16px] ${refreshing ? 'animate-spin' : ''}`}>refresh</span>
+            <span>{refreshing ? 'Đang tải...' : 'Làm mới'}</span>
           </button>
 
           <button
@@ -1273,7 +1316,7 @@ export default function DispatcherDashboard() {
                     {computed.incidentsChart.length > 0 ? (
                       <div className="w-full flex justify-center my-1">
                         <Chart
-                          key={`incidents-disp-${incidents.length}`}
+                          key={`incidents-disp-${computed.incidentsChart.length}-${computed.openIncidentsCount}`}
                           options={incidentsDonutOptions}
                           series={incidentsDonutSeries}
                           type="donut"

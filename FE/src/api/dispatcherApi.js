@@ -262,9 +262,10 @@ export const dispatcherApi = {
     }
   },
 
-  getLeaveReassignments: async () => {
+  getLeaveReassignments: async (options = {}) => {
     try {
-      const data = await fetchWithAuth('/dispatcher/leave-reassignments');
+      const qs = options?.refresh ? '?refresh=1' : '';
+      const data = await fetchWithAuth(`/dispatcher/leave-reassignments${qs}`);
       return {
         reassignments: data?.reassignments || [],
         availableDrivers: data?.availableDrivers || []
@@ -292,10 +293,15 @@ export const dispatcherApi = {
   },
 
   // --- 5. Dashboard Stats ---
-  getDashboardStats: async () => {
+  getDashboardStats: async (options = {}) => {
     try {
-      const data = await fetchWithAuth('/dispatcher/dashboard-stats');
-      return data?.kpi || data?.stats || data || null;
+      const qs = options?.refresh ? '?refresh=1' : '';
+      const data = await fetchWithAuth(`/dispatcher/dashboard-stats${qs}`);
+      const baseKpi = data?.kpi || data?.stats || data || null;
+      if (baseKpi && typeof baseKpi === 'object' && Array.isArray(data?.incidentsSummary)) {
+        return { ...baseKpi, incidentsSummary: data.incidentsSummary };
+      }
+      return baseKpi;
     } catch (error) {
       console.warn('dispatcherApi.getDashboardStats warn:', error?.message);
       return null;

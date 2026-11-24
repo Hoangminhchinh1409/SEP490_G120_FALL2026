@@ -95,7 +95,13 @@ const proxyVietmapTile = async (req, res) => {
     const z = parseInt(req.params.z, 10);
     const x = parseInt(req.params.x, 10);
     const y = parseInt(req.params.y, 10);
-    if ([z, x, y].some((n) => Number.isNaN(n) || n < 0 || n > 22)) {
+    const maxCoord = z >= 0 && z <= 22 ? Math.pow(2, z) - 1 : -1;
+    if (
+      [z, x, y].some((n) => Number.isNaN(n) || n < 0) ||
+      z > 22 ||
+      x > maxCoord ||
+      y > maxCoord
+    ) {
       return res.status(400).end();
     }
 
@@ -105,6 +111,7 @@ const proxyVietmapTile = async (req, res) => {
     }
     res.setHeader('Content-Type', headers['content-type'] || 'image/png');
     res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     return res.send(body);
   } catch (err) {
     return res.status(502).end();

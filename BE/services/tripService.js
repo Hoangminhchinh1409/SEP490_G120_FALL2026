@@ -3,7 +3,6 @@ const fleetService = require("./fleetService");
 const leaveModel = require("../models/leaveModel");
 const prisma = require("../config/prisma");
 const { getOrCreateLocation } = require("./orderHelperService");
-const supabase = require("../config/supabase");
 
 /**
  * Tính toán trạng thái thực tế của tài xế và % tiến độ chuẩn xác của chuyến xe
@@ -660,29 +659,6 @@ const createTrip = async (payload, userId = 1) => {
     const targetDateObjs = targetDates.map((d) => new Date(`${d}T00:00:00.000Z`));
     const bigDriverId = BigInt(Number(driverId));
 
-<<<<<<< Updated upstream
-    const { data: shifts } = await supabase
-      .from("driver_shifts")
-      .select("id, date, status, start_time, end_time")
-      .eq("driver_id", driverId)
-      .in("date", targetDates);
-
-    let approvedShift = shifts?.find((s) => s.status === "Approved");
-
-    // Nếu tài xế đã đăng ký ca Requested trong ngày, tự động duyệt ca (BR-07) khi Điều phối viên gán vào chuyến xe
-    if (!approvedShift) {
-      const requestedShift = shifts?.find((s) => s.status === "Requested");
-      if (requestedShift) {
-        await supabase
-          .from("driver_shifts")
-          .update({
-            status: "Approved",
-            reviewed_at: new Date().toISOString(),
-            note: "Tự động duyệt ca khi Điều phối viên gán chuyến xe (BR-07)",
-          })
-          .eq("id", requestedShift.id);
-        approvedShift = { ...requestedShift, status: "Approved" };
-=======
     const shifts = await prisma.driver_shifts.findMany({
       where: {
         driver_id: bigDriverId,
@@ -706,29 +682,12 @@ const createTrip = async (payload, userId = 1) => {
           },
         });
         approvedShift = { ...requestedShift, status: 'Approved' };
->>>>>>> Stashed changes
       }
     }
 
     // Nếu tài xế chưa có ca nào trong ngày (môi trường test/demo hoặc phát sinh gấp)
     if (!approvedShift) {
       try {
-<<<<<<< Updated upstream
-        const { data: newShift } = await supabase
-          .from("driver_shifts")
-          .insert([
-            {
-              driver_id: driverId,
-              date: todayVnStr,
-              status: "Approved",
-              start_time: `${todayVnStr}T06:00:00+07:00`,
-              end_time: `${todayVnStr}T22:00:00+07:00`,
-              note: "Ca làm việc tạo tự động cho chuyến xe",
-            },
-          ])
-          .select()
-          .maybeSingle();
-=======
         const newShift = await prisma.driver_shifts.create({
           data: {
             driver_id: bigDriverId,
@@ -739,7 +698,6 @@ const createTrip = async (payload, userId = 1) => {
             note: 'Ca làm việc tạo tự động cho chuyến xe',
           },
         });
->>>>>>> Stashed changes
 
         if (newShift) {
           approvedShift = newShift;
@@ -900,11 +858,13 @@ const createTrip = async (payload, userId = 1) => {
   // 8. Tự động gửi thông báo điều xe đến Group Zalo của Đội Ops Sân bay Nội Bài
   try {
     const zaloService = require("./zaloService");
+    const matchedCargo = Array.isArray(matchedOrder?.order_cargos)
+      ? matchedOrder.order_cargos[0]
+      : matchedOrder?.order_cargos;
     zaloService
       .sendOpsTripNotification({
         tripCode,
         orderCode: matchedOrder?.order_code || order_code,
-        hawbNumber: matchedOrder?.hawb_number || "HAWB-AUTO",
         truckPlate: cleanPlate,
         driverName: cleanDriverName,
         driverPhone: "0912.345.678",
@@ -923,7 +883,7 @@ const createTrip = async (payload, userId = 1) => {
           matchedOrder?.delivery_address ||
           "Điểm giao nhận",
         plannedEta: "08:30",
-        weightKg: matchedOrder?.order_cargos?.[0]?.actual_weight_kg || 2150,
+        weightKg: matchedCargo?.actual_weight_kg || 2150,
       })
       .catch((err) =>
         console.warn("[ZaloService] Non-blocking warn:", err.message),
@@ -963,8 +923,8 @@ const updateTripStatus = async (id, status, userId = 1) => {
   return formatTrip(updatedTrip);
 };
 
-const getLeaveReassignments = async () => {
-  return await leaveModel.getReassignmentsNeededForDispatcher();
+const getLeaveReassignments = async (options = {}) => {
+  return await leaveModel.getReassignmentsNeededForDispatcher(options);
 };
 
 const reassignTripDriver = async (

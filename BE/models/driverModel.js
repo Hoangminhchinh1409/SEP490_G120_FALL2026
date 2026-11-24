@@ -580,52 +580,31 @@ const recordTripEvent = async ({
   longitude = null,
   payload = null,
 }) => {
-<<<<<<< Updated upstream
-  const insertPayload = {
-    client_action_id: ensureUUID(clientActionId),
-    trip_id: tripId,
-    trip_stop_id: tripStopId,
-    driver_id: driverId,
-    event_type: eventType,
-    phone_time: phoneTime || new Date().toISOString(),
-    received_time: new Date().toISOString(),
-    latitude,
-    longitude,
-    outside_radius_flag: !!outsideRadiusFlag,
-    payload,
-  };
-
-  const { data, error } = await supabase
-    .from("trip_events")
-    .insert([insertPayload])
-    .select();
-
-  if (error) {
-    if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('already exists')) {
-      console.log(`[Idempotency] Event with clientActionId ${insertPayload.client_action_id} already exists, ignoring duplicate.`);
-      return { client_action_id: insertPayload.client_action_id, duplicate: true };
+  const actionUuid = ensureUUID(clientActionId);
+  try {
+    const created = await prisma.trip_events.create({
+      data: {
+        client_action_id: actionUuid,
+        trip_id: toBigInt(tripId),
+        trip_stop_id: toBigInt(tripStopId),
+        driver_id: toBigInt(driverId),
+        event_type: eventType,
+        phone_time: phoneTime ? new Date(phoneTime) : new Date(),
+        received_time: new Date(),
+        latitude: latitude !== null && latitude !== undefined ? Number(latitude) : null,
+        longitude: longitude !== null && longitude !== undefined ? Number(longitude) : null,
+        payload: payload ?? undefined,
+      },
+    });
+    return serializePrisma(created);
+  } catch (error) {
+    if (error?.code === 'P2002') {
+      console.log(`[Idempotency] Event with clientActionId ${actionUuid} already exists, ignoring duplicate.`);
+      return { client_action_id: actionUuid, duplicate: true };
     }
     console.error("recordTripEvent error:", error);
     throw error;
   }
-  return data && data.length > 0 ? data[0] : null;
-=======
-  const created = await prisma.trip_events.create({
-    data: {
-      client_action_id: ensureUUID(clientActionId),
-      trip_id: toBigInt(tripId),
-      trip_stop_id: toBigInt(tripStopId),
-      driver_id: toBigInt(driverId),
-      event_type: eventType,
-      phone_time: phoneTime ? new Date(phoneTime) : new Date(),
-      received_time: new Date(),
-      latitude: latitude !== null && latitude !== undefined ? Number(latitude) : null,
-      longitude: longitude !== null && longitude !== undefined ? Number(longitude) : null,
-      payload: payload ?? undefined,
-    },
-  });
-  return serializePrisma(created);
->>>>>>> Stashed changes
 };
 
 // ==========================================
@@ -658,14 +637,16 @@ const createIncident = async ({
       status: "Reported",
       description: String(description || "").slice(0, 500),
       photos: normalizedPhotos,
-      incident_lat: incidentLat !== null && incidentLat !== undefined ? Number(incidentLat) : null,
-      incident_lng: incidentLng !== null && incidentLng !== undefined ? Number(incidentLng) : null,
       reported_time: now,
       created_at: now,
       updated_at: now,
     },
   });
-  return serializePrisma(created);
+  return {
+    ...serializePrisma(created),
+    incident_lat: incidentLat !== null && incidentLat !== undefined ? Number(incidentLat) : null,
+    incident_lng: incidentLng !== null && incidentLng !== undefined ? Number(incidentLng) : null,
+  };
 };
 
 // ==========================================

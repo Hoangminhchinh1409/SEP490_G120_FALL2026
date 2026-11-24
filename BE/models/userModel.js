@@ -1,6 +1,19 @@
 const prisma = require("../config/prisma");
 const { serializePrisma, toBigInt } = require("../utils/prismaHelper");
 
+const AUTH_SESSION_CACHE_TTL_MS = 5000;
+const AUTH_SESSION_CACHE_MAX = 500;
+const authSessionCache = new Map();
+const authSessionInflight = new Map();
+
+const invalidateAuthSessionCache = (id) => {
+  if (id === undefined || id === null) {
+    authSessionCache.clear();
+    return;
+  }
+  authSessionCache.delete(String(Number(id)));
+};
+
 const findUserByIdentifier = async (identifier) => {
   if (typeof identifier !== "string" || !identifier.trim() || identifier.trim().length > 100) {
     const error = new TypeError("Identifier must be a non-empty string of at most 100 characters");
@@ -54,24 +67,59 @@ const findUserById = async (id) => {
 const getAuthSessionState = async (id) => {
   const userId = toBigInt(id);
   if (userId === null) return null;
-  const user = await prisma.users.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      status: true,
-      password_changed_at: true,
-      role_id: true,
-      roles: {
-        select: { id: true, name: true },
+
+  const cacheKey = String(userId);
+  const now = Date.now();
+  const cached = authSessionCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+  const inflight = authSessionInflight.get(cacheKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const fetchPromise = prisma.users
+    .findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        status: true,
+        password_changed_at: true,
+        role_id: true,
+        roles: {
+          select: { id: true, name: true },
+        },
       },
-    },
-  });
-  if (!user) return null;
-  const serialized = serializePrisma(user);
-  return {
-    ...serialized,
-    role: serialized.roles || null,
-  };
+    })
+    .then((user) => {
+      if (!user) {
+        authSessionCache.delete(cacheKey);
+        return null;
+      }
+      const serialized = serializePrisma(user);
+      const result = {
+        ...serialized,
+        role: serialized.roles || null,
+      };
+      if (authSessionCache.size >= AUTH_SESSION_CACHE_MAX) {
+        const oldestKey = authSessionCache.keys().next().value;
+        authSessionCache.delete(oldestKey);
+      }
+      authSessionCache.set(cacheKey, {
+        data: result,
+        expiresAt: Date.now() + AUTH_SESSION_CACHE_TTL_MS,
+      });
+      return result;
+    })
+    .finally(() => {
+      if (authSessionInflight.get(cacheKey) === fetchPromise) {
+        authSessionInflight.delete(cacheKey);
+      }
+    });
+
+  authSessionInflight.set(cacheKey, fetchPromise);
+  return fetchPromise;
 };
 
 const createPasswordResetToken = async (userId, tokenHash, expiresAt) => {
@@ -209,6 +257,7 @@ const updatePassword = async (id, passwordHash) => {
     },
     select: { id: true, password_changed_at: true },
   });
+  invalidateAuthSessionCache(id);
   return serializePrisma(data);
 };
 
@@ -217,6 +266,7 @@ module.exports = {
   findUserByEmail,
   findUserById,
   getAuthSessionState,
+  invalidateAuthSessionCache,
   createPasswordResetToken,
   consumePasswordResetToken,
   updateLastLogin,

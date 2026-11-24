@@ -57,8 +57,23 @@ function parsePeriodRange(periodStr) {
 // A. DISPATCHER DASHBOARD STATS
 // ==========================================
 
+const DISPATCHER_STATS_CACHE_TTL_MS = 10000;
+let dispatcherStatsCache = { data: null, expiresAt: 0 };
+let dispatcherStatsInflight = null;
+
 const getDispatcherDashboardStats = async (req, res) => {
   try {
+    const forceRefresh = req.query?.refresh === '1' || req.query?.refresh === 'true';
+    const now = Date.now();
+    if (!forceRefresh && dispatcherStatsCache.data && dispatcherStatsCache.expiresAt > now) {
+      return res.json(dispatcherStatsCache.data);
+    }
+    if (!forceRefresh && dispatcherStatsInflight) {
+      const payload = await dispatcherStatsInflight;
+      return res.json(payload);
+    }
+
+    const computePromise = (async () => {
     const [ordersRaw, trucks, trips, incidents] = await Promise.all([
       prisma.orders.findMany({
         select: {
@@ -68,8 +83,18 @@ const getDispatcherDashboardStats = async (req, res) => {
           agreed_price: true,
           customer_id: true,
           created_at: true,
-          order_cargos: true,
-          order_notes: { select: { content: true } }
+          order_cargos: {
+            select: {
+              actual_weight_kg: true,
+              chargeable_weight_kg: true
+            }
+          },
+          order_notes: {
+            where: {
+              content: { startsWith: '[META_' }
+            },
+            select: { content: true }
+          }
         }
       }),
       prisma.trucks.findMany({
@@ -77,7 +102,7 @@ const getDispatcherDashboardStats = async (req, res) => {
         select: { status: true }
       }),
       prisma.trips.findMany({ select: { status: true } }),
-      prisma.incidents.findMany({ select: { status: true } })
+      prisma.incidents.findMany({ select: { id: true, type: true, status: true } })
     ]);
 
     const orders = serializePrisma(ordersRaw || []);
@@ -122,7 +147,7 @@ const getDispatcherDashboardStats = async (req, res) => {
 
     const totalWeight = nonCancelledOrders.reduce((s, o) => s + o.weight, 0);
 
-    return res.json({
+    const payload = {
       kpi: {
         total_orders: totalOrders,
         ready_for_planning: readyOrders,
@@ -137,8 +162,26 @@ const getDispatcherDashboardStats = async (req, res) => {
         open_incidents: openIncidents,
         total_revenue: totalRevenue,
         total_weight_kg: Math.round(totalWeight)
-      }
+      },
+      incidentsSummary: (incidents || []).map((inc) => ({
+        id: inc.id !== undefined && inc.id !== null ? Number(inc.id) : null,
+        type: inc.type || 'OTHER',
+        status: inc.status || 'Open'
+      }))
+    };
+
+    dispatcherStatsCache = {
+      data: payload,
+      expiresAt: Date.now() + DISPATCHER_STATS_CACHE_TTL_MS
+    };
+    return payload;
+    })().finally(() => {
+      dispatcherStatsInflight = null;
     });
+
+    dispatcherStatsInflight = computePromise;
+    const payload = await computePromise;
+    return res.json(payload);
   } catch (err) {
     console.error('getDispatcherDashboardStats error:', err);
     return res.status(500).json({ message: 'Lỗi tải thống kê tổng quan', error: err.message });
@@ -152,7 +195,8 @@ const getDispatcherDashboardStats = async (req, res) => {
 const getPerformanceOverview = async (req, res) => {
   try {
     const periodStr = req.query.period || 'ALL';
-    const result = await oversightService.getPerformanceOverview(periodStr);
+    const refresh = req.query?.refresh === '1' || req.query?.refresh === 'true';
+    const result = await oversightService.getPerformanceOverview(periodStr, { refresh });
     return res.json(result);
   } catch (error) {
     console.error('getPerformanceOverview Error:', error);
@@ -163,7 +207,8 @@ const getPerformanceOverview = async (req, res) => {
 const getDriverPerformance = async (req, res) => {
   try {
     const periodStr = req.query.period || 'ALL';
-    const result = await oversightService.getDriverPerformance(periodStr);
+    const refresh = req.query?.refresh === '1' || req.query?.refresh === 'true';
+    const result = await oversightService.getDriverPerformance(periodStr, { refresh });
     return res.json(result);
   } catch (error) {
     console.error('getDriverPerformance Error:', error);

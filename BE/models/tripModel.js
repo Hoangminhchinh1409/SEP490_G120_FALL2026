@@ -188,30 +188,56 @@ const findTripByCode = async (codeOrId) => {
   const str = String(codeOrId).trim();
   const isNum = /^\d+$/.test(str);
 
-  let query = supabase
-    .from('trips')
-    .select(`
-      *,
-      trip_trucks(id, trip_id, truck_id, incident_id, assignment_type, trucks(*)),
-      trip_drivers(id, trip_id, driver_id, incident_id, driver_role, assignment_type, driver_profiles(*, users:user_account_id(id, full_name, phone))),
-      trip_stops(*, locations(*), orders(*, customers(*), order_cargos(*)), delivery_evidences(*)),
-      incidents(id, type, status, description, reported_time, resolution_note),
-      waybills(*),
-      trip_events(*)
-    `);
+  const trip = await prisma.trips.findFirst({
+    where: isNum
+      ? {
+          OR: [
+            { trip_code: { equals: str, mode: 'insensitive' } },
+            { id: toBigInt(str) }
+          ]
+        }
+      : { trip_code: { equals: str, mode: 'insensitive' } },
+    include: {
+      trip_trucks: {
+        include: { trucks: true }
+      },
+      trip_drivers: {
+        include: {
+          driver_profiles: {
+            include: {
+              users: { select: { id: true, full_name: true, phone: true } }
+            }
+          }
+        }
+      },
+      trip_stops: {
+        include: {
+          locations: true,
+          orders: {
+            include: {
+              customers: true,
+              order_cargos: true
+            }
+          },
+          delivery_evidences: true
+        }
+      },
+      incidents: {
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          description: true,
+          reported_time: true,
+          resolution_note: true
+        }
+      },
+      waybills: true,
+      trip_events: true
+    }
+  });
 
-  if (isNum) {
-    query = query.or(`trip_code.eq.${str},id.eq.${Number(str)}`);
-  } else {
-    query = query.ilike('trip_code', str);
-  }
-
-  const { data, error } = await query.limit(1).maybeSingle();
-  if (error) {
-    console.error('tripModel.findTripByCode error:', error);
-    throw error;
-  }
-  return data ? mapTrip(data) : null;
+  return trip ? mapTrip(trip) : null;
 };
 
 const findTruckByPlate = async (plate) => {

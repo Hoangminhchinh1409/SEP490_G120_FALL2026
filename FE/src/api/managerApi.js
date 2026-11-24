@@ -2,9 +2,11 @@ import { fetchWithAuth } from './apiClient';
 
 export const managerApi = {
   // 1. Thống kê Dashboard (Screen 16: Hybrid BI Overview)
-  getDashboardStats: async (period = '2026-10') => {
+  getDashboardStats: async (period = '2026-10', options = {}) => {
     try {
-      const data = await fetchWithAuth(`/manager/dashboard/overview?period=${encodeURIComponent(period)}`);
+      const params = new URLSearchParams({ period: period || 'ALL' });
+      if (options?.refresh) params.set('refresh', '1');
+      const data = await fetchWithAuth(`/manager/dashboard/overview?${params.toString()}`);
       return data;
     } catch (error) {
       console.error('managerApi.getDashboardStats Error:', error);
@@ -13,9 +15,13 @@ export const managerApi = {
   },
 
   // Báo cáo hiệu suất tài xế
-  getDriverPerformance: async (period) => {
+  getDriverPerformance: async (period, options = {}) => {
     try {
-      const url = period ? `/manager/drivers/performance?period=${encodeURIComponent(period)}`: '/manager/drivers/performance';
+      const params = new URLSearchParams();
+      if (period) params.set('period', period);
+      if (options?.refresh) params.set('refresh', '1');
+      const qs = params.toString();
+      const url = `/manager/drivers/performance${qs ? `?${qs}` : ''}`;
       const data = await fetchWithAuth(url);
       return data;
     } catch (error) {

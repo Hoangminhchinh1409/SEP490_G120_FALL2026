@@ -686,8 +686,75 @@ async function getDriverPerformance(periodStr) {
   };
 }
 
+const OVERSIGHT_CACHE_TTL_MS = 10000;
+const overviewCache = new Map();
+const overviewInflight = new Map();
+const driverPerfCache = new Map();
+const driverPerfInflight = new Map();
+
+const runWithShortTtlCache = async (cacheMap, inflightMap, key, fetcher, forceRefresh = false) => {
+  const now = Date.now();
+  if (!forceRefresh) {
+    const cached = cacheMap.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+    const pending = inflightMap.get(key);
+    if (pending) {
+      return pending;
+    }
+  }
+
+  const promise = Promise.resolve()
+    .then(fetcher)
+    .then((data) => {
+      if (cacheMap.size > 40) {
+        const oldestKey = cacheMap.keys().next().value;
+        cacheMap.delete(oldestKey);
+      }
+      cacheMap.set(key, { data, expiresAt: Date.now() + OVERSIGHT_CACHE_TTL_MS });
+      return data;
+    })
+    .finally(() => {
+      if (inflightMap.get(key) === promise) {
+        inflightMap.delete(key);
+      }
+    });
+
+  inflightMap.set(key, promise);
+  return promise;
+};
+
+const getPerformanceOverviewCached = (periodStr = 'ALL', options = {}) => {
+  const cacheKey = String(periodStr || 'ALL');
+  return runWithShortTtlCache(
+    overviewCache,
+    overviewInflight,
+    cacheKey,
+    () => getPerformanceOverview(periodStr),
+    Boolean(options?.refresh)
+  );
+};
+
+const getDriverPerformanceCached = (periodStr = 'ALL', options = {}) => {
+  const cacheKey = String(periodStr || 'ALL');
+  return runWithShortTtlCache(
+    driverPerfCache,
+    driverPerfInflight,
+    cacheKey,
+    () => getDriverPerformance(periodStr),
+    Boolean(options?.refresh)
+  );
+};
+
+const invalidateOversightCache = () => {
+  overviewCache.clear();
+  driverPerfCache.clear();
+};
+
 module.exports = {
   parsePeriodRange,
-  getPerformanceOverview,
-  getDriverPerformance
+  getPerformanceOverview: getPerformanceOverviewCached,
+  getDriverPerformance: getDriverPerformanceCached,
+  invalidateOversightCache
 };

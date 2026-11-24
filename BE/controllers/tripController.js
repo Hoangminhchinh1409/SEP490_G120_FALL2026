@@ -166,7 +166,8 @@ const getTripReplay = async (req, res) => {
 
 const getLeaveReassignments = async (req, res) => {
   try {
-    const result = await tripService.getLeaveReassignments();
+    const refresh = req.query?.refresh === '1' || req.query?.refresh === 'true';
+    const result = await tripService.getLeaveReassignments({ refresh });
     return res.json(result);
   } catch (err) {
     console.error('getLeaveReassignments error:', err);

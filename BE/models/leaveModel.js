@@ -7,6 +7,14 @@ const ACTIVE_TRIP_STATUSES = ["Assigned", "Dispatched", "Accepted", "In Progress
 const LEAVE_LOG_ACTION = "DRIVER_LEAVE_REQUEST";
 const LEAVE_TARGET_TYPE = "DRIVER_LEAVE";
 
+const LEAVE_REASSIGN_CACHE_TTL_MS = 10000;
+let leaveReassignCache = { data: null, expiresAt: 0 };
+let leaveReassignInflight = null;
+
+const invalidateLeaveReassignmentCache = () => {
+  leaveReassignCache = { data: null, expiresAt: 0 };
+};
+
 const toDateObj = (dateStr) => {
   if (!dateStr) return null;
   if (dateStr instanceof Date) return dateStr;
@@ -220,6 +228,7 @@ const createLeaveRequest = async ({ userId, driverProfileId, dates, reason, isUr
     },
   });
 
+  invalidateLeaveReassignmentCache();
   return created ? formatLeaveRow(created, {}) : null;
 };
 
@@ -250,27 +259,6 @@ const getLeaveRequests = async ({ driverProfileId = null, status = null } = {}) 
   const driverIds = [...new Set(logs.map((l) => l.target_id).filter(Boolean))];
   const driverMap = {};
 
-  if (driverIds.length > 0) {
-    const profiles = await prisma.driver_profiles.findMany({
-      where: { id: { in: driverIds } },
-      select: {
-        id: true,
-        user_account_id: true,
-        license_class: true,
-        users: {
-          select: { id: true, username: true, full_name: true, phone: true, email: true },
-        },
-      },
-    });
-
-    serializePrisma(profiles || []).forEach((p) => {
-      driverMap[Number(p.id)] = {
-        ...p,
-        user: p.users || null,
-      };
-    });
-  }
-
   const approvedTripIds = [];
   logs.forEach((l) => {
     const ch = parseChangesJson(l.changes);
@@ -281,34 +269,57 @@ const getLeaveRequests = async ({ driverProfileId = null, status = null } = {}) 
     }
   });
 
-  const activeTripDriverMap = new Map();
-  if (approvedTripIds.length > 0) {
-    const uniqueTripIds = [...new Set(approvedTripIds)];
-    const currentAssigns = await prisma.trip_drivers.findMany({
-      where: {
-        trip_id: { in: uniqueTripIds },
-        released_time: null,
-      },
-      select: {
-        trip_id: true,
-        driver_id: true,
-        released_time: true,
-        driver_profiles: {
+  const uniqueTripIds = [...new Set(approvedTripIds)];
+
+  const [profiles, currentAssigns] = await Promise.all([
+    driverIds.length > 0
+      ? prisma.driver_profiles.findMany({
+          where: { id: { in: driverIds } },
           select: {
             id: true,
-            users: { select: { full_name: true } },
+            user_account_id: true,
+            license_class: true,
+            users: {
+              select: { id: true, username: true, full_name: true, phone: true, email: true },
+            },
           },
-        },
-      },
-    });
+        })
+      : Promise.resolve([]),
+    uniqueTripIds.length > 0
+      ? prisma.trip_drivers.findMany({
+          where: {
+            trip_id: { in: uniqueTripIds },
+            released_time: null,
+          },
+          select: {
+            trip_id: true,
+            driver_id: true,
+            released_time: true,
+            driver_profiles: {
+              select: {
+                id: true,
+                users: { select: { full_name: true } },
+              },
+            },
+          },
+        })
+      : Promise.resolve([]),
+  ]);
 
-    serializePrisma(currentAssigns || []).forEach((a) => {
-      activeTripDriverMap.set(Number(a.trip_id), {
-        driver_id: Number(a.driver_id),
-        driver_name: a.driver_profiles?.users?.full_name || `Tài xế #${a.driver_id}`,
-      });
+  serializePrisma(profiles || []).forEach((p) => {
+    driverMap[Number(p.id)] = {
+      ...p,
+      user: p.users || null,
+    };
+  });
+
+  const activeTripDriverMap = new Map();
+  serializePrisma(currentAssigns || []).forEach((a) => {
+    activeTripDriverMap.set(Number(a.trip_id), {
+      driver_id: Number(a.driver_id),
+      driver_name: a.driver_profiles?.users?.full_name || `Tài xế #${a.driver_id}`,
     });
-  }
+  });
 
   const formatted = logs.map((row) => formatLeaveRow(row, driverMap, activeTripDriverMap));
   if (status && status !== "ALL") {
@@ -374,6 +385,7 @@ const updateLeaveRequestChanges = async (id, changesObj) => {
     where: { id: bigId },
     data: { changes: changesObj },
   });
+  invalidateLeaveReassignmentCache();
   return serializePrisma(updated);
 };
 
@@ -834,6 +846,7 @@ const reassignDriverOnTrip = async ({ tripId, newDriverId, dispatcherUserId, rea
     },
   });
 
+  invalidateLeaveReassignmentCache();
   return {
     trip_id: numTripId,
     trip_code: trip.trip_code || `TRIP-${numTripId}`,
@@ -842,6 +855,28 @@ const reassignDriverOnTrip = async ({ tripId, newDriverId, dispatcherUserId, rea
     new_driver_phone: newDriver.users?.phone || "",
     reason: cleanReason,
   };
+};
+
+const getReassignmentsNeededForDispatcherCached = async ({ refresh = false } = {}) => {
+  const now = Date.now();
+  if (!refresh && leaveReassignCache.data && leaveReassignCache.expiresAt > now) {
+    return leaveReassignCache.data;
+  }
+  if (!refresh && leaveReassignInflight) {
+    return leaveReassignInflight;
+  }
+  const promise = getReassignmentsNeededForDispatcher()
+    .then((data) => {
+      leaveReassignCache = { data, expiresAt: Date.now() + LEAVE_REASSIGN_CACHE_TTL_MS };
+      return data;
+    })
+    .finally(() => {
+      if (leaveReassignInflight === promise) {
+        leaveReassignInflight = null;
+      }
+    });
+  leaveReassignInflight = promise;
+  return promise;
 };
 
 module.exports = {
@@ -856,6 +891,7 @@ module.exports = {
   releaseDriverFromTripsOnApproval,
   getActiveUsersByRoles,
   getUserDisplayName,
-  getReassignmentsNeededForDispatcher,
+  getReassignmentsNeededForDispatcher: getReassignmentsNeededForDispatcherCached,
   reassignDriverOnTrip,
+  invalidateLeaveReassignmentCache,
 };

@@ -360,9 +360,6 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     throw error;
   }
 
-<<<<<<< Updated upstream
-  // 3. Cập nhật thông tin điểm bốc hàng (BR-11: Sau khi bốc hàng và niêm chì seal, trạng thái là Loading Done; chỉ chuyển Done khi bấm Left)
-=======
   const uploadFolder = `nexlog/trips/${tripId}/pickup`;
   const [resolvedCargoUrl, resolvedLoadedUrl, resolvedSealUrl] =
     await Promise.all([
@@ -375,7 +372,6 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     ]);
 
   // 3. Cập nhật thông tin điểm bốc hàng
->>>>>>> Stashed changes
   const updatedStop = await driverModel.updateTripStop(stopId, {
     status: "Loading Done",
     loaded_quantity: parsedPackages,

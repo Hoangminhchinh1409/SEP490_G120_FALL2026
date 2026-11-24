@@ -2,6 +2,7 @@ const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const prisma = require("../config/prisma");
 const staffAccountModel = require("../models/staffAccountModel");
+const userModel = require("../models/userModel");
 
 // Role IDs hợp lệ theo quy định hệ thống: Chỉ Dispatcher (3) và Driver (4)
 const ALLOWED_STAFF_ROLE_IDS = [3, 4];
@@ -285,6 +286,7 @@ const staffAccountService = {
     }
 
     const updated = await staffAccountModel.updateStaffAccount(id, updateData);
+    userModel.invalidateAuthSessionCache(id);
     return {
       ...updated,
       role: updated.roles?.name || ROLE_ID_TO_NAME[updated.role_id] || "STAFF",
@@ -316,6 +318,7 @@ const staffAccountService = {
     }
 
     const updated = await staffAccountModel.updateAccountStatus(id, newStatus);
+    userModel.invalidateAuthSessionCache(id);
     return {
       id: updated.id,
       username: updated.username,

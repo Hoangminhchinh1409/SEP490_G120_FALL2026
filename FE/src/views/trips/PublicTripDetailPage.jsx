@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -48,11 +48,8 @@ export default function PublicTripDetailPage() {
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchTripDetails = async (isManual = false) => {
+  const fetchTripDetails = useCallback(async () => {
     if (!tripCode) return;
-    if (isManual) setRefreshing(true);
-    else setLoading(true);
-
     try {
       const res = await fetchWithoutAuth(`/trips/public/${tripCode}`);
       if (res && res.trip) {
@@ -68,11 +65,19 @@ export default function PublicTripDetailPage() {
       setLoading(false);
       setRefreshing(false);
     }
+  }, [tripCode]);
+
+  const handleManualRefresh = () => {
+    setRefreshing(true);
+    fetchTripDetails();
   };
 
   useEffect(() => {
-    fetchTripDetails();
-  }, [tripCode]);
+    const timer = setTimeout(() => {
+      fetchTripDetails();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchTripDetails]);
 
   const copyTripCode = () => {
     if (typeof window !== 'undefined' && trip?.trip_code) {
@@ -113,7 +118,7 @@ export default function PublicTripDetailPage() {
           <p className="text-sm text-slate-600 mt-2">{error || 'Chuyến xe không tồn tại hoặc đã bị xóa.'}</p>
           <div className="mt-6 flex flex-col gap-2">
             <button
-              onClick={() => fetchTripDetails(true)}
+              onClick={handleManualRefresh}
               className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition text-sm flex items-center justify-center gap-2"
             >
               <RefreshCw className="w-4 h-4" /> Thử tải lại
@@ -133,7 +138,6 @@ export default function PublicTripDetailPage() {
   // Bóc tách thông tin hiển thị
   const cleanPhone = String(trip.driver_phone || '0912345678').replace(/\D/g, '');
   const primaryOrder = trip.orders_data?.[0] || {};
-  const hawbCode = primaryOrder.hawb_code || 'HAWB-AUTO-ALS';
   const orderCode = primaryOrder.order_id || trip.orders?.[0] || 'ORD-NEXLOG';
   const customerName = trip.customer || primaryOrder.customer || 'Khách hàng NEXLOG';
 
@@ -190,7 +194,7 @@ export default function PublicTripDetailPage() {
           </Link>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => fetchTripDetails(true)}
+              onClick={handleManualRefresh}
               disabled={refreshing}
               title="Làm mới thông tin"
               className="p-2 text-slate-600 hover:text-blue-600 hover:bg-slate-50 rounded-lg border border-slate-200 transition"
@@ -344,12 +348,6 @@ export default function PublicTripDetailPage() {
                 <span>Thủ Tục Kho ALS & Lô Hàng</span>
               </div>
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between text-sm py-1.5 border-b border-slate-100">
-                  <span className="text-slate-500">Mã vận đơn HAWB</span>
-                  <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-                    {hawbCode}
-                  </span>
-                </div>
                 <div className="flex items-center justify-between text-sm py-1.5 border-b border-slate-100">
                   <span className="text-slate-500">Mã đơn hàng</span>
                   <span className="font-semibold text-slate-800">{orderCode}</span>

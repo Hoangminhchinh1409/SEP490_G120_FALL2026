@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 const adminModel = require("../models/adminModel");
+const userModel = require("../models/userModel");
 
 // Validation constants
 const PASSWORD_MIN_LENGTH = 8;
@@ -375,6 +376,7 @@ const updateUser = async (id, updateData, adminId = null, ipAddress = null) => {
     }
 
     const updated = await adminModel.updateUser(numId, fieldsToUpdate);
+    userModel.invalidateAuthSessionCache(numId);
 
     // Auto-audit log
     await adminModel.createActivityLog({
@@ -426,6 +428,7 @@ const updateUserStatus = async (id, status, adminId = null, ipAddress = null) =>
     }
 
     const updated = await adminModel.updateUserStatus(numId, cleanStatus);
+    userModel.invalidateAuthSessionCache(numId);
 
     // Auto-audit log (BUG-ADM-17: Rollback if audit log fails to ensure compliance)
     const action = cleanStatus === "LOCKED" ? "LOCK_USER" : cleanStatus === "ACTIVE" ? "ACTIVATE_USER" : "DEACTIVATE_USER";

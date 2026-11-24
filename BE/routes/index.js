@@ -9,11 +9,8 @@ const driverRoutes = require("./driverRoutes");
 const managerRoutes = require("./managerRoutes");
 const aiRoutes = require("./aiRoutes");
 const uploadRoutes = require("./uploadRoutes");
-<<<<<<< Updated upstream
 const tripController = require("../controllers/tripController");
-=======
 const routingRoutes = require("./routingRoutes");
->>>>>>> Stashed changes
 
 const router = express.Router();
 
