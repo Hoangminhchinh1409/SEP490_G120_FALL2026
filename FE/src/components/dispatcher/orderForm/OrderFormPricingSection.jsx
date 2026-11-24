@@ -64,6 +64,7 @@ export default function OrderFormPricingSection({
             className="mb-0"
           >
             <InputNumber 
+              style={{ width: '100%' }}
               className="w-full font-bold text-blue-700"
               formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               parser={value => value.replace(/\$\s?|(,*)/g, '')} 
@@ -73,6 +74,7 @@ export default function OrderFormPricingSection({
 
           <Form.Item label="Phí phụ trội (VNĐ)" name="extra_fees_surcharge" className="mb-0">
             <InputNumber 
+              style={{ width: '100%' }}
               className="w-full text-indigo-700"
               formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               parser={value => value.replace(/\$\s?|(,*)/g, '')} 
@@ -82,6 +84,7 @@ export default function OrderFormPricingSection({
 
           <Form.Item label="Phí phát sinh (VNĐ)" name="extra_fees_collection" className="mb-0">
             <InputNumber 
+              style={{ width: '100%' }}
               className="w-full text-emerald-700"
               formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               parser={value => value.replace(/\$\s?|(,*)/g, '')} 

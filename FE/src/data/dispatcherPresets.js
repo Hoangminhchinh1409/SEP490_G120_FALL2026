@@ -142,7 +142,7 @@ export const calculateAlsPricing = ({
     const baseOpenPrice = vType === 'TRUCK_1.25T' ? 600000: (vType === 'TRUCK_2.5T' ? 800000: 1000000);
     const calculatedRate = baseOpenPrice + (distanceKm * vSpec.defaultRateKm) + (chargeableWeightKg * 250);
     const discount = timeSlot === 'AFTERNOON' ? 0.9: 1.0; // Khung giờ chiều giảm ~10%
-    baseTransportFee = Math.round((calculatedRate * discount) / 50000) * 50000;
+    baseTransportFee = Math.round((calculatedRate * discount) / 10000) * 10000;
   }
 
   // 2. Phí bốc xếp (Tùy case phát sinh thực tế -> chuyển sang ghi nhận phụ phí phát sinh)

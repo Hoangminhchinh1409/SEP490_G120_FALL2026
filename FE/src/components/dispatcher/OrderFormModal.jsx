@@ -425,7 +425,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   }, [shippingDirection, flightDatetime, routeInfo.distanceKm]);
 
   useEffect(() => {
-    if (estimatedBaselineRate > 0 && !form.isFieldTouched('agreed_price')) {
+    if (estimatedBaselineRate > 0) {
       form.setFieldsValue({ agreed_price: estimatedBaselineRate });
     }
   }, [estimatedBaselineRate, form]);
@@ -872,6 +872,17 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         open={assistantDrawerOpen}
         onClose={() => setAssistantDrawerOpen(false)}
         currentCargo={cargoItems.map(it => it.cargo_name).filter(Boolean).join(', ') || 'Hàng hóa xuất nhập khẩu'}
+        cargoItems={cargoItems}
+        order={{
+          shipping_direction: shippingDirection,
+          pickup_address: watchedValues?.pickup_address || '',
+          delivery_address: watchedValues?.delivery_address || '',
+          weight: parseFloat(totals.actualWeight) || 0,
+          chargeable_weight: parseFloat(totals.chargeableWeight) || 0,
+          package_count: totals.totalCount || 0,
+          customs_service_required: customsServiceRequired,
+          items: cargoItems
+        }}
         onApplyRecommendations={handleApplyAssistantDocs}
       />
     </Modal>

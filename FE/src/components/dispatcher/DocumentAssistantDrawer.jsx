@@ -4,10 +4,76 @@ import { Sparkles, Bot, CheckCircle2, ShieldCheck, FileText, AlertTriangle } fro
 import { BASIC_CUSTOMS_DOCUMENTS, SPECIALIZED_CARGO_CATEGORIES } from '../../data/dispatcherPresets';
 import { aiApi } from '../../api/aiApi';
 
-export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommendations, currentCargo = '', order = null }) {
+const CARGO_TYPE_LABELS = {
+  GENERAL: 'Hàng bách hóa / Kiện thông thường',
+  PALLET: 'Hàng đóng Pallet',
+  BULK: 'Hàng rời / Hàng xá',
+  FRAGILE: 'Hàng điện tử dễ vỡ / Thiết bị đo',
+  VALUABLE: 'Hàng giá trị cao',
+  PERISHABLE: 'Hàng thực phẩm / Bảo quản lạnh'
+};
+
+const buildAggregatedCargoDescription = (order, cargoItems, currentCargo) => {
+  const rawItems =
+    Array.isArray(cargoItems) && cargoItems.length > 0
+      ? cargoItems
+      : Array.isArray(order?.items) && order.items.length > 0
+        ? order.items
+        : [];
+
+  const validItems = rawItems.filter((it) => it && String(it.cargo_name || it.name || '').trim());
+
+  const pickup = order?.pickup_address || order?.pickup || '';
+  const dropoff = order?.delivery_address || order?.dropoff || '';
+  const directionLabel =
+    order?.shipping_direction === 'EXPORT' || order?.order_type === 'Export'
+      ? 'Xuất khẩu'
+      : 'Nhập khẩu';
+
+  if (validItems.length > 0) {
+    let totalCount = 0;
+    let totalWeight = 0;
+    const itemLines = validItems.map((it, idx) => {
+      const name = String(it.cargo_name || it.name).trim();
+      const qty = Number(it.package_count || it.quantity || 1);
+      const unit = it.package_unit || it.unit || 'kiện';
+      const unitWeight = Number(it.weight || it.actual_weight_kg || 0);
+      const lineWeight = unitWeight * Math.max(1, qty);
+      totalCount += Math.max(1, qty);
+      totalWeight += lineWeight;
+
+      const typeLabel = CARGO_TYPE_LABELS[it.cargo_type] || it.cargo_type || 'GENERAL';
+      const dims =
+        it.cargo_type !== 'BULK' && it.length_cm && it.width_cm && it.height_cm
+          ? `, KT: ${it.length_cm}x${it.width_cm}x${it.height_cm} cm`
+          : '';
+      return `${idx + 1}. ${name} (${typeLabel}) - SL: ${qty} ${unit}, KL: ${lineWeight > 0 ? `${lineWeight} kg` : 'chưa rõ'}${dims}`;
+    });
+
+    const summaryWeight = Number(order?.weight || order?.actual_weight_kg || totalWeight || 0);
+    const summaryCount = Number(order?.package_count || totalCount || validItems.length);
+    const routeLine =
+      pickup || dropoff
+        ? `\nLộ trình (${directionLabel}): ${pickup || 'Kho ALS'} → ${dropoff || 'Kho khách hàng'}`
+        : `\nLoại hình: Hàng ${directionLabel}`;
+
+    return `Tổng hợp lô hàng (${validItems.length} mặt hàng, tổng ${summaryCount} kiện, tổng KL: ${summaryWeight} kg):\n${itemLines.join('\n')}${routeLine}`;
+  }
+
+  if (order && (order.cargo_name || currentCargo)) {
+    return `${order.cargo_name || currentCargo || 'Hàng hóa'} (${order.cargo_type || 'GENERAL'}), SL: ${order.package_count || 1} ${order.package_unit || 'kiện'}, nặng ${order.weight || order.actual_weight_kg || 0} kg, lộ trình từ ${pickup || 'Nội Bài'} đi ${dropoff || 'kho khách hàng'}`;
+  }
+
+  return (
+    currentCargo ||
+    'Lô hàng linh kiện viễn thông và thiết bị quang nhập khẩu từ Hàn Quốc về Nội Bài giao nhà máy tại KCN Tiên Sơn Bắc Ninh'
+  );
+};
+
+export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommendations, currentCargo = '', cargoItems = null, order = null }) {
   const [selectedCategoryKey, setSelectedCategoryKey] = useState('GENERAL');
-  const [cargoDesc, setCargoDesc] = useState(
-    currentCargo || 'Lô hàng linh kiện viễn thông và thiết bị quang nhập khẩu từ Hàn Quốc về Nội Bài giao nhà máy tại KCN Tiên Sơn Bắc Ninh'
+  const [cargoDesc, setCargoDesc] = useState(() =>
+    buildAggregatedCargoDescription(order, cargoItems, currentCargo)
   );
   const [loading, setLoading] = useState(false);
   const [activeAnalysis, setActiveAnalysis] = useState(() => {
@@ -15,14 +81,15 @@ export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommen
   });
   const [aiInsight, setAiInsight] = useState(null);
 
+  const aggregatedDesc = buildAggregatedCargoDescription(order, cargoItems, currentCargo);
+
   useEffect(() => {
-    if (!open || !order) return undefined;
-    const desc = `${order.cargo_name || currentCargo || 'Hàng hóa'} (${order.cargo_type || 'GENERAL'}), SL: ${order.package_count || 1} ${order.package_unit || 'kiện'}, nặng ${order.weight || order.actual_weight_kg || 0} kg, lộ trình từ ${order.pickup_address || order.pickup || 'Nội Bài'} đi ${order.delivery_address || order.dropoff || 'kho khách hàng'}`;
+    if (!open) return undefined;
     const timerId = setTimeout(() => {
-      setCargoDesc(desc);
+      setCargoDesc(aggregatedDesc);
     }, 0);
     return () => clearTimeout(timerId);
-  }, [open, order, currentCargo]);
+  }, [open, aggregatedDesc]);
 
   const handleSelectPresetCategory = (catKey) => {
     setSelectedCategoryKey(catKey);
@@ -158,7 +225,7 @@ export default function DocumentAssistantDrawer({ open, onClose, onApplyRecommen
             </Tag>
           </div>
           <Input.TextArea 
-            rows={2} 
+            autoSize={{ minRows: 3, maxRows: 8 }}
             value={cargoDesc} 
             onChange={(e) => setCargoDesc(e.target.value)}
             placeholder="Nhập mô tả chi tiết lô hàng để Gemini AI phân tích chính sách mặt hàng & chứng từ..."
