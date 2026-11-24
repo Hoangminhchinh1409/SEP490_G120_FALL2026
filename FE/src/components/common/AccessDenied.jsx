@@ -14,7 +14,7 @@ export default function AccessDenied({ moduleName = "trang này" }) {
       </div>
       <h2 className="text-xl font-bold text-slate-800 mb-1.5">Truy Cập Bị Từ Chối (403 Forbidden)</h2>
       <p className="text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
-        Vai trò hiện tại của bạn không có quyền truy cập vào {moduleName} (MSG30). Vui lòng liên hệ Quản trị viên hệ thống để được cấp quyền xem chức năng này.
+        Vai trò hiện tại của bạn không có quyền truy cập vào {moduleName}. Vui lòng liên hệ Quản trị viên hệ thống để được cấp quyền xem chức năng này.
       </p>
       <Button
         type="primary"

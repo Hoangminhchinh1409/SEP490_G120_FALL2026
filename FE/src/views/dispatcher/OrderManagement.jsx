@@ -198,7 +198,12 @@ const OrderManagement = () => {
       let matchStatus = true;
       if (filterStatus !== 'all') {
         if (filterStatus === 'CLOSED') {
-          matchStatus = item.status === 'CLOSED';
+          matchStatus = item.status === 'CLOSED' || Boolean(item.is_closed);
+        } else if (filterStatus === 'DELIVERED_EXCEPTION') {
+          matchStatus =
+            item.status === 'DELIVERED_EXCEPTION' ||
+            item.raw_status === 'DELIVERED_EXCEPTION' ||
+            Boolean(item.refusal_reason);
         } else {
           matchStatus = item.status === filterStatus;
         }
@@ -304,6 +309,37 @@ const OrderManagement = () => {
       key: 'status', 
       width: '10%',
       render: (status, record) => {
+        const isRefused =
+          status === 'DELIVERED_EXCEPTION' ||
+          record.raw_status === 'DELIVERED_EXCEPTION' ||
+          Boolean(record.refusal_reason);
+
+        if (isRefused) {
+          if (record.is_closed || status === 'CLOSED') {
+            return (
+              <Tooltip title={`Khách từ chối nhận • Đã lưu giữ tại: ${record.warehouse_name || 'Kho ALS'}`}>
+                <Tag color="volcano" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                  Từ chối • Đã lưu kho ALS (Đóng)
+                </Tag>
+              </Tooltip>
+            );
+          }
+          if (record.redirected_to_warehouse) {
+            return (
+              <Tooltip title={`Đang điều tài xế hoàn hàng về: ${record.warehouse_name || 'Kho ALS'}`}>
+                <Tag color="orange" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                  Đang hoàn về Kho ALS
+                </Tag>
+              </Tooltip>
+            );
+          }
+          return (
+            <Tag color="error" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap animate-pulse">
+              Từ chối nhận (Chờ điều kho)
+            </Tag>
+          );
+        }
+
         if (status === 'CLOSED' || status === 'CANCELLED' || status === 'DELIVERED') {
           if (record.cancel_reason || record.cancellation_reason || status === 'CANCELLED') {
             return (
@@ -461,6 +497,20 @@ const OrderManagement = () => {
                   onClick={() => router.push('/dispatcher/trips')}
                 >
                   Xếp chuyến
+                </Button>
+              </Tooltip>
+            </>
+          ): record.status === 'DELIVERED_EXCEPTION' && !record.is_closed ? (
+            <>
+              <Tooltip title="Điều tài xế chở hàng bị từ chối về Kho ALS & Đóng đơn">
+                <Button
+                  size="small"
+                  type="primary"
+                  danger
+                  className="text-xs font-bold"
+                  onClick={() => setSelectedOrderForDetails({ ...record, targetTab: '1' })}
+                >
+                  Điều về kho ALS
                 </Button>
               </Tooltip>
             </>

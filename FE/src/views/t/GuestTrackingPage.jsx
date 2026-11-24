@@ -48,10 +48,21 @@ function mapOrderStatusToStep(rawStatus) {
 function mapApiOrderToViewModel(apiOrder) {
   const phoneDigits = String(apiOrder.dispatcher_phone || '0988123456').replace(/[^0-9]/g, '');
   const upperStatus = String(apiOrder.status || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  const rawUpperStatus = String(apiOrder.raw_status || apiOrder.status || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  const isRefused =
+    upperStatus === 'DELIVERED_EXCEPTION' ||
+    rawUpperStatus === 'DELIVERED_EXCEPTION' ||
+    Boolean(apiOrder.refusal_reason);
   return {
     id: apiOrder.order_code || String(apiOrder.id || ''),
     customer: apiOrder.customer_name || 'Quý khách hàng',
     status: mapOrderStatusToStep(apiOrder.status),
+    rawStatus: rawUpperStatus,
+    isClosed: Boolean(apiOrder.is_closed),
+    orderType: apiOrder.order_type || 'Import',
+    isRefused,
+    refusalReason: apiOrder.refusal_reason || null,
+    warehouseName: apiOrder.warehouse_name || null,
     pickup: apiOrder.pickup_address || 'Đang cập nhật điểm lấy hàng',
     dropoff: apiOrder.delivery_address || 'Đang cập nhật điểm giao hàng',
     eta: apiOrder.eta || 'Đang cập nhật',
@@ -130,14 +141,63 @@ export default function GuestTrackingPage() {
 
         <Steps
           current={order.status}
+          status={order.isRefused ? 'error' : undefined}
           items={[
             { title: 'Chờ chứng từ', content: 'Đã tạo đơn' },
             { title: 'Lấy hàng', content: order.pickup },
             { title: 'Đang giao', content: 'Đang di chuyển' },
-            { title: 'Hoàn thành', content: order.dropoff },
+            {
+              title: order.isRefused
+                ? 'Từ chối nhận (Lưu kho ALS)'
+                : 'Hoàn thành',
+              content: order.isRefused
+                ? order.warehouseName || 'Hoàn về Kho ALS lưu giữ'
+                : order.dropoff,
+            },
           ]}
           className="mb-8"
         />
+
+        {/* THÔNG BÁO NGOẠI LỆ KHÁCH TỪ CHỐI NHẬN HÀNG & LƯU KHO ALS */}
+        {order.isRefused && (
+          <div className="mb-6">
+            <Alert
+              title={
+                <span className="font-bold text-red-900">
+                  Giao hàng ngoại lệ (Delivered - Exception): Người nhận từ chối nhận hàng
+                </span>
+              }
+              description={
+                <div className="space-y-1.5 mt-1 text-sm text-red-950">
+                  <p>
+                    • Lý do ghi nhận tại điểm giao:{' '}
+                    <b>{order.refusalReason || 'Người nhận từ chối nhận hàng'}</b>
+                  </p>
+                  <p>
+                    • Kho ALS lưu giữ hàng hóa:{' '}
+                    <b className="text-amber-800">
+                      {order.warehouseName || 'Đang điều xe chở hàng hoàn về Kho ALS'}
+                    </b>
+                  </p>
+                  <p>
+                    • Trạng thái đơn hàng:{' '}
+                    <b>
+                      {order.isClosed
+                        ? 'Đã hạ hàng lưu giữ an toàn tại Kho ALS & Đóng đơn vận chuyển'
+                        : 'Tài xế đang trên đường hoàn hàng về Kho ALS'}
+                    </b>
+                  </p>
+                  <p className="text-xs text-gray-600 italic mt-1">
+                    * Lưu ý: Lô hàng được bảo quản tại Kho ALS. Phí lưu kho phát sinh (nếu có) sẽ được tính theo số ngày lưu kho thực tế theo hợp đồng dịch vụ của ALS.
+                  </p>
+                </div>
+              }
+              type="warning"
+              showIcon
+              className="rounded-xl border border-amber-300 bg-amber-50"
+            />
+          </div>
+        )}
 
         {/* THÔNG BÁO XỬ LÝ SỰ CỐ & BỒI THƯỜNG MINH BẠCH CHO KHÁCH HÀNG */}
         {inc?.has_incident && (

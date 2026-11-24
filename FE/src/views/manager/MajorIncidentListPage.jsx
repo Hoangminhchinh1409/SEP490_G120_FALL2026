@@ -93,7 +93,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
           <span className="font-bold text-xs text-primary block">{r.type_display || r.type}</span>
           {r.is_major && (
             <Tag color="red" className="font-bold text-[10px] px-1.5 py-0 rounded mt-0.5">
-              Sự cố lớn (BR-16)
+              Sự cố lớn
             </Tag>
           )}
         </div>
@@ -253,7 +253,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
             )}
           </div>
           <p className="text-xs text-on-surface-variant mt-1.5 max-w-3xl">
-            Thẩm định hồ sơ bằng chứng đối chiếu 3 góc nhìn (Pickup - Sự cố - Delivery), căn cứ Hợp đồng vận chuyển và phê duyệt bồi thường thiệt hại hàng hóa (BR-16, UC-25).
+            Thẩm định hồ sơ bằng chứng đối chiếu 3 góc nhìn (Pickup - Sự cố - Delivery), căn cứ Hợp đồng vận chuyển và phê duyệt bồi thường thiệt hại hàng hóa.
           </p>
         </div>
 

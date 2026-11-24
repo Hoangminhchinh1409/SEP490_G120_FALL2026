@@ -74,7 +74,7 @@ export async function enqueueAction(action) {
 
       countReq.onsuccess = () => {
         if (countReq.result >= MAX_QUEUE_LIMIT) {
-          return reject(new Error("Điện thoại đang giữ quá nhiều cập nhật chưa gửi. Hãy kết nối mạng để gửi trước khi làm tiếp. (MSG39)"));
+          return reject(new Error("Điện thoại đang giữ quá nhiều cập nhật chưa gửi. Hãy kết nối mạng để gửi trước khi làm tiếp."));
         }
         const addReq = store.add(item);
         addReq.onsuccess = () => resolve(item);
@@ -86,7 +86,7 @@ export async function enqueueAction(action) {
     // Fallback to localStorage
     const queue = getLocalStorageQueue();
     if (queue.length >= MAX_QUEUE_LIMIT) {
-      throw new Error("Điện thoại đang giữ quá nhiều cập nhật chưa gửi. Hãy kết nối mạng để gửi trước khi làm tiếp. (MSG39)");
+      throw new Error("Điện thoại đang giữ quá nhiều cập nhật chưa gửi. Hãy kết nối mạng để gửi trước khi làm tiếp.");
     }
     queue.push(item);
     saveLocalStorageQueue(queue);

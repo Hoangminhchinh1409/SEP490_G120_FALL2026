@@ -75,8 +75,8 @@ export function TripDetailsDrawer({ selectedTripDetails, onClose }) {
                 <div className="flex-1">
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-gray-800 text-xs">{stop.name}</span>
-                    <AntTag color={stop.type === 'PICKUP' ? 'blue' : stop.type === 'REST' ? 'orange' : stop.type === 'INCIDENT' ? 'red' : stop.type === 'TRANSSHIP' ? 'purple' : 'green'} className="text-[10px] m-0">
-                      {stop.type}
+                    <AntTag color={stop.type === 'PICKUP' ? 'blue' : stop.type === 'RETURN' ? 'volcano' : stop.type === 'REST' ? 'orange' : stop.type === 'INCIDENT' ? 'red' : stop.type === 'TRANSSHIP' ? 'purple' : 'green'} className="text-[10px] m-0">
+                      {stop.type === 'RETURN' ? 'HOÀN VỀ KHO ALS (RETURN)' : stop.type}
                     </AntTag>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-1.5 text-gray-600 text-[11px]">

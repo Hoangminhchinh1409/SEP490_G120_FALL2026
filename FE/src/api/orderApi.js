@@ -102,15 +102,41 @@ export const orderApi = {
   },
 
   // 8. Đóng đơn hàng (chuyển sang CLOSED)
-  closeOrder: async (orderId) => {
+  closeOrder: async (orderId, payload = {}) => {
     try {
       const data = await fetchWithoutAuth(`/orders/${orderId}/close`, {
-        method: 'POST'
+        method: 'POST',
+        body: JSON.stringify(payload)
       });
       return data.order;
     } catch (error) {
       console.warn('orderApi.closeOrder API note:', error);
-      return { id: orderId, status: 'CLOSED' };
+      return { id: orderId, status: 'CLOSED', is_closed: true };
+    }
+  },
+
+  // 8b. Điều tài xế chở hàng bị từ chối về Kho ALS hoặc xác nhận đã hạ hàng tại kho ALS & đóng đơn
+  redirectToAlsWarehouse: async (orderId, { location_id = null, warehouse_name = '', close_immediately = false, note = '' } = {}) => {
+    const data = await fetchWithoutAuth(`/orders/${orderId}/redirect-warehouse`, {
+      method: 'POST',
+      body: JSON.stringify({
+        location_id,
+        warehouse_name,
+        close_immediately,
+        note
+      })
+    });
+    return data;
+  },
+
+  // 8c. Lấy danh sách hệ thống kho ALS
+  getAlsWarehouses: async () => {
+    try {
+      const data = await fetchWithoutAuth('/orders/public-locations');
+      return data.locations || [];
+    } catch (error) {
+      console.warn('orderApi.getAlsWarehouses fallback:', error);
+      return [];
     }
   },
 

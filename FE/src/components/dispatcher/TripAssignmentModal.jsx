@@ -542,7 +542,7 @@ function TripAssignmentModalContent({
           });
         } else if (vrptwData.restStopsAdded > 0) {
           message.info({
-            content: `Engine VRPTW đã tự động chèn điểm nghỉ 15 phút tuân thủ luật lái xe liên tục BR-03 (<= 4h).`,
+            content: `Hệ thống đã tự động chèn điểm nghỉ 15 phút tuân thủ quy định lái xe liên tục (<= 4h).`,
             duration: 4
           });
         } else {

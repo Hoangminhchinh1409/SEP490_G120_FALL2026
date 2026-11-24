@@ -462,7 +462,7 @@ export default function MajorIncidentDetailModal({
                   )}
                   {currentData.is_major && (
                     <Tag color="red" className="font-bold text-xs uppercase px-2.5 py-0.5 rounded-full border-0 shadow-2xs">
-                      Sự cố nghiêm trọng (BR-16)
+                      Sự cố nghiêm trọng
                     </Tag>
                   )}
                 </div>
@@ -1558,7 +1558,7 @@ export default function MajorIncidentDetailModal({
                   </div>
                   <div className="text-[10px] text-slate-400 italic space-y-0.5 pt-1">
                     <div>- Lập và lưu trữ trực tiếp tại hồ sơ Đơn hàng: <b>{orderCode}</b> (Chuyến xe: <b>{tripCode}</b>)</div>
-                    <div>- Căn cứ xác nhận ký kết giữa Điều phối viên ALS và Khách hàng theo quy chuẩn BR-45 &amp; BR-50.</div>
+                    <div>- Căn cứ xác nhận ký kết giữa Điều phối viên ALS và Khách hàng.</div>
                   </div>
                 </div>
 

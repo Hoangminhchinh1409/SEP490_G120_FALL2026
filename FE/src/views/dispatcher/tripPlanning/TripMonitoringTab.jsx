@@ -1,5 +1,5 @@
-import React from 'react';
-import { Row, Col, Card, Table, Tag, Space, Button, Tooltip, Input, Select, Progress } from 'antd';
+import React, { useState } from 'react';
+import { Row, Col, Card, Table, Tag, Space, Button, Tooltip, Input, Select, Progress, message } from 'antd';
 import { 
   Route, 
   Search, 
@@ -14,8 +14,11 @@ import {
   ArrowRight, 
   User, 
   Truck,
-  XCircle 
+  XCircle,
+  Ban,
+  Warehouse
 } from 'lucide-react';
+import { orderApi } from '../../../api/orderApi';
 
 const { Option } = Select;
 
@@ -72,6 +75,11 @@ export default function TripMonitoringTab({
             {r.has_incident && (
               <Tag color="error" className="text-[10px] m-0 px-1.5 py-0 flex items-center gap-1 font-bold animate-pulse">
                 <AlertTriangle size={10} /> Sự cố hiện trường
+              </Tag>
+            )}
+            {r.has_refusal_exception && (
+              <Tag color="volcano" className="text-[10px] m-0 px-1.5 py-0 flex items-center gap-1 font-bold animate-pulse">
+                <Ban size={10} /> Khách từ chối nhận
               </Tag>
             )}
             {r.is_late_risk && !r.has_incident && (
@@ -270,8 +278,158 @@ export default function TripMonitoringTab({
     }
   ];
 
+  const [redirectingOrderId, setRedirectingOrderId] = useState(null);
+  const [selectedWarehouseByOrder, setSelectedWarehouseByOrder] = useState({});
+
+  const refusedOrdersOnTrips = [];
+  trips.forEach((t) => {
+    if (Array.isArray(t.refused_orders)) {
+      t.refused_orders.forEach((ro) => {
+        if (!ro.is_closed) {
+          refusedOrdersOnTrips.push({
+            ...ro,
+            trip_id: t.id,
+            plate: t.plate,
+            driver_name: t.driver_name,
+            trip_record: t
+          });
+        }
+      });
+    }
+  });
+
+  const handleQuickRedirectWarehouse = async (ro, closeImmediately = false) => {
+    const targetOrderId = ro.id || ro.order_code;
+    const targetWh =
+      selectedWarehouseByOrder[targetOrderId] ||
+      ro.warehouse_name ||
+      'Nhà Ga Hàng Hóa ALS Nội Bài (ALSC)';
+    try {
+      setRedirectingOrderId(targetOrderId);
+      const res = await orderApi.redirectToAlsWarehouse(targetOrderId, {
+        warehouse_name: targetWh,
+        close_immediately: closeImmediately
+      });
+      message.success(
+        res?.message ||
+          (closeImmediately
+            ? `Đã xác nhận hạ hàng đơn ${ro.order_code} tại ${targetWh} và đóng đơn!`
+            : `Đã điều chuyến ${ro.trip_id} chở hàng đơn ${ro.order_code} về ${targetWh}!`)
+      );
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexlog_orders_updated'));
+      }
+    } catch (err) {
+      message.error(err.message || 'Không thể điều hướng đơn hàng về Kho ALS');
+    } finally {
+      setRedirectingOrderId(null);
+    }
+  };
+
   return (
     <div className="space-y-5 pt-2">
+      {/* Banner Cảnh báo Khách không nhận hàng — Điều tài xế về Kho ALS */}
+      {refusedOrdersOnTrips.length > 0 && (
+        <div className="p-4 bg-gradient-to-r from-red-50 via-orange-50 to-amber-50 border-2 border-red-300 rounded-xl space-y-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-red-100 text-red-600 rounded-lg shrink-0 mt-0.5">
+              <Ban size={20} />
+            </div>
+            <div>
+              <h4 className="font-bold text-red-950 text-sm m-0">
+                Có {refusedOrdersOnTrips.length} đơn hàng bị khách từ chối nhận tại điểm giao — Hãy điều tài xế về Kho ALS!
+              </h4>
+              <p className="text-xs text-red-800 mt-0.5 m-0">
+                Chọn Kho ALS để thêm điểm dừng hoàn hàng cho tài xế trên Driver PWA, hoặc xác nhận đóng đơn sau khi hàng đã hạ xuống kho lưu giữ ALS.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2.5">
+            {refusedOrdersOnTrips.map((ro) => {
+              const targetKey = ro.id || ro.order_code;
+              const currentWh =
+                selectedWarehouseByOrder[targetKey] ||
+                ro.warehouse_name ||
+                'Nhà Ga Hàng Hóa ALS Nội Bài (ALSC)';
+              return (
+                <div
+                  key={`${ro.trip_id}-${ro.order_code}`}
+                  className="bg-white rounded-xl border border-red-200 p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3"
+                >
+                  <div className="space-y-1 text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-bold text-red-700 text-sm">
+                        Đơn: {ro.order_code}
+                      </span>
+                      <Tag color="purple" className="m-0 text-[10px]">
+                        Chuyến {ro.trip_id} ({ro.plate} • {ro.driver_name})
+                      </Tag>
+                      {ro.has_return_stop ? (
+                        <Tag color="orange" className="m-0 text-[10px] font-bold">
+                          Đã điều về: {ro.warehouse_name || 'Kho ALS'} (Chờ tài xế hạ hàng)
+                        </Tag>
+                      ) : (
+                        <Tag color="error" className="m-0 text-[10px] font-bold">
+                          Chờ chỉ định Kho ALS
+                        </Tag>
+                      )}
+                    </div>
+                    <div className="text-gray-700">
+                      Lý do khách từ chối: <b className="text-red-700">{ro.refusal_reason || 'Người nhận từ chối nhận hàng'}</b>
+                    </div>
+                  </div>
+
+                  {!isReadOnly && (
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <Select
+                        size="small"
+                        value={currentWh}
+                        onChange={(val) =>
+                          setSelectedWarehouseByOrder((prev) => ({
+                            ...prev,
+                            [targetKey]: val
+                          }))
+                        }
+                        className="w-64"
+                        options={[
+                          { value: 'Nhà Ga Hàng Hóa ALS Nội Bài (ALSC)', label: 'Nhà Ga Hàng Hóa ALS Nội Bài (ALSC)' },
+                          { value: 'Kho ALS Bắc Ninh (ALSB)', label: 'Kho ALS Bắc Ninh (ALSB)' },
+                          { value: 'Kho ALS Đông Hà Nội (ALSE)', label: 'Kho ALS Đông Hà Nội (ALSE)' },
+                          { value: 'Kho ALS Thái Nguyên (ALST)', label: 'Kho ALS Thái Nguyên (ALST)' },
+                          { value: 'Kho ALS Mỹ Đình (ICD Mỹ Đình)', label: 'Kho ALS Mỹ Đình (ICD Mỹ Đình)' },
+                          { value: 'Kho ALS Gia Lâm', label: 'Kho ALS Gia Lâm' }
+                        ]}
+                      />
+                      <Button
+                        size="small"
+                        type="primary"
+                        loading={redirectingOrderId === targetKey}
+                        icon={<Warehouse size={13} />}
+                        onClick={() => handleQuickRedirectWarehouse(ro, false)}
+                        className="bg-amber-600 hover:bg-amber-700 border-none font-bold text-xs"
+                      >
+                        {ro.has_return_stop ? 'Đổi Kho ALS' : 'Điều về Kho ALS'}
+                      </Button>
+                      <Button
+                        size="small"
+                        type="primary"
+                        loading={redirectingOrderId === targetKey}
+                        icon={<CheckCircle2 size={13} />}
+                        onClick={() => handleQuickRedirectWarehouse(ro, true)}
+                        className="bg-emerald-600 hover:bg-emerald-700 border-none font-bold text-xs"
+                      >
+                        Đã hạ kho &amp; Đóng đơn
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Banner & Hàng đợi Chuyến xe cần đổi tài xế do nghỉ đột xuất đã duyệt */}
       {leaveReassignments.length > 0 && (
         <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl space-y-3 shadow-xs">

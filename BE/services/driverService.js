@@ -9,7 +9,7 @@ const cloudinaryService = require("./cloudinaryService");
 // Helper chuẩn hóa điểm lấy hàng (Pickup) hay điểm giao hàng (Drop-off)
 const isPickupStop = (stop) => {
   if (!stop) return false;
-  const raw = String(stop.stop_type || stop.type || "")
+  const raw = String(stop.raw_stop_type || stop.stop_type || stop.type || "")
     .trim()
     .toUpperCase();
   if (raw === "PICKUP" || raw === "LẤY HÀNG" || raw === "LAY HANG") return true;
@@ -20,12 +20,30 @@ const isPickupStop = (stop) => {
     raw === "DELIVERY" ||
     raw === "GIAO HÀNG" ||
     raw === "GIAO HANG" ||
+    raw === "RETURN" ||
+    raw === "RETURN_TO_WAREHOUSE" ||
+    raw === "HOÀN KHO" ||
     raw === "REST" ||
     raw === "TRANSIT"
   ) {
     return false;
   }
   return stop.sequence === 1;
+};
+
+const isReturnWarehouseStop = (stop) => {
+  if (!stop) return false;
+  const raw = String(stop.raw_stop_type || stop.stop_type || stop.type || "")
+    .trim()
+    .toUpperCase();
+  if (raw === "RETURN" || raw === "RETURN_TO_WAREHOUSE" || raw === "HOÀN KHO") {
+    return true;
+  }
+  const ordStatus = String(stop.order?.status || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_");
+  return !isPickupStop(stop) && ordStatus === "DELIVERED_EXCEPTION";
 };
 
 const isDropoffStop = (stop) => {
@@ -239,8 +257,8 @@ const arriveAtStop = async (
     await driverModel.updateDriverProfileStatus(profile.id, "On Trip");
   }
 
-  // Nếu là điểm giao hàng (Drop-off): Chuyển đơn hàng sang IN_TRANSIT
-  if (isDropoffStop(stop) && stop.order_id) {
+  // Nếu là điểm giao hàng thông thường (không phải điểm hoàn kho của đơn đã bị từ chối): Chuyển đơn hàng sang IN_TRANSIT
+  if (isDropoffStop(stop) && !isReturnWarehouseStop(stop) && stop.order_id) {
     await driverModel.updateOrdersStatus(
       [stop.order_id],
       "IN_TRANSIT",
@@ -466,9 +484,25 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     throw error;
   }
 
-  // 1. Kiểm tra ảnh theo loại hàng
-  const isExport = stop.order?.order_type === "Export" || !!cut_seal_photo_url;
-  if (isExport) {
+  // 1. Kiểm tra ảnh theo loại điểm dừng (Điểm hoàn hàng về kho ALS / Xuất khẩu / Nhập khẩu)
+  const isReturnToAls = isReturnWarehouseStop(stop);
+  const isExport =
+    !isReturnToAls &&
+    (stop.order?.order_type === "Export" || !!cut_seal_photo_url);
+
+  if (isReturnToAls) {
+    const returnPhoto =
+      unloaded_cargo_photo_url?.trim() ||
+      pod_photo_url?.trim() ||
+      cut_seal_photo_url?.trim();
+    if (!returnPhoto) {
+      const error = new Error(
+        "Vui lòng chụp ảnh hàng hóa đã hạ xuống Kho ALS lưu giữ",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+  } else if (isExport) {
     if (!cut_seal_photo_url || !unloaded_cargo_photo_url) {
       const error = new Error(
         "Hàng xuất khẩu bắt buộc chụp ảnh cắt chì và ảnh dỡ hàng",
@@ -529,7 +563,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
   });
 
   // 3.1. Lưu trực tiếp vào bảng delivery_evidences để bảo đảm hiển thị đầy đủ trên mọi view giám sát
-  if (resolvedPodUrl || resolvedCutSealUrl) {
+  if (resolvedPodUrl || resolvedCutSealUrl || resolvedUnloadedUrl) {
     try {
       const evidencesToInsert = [];
       const nowDate = new Date();
@@ -537,7 +571,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
         evidencesToInsert.push({
           trip_stop_id: BigInt(stopId),
           order_id: stop.order_id ? BigInt(stop.order_id) : null,
-          type: "POD",
+          type: isReturnToAls ? "ReturnWarehouse" : "POD",
           file_link: resolvedPodUrl.slice(0, 255),
           receiver_name: receiver_name?.trim()
             ? receiver_name.trim().slice(0, 100)
@@ -561,6 +595,20 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
           longitude: phoneLng,
         });
       }
+      if (resolvedUnloadedUrl) {
+        evidencesToInsert.push({
+          trip_stop_id: BigInt(stopId),
+          order_id: stop.order_id ? BigInt(stop.order_id) : null,
+          type: isReturnToAls ? "ReturnWarehouse" : "Unloaded",
+          file_link: resolvedUnloadedUrl.slice(0, 255),
+          receiver_name: receiver_name?.trim()
+            ? receiver_name.trim().slice(0, 100)
+            : null,
+          captured_time: nowDate,
+          latitude: phoneLat,
+          longitude: phoneLng,
+        });
+      }
       if (evidencesToInsert.length > 0) {
         await prisma.delivery_evidences.createMany({ data: evidencesToInsert });
       }
@@ -572,14 +620,28 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     }
   }
 
-  // 4. Cập nhật đơn hàng liên kết sang DELIVERED
+  // 4. Cập nhật trạng thái đơn hàng liên kết
+  const warehouseDisplayName =
+    stop.location?.name || stop.location?.address || "Kho ALS";
   if (stop.order_id) {
-    await driverModel.updateOrdersStatus(
-      [stop.order_id],
-      "DELIVERED",
-      `Đã giao hàng thành công (Người nhận: ${receiver_name || "Khách hàng"})`,
-      userId,
-    );
+    if (isReturnToAls) {
+      await driverModel.closeRefusedOrderAtWarehouse(stop.order_id, {
+        warehouseName: warehouseDisplayName,
+        changedBy: userId,
+      });
+    } else {
+      const extraOrderData = { is_closed: true };
+      if (isExport) {
+        extraOrderData.warehouse_name = warehouseDisplayName;
+      }
+      await driverModel.updateOrdersStatus(
+        [stop.order_id],
+        "DELIVERED",
+        `Đã giao hàng thành công (Người nhận: ${receiver_name || "Khách hàng"})`,
+        userId,
+        extraOrderData,
+      );
+    }
   }
 
   // 5. Kiểm tra xem có phải điểm dừng cuối cùng của chuyến không
@@ -941,9 +1003,29 @@ const recordStopEvent = async (
     }
 
     // Kiểm tra xem đây có phải điểm dừng cuối cùng của chuyến không
+    // Nếu trên chuyến có đơn đang ở DELIVERED_EXCEPTION nhưng chưa đóng,
+    // chuyến xe chỉ hoàn thành sau khi tài xế đã hạ hàng hoàn tại Kho ALS.
+    if (isReturnWarehouseStop(stop) && stop.order_id) {
+      const warehouseDisplayName =
+        stop.location?.name || stop.location?.address || "Kho ALS";
+      await driverModel.closeRefusedOrderAtWarehouse(stop.order_id, {
+        warehouseName: warehouseDisplayName,
+        changedBy: userId,
+      });
+    }
+
     const remainingStops =
       trip.stops?.filter((s) => s.id !== stopId && s.status !== "Done") || [];
-    if (remainingStops.length === 0) {
+    const hasUnclosedRefusedOrder = (trip.stops || []).some((s) => {
+      if (s.id === stopId && isReturnWarehouseStop(stop)) return false;
+      const st = String(s.order?.status || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_");
+      return st === "DELIVERED_EXCEPTION" && !s.order?.is_closed;
+    });
+
+    if (remainingStops.length === 0 && !hasUnclosedRefusedOrder) {
       // Đã hoàn thành điểm dừng cuối -> Chuyến xe hoàn thành (Completed)
       await driverModel.updateTripStatus(tripId, "Completed");
       if (trip.truck?.id) {
@@ -1086,13 +1168,22 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
 
   // 4. Tạo thông báo cho Điều phối viên
   const orderCode = stop.order?.order_code || stop.order_id;
-  if (trip.created_by) {
-    await driverModel.createSystemNotification({
-      userAccountId: trip.created_by,
-      targetType: "ORDER",
-      targetId: stop.order_id,
-      message: `Khách không nhận hàng của đơn ${orderCode}. Hãy điều tài xế về kho ALS.`,
-    });
+  const targetDispatcherIds = [
+    ...new Set(
+      [trip.created_by, stop.order?.responsible_dispatcher_id]
+        .map((id) => (id ? Number(id) : null))
+        .filter(Boolean),
+    ),
+  ];
+  for (const dispId of targetDispatcherIds) {
+    await driverModel
+      .createSystemNotification({
+        userAccountId: dispId,
+        targetType: "ORDER",
+        targetId: stop.order_id,
+        message: `Khách không nhận hàng của đơn ${orderCode}. Hãy điều tài xế về kho ALS.`,
+      })
+      .catch(() => {});
   }
 
   await driverModel.logDriverActivity({
@@ -1633,7 +1724,7 @@ const syncOfflineActions = async (userId, actions = []) => {
             error: r.error || null,
           })),
         },
-        reason: `Đồng bộ ngoại tuyến: ${syncedCount}/${totalCount} thành công (BR-27, MSG39)`,
+        reason: `Đồng bộ ngoại tuyến: ${syncedCount}/${totalCount} thành công`,
       },
       select: { id: true },
     });
@@ -1646,10 +1737,10 @@ const syncOfflineActions = async (userId, actions = []) => {
   }
 
   try {
-    // 2. Tạo thông báo hiển thị cho Driver tại Screen 6.5
+    // 2. Tạo thông báo hiển thị cho Driver
     const notifMessage =
       failedCount === 0
-        ? `Đã đồng bộ thành công ${syncedCount}/${totalCount} hành động ngoại tuyến lên máy chủ (BR-27, MSG39). Bấm để xem chi tiết danh sách.`
+        ? `Đã đồng bộ thành công ${syncedCount}/${totalCount} hành động ngoại tuyến lên máy chủ. Bấm để xem chi tiết danh sách.`
         : `Đồng bộ ngoại tuyến hoàn tất: ${syncedCount}/${totalCount} thành công (${failedCount} thao tác bị lỗi). Bấm để kiểm tra chi tiết.`;
 
     await prisma.notifications.create({

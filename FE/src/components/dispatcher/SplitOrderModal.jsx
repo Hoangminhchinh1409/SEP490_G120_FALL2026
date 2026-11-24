@@ -250,7 +250,7 @@ function SplitOrderModalContent({ open, order, onCancel, onSuccess }) {
           </div>
           <div>
             <h3 className="text-sm font-bold text-gray-800 m-0">
-              Tách đơn hàng sang nhiều xe tải nhỏ (Theo chuẩn BR-29)
+              Tách đơn hàng sang nhiều xe tải nhỏ
             </h3>
             <span className="text-[11px] text-gray-500 font-normal">
               Đơn gốc #{order.order_id} ({totalWeight.toLocaleString()} kg, {totalPackages} kiện) ➔ Đi trọn vẹn từng xe nhỏ độc lập
@@ -344,7 +344,7 @@ function SplitOrderModalContent({ open, order, onCancel, onSuccess }) {
             <div>
               <span className="text-[11px] text-gray-600 block mb-1">Quy tắc tuân thủ:</span>
               <Tag color="blue" className="text-[10px] w-full text-center py-1 rounded">
-                1 Đơn = 1 Xe trọn vẹn (BR-29)
+                1 Đơn = 1 Xe trọn vẹn
               </Tag>
             </div>
           </div>

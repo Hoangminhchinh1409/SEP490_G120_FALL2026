@@ -9,6 +9,7 @@ const {
   cancelOrder,
   closeOrder,
   splitOrder,
+  redirectOrderToAlsWarehouse,
   getOrderByToken,
   customerAgreeOrderPrice,
   customerUploadDocuments,
@@ -85,5 +86,8 @@ router.post('/:id/split', ...requireDispatcherOrAdmin, splitOrder);
 
 // 13. Đóng đơn hàng (chuyển sang CLOSED)
 router.post('/:id/close', ...requireDispatcherOrAdmin, closeOrder);
+
+// 14. Điều tài xế chở hàng bị từ chối về Kho ALS & Đóng đơn ngoại lệ
+router.post('/:id/redirect-warehouse', requireAuth, redirectOrderToAlsWarehouse);
 
 module.exports = router;

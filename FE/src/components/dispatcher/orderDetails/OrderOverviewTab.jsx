@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tag, Button, InputNumber, Input, Popover, Select, message } from 'antd';
 import { 
   AlertTriangle, 
@@ -10,15 +10,28 @@ import {
   Route, 
   Package,
   RefreshCw,
-  CheckCircle2
+  CheckCircle2,
+  Warehouse,
+  Ban
 } from 'lucide-react';
 import RouteMapPicker from '../../common/RouteMapPicker';
 import { getVehicleSpecByKey, VEHICLE_SPECS } from '../../../data/dispatcherPresets';
 import { aiApi } from '../../../api/aiApi';
+import { orderApi } from '../../../api/orderApi';
 import { OrderVehicleRecommendationBox, OrderOverviewPreDocsBox } from './OrderOverviewSubSections';
+
+const DEFAULT_ALS_WAREHOUSES = [
+  { id: 1, name: 'Nhà Ga Hàng Hóa ALS Nội Bài (ALSC)', address: 'Cảng HKQT Nội Bài, Phú Minh, Sóc Sơn, Hà Nội' },
+  { id: 2, name: 'Kho ALS Bắc Ninh (ALSB)', address: 'KCN Yên Phong, Bắc Ninh' },
+  { id: 3, name: 'Kho ALS Đông Hà Nội (ALSE)', address: 'KCN VSIP, Từ Sơn, Bắc Ninh' },
+  { id: 4, name: 'Kho ALS Thái Nguyên (ALST)', address: 'KCN Yên Bình, Phổ Yên, Thái Nguyên' },
+  { id: 5, name: 'Kho ALS Mỹ Đình (ICD Mỹ Đình)', address: '17 Phạm Hùng, Mỹ Đình, Nam Từ Liêm, Hà Nội' },
+  { id: 6, name: 'Kho ALS Gia Lâm', address: 'Nguyễn Sơn, Long Biên, Hà Nội' }
+];
 
 export default function OrderOverviewTab({
   order,
+  onUpdateOrder,
   routeInfo,
   setRouteInfo,
   pickupAddress,
@@ -55,6 +68,64 @@ export default function OrderOverviewTab({
 
   const [aiAnalyzingVehicle, setAiAnalyzingVehicle] = useState(false);
   const [aiVehicleInsight, setAiVehicleInsight] = useState(null);
+
+  // State Điều hướng hàng bị từ chối về Kho ALS
+  const [alsWarehouses, setAlsWarehouses] = useState(DEFAULT_ALS_WAREHOUSES);
+  const [selectedAlsWarehouse, setSelectedAlsWarehouse] = useState(
+    order.warehouse_name || DEFAULT_ALS_WAREHOUSES[0].name
+  );
+  const [redirectLoading, setRedirectLoading] = useState(false);
+
+  const isRefusalOrder =
+    order.status === 'DELIVERED_EXCEPTION' ||
+    order.raw_status === 'DELIVERED_EXCEPTION' ||
+    Boolean(order.refusal_reason);
+
+  useEffect(() => {
+    if (isRefusalOrder) {
+      orderApi.getAlsWarehouses().then((locs) => {
+        if (Array.isArray(locs) && locs.length > 0) {
+          setAlsWarehouses(locs);
+          if (!order.warehouse_name && locs[0]?.name) {
+            setSelectedAlsWarehouse(locs[0].name);
+          }
+        }
+      });
+    }
+  }, [isRefusalOrder, order.warehouse_name]);
+
+  const handleRedirectOrCloseRefusedOrder = async (closeImmediately = false) => {
+    try {
+      setRedirectLoading(true);
+      const matchedLoc = alsWarehouses.find((w) => w.name === selectedAlsWarehouse);
+      const res = await orderApi.redirectToAlsWarehouse(order.id || order.order_id, {
+        location_id: matchedLoc?.id || null,
+        warehouse_name: selectedAlsWarehouse,
+        close_immediately: closeImmediately
+      });
+      message.success(
+        res?.message ||
+          (closeImmediately
+            ? `Đã xác nhận hạ hàng lưu kho tại ${selectedAlsWarehouse} và đóng đơn!`
+            : `Đã điều tài xế chở hàng về ${selectedAlsWarehouse}!`)
+      );
+      onUpdateOrder?.({
+        ...order,
+        status: closeImmediately ? 'CLOSED' : 'DELIVERED_EXCEPTION',
+        raw_status: 'DELIVERED_EXCEPTION',
+        is_closed: closeImmediately,
+        warehouse_name: selectedAlsWarehouse,
+        redirected_to_warehouse: true
+      });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexlog_orders_updated'));
+      }
+    } catch (err) {
+      message.error(err.message || 'Lỗi khi điều hướng đơn hàng về Kho ALS');
+    } finally {
+      setRedirectLoading(false);
+    }
+  };
 
   // State thêm chứng từ tùy biến ngay tại Overview Tab
   const [overviewSelectedSpecDoc, setOverviewSelectedSpecDoc] = useState('');
@@ -128,6 +199,131 @@ export default function OrderOverviewTab({
 
   return (
     <div className="space-y-4">
+      {/* Banner Xử lý Ngoại lệ: Khách hàng không nhận hàng */}
+      {isRefusalOrder && (
+        <div className="p-4 rounded-xl border-2 border-red-300 bg-gradient-to-r from-red-50 via-orange-50 to-amber-50 space-y-3 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-red-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-red-100 text-red-600">
+                <Ban size={18} />
+              </div>
+              <div>
+                <h4 className="font-bold text-red-900 text-sm m-0">
+                  Khách không nhận hàng của đơn {order.order_id}. Hãy điều tài xế về kho ALS.
+                </h4>
+                <p className="text-xs text-red-700 m-0 mt-0.5">
+                  Đơn hàng bị từ chối cần được điều hướng về Kho ALS lưu giữ để hạ hàng và đóng đơn.
+                </p>
+              </div>
+            </div>
+            <Tag color={order.is_closed || order.status === 'CLOSED' ? 'green' : 'error'} className="font-bold text-xs px-3 py-1 rounded-full m-0 self-start sm:self-center">
+              {order.is_closed || order.status === 'CLOSED'
+                ? 'ĐÃ HẠ KHO ALS & ĐÓNG ĐƠN'
+                : order.redirected_to_warehouse
+                  ? 'ĐANG HOÀN VỀ KHO ALS'
+                  : 'CHỜ ĐIỀU VỀ KHO ALS'}
+            </Tag>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <div className="md:col-span-2 bg-white/90 p-3 rounded-lg border border-red-100 space-y-2">
+              <div>
+                <span className="text-gray-500 font-semibold">Lý do khách từ chối nhận hàng:</span>
+                <p className="font-bold text-red-700 text-sm mt-0.5 mb-0">
+                  {order.refusal_reason || 'Người nhận tại điểm giao từ chối tiếp nhận lô hàng'}
+                </p>
+              </div>
+              {order.warehouse_name && (
+                <div className="pt-1 border-t border-gray-100 flex items-center gap-1.5 text-amber-800">
+                  <Warehouse size={14} className="text-amber-600 shrink-0" />
+                  <span>
+                    Kho ALS tiếp nhận lưu giữ: <b>{order.warehouse_name}</b>
+                  </span>
+                </div>
+              )}
+
+              {!(order.is_closed || order.status === 'CLOSED') ? (
+                <div className="pt-2 border-t border-red-100 space-y-2">
+                  <label className="font-bold text-gray-800 block">
+                    Chọn Kho ALS nhận hàng hoàn trả / lưu giữ:
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Select
+                      value={selectedAlsWarehouse}
+                      onChange={setSelectedAlsWarehouse}
+                      className="flex-1"
+                      options={alsWarehouses.map((w) => ({
+                        value: w.name,
+                        label: `${w.name}${w.address ? ` — ${w.address}` : ''}`
+                      }))}
+                    />
+                    <Button
+                      type="primary"
+                      loading={redirectLoading}
+                      onClick={() => handleRedirectOrCloseRefusedOrder(false)}
+                      className="bg-amber-600 hover:bg-amber-700 border-none font-bold text-xs"
+                    >
+                      {order.redirected_to_warehouse
+                        ? 'Cập nhật Kho ALS điều về'
+                        : 'Điều tài xế về Kho ALS'}
+                    </Button>
+                    <Button
+                      type="primary"
+                      loading={redirectLoading}
+                      onClick={() => handleRedirectOrCloseRefusedOrder(true)}
+                      className="bg-emerald-600 hover:bg-emerald-700 border-none font-bold text-xs"
+                    >
+                      Đã hạ hàng tại Kho ALS &amp; Đóng đơn
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-gray-500 italic m-0">
+                    * Bấm <b>&quot;Điều tài xế về Kho ALS&quot;</b> để tự động chèn thêm điểm dừng Kho ALS vào lộ trình của tài xế. Hoặc bấm <b>&quot;Đã hạ hàng tại Kho ALS &amp; Đóng đơn&quot;</b> nếu xe đã hoàn tất hạ hàng tại kho lưu giữ.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium">
+                  ✓ Hàng hóa đã được dỡ xuống lưu giữ an toàn tại <b>{order.warehouse_name || 'Kho ALS'}</b>. Đơn vận chuyển đã đóng và chuyến xe đã được giải phóng. Phí lưu kho phát sinh được tính cho khách theo ngày lưu kho thực tế.
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white/90 p-3 rounded-lg border border-red-100 flex flex-col items-center justify-center text-center">
+              <span className="font-semibold text-gray-700 mb-1.5 block">
+                Ảnh hiện trường từ chối nhận
+              </span>
+              {order.refusal_photo ? (
+                <img
+                  src={order.refusal_photo}
+                  alt="Ảnh hàng bị từ chối"
+                  className="w-full h-28 object-cover rounded-lg border border-red-200 cursor-pointer hover:opacity-90"
+                  onClick={() => window.open(order.refusal_photo, '_blank')}
+                />
+              ) : (
+                <div className="py-6 text-gray-400 text-xs italic">
+                  Đã ghi nhận báo cáo từ tài xế
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hiển thị thông tin Kho ALS hạ hàng đối với Đơn Xuất khẩu đã hoàn thành */}
+      {!isRefusalOrder &&
+        order.shipping_direction === 'EXPORT' &&
+        ['DELIVERED', 'CLOSED'].includes(order.status) && (
+          <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 text-xs text-purple-900 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Warehouse size={16} className="text-purple-600 shrink-0" />
+              <span>
+                <b>Đơn Xuất khẩu đã bàn giao về Kho ALS:</b> Hàng đã hạ tại{' '}
+                <b>{order.warehouse_name || order.dropoff}</b>. Nếu hàng chờ thông quan hoặc chưa xuất khẩu được, thời gian lưu kho sẽ tính theo biểu phí lưu kho của ALS với khách hàng.
+              </span>
+            </div>
+            <Tag color="green" className="m-0 font-bold">Đã hoàn thành vận chuyển</Tag>
+          </div>
+        )}
+
       {/* Banner hướng dẫn luồng xử lý đối với đơn DRAFT */}
       {order.status === 'DRAFT' && (
         <div className="space-y-2">

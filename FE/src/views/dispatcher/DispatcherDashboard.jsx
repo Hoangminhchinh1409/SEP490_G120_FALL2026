@@ -962,7 +962,7 @@ export default function DispatcherDashboard() {
                         {computed.revenueFormatted}
                       </div>
                       <div className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
-                        Cước &amp; phí hủy (BR-30)
+                        Cước &amp; phí hủy
                       </div>
                     </div>
                     <div className="w-full bg-surface-container h-1 rounded-full overflow-hidden">

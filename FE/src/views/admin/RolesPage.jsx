@@ -60,17 +60,17 @@ const PERMISSION_METADATA = {
   },
   DRIVER_SHIFT_MANAGE: {
     module: "Đội xe (Fleet)",
-    name: "Quản lý & Phê duyệt Ca trực Tài xế (UC-20)",
+    name: "Quản lý & Phê duyệt Ca trực Tài xế",
     defaultOwner: 2,
   },
   VENDOR_MANAGE: {
     module: "Đối tác (Vendors)",
-    name: "Quản lý & Phê duyệt Nhà xe Đối tác (API-07)",
+    name: "Quản lý & Phê duyệt Nhà xe Đối tác",
     defaultOwner: 2,
   },
   INCIDENT_MANAGE: {
     module: "Sự cố & Khiếu nại",
-    name: "Xử lý Sự cố & Duyệt Bồi thường (UC-47)",
+    name: "Xử lý Sự cố & Duyệt Bồi thường",
     defaultOwner: 2,
   },
   NEWS_MANAGE: {

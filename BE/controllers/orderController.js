@@ -42,7 +42,8 @@ const {
   assignTrip,
   cancelOrder,
   closeOrder,
-  splitOrder
+  splitOrder,
+  redirectOrderToAlsWarehouse
 } = require('./order/orderWorkflowController');
 
 module.exports = {
@@ -76,5 +77,6 @@ module.exports = {
   assignTrip,
   cancelOrder,
   closeOrder,
-  splitOrder
+  splitOrder,
+  redirectOrderToAlsWarehouse
 };

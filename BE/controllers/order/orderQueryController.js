@@ -286,6 +286,12 @@ const getAllOrders = async (req, res) => {
         receiver_name: order.receiver_name || "",
         receiver_phone: order.receiver_phone || "",
         status: feStatus,
+        raw_status: order.status || "",
+        is_closed: Boolean(order.is_closed),
+        refusal_reason: order.refusal_reason || meta.refusal_reason || null,
+        refusal_photo: order.refusal_photo || meta.refusal_photo || null,
+        warehouse_name: order.warehouse_name || meta.warehouse_name || null,
+        redirected_to_warehouse: Boolean(meta.redirected_to_warehouse || order.warehouse_name),
         source: isFromWeb ? "HOMEPAGE" : order.source || "HOTLINE",
         package_count: totalPackageCount || 1,
         package_unit: cargo.unit || (isBulk ? "Chuyến" : "Kiện"),
@@ -880,6 +886,13 @@ const getOrderByToken = async (req, res) => {
           extraMeta.vehicle_analysis_note ||
           "",
         status: order.status,
+        raw_status: order.status,
+        is_closed: Boolean(order.is_closed),
+        order_type: order.order_type || "Import",
+        refusal_reason: order.refusal_reason || extraMeta.refusal_reason || null,
+        refusal_photo: order.refusal_photo || extraMeta.refusal_photo || null,
+        warehouse_name: order.warehouse_name || extraMeta.warehouse_name || null,
+        redirected_to_warehouse: Boolean(extraMeta.redirected_to_warehouse || order.warehouse_name),
         source: order.source,
         dispatcher_phone:
           extraMeta.dispatcher_phone ||

@@ -787,6 +787,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       children: (
         <OrderOverviewTab
           order={order}
+          onUpdateOrder={onUpdateOrder}
           routeInfo={routeInfo}
           setRouteInfo={setRouteInfo}
           pickupAddress={pickupAddress}

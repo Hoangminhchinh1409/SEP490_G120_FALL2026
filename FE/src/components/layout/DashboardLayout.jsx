@@ -300,7 +300,7 @@ export default function DashboardLayout({
                   </div>
 
                   <div className="pt-2 px-4 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                    <span className="text-slate-400">Tự động xóa sau 90 ngày (BR-22)</span>
+                    <span className="text-slate-400">Tự động xóa sau 90 ngày</span>
                     <Link
                       href={role === 'admin' ? '/admin/logs' : `/${role}`}
                       className="text-blue-600 hover:text-blue-700 font-medium"

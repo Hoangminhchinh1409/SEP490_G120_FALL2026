@@ -26,7 +26,12 @@ const mapTripStop = (s) => {
     order: s.orders ? {
       id: toNum(s.orders.id),
       order_code: s.orders.order_code,
+      order_type: s.orders.order_type || 'Import',
       status: s.orders.status,
+      is_closed: Boolean(s.orders.is_closed),
+      refusal_reason: s.orders.refusal_reason || null,
+      refusal_photo: s.orders.refusal_photo || null,
+      warehouse_name: s.orders.warehouse_name || null,
       receiver_name: s.orders.receiver_name,
       receiver_phone: s.orders.receiver_phone,
       agreed_price: toNum(s.orders.agreed_price),

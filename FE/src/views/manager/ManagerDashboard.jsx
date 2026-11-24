@@ -690,7 +690,7 @@ export default function ManagerDashboard() {
                         {dashboardData.kpiCards.revenueFormatted}
                       </div>
                       <div className="text-[11px] text-on-surface-variant mt-0.5 font-medium">
-                        Chưa gồm tiền thu hộ (BR-30)
+                        Chưa gồm tiền thu hộ
                       </div>
                     </div>
                     <div className="w-full bg-surface-container h-1 rounded-full overflow-hidden">

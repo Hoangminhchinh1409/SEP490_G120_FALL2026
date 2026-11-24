@@ -100,7 +100,7 @@ export default function SettingsPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Cấu hình Tham số Hệ thống (System Settings)</h1>
           </div>
           <p className="text-slate-500 text-sm mt-1.5">
-            Quản trị các tham số hoạt động, thời hạn khiếu nại, chế độ bảo trì và các quy chuẩn vận hành theo SRS v2 (UC-36).
+            Quản trị các tham số hoạt động, thời hạn khiếu nại, chế độ bảo trì và các quy chuẩn vận hành hệ thống.
           </p>
         </div>
       </div>
@@ -147,7 +147,7 @@ export default function SettingsPage() {
               {maintenanceOn && (
                 <div className="mt-3.5 p-3 bg-amber-100/70 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium flex items-center gap-2">
                   <AlertTriangle size={16} className="text-amber-700 shrink-0" />
-                  <span>Cảnh báo: Toàn bộ nhân viên không phải Quản trị viên khi đăng nhập sẽ nhìn thấy: <i>&ldquo;Hệ thống đang bảo trì. Vui lòng quay lại sau.&rdquo;</i> (MSG86)</span>
+                  <span>Cảnh báo: Toàn bộ nhân viên không phải Quản trị viên khi đăng nhập sẽ nhìn thấy: <i>&ldquo;Hệ thống đang bảo trì. Vui lòng quay lại sau.&rdquo;</i></span>
                 </div>
               )}
             </div>
@@ -226,7 +226,7 @@ export default function SettingsPage() {
             <InputNumber min={60} max={1825} className="w-36 h-10 rounded-lg" />
           </Form.Item>
 
-          <Form.Item name="gps_track_retention_days" label="Thời hạn lưu vết hành trình GPS (ngày)" extra="Vết tọa độ di chuyển của xe tải (JOB-01)">
+          <Form.Item name="gps_track_retention_days" label="Thời hạn lưu vết hành trình GPS (ngày)" extra="Vết tọa độ di chuyển của xe tải">
             <InputNumber min={30} max={365} className="w-36 h-10 rounded-lg" />
           </Form.Item>
 

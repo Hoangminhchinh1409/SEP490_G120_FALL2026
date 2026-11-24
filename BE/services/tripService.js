@@ -67,6 +67,23 @@ const calculateDriverStatusAndProgress = (trip, sortedStops) => {
 
   // Nếu tất cả các điểm dừng đã Done nhưng chuyến chưa bấm hoàn thành
   if (currentStopIndex === -1) {
+    // Kiểm tra xem có đơn hàng nào đang ở DELIVERED_EXCEPTION nhưng chưa đóng (chờ điều về kho ALS) không
+    const unclosedRefusedStop = sortedStops.find((s) => {
+      const ordSt = String(s.order?.status || "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_");
+      return ordSt === "DELIVERED_EXCEPTION" && !s.order?.is_closed;
+    });
+    if (unclosedRefusedStop) {
+      return {
+        progress: 85,
+        driver_status_code: "REFUSED_WAITING_REDIRECT",
+        driver_status_label: `Khách từ chối đơn ${unclosedRefusedStop.order?.order_code || ""} — Chờ điều về kho ALS`,
+        driver_status_color: "error",
+        driver_current_step: "Exception",
+        current_stop_info: null,
+      };
+    }
     return {
       progress: 95,
       driver_status_code: "ALL_STOPS_DONE",
@@ -80,15 +97,19 @@ const calculateDriverStatusAndProgress = (trip, sortedStops) => {
   const currentStop = sortedStops[currentStopIndex];
   const stopSeq = currentStop.sequence || currentStopIndex + 1;
   const rawType = String(currentStop.stop_type || "").toUpperCase();
-  const isPickup = rawType === "PICKUP" || stopSeq === 1;
+  const isReturn = rawType === "RETURN" || rawType === "RETURN_TO_WAREHOUSE";
+  const isPickup = !isReturn && (rawType === "PICKUP" || stopSeq === 1);
   const isDropoff =
     !isPickup &&
+    !isReturn &&
     (rawType === "DROPOFF" || rawType === "DELIVERY" || stopSeq === nStops);
-  const stopTypeName = isPickup
-    ? "Lấy hàng"
-    : isDropoff
-      ? "Giao hàng"
-      : "Điểm dừng";
+  const stopTypeName = isReturn
+    ? "Hoàn về kho ALS"
+    : isPickup
+      ? "Lấy hàng"
+      : isDropoff
+        ? "Giao hàng"
+        : "Điểm dừng";
   const stopLocName =
     currentStop.location?.name ||
     currentStop.location?.address ||
@@ -149,30 +170,35 @@ const calculateDriverStatusAndProgress = (trip, sortedStops) => {
 
   let stopFraction = 0.15;
   let statusCode = "MOVING_TO_STOP";
-  let statusLabel =
-    currentStopIndex === 0
+  let statusLabel = isReturn
+    ? `Đang hoàn hàng về Kho ALS (${stopLocName})`
+    : currentStopIndex === 0
       ? `Đang di chuyển tới Điểm #1 (Kho lấy hàng)`
       : `Đang di chuyển tới Điểm #${stopSeq} (Điểm giao)`;
-  let statusColor = "blue";
+  let statusColor = isReturn ? "volcano" : "blue";
   let stepLabel = "0/4";
 
   switch (stopStatus) {
     case "Arrived":
       stopFraction = 0.4;
       statusCode = "ARRIVED";
-      statusLabel = isPickup
-        ? `Đã đến Điểm #${stopSeq} (Chờ bốc hàng)`
-        : `Đã đến Điểm #${stopSeq} (Chờ dỡ hàng)`;
-      statusColor = "cyan";
+      statusLabel = isReturn
+        ? `Đã về tới Kho ALS (#${stopSeq} - Chờ hạ hàng hoàn)`
+        : isPickup
+          ? `Đã đến Điểm #${stopSeq} (Chờ bốc hàng)`
+          : `Đã đến Điểm #${stopSeq} (Chờ dỡ hàng)`;
+      statusColor = isReturn ? "volcano" : "cyan";
       stepLabel = "1/4";
       break;
 
     case "Loading Started":
       stopFraction = 0.65;
       statusCode = "LOADING_STARTED";
-      statusLabel = isPickup
-        ? `Đang bốc hàng tại Điểm #${stopSeq}`
-        : `Đang dỡ hàng tại Điểm #${stopSeq}`;
+      statusLabel = isReturn
+        ? `Đang hạ hàng hoàn tại Kho ALS (#${stopSeq})`
+        : isPickup
+          ? `Đang bốc hàng tại Điểm #${stopSeq}`
+          : `Đang dỡ hàng tại Điểm #${stopSeq}`;
       statusColor = "orange";
       stepLabel = "2/4";
       break;
@@ -180,9 +206,11 @@ const calculateDriverStatusAndProgress = (trip, sortedStops) => {
     case "Loading Done":
       stopFraction = 0.85;
       statusCode = "LOADING_DONE";
-      statusLabel = isPickup
-        ? `Đã bốc xong Điểm #${stopSeq} (Chờ rời đi)`
-        : `Đã dỡ hàng & ký POD (Chờ rời đi)`;
+      statusLabel = isReturn
+        ? `Đã hạ hàng hoàn vào Kho ALS (#${stopSeq})`
+        : isPickup
+          ? `Đã bốc xong Điểm #${stopSeq} (Chờ rời đi)`
+          : `Đã dỡ hàng & ký POD (Chờ rời đi)`;
       statusColor = "purple";
       stepLabel = "3/4";
       break;
@@ -391,19 +419,62 @@ const formatTrip = (trip) => {
     planned_start_iso: trip.planned_start || null,
     // duplicate phone removed
     orders: orderCodes,
-    orders_data: uniqueOrders.map((o) => ({
-      order_id: o.order_code,
-      customer: o.customer?.company_name || customerName,
-      weight: o.cargo?.actual_weight_kg || 700,
-      package_count: o.cargo?.quantity || 4,
-      length_cm: o.cargo?.length_cm || 100,
-      width_cm: o.cargo?.width_cm || 80,
-      height_cm: o.cargo?.height_cm || 80,
-      dropoff:
-        dropoffStop.location?.address ||
-        dropoffStop.location?.name ||
-        "Điểm giao hàng",
-    })),
+    orders_data: uniqueOrders.map((o) => {
+      const hasReturnStop = sortedStops.some(
+        (st) =>
+          Number(st.order_id) === Number(o.id) &&
+          String(st.stop_type || "").toUpperCase() === "RETURN",
+      );
+      return {
+        id: o.id,
+        order_id: o.order_code,
+        order_type: o.order_type || "Import",
+        status: o.status,
+        is_closed: Boolean(o.is_closed),
+        refusal_reason: o.refusal_reason || null,
+        refusal_photo: o.refusal_photo || null,
+        warehouse_name: o.warehouse_name || null,
+        has_return_stop: hasReturnStop,
+        customer: o.customer?.company_name || customerName,
+        weight: o.cargo?.actual_weight_kg || 700,
+        package_count: o.cargo?.quantity || 4,
+        length_cm: o.cargo?.length_cm || 100,
+        width_cm: o.cargo?.width_cm || 80,
+        height_cm: o.cargo?.height_cm || 80,
+        dropoff:
+          dropoffStop.location?.address ||
+          dropoffStop.location?.name ||
+          "Điểm giao hàng",
+      };
+    }),
+    has_refusal_exception: uniqueOrders.some(
+      (o) =>
+        String(o.status || "")
+          .toUpperCase()
+          .replace(/[^A-Z0-9]+/g, "_") === "DELIVERED_EXCEPTION" &&
+        !o.is_closed,
+    ),
+    refused_orders: uniqueOrders
+      .filter(
+        (o) =>
+          String(o.status || "")
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, "_") === "DELIVERED_EXCEPTION",
+      )
+      .map((o) => ({
+        id: o.id,
+        order_code: o.order_code,
+        order_type: o.order_type || "Import",
+        is_closed: Boolean(o.is_closed),
+        refusal_reason: o.refusal_reason || null,
+        refusal_photo: o.refusal_photo || null,
+        warehouse_name: o.warehouse_name || null,
+        has_return_stop: sortedStops.some(
+          (st) =>
+            Number(st.order_id) === Number(o.id) &&
+            String(st.stop_type || "").toUpperCase() === "RETURN",
+        ),
+      })),
     customer: customerName,
     pickup:
       pickupStop.location?.address ||
@@ -458,7 +529,9 @@ const formatTrip = (trip) => {
                 ? "PICKUP"
                 : upperStopType === "REST"
                   ? "REST"
-                  : "DROPOFF";
+                  : upperStopType === "RETURN" || upperStopType === "RETURN_TO_WAREHOUSE"
+                    ? "RETURN"
+                    : "DROPOFF";
 
             const isDone = s.status === "Done" || s.status === "Completed";
             const isArrived = s.status === "Arrived";
@@ -669,7 +742,7 @@ const createTrip = async (payload, userId = 1) => {
 
     let approvedShift = shifts?.find((s) => s.status === 'Approved');
 
-    // Nếu tài xế đã đăng ký ca Requested trong ngày, tự động duyệt ca (BR-07) khi Điều phối viên gán vào chuyến xe
+    // Nếu tài xế đã đăng ký ca Requested trong ngày, tự động duyệt ca khi Điều phối viên gán vào chuyến xe
     if (!approvedShift) {
       const requestedShift = shifts?.find((s) => s.status === 'Requested');
       if (requestedShift) {
@@ -678,7 +751,7 @@ const createTrip = async (payload, userId = 1) => {
           data: {
             status: 'Approved',
             reviewed_at: new Date(),
-            note: 'Tự động duyệt ca khi Điều phối viên gán chuyến xe (BR-07)',
+            note: 'Tự động duyệt ca khi Điều phối viên gán chuyến xe',
           },
         });
         approvedShift = { ...requestedShift, status: 'Approved' };
@@ -712,7 +785,7 @@ const createTrip = async (payload, userId = 1) => {
 
     if (!approvedShift) {
       const err = new Error(
-        `Tài xế được chọn chưa có Ca làm việc được duyệt (Approved Shift) bao trùm thời gian chạy chuyến hôm nay (BR-07)!`,
+        `Tài xế được chọn chưa có Ca làm việc được duyệt (Approved Shift) bao trùm thời gian chạy chuyến hôm nay!`,
       );
       err.statusCode = 400;
       throw err;
@@ -846,7 +919,7 @@ const createTrip = async (payload, userId = 1) => {
             userAccountId: Number(driverProf.user_account_id),
             targetType: "TRIP",
             targetId: tripRecord?.id,
-            message: `Bạn được điều phối chuyến xe mới ${tripCode} (${cleanPlate || "Xe tải"}). Hãy kiểm tra lộ trình và sẵn sàng nhận chuyến! (MSG17)`,
+            message: `Bạn được điều phối chuyến xe mới ${tripCode} (${cleanPlate || "Xe tải"}). Hãy kiểm tra lộ trình và sẵn sàng nhận chuyến!`,
           });
         }
       }

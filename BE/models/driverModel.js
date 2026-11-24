@@ -17,10 +17,13 @@ const ensureUUID = (val) => {
 
 const normalizeStopDirection = (s) => {
   const raw = String(s.stop_type || s.type || "").trim().toUpperCase();
+  if (raw === "RETURN" || raw === "RETURN_TO_WAREHOUSE" || raw === "HOÀN KHO") {
+    return "Return";
+  }
   if (
     raw === "PICKUP" ||
     raw === "LẤY HÀNG" ||
-    (s.sequence === 1 && !raw.includes("DROP") && !raw.includes("DELIVER"))
+    (s.sequence === 1 && !raw.includes("DROP") && !raw.includes("DELIVER") && !raw.includes("RETURN"))
   ) {
     return "Pickup";
   }
@@ -54,6 +57,7 @@ const mapTripStopRow = (s) => {
   }
   return {
     ...rest,
+    raw_stop_type: rest.stop_type,
     stop_type: normalizeStopDirection(rest),
     location: locObj || null,
     order: mappedOrder,
@@ -231,6 +235,11 @@ const getActiveTrip = async (driverProfileId) => {
               customer_id: true,
               agreed_price: true,
               status: true,
+              is_closed: true,
+              refusal_reason: true,
+              refusal_photo: true,
+              warehouse_name: true,
+              responsible_dispatcher_id: true,
               receiver_name: true,
               receiver_phone: true,
               order_cargos: true,
@@ -406,6 +415,11 @@ const getTripDetail = async (tripId, driverProfileId) => {
               customer_id: true,
               agreed_price: true,
               status: true,
+              is_closed: true,
+              refusal_reason: true,
+              refusal_photo: true,
+              warehouse_name: true,
+              responsible_dispatcher_id: true,
               receiver_name: true,
               receiver_phone: true,
               order_cargos: true,
@@ -472,6 +486,11 @@ const getTripStopById = async (stopId, tripId) => {
           order_code: true,
           order_type: true,
           status: true,
+          is_closed: true,
+          refusal_reason: true,
+          refusal_photo: true,
+          warehouse_name: true,
+          responsible_dispatcher_id: true,
         },
       },
     },
@@ -482,6 +501,7 @@ const getTripStopById = async (stopId, tripId) => {
   const { locations: locObj, orders: ordObj, ...rest } = s;
   return {
     ...rest,
+    raw_stop_type: rest.stop_type,
     location: locObj || null,
     order: ordObj || null,
   };
@@ -499,15 +519,24 @@ const updateTripStop = async (stopId, updateData) => {
   return serializePrisma(updated);
 };
 
-const updateOrdersStatus = async (orderIds, status, notes = "", changedBy = null) => {
+const updateOrdersStatus = async (orderIds, status, notes = "", changedBy = null, extraData = {}) => {
   if (!orderIds || orderIds.length === 0) return [];
   const bigOrderIds = orderIds.map((oid) => toBigInt(oid)).filter((v) => v !== null);
   const now = new Date();
   const bigChangedBy = toBigInt(changedBy);
 
+  const updatePayload = {
+    status,
+    updated_at: now,
+    ...extraData,
+  };
+  if (status === "DELIVERED" && updatePayload.is_closed === undefined) {
+    updatePayload.is_closed = true;
+  }
+
   await prisma.orders.updateMany({
     where: { id: { in: bigOrderIds } },
-    data: { status, updated_at: now },
+    data: updatePayload,
   });
 
   const rows = await prisma.orders.findMany({
@@ -709,6 +738,7 @@ const updateOrderRefusal = async (orderId, { reason, photoUrl, changedBy = null 
     where: { id: bigOrderId },
     data: {
       status: "DELIVERED_EXCEPTION",
+      is_closed: false,
       refusal_reason: reason,
       refusal_photo: photoUrl,
       updated_at: new Date(),
@@ -717,6 +747,7 @@ const updateOrderRefusal = async (orderId, { reason, photoUrl, changedBy = null 
       id: true,
       order_code: true,
       status: true,
+      is_closed: true,
       refusal_reason: true,
       refusal_photo: true,
     },
@@ -732,6 +763,46 @@ const updateOrderRefusal = async (orderId, { reason, photoUrl, changedBy = null 
     });
   } catch (hErr) {
     console.warn("order_status_history insert warning:", hErr.message);
+  }
+
+  return serializePrisma(updated);
+};
+
+const closeRefusedOrderAtWarehouse = async (
+  orderId,
+  { warehouseName = "Kho ALS", changedBy = null } = {}
+) => {
+  const bigOrderId = toBigInt(orderId);
+  const now = new Date();
+  const updated = await prisma.orders.update({
+    where: { id: bigOrderId },
+    data: {
+      status: "DELIVERED_EXCEPTION",
+      is_closed: true,
+      warehouse_name: warehouseName,
+      updated_at: now,
+    },
+    select: {
+      id: true,
+      order_code: true,
+      status: true,
+      is_closed: true,
+      warehouse_name: true,
+      refusal_reason: true,
+      refusal_photo: true,
+    },
+  });
+
+  try {
+    await prisma.order_notes.create({
+      data: {
+        order_id: bigOrderId,
+        content: `[ĐÃ HẠ HÀNG HOÀN VỀ KHO ALS & ĐÓNG ĐƠN] Hàng bị từ chối đã được dỡ xuống lưu giữ tại ${warehouseName}. Đơn hàng đã đóng.`,
+        created_by: toBigInt(changedBy) || 1n,
+      },
+    });
+  } catch (noteErr) {
+    console.warn("closeRefusedOrderAtWarehouse order_notes warning:", noteErr.message);
   }
 
   return serializePrisma(updated);
@@ -877,6 +948,7 @@ module.exports = {
   checkIdempotency,
   logDriverActivity,
   updateOrderRefusal,
+  closeRefusedOrderAtWarehouse,
   createProposedExtraFee,
   getDriverDrivingTimeStats,
 
