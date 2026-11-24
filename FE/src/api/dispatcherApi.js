@@ -334,5 +334,29 @@ export const dispatcherApi = {
       console.error('dispatcherApi.optimizeMultiStopRoute error:', error);
       throw error;
     }
+  },
+
+  // --- 8. Duyệt phụ phí tài xế đề xuất (BUG-ITD-07) ---
+  getExtraFees: async (status = '') => {
+    try {
+      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+      const data = await fetchWithAuth(`/extra-fees${qs}`);
+      return data.extra_fees || [];
+    } catch (error) {
+      console.warn('dispatcherApi.getExtraFees warn:', error?.message);
+      return [];
+    }
+  },
+
+  reviewExtraFee: async (id, action, note = '') => {
+    try {
+      return await fetchWithAuth(`/extra-fees/${id}/review`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action, note })
+      });
+    } catch (error) {
+      console.error('dispatcherApi.reviewExtraFee error:', error);
+      throw error;
+    }
   }
 };

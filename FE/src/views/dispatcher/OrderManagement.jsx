@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip, Space } from 'antd';
-import { Search, Plus, Download, Eye, PhoneCall, Globe, RefreshCw, ArrowUpRight, XCircle, Sparkles, Bot } from 'lucide-react';
+import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip, Space, Modal, Image, Empty } from 'antd';
+import { Search, Plus, Download, Eye, PhoneCall, Globe, RefreshCw, ArrowUpRight, XCircle, Sparkles, Bot, DollarSign, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import OrderDetailsModal from '../../components/dispatcher/OrderDetailsModal';
 import CancelOrderModal from '../../components/dispatcher/CancelOrderModal';
 import DocumentAssistantDrawer from '../../components/dispatcher/DocumentAssistantDrawer';
 import { orderApi } from '../../api/orderApi';
+import { dispatcherApi } from '../../api/dispatcherApi';
 import { useAuth } from '../../providers/AuthProvider';
 import ReadOnlyBanner from '../../components/common/ReadOnlyBanner';
 import AccessDenied from '../../components/common/AccessDenied';
@@ -59,6 +60,19 @@ const OrderManagement = () => {
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState(null);
   const [selectedOrderForCancel, setSelectedOrderForCancel] = useState(null);
   const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
+  const [proposedFees, setProposedFees] = useState([]);
+  const [isFeeModalOpen, setIsFeeModalOpen] = useState(false);
+  const [reviewingFeeId, setReviewingFeeId] = useState(null);
+
+  const fetchProposedFees = useCallback(async () => {
+    if (!allowed) return;
+    try {
+      const list = await dispatcherApi.getExtraFees('Proposed');
+      setProposedFees(list || []);
+    } catch (e) {
+      console.warn('fetchProposedFees warn:', e?.message);
+    }
+  }, [allowed]);
 
   // Tải danh sách đơn hàng từ Backend Supabase (silent: true khi cập nhật nền không bật loading)
   const fetchOrders = useCallback(async (isSilent = false) => {
@@ -68,8 +82,12 @@ const OrderManagement = () => {
     }
     try {
       if (!isSilent) setLoading(true);
-      const data = await orderApi.getAllOrders();
+      const [data, fees] = await Promise.all([
+        orderApi.getAllOrders(),
+        dispatcherApi.getExtraFees('Proposed')
+      ]);
       setOrders(data);
+      setProposedFees(fees || []);
     } catch (err) {
       console.error('Fetch orders error:', err);
       message.error('Không thể kết nối đến máy chủ BE để lấy danh sách đơn');
@@ -77,6 +95,19 @@ const OrderManagement = () => {
       if (!isSilent) setLoading(false);
     }
   }, [allowed]);
+
+  const handleReviewProposedFee = async (feeId, action) => {
+    try {
+      setReviewingFeeId(feeId);
+      const res = await dispatcherApi.reviewExtraFee(feeId, action);
+      message.success(res?.message || (action === 'CONFIRM' ? 'Đã xác nhận phụ phí!' : 'Đã từ chối phụ phí!'));
+      await fetchOrders(true);
+    } catch (err) {
+      message.error(err?.message || 'Lỗi khi duyệt phụ phí');
+    } finally {
+      setReviewingFeeId(null);
+    }
+  };
 
   useEffect(() => {
     let isSubscribed = true;
@@ -87,9 +118,13 @@ const OrderManagement = () => {
         return;
       }
       try {
-        const data = await orderApi.getAllOrders();
+        const [data, fees] = await Promise.all([
+          orderApi.getAllOrders(),
+          dispatcherApi.getExtraFees('Proposed')
+        ]);
         if (isSubscribed) {
           setOrders(data);
+          setProposedFees(fees || []);
           setLoading(false);
         }
       } catch (err) {
@@ -603,6 +638,19 @@ const OrderManagement = () => {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Badge count={proposedFees.length} offset={[-4, 4]}>
+              <Button
+                icon={<DollarSign size={15} className="text-amber-600" />}
+                className="h-10 px-3.5 border-amber-300 bg-amber-50/80 text-amber-800 hover:bg-amber-100 font-semibold"
+                onClick={() => {
+                  fetchProposedFees();
+                  setIsFeeModalOpen(true);
+                }}
+              >
+                Duyệt phụ phí tài xế
+              </Button>
+            </Badge>
+
             <Button 
               icon={<Sparkles size={15} className="text-purple-600 animate-pulse" />} 
               className="h-10 px-3.5 border-purple-200 bg-purple-50/70 text-purple-700 hover:bg-purple-100 font-semibold"
@@ -731,6 +779,82 @@ const OrderManagement = () => {
           setIsCreateModalOpen(true);
         }}
       />
+
+      {/* Modal Duyệt Phụ Phí Tài Xế Đề Xuất (BUG-ITD-07) */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-amber-800">
+            <DollarSign size={18} />
+            <span>Phụ phí tài xế đề xuất chờ xác nhận ({proposedFees.length})</span>
+          </div>
+        }
+        open={isFeeModalOpen}
+        onCancel={() => setIsFeeModalOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setIsFeeModalOpen(false)}>Đóng</Button>
+        ]}
+        width={720}
+      >
+        {proposedFees.length === 0 ? (
+          <Empty description="Không có khoản phụ phí nào từ tài xế đang chờ xác nhận" className="my-6" />
+        ) : (
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+            {proposedFees.map((fee) => (
+              <div key={fee.id} className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex items-start gap-3">
+                  {fee.photo_url && (
+                    <Image
+                      src={fee.photo_url}
+                      alt="Ảnh chứng từ phụ phí"
+                      width={56}
+                      height={56}
+                      className="rounded-lg object-cover border border-gray-200 shrink-0"
+                    />
+                  )}
+                  <div className="text-xs">
+                    <div className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
+                      <span>{fee.fee_type}</span>
+                      {fee.order_code && <Tag color="blue" className="m-0 text-[10px]">{fee.order_code}</Tag>}
+                      {fee.trip_code && <Tag color="purple" className="m-0 text-[10px]">{fee.trip_code}</Tag>}
+                    </div>
+                    <div className="text-gray-600 mt-1">
+                      <span className="font-semibold">Tài xế:</span> {fee.driver_name || 'Tài xế'} • <span className="font-semibold">Lý do:</span> {fee.reason || 'Không có ghi chú'}
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">
+                      Đề xuất lúc: {fee.created_at ? new Date(fee.created_at).toLocaleString('vi-VN') : 'Vừa xong'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  <span className="font-bold font-mono text-sm text-amber-700 mr-1">
+                    {(Number(fee.amount) || 0).toLocaleString()} đ
+                  </span>
+                  <Button
+                    size="small"
+                    type="primary"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-xs font-semibold"
+                    icon={<CheckCircle size={13} />}
+                    loading={reviewingFeeId === fee.id}
+                    onClick={() => handleReviewProposedFee(fee.id, 'CONFIRM')}
+                  >
+                    Xác nhận
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    className="text-xs font-semibold"
+                    icon={<XCircle size={13} />}
+                    loading={reviewingFeeId === fee.id}
+                    onClick={() => handleReviewProposedFee(fee.id, 'REJECT')}
+                  >
+                    Từ chối
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

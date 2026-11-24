@@ -812,10 +812,14 @@ const createTrip = async (payload, userId = 1) => {
 
   // --- KIỂM TRA RÀNG BUỘC TÀI XẾ ---
   if (driverId) {
-    const nowVn = new Date(Date.now() + 7 * 3600 * 1000);
-    const todayVnStr = nowVn.toISOString().split("T")[0];
-    const todayUtcStr = new Date().toISOString().split("T")[0];
-    const targetDates = [...new Set([todayVnStr, todayUtcStr])];
+    const tripStart = payload.planned_start ? new Date(payload.planned_start) : new Date();
+    const durationMins = Number(planned_duration) > 0 ? Number(planned_duration) : 60;
+    const tripEnd = new Date(tripStart.getTime() + durationMins * 60000);
+
+    const startVn = new Date(tripStart.getTime() + 7 * 3600 * 1000);
+    const tripVnStr = startVn.toISOString().split("T")[0];
+    const tripUtcStr = tripStart.toISOString().split("T")[0];
+    const targetDates = [...new Set([tripVnStr, tripUtcStr])];
     const targetDateObjs = targetDates.map((d) => new Date(`${d}T00:00:00.000Z`));
     const bigDriverId = BigInt(Number(driverId));
 
@@ -827,11 +831,30 @@ const createTrip = async (payload, userId = 1) => {
       select: { id: true, date: true, status: true, start_time: true, end_time: true },
     });
 
-    const approvedShift = shifts?.find((s) => s.status === "Approved");
+    const approvedShifts = (shifts || []).filter((s) => String(s.status || "").toUpperCase() === "APPROVED");
 
-    if (!approvedShift) {
+    const toVnMinutes = (d) => {
+      const dt = new Date(d);
+      const vn = new Date(dt.getTime() + 7 * 3600 * 1000);
+      return vn.getUTCHours() * 60 + vn.getUTCMinutes();
+    };
+
+    const tripStartMins = toVnMinutes(tripStart);
+    const tripEndMins = toVnMinutes(tripEnd);
+
+    const coveringShift = approvedShifts.find((s) => {
+      if (!s.start_time || !s.end_time) return true;
+      const shiftStartMins = toVnMinutes(s.start_time);
+      const shiftEndMins = toVnMinutes(s.end_time);
+      // Nếu ca qua đêm (vd 22:00 - 06:00) thì coi như hợp lệ nếu không lệch hoàn toàn
+      if (shiftEndMins < shiftStartMins) return true;
+      // Kiểm tra ca bao trọn thời gian chuyến (cho phép sai số đầu/cuối 0 phút)
+      return shiftStartMins <= tripStartMins && shiftEndMins >= tripEndMins;
+    });
+
+    if (!coveringShift) {
       const err = new Error(
-        `Tài xế được chọn chưa có Ca làm việc được duyệt (Approved Shift) bao trùm thời gian chạy chuyến hôm nay!`,
+        `Tài xế được chọn chưa có Ca làm việc được duyệt (Approved Shift) bao trùm thời gian chạy chuyến!`,
       );
       err.statusCode = 400;
       throw err;

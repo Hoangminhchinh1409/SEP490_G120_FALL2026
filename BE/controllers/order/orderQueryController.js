@@ -340,7 +340,9 @@ const getAllOrders = async (req, res) => {
           "",
         agreed_price: parseInt(order.agreed_price, 10) || 0,
         extra_fees_surcharge: Array.isArray(order.extra_fees)
-          ? order.extra_fees.reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
+          ? order.extra_fees
+              .filter((f) => !['PROPOSED', 'REJECTED'].includes(String(f.status || '').toUpperCase()))
+              .reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
           : 0,
         extra_fees_list: Array.isArray(order.extra_fees) ? order.extra_fees : [],
         extra_fees_collection: 0,

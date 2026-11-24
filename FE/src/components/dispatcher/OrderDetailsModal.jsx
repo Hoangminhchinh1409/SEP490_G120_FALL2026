@@ -271,9 +271,11 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
 
   const estimatedBaselineRate = pricingBreakdown.totalRounded;
 
-  // Tổng các khoản phụ phí phát sinh
+  // Tổng các khoản phụ phí phát sinh (chỉ cộng các khoản đã xác nhận, không cộng Proposed / Rejected)
   const totalExtraFees = useMemo(() => {
-    return extraFees.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    return extraFees
+      .filter((item) => !['PROPOSED', 'REJECTED'].includes(String(item.status || '').toUpperCase()))
+      .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   }, [extraFees]);
 
   // Chuẩn hóa địa chỉ điểm lấy và điểm giao

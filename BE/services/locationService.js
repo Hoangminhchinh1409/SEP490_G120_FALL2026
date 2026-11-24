@@ -28,9 +28,10 @@ const formatLocation = (loc) => {
     .replace(/\s*\((Điểm gửi|Điểm nhận|Điểm lấy|Điểm giao)\)/gi, '')
     .trim();
 
-  // Đọc đúng trường từ schema cơ sở dữ liệu: latitude, longitude, province
+  // Đọc đúng trường từ schema cơ sở dữ liệu: latitude, longitude, province, geofence_radius
   const latVal = loc.latitude !== null && loc.latitude !== undefined ? Number(loc.latitude) : null;
   const lngVal = loc.longitude !== null && loc.longitude !== undefined ? Number(loc.longitude) : null;
+  const geofenceVal = loc.geofence_radius !== null && loc.geofence_radius !== undefined ? Number(loc.geofence_radius) : null;
   const provinceVal = loc.province || 'Khác';
 
   const isAlsHub = !loc.customer_id && isAlsWarehouseType(loc.type);
@@ -47,6 +48,7 @@ const formatLocation = (loc) => {
     province: provinceVal,
     lat: latVal,
     lng: lngVal,
+    geofence_radius: geofenceVal,
     receiving_hours: loc.receiving_hours || '24/7 (Cả tuần)',
     contact_name: loc.contact_name || null,
     contact_phone: loc.contact_phone || null,
@@ -107,14 +109,32 @@ const createLocation = async (payload, userId = 3) => {
     throw err;
   }
 
+  const rawProvince = payload.province || payload.city;
+  let resolvedProvince = rawProvince
+    ? String(rawProvince).replace(/^(Thành phố|Tỉnh)\s+/i, '').trim()
+    : '';
+  if (!resolvedProvince && payload.address) {
+    const parts = String(payload.address).split(',').map((s) => s.trim()).filter(Boolean);
+    const filtered = parts.filter((p) => !/^việt nam$/i.test(p) && !/^\d{5,6}$/.test(p));
+    if (filtered.length > 0) {
+      resolvedProvince = filtered[filtered.length - 1].replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
+    }
+  }
+
+  const rawRadius = payload.geofence_radius ?? payload.radius_m ?? payload.radius;
+  const geofenceRadius = rawRadius !== undefined && rawRadius !== null && rawRadius !== '' && !isNaN(parseInt(rawRadius, 10))
+    ? Math.max(0, parseInt(rawRadius, 10))
+    : null;
+
   const locationData = {
     name: payload.name.trim(),
     type: dbType,
     customer_id: payload.customer_id ? parseInt(payload.customer_id, 10) : null,
     address: payload.address.trim(),
-    province: String(payload.province || 'Hà Nội').replace(/^(Thành phố|Tỉnh)\s+/i, '').trim(),
+    province: resolvedProvince || 'Hà Nội',
     latitude: latVal,
     longitude: lngVal,
+    geofence_radius: geofenceRadius,
     contact_name: payload.contact_name?.trim() || null,
     contact_phone: payload.contact_phone?.trim() || null,
     created_by: userId
@@ -130,6 +150,11 @@ const updateLocation = async (id, payload) => {
     throw err;
   }
   const cleanIdStr = String(id).replace(/^LOC-/i, '').trim();
+  if (!/^\d+$/.test(cleanIdStr)) {
+    const err = new Error('Mã địa điểm không hợp lệ');
+    err.statusCode = 400;
+    throw err;
+  }
   const realId = parseInt(cleanIdStr, 10);
   if (isNaN(realId) || realId <= 0) {
     const err = new Error('Mã địa điểm không hợp lệ');
@@ -148,7 +173,8 @@ const updateLocation = async (id, payload) => {
     }
     updatePayload.address = payload.address.trim();
   }
-  if (payload.province) updatePayload.province = String(payload.province).replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
+  const rawProv = payload.province || payload.city;
+  if (rawProv) updatePayload.province = String(rawProv).replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
   if (payload.contact_name !== undefined) updatePayload.contact_name = payload.contact_name?.trim() || null;
   if (payload.contact_phone !== undefined) updatePayload.contact_phone = payload.contact_phone?.trim() || null;
 
@@ -159,6 +185,10 @@ const updateLocation = async (id, payload) => {
   const rawLng = payload.lng !== undefined ? payload.lng : payload.longitude;
   if (rawLng !== undefined && rawLng !== null && !isNaN(parseFloat(rawLng))) {
     updatePayload.longitude = parseFloat(rawLng);
+  }
+  const rawRadius = payload.geofence_radius ?? payload.radius_m ?? payload.radius;
+  if (rawRadius !== undefined && rawRadius !== null && rawRadius !== '' && !isNaN(parseInt(rawRadius, 10))) {
+    updatePayload.geofence_radius = Math.max(0, parseInt(rawRadius, 10));
   }
 
   return await locationModel.update(realId, updatePayload);
@@ -171,6 +201,11 @@ const deleteLocation = async (id) => {
     throw err;
   }
   const cleanIdStr = String(id).replace(/^LOC-/i, '').trim();
+  if (!/^\d+$/.test(cleanIdStr)) {
+    const err = new Error('Mã địa điểm không hợp lệ');
+    err.statusCode = 400;
+    throw err;
+  }
   const realId = parseInt(cleanIdStr, 10);
   if (isNaN(realId) || realId <= 0) {
     const err = new Error('Mã địa điểm không hợp lệ');
@@ -197,11 +232,9 @@ const deleteLocation = async (id) => {
       err.statusCode = 400;
       throw err;
     }
-
-    await locationModel.reassignOrdersToDefaultLocation(realId, 1);
   }
 
-  return await locationModel.delete(realId);
+  return await locationModel.deleteById(realId);
 };
 
 module.exports = {

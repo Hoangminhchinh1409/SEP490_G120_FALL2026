@@ -23,6 +23,7 @@ const contractController = require('../controllers/contractController');
 const tripController = require('../controllers/tripController');
 const incidentController = require('../controllers/incidentController');
 const oversightController = require('../controllers/oversightController');
+const orderWorkflowController = require('../controllers/order/orderWorkflowController');
 
 // 1. Fleet & Drivers
 router.get('/fleet/trucks', fleetController.getFleetTrucks);
@@ -63,5 +64,9 @@ router.get('/approvals', incidentController.getApprovals);
 
 // 6. Dashboard Stats
 router.get('/dashboard-stats', oversightController.getDispatcherDashboardStats);
+
+// 7. Extra Fees Approval (BUG-ITD-07)
+router.get('/extra-fees', orderWorkflowController.getExtraFeesForDispatcher);
+router.patch('/extra-fees/:id/review', requireDispatcherOrAdmin, orderWorkflowController.reviewExtraFee);
 
 module.exports = router;

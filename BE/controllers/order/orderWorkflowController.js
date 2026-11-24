@@ -116,14 +116,15 @@ const assignTrip = async (req, res) => {
 const cancelOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const { cancellation_reason, cancellation_fee } = req.body || {};
+    const { cancellation_reason, cancellation_fee, cancel_fee } = req.body || {};
+    const rawCancelFee = cancellation_fee !== undefined && cancellation_fee !== null ? cancellation_fee : cancel_fee;
 
     if (!cancellation_reason || !String(cancellation_reason).trim()) {
       return res.status(400).json({ message: 'Lý do hủy đơn hàng là bắt buộc' });
     }
 
-    if (cancellation_fee !== undefined && cancellation_fee !== null) {
-      const fee = parseInt(cancellation_fee, 10);
+    if (rawCancelFee !== undefined && rawCancelFee !== null) {
+      const fee = parseInt(rawCancelFee, 10);
       if (isNaN(fee) || fee < 0) {
         return res.status(400).json({ message: 'Phí hủy không hợp lệ (phải >= 0)' });
       }
@@ -137,7 +138,7 @@ const cancelOrder = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng cần hủy' });
     }
 
-    const upperSt = (currentOrder.status || '').toUpperCase();
+    const upperSt = String(currentOrder.status || '').trim().toUpperCase().replace(/\s+/g, '_');
 
     // BR-17 / Figure 20: Chỉ được hủy đơn trước khi hàng được bốc lên xe (DRAFT, CONFIRMED, READY_FOR_PLANNING, ASSIGNED, ACCEPTED).
     const blockedStatuses = ['PICKED_UP', 'IN_TRANSIT', 'IN_PROGRESS', 'HANDED_OVER_VENDOR', 'HANDED_OVER_TO_VENDOR', 'DELIVERED', 'DELIVERED_EXCEPTION', 'CANCELLED', 'CLOSED'];
@@ -147,9 +148,27 @@ const cancelOrder = async (req, res) => {
       });
     }
 
+    // Kiểm tra thêm ở bảng trip_stops: nếu tài xế đã ghi nhận bốc/lấy hàng (Loading Started / Loading Done / Completed) hoặc chuyến đã In Progress -> cấm hủy
+    const orderStops = await prisma.trip_stops.findMany({
+      where: { order_id: currentOrder.id },
+      include: { trips: { select: { id: true, status: true } } }
+    });
+    const hasLoadedStop = (orderStops || []).some((s) => {
+      const sSt = String(s.status || '').trim().toUpperCase().replace(/\s+/g, '_');
+      const tSt = String(s.trips?.status || '').trim().toUpperCase().replace(/\s+/g, '_');
+      const isPickupLoaded = s.stop_type === 'Pickup' && ['LOADING_STARTED', 'LOADING_DONE', 'LEFT', 'COMPLETED'].includes(sSt);
+      const isTripInTransit = ['IN_PROGRESS', 'IN_TRANSIT'].includes(tSt);
+      return isPickupLoaded || isTripInTransit;
+    });
+    if (hasLoadedStop) {
+      return res.status(400).json({
+        message: 'Không thể hủy đơn hàng sau khi tài xế đã bắt đầu bốc xếp hoặc hàng đã lên xe!'
+      });
+    }
+
     const nowDate = new Date();
     const nowIso = nowDate.toISOString();
-    const feeVal = cancellation_fee !== undefined && cancellation_fee !== null ? parseInt(cancellation_fee, 10) : 0;
+    const feeVal = rawCancelFee !== undefined && rawCancelFee !== null ? parseInt(rawCancelFee, 10) : 0;
     const actorId = Number(req.user?.id || 3);
     const updates = {
       status: 'CANCELLED',
@@ -162,7 +181,7 @@ const cancelOrder = async (req, res) => {
       const updRes = await tx.orders.updateMany({
         where: {
           id: currentOrder.id,
-          status: { notIn: blockedStatuses }
+          status: currentOrder.status
         },
         data: updates
       });
@@ -189,7 +208,15 @@ const cancelOrder = async (req, res) => {
       for (const tId of tripIds) {
         await tx.trips.updateMany({
           where: { id: tId },
-          data: { status: 'CANCELLED', updated_at: nowDate }
+          data: { status: 'Cancelled', updated_at: nowDate }
+        });
+
+        await tx.trip_status_history.create({
+          data: {
+            trip_id: tId,
+            status: 'Cancelled',
+            changed_by: BigInt(actorId)
+          }
         });
 
         const tripTrucks = await tx.trip_trucks.findMany({
@@ -799,11 +826,138 @@ const redirectOrderToAlsWarehouse = async (req, res) => {
 };
 
 
+// 10. LẤY DANH SÁCH PHỤ PHÍ TÀI XẾ ĐỀ XUẤT CHO DISPATCHER (BUG-ITD-07)
+const getExtraFeesForDispatcher = async (req, res) => {
+  try {
+    const { status } = req.query || {};
+    const whereClause = {};
+    if (status) {
+      whereClause.status = String(status);
+    }
+
+    const fees = await prisma.extra_fees.findMany({
+      where: whereClause,
+      include: {
+        orders: {
+          select: {
+            id: true,
+            order_code: true,
+            customers: { select: { company_name: true } }
+          }
+        },
+        trips: {
+          select: {
+            id: true,
+            trip_code: true
+          }
+        },
+        users_extra_fees_recorded_byTousers: {
+          select: {
+            id: true,
+            full_name: true,
+            username: true
+          }
+        }
+      },
+      orderBy: { created_at: 'desc' }
+    });
+
+    const formatted = (fees || []).map((f) => ({
+      id: Number(f.id),
+      order_id: f.order_id ? Number(f.order_id) : null,
+      order_code: f.orders?.order_code || null,
+      customer_name: f.orders?.customers?.company_name || null,
+      trip_id: f.trip_id ? Number(f.trip_id) : null,
+      trip_code: f.trips?.trip_code || null,
+      fee_type: f.fee_type,
+      amount: Number(f.amount || 0),
+      reason: f.reason || '',
+      photo_url: f.photo_url || null,
+      status: f.status || 'Proposed',
+      source: f.source || 'Driver',
+      recorded_by: f.recorded_by ? Number(f.recorded_by) : null,
+      driver_name: f.users_extra_fees_recorded_byTousers?.full_name || f.users_extra_fees_recorded_byTousers?.username || null,
+      created_at: f.created_at ? new Date(f.created_at).toISOString() : null
+    }));
+
+    return res.json({ extra_fees: formatted });
+  } catch (err) {
+    console.error('getExtraFeesForDispatcher Exception:', err);
+    return res.status(500).json({ message: 'Lỗi khi tải danh sách phụ phí', error: err.message });
+  }
+};
+
+// 11. DISPATCHER XÁC NHẬN HOẶC TỪ CHỐI PHỤ PHÍ ĐỀ XUẤT (BUG-ITD-07)
+const reviewExtraFee = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const feeIdStr = String(id || '').trim();
+    if (!/^\d+$/.test(feeIdStr)) {
+      return res.status(400).json({ message: 'Mã phụ phí không hợp lệ' });
+    }
+    const feeId = BigInt(feeIdStr);
+
+    const { action, status: requestedStatus, note } = req.body || {};
+    const decisionRaw = String(action || requestedStatus || '').trim().toUpperCase();
+    let targetStatus = null;
+    if (['CONFIRM', 'CONFIRMED', 'APPROVE', 'APPROVED'].includes(decisionRaw)) {
+      targetStatus = 'CONFIRMED';
+    } else if (['REJECT', 'REJECTED', 'DENY'].includes(decisionRaw)) {
+      targetStatus = 'REJECTED';
+    } else {
+      return res.status(400).json({ message: 'Hành động duyệt phụ phí không hợp lệ (CONFIRM hoặc REJECT)' });
+    }
+
+    const existing = await prisma.extra_fees.findUnique({ where: { id: feeId } });
+    if (!existing) {
+      return res.status(404).json({ message: 'Không tìm thấy khoản phụ phí cần duyệt' });
+    }
+
+    const actorId = BigInt(Number(req.user?.id || 22));
+    const updated = await prisma.extra_fees.update({
+      where: { id: feeId },
+      data: {
+        status: targetStatus,
+        confirmed_by: actorId,
+        confirmed_time: new Date(),
+        ...(targetStatus === 'REJECTED' && note && String(note).trim()
+          ? { reject_reason: String(note).trim() }
+          : {}),
+        ...(note && String(note).trim()
+          ? { reason: `${existing.reason || ''} [Điều phối ghi chú: ${String(note).trim()}]`.trim() }
+          : {})
+      }
+    });
+
+    return res.json({
+      message: targetStatus === 'CONFIRMED'
+        ? 'Đã xác nhận khoản phụ phí và cộng vào tổng phụ phí đơn hàng!'
+        : 'Đã từ chối khoản phụ phí đề xuất.',
+      extra_fee: {
+        id: Number(updated.id),
+        order_id: updated.order_id ? Number(updated.order_id) : null,
+        trip_id: updated.trip_id ? Number(updated.trip_id) : null,
+        fee_type: updated.fee_type,
+        amount: Number(updated.amount || 0),
+        reason: updated.reason,
+        photo_url: updated.photo_url,
+        status: updated.status
+      }
+    });
+  } catch (err) {
+    console.error('reviewExtraFee Exception:', err);
+    return res.status(500).json({ message: 'Lỗi khi xử lý duyệt phụ phí', error: err.message });
+  }
+};
+
+
 module.exports = {
   confirmOrder,
   assignTrip,
   cancelOrder,
   closeOrder,
   splitOrder,
-  redirectOrderToAlsWarehouse
+  redirectOrderToAlsWarehouse,
+  getExtraFeesForDispatcher,
+  reviewExtraFee
 };

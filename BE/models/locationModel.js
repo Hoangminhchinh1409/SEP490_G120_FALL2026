@@ -130,11 +130,21 @@ const findRelatedTrips = async (locationId) => {
   return Array.from(uniqueTripsMap.values());
 };
 
-const deleteById = async (id) => {
+const deleteById = async (id, defaultLocationId = 1) => {
   const numId = BigInt(id);
-  await reassignOrdersToDefaultLocation(id);
-  await prisma.locations.delete({
-    where: { id: numId }
+  const defId = BigInt(defaultLocationId);
+  await prisma.$transaction(async (tx) => {
+    await tx.orders.updateMany({
+      where: { pickup_location_id: numId },
+      data: { pickup_location_id: defId }
+    });
+    await tx.orders.updateMany({
+      where: { delivery_location_id: numId },
+      data: { delivery_location_id: defId }
+    });
+    await tx.locations.delete({
+      where: { id: numId }
+    });
   });
 };
 
