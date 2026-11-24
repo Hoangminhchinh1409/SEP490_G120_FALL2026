@@ -18,6 +18,12 @@ const pool = new Pool({
     : false
 });
 
+pool.on("connect", (client) => {
+  client.on("error", (err) => {
+    console.warn("[PG Client] Client socket error caught:", err?.message || err);
+  });
+});
+
 pool.on("error", (err) => {
   console.warn("[PG Pool] Idle client disconnected:", err?.message || err);
 });

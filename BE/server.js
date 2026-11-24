@@ -16,6 +16,14 @@ BigInt.prototype.toJSON = function () {
     return Number.isSafeInteger(n) ? n : this.toString();
 };
 
+process.on("uncaughtException", (err) => {
+    if (err?.code === "ECONNRESET" || err?.syscall === "read") {
+        console.warn("[Process] Transient socket disconnection caught:", err.message);
+        return;
+    }
+    console.error("[Process] Uncaught Exception:", err);
+});
+
 const prisma = require("./config/prisma");
 const apiRoutes = require("./routes");
 

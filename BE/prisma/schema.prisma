@@ -83,7 +83,7 @@ model customer_documents {
 model customers {
   id                  BigInt                @id @default(autoincrement())
   company_name        String                @db.VarChar(255)
-  tax_code            String                @unique @db.VarChar(20)
+  tax_code            String?               @unique @db.VarChar(20)
   registered_address  String                @db.VarChar(255)
   contact_person      String                @db.VarChar(100)
   email               String                @db.VarChar(100)

@@ -60,7 +60,16 @@ export default function OrderFormPricingSection({
           <Form.Item 
             label="Giá cước thỏa thuận (VNĐ)" 
             name="agreed_price" 
-            rules={[{ required: true, message: 'Nhập giá thỏa thuận' }]} 
+            rules={[
+              { required: true, message: 'Nhập giá cước thỏa thuận' },
+              {
+                validator: (_, val) => {
+                  if (val === undefined || val === null || val === '') return Promise.reject(new Error('Vui lòng nhập giá cước'));
+                  if (Number(val) <= 0) return Promise.reject(new Error('Giá cước phải lớn hơn 0 VNĐ'));
+                  return Promise.resolve();
+                }
+              }
+            ]} 
             className="mb-0"
           >
             <InputNumber 
@@ -68,7 +77,7 @@ export default function OrderFormPricingSection({
               className="w-full font-bold text-blue-700"
               formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               parser={value => value.replace(/\$\s?|(,*)/g, '')} 
-              min={0} 
+              min={1000} 
             />
           </Form.Item>
 

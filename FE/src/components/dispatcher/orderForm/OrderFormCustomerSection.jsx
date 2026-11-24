@@ -23,19 +23,53 @@ export default function OrderFormCustomerSection({ form, shippingDirection, setP
           </Select>
         </Form.Item>
         
-        <Form.Item label="Mã số thuế" name="customer_tax_code" className="mb-2">
-          <Input placeholder="Mã số thuế" />
+        <Form.Item 
+          label="Mã số thuế" 
+          name="customer_tax_code" 
+          className="mb-2"
+          rules={[
+            {
+              pattern: /^[0-9]{10}(-[0-9]{3})?$|^[0-9]{13}$/,
+              message: 'Mã số thuế phải gồm 10 hoặc 13 chữ số'
+            }
+          ]}
+        >
+          <Input placeholder="Mã số thuế (10 hoặc 13 chữ số)" />
         </Form.Item>
 
-        <Form.Item label="Khách hàng" name="customer_name" rules={[{ required: true, message: 'Nhập tên khách hàng' }]} className="mb-2">
+        <Form.Item 
+          label="Khách hàng" 
+          name="customer_name" 
+          rules={[
+            { required: true, message: 'Nhập tên khách hàng' },
+            { max: 255, message: 'Tên khách hàng tối đa 255 ký tự' }
+          ]} 
+          className="mb-2"
+        >
           <Input placeholder="Tên công ty hoặc doanh nghiệp" />
         </Form.Item>
 
-        <Form.Item label="Số điện thoại" name="customer_phone" rules={[{ required: true, message: 'Nhập SĐT' }]} className="mb-2">
+        <Form.Item 
+          label="Số điện thoại" 
+          name="customer_phone" 
+          rules={[
+            { required: true, message: 'Nhập SĐT khách hàng' },
+            { pattern: /^(0[3|5|7|8|9])[0-9]{8}$/, message: 'Số điện thoại phải gồm 10 chữ số hợp lệ' }
+          ]} 
+          className="mb-2"
+        >
           <Input placeholder="Số điện thoại liên hệ" />
         </Form.Item>
 
-        <Form.Item label="Email" name="customer_email" rules={[{ required: true, type: 'email', message: 'Email hợp lệ' }]} className="mb-2">
+        <Form.Item 
+          label="Email" 
+          name="customer_email" 
+          rules={[
+            { required: true, message: 'Nhập email liên hệ' },
+            { type: 'email', message: 'Email không đúng định dạng' }
+          ]} 
+          className="mb-2"
+        >
           <Input placeholder="Email liên hệ" />
         </Form.Item>
 

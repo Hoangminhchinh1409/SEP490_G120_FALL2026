@@ -30,7 +30,10 @@ export default function OrderFormVehicleSection({
               </span>
             }
             name="receiver_name" 
-            rules={[{ required: true, message: shippingDirection === 'IMPORT' ? 'Nhập tên người nhận hàng' : 'Nhập tên người liên hệ' }]} 
+            rules={[
+              { required: true, message: shippingDirection === 'IMPORT' ? 'Nhập tên người nhận hàng' : 'Nhập tên người liên hệ' },
+              { max: 255, message: 'Tên tối đa 255 ký tự' }
+            ]} 
             className="mb-0"
           >
             <Input 
@@ -46,7 +49,10 @@ export default function OrderFormVehicleSection({
               </span>
             }
             name="receiver_phone" 
-            rules={[{ required: true, message: shippingDirection === 'IMPORT' ? 'Nhập SĐT người nhận hàng' : 'Nhập SĐT người liên hệ' }]} 
+            rules={[
+              { required: true, message: shippingDirection === 'IMPORT' ? 'Nhập SĐT người nhận hàng' : 'Nhập SĐT người liên hệ' },
+              { pattern: /^(0[3|5|7|8|9])[0-9]{8}$/, message: 'Số điện thoại phải gồm 10 chữ số hợp lệ' }
+            ]} 
             className="mb-0"
           >
             <Input 
