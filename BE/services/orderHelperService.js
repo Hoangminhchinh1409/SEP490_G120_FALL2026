@@ -386,10 +386,11 @@ const loadOrderMeta = async (orderId, orderObj = null) => {
 };
 
 // Lưu metadata vào order_notes (tự động chia nhỏ <= 450 ký tự/dòng để tương thích cột VARCHAR(500))
-const saveOrderMeta = async (orderId, meta) => {
+const saveOrderMeta = async (orderId, meta, createdBy = 1n) => {
   if (!orderId || !meta) return;
   try {
     const bigOrderId = toBigInt(orderId);
+    const creatorId = createdBy ? toBigInt(createdBy) : 1n;
     const allNotes = await prisma.order_notes.findMany({
       where: { order_id: bigOrderId },
       select: { id: true, content: true, created_at: true },
@@ -429,7 +430,7 @@ const saveOrderMeta = async (orderId, meta) => {
           data: {
             order_id: bigOrderId,
             content: `${META_NOTE_PREFIX}${jsonStr}`,
-            created_by: 1n
+            created_by: creatorId
           }
         });
       } else {
@@ -439,7 +440,7 @@ const saveOrderMeta = async (orderId, meta) => {
           chunks.push({
             order_id: bigOrderId,
             content: `[META_CHUNK_${idx}]:${piece}`,
-            created_by: 1n
+            created_by: creatorId
           });
         }
         await tx.order_notes.createMany({ data: chunks });

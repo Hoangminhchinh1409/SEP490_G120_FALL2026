@@ -141,30 +141,30 @@ const getAllOrders = async (req, res) => {
           : [];
       const cargo = cargosList[0] || {};
       const totalPackageCount =
-        meta.package_count !== undefined && meta.package_count !== null
-          ? Number(meta.package_count)
-          : cargosList.length > 0
-            ? cargosList.reduce((sum, c) => sum + (parseInt(c.quantity, 10) || 1), 0)
-            : 1;
+        cargosList.length > 0
+          ? cargosList.reduce((sum, c) => sum + (parseInt(c.quantity, 10) || 0), 0)
+          : (meta.package_count !== undefined && meta.package_count !== null
+            ? Number(meta.package_count)
+            : null);
       const totalActualWeight =
-        meta.weight !== undefined && meta.weight !== null
-          ? parseFloat(meta.weight)
-          : cargosList.length > 0
-            ? cargosList.reduce((sum, c) => sum + (parseFloat(c.actual_weight_kg) || 0), 0)
-            : 0;
+        cargosList.length > 0
+          ? cargosList.reduce((sum, c) => sum + (parseFloat(c.actual_weight_kg) || 0), 0)
+          : (meta.weight !== undefined && meta.weight !== null
+            ? parseFloat(meta.weight)
+            : null);
       const totalChargeableWeight =
-        meta.chargeable !== undefined && meta.chargeable !== null
-          ? parseFloat(meta.chargeable)
-          : cargosList.length > 0
-            ? cargosList.reduce(
-                (sum, c) =>
-                  sum +
-                  (parseFloat(c.chargeable_weight_kg) ||
-                    parseFloat(c.actual_weight_kg) ||
-                    0),
-                0,
-              )
-            : totalActualWeight;
+        cargosList.length > 0
+          ? cargosList.reduce(
+              (sum, c) =>
+                sum +
+                (parseFloat(c.chargeable_weight_kg) ||
+                  parseFloat(c.actual_weight_kg) ||
+                  0),
+              0,
+            )
+          : (meta.chargeable !== undefined && meta.chargeable !== null
+            ? parseFloat(meta.chargeable)
+            : totalActualWeight);
       const combinedCargoName =
         cargosList.length > 1
           ? cargosList
@@ -173,18 +173,11 @@ const getAllOrders = async (req, res) => {
               .join(", ")
           : cargo.cargo_name;
       const feStatus = mapDbStatusToFe(order.status, order, meta);
-      const isExplicitDirect =
-        order.source === "Direct" || order.source === "HOTLINE";
       const isFromWeb =
-        !isExplicitDirect &&
-        (order.source === "HOMEPAGE" ||
-          order.source === "Web" ||
-          Boolean(meta.customer_email) ||
-          order.agreed_price === 0 ||
-          visibleNotes.some(
-            (n) =>
-              n.content?.includes("Website") || n.content?.includes("Homepage"),
-          ));
+        order.source === "HOMEPAGE" ||
+        order.source === "Web" ||
+        String(order.source || "").toUpperCase() === "HOMEPAGE" ||
+        String(order.source || "").toUpperCase() === "WEB";
 
       const noteStr = visibleNotes.map((n) => n.content).join(" ") || "";
       const isBulk =
@@ -201,14 +194,14 @@ const getAllOrders = async (req, res) => {
         ? "BULK"
         : isPallet
           ? "PALLET"
-          : "GENERAL";
+          : (cargo.cargo_type || "GENERAL");
 
-      // Xác định chính xác địa chỉ lấy & giao từ meta trước, sau đó tới locations
+      // Xác định chính xác địa chỉ lấy & giao từ meta trước, sau đó tới locations (BUG-OL-05: không dùng giá trị giả)
       const resolvedPickupAddr =
         meta.pickup_address ||
         order.pickup_location?.address ||
         order.pickup_location?.name ||
-        "Kho ALS Cảng HKQT Nội Bài";
+        null;
 
       const isDuplicateAirportDelivery =
         order.pickup_location_id === 1 &&
@@ -222,39 +215,39 @@ const getAllOrders = async (req, res) => {
           : null) ||
         order.delivery_location?.address ||
         order.delivery_location?.name ||
-        "KCN Tiên Sơn, Bắc Ninh";
+        null;
 
-      const resolvedPickupCoords = {
-        lat:
-          parseFloat(
-            meta.pickup_coords?.lat ||
-              order.pickup_location?.latitude ||
-              order.pickup_location?.lat,
-          ) || 21.2187,
-        lng:
-          parseFloat(
-            meta.pickup_coords?.lng ||
-              order.pickup_location?.longitude ||
-              order.pickup_location?.lng,
-          ) || 105.8042,
-      };
+      const rawPickupLat = parseFloat(
+        meta.pickup_coords?.lat ||
+          order.pickup_location?.latitude ||
+          order.pickup_location?.lat,
+      );
+      const rawPickupLng = parseFloat(
+        meta.pickup_coords?.lng ||
+          order.pickup_location?.longitude ||
+          order.pickup_location?.lng,
+      );
+      const resolvedPickupCoords =
+        !isNaN(rawPickupLat) && !isNaN(rawPickupLng)
+          ? { lat: rawPickupLat, lng: rawPickupLng }
+          : null;
 
-      const resolvedDeliveryCoords = {
-        lat:
-          parseFloat(
-            meta.delivery_coords?.lat ||
-              (!isDuplicateAirportDelivery &&
-                (order.delivery_location?.latitude ||
-                  order.delivery_location?.lat)),
-          ) || 21.1215,
-        lng:
-          parseFloat(
-            meta.delivery_coords?.lng ||
-              (!isDuplicateAirportDelivery &&
-                (order.delivery_location?.longitude ||
-                  order.delivery_location?.lng)),
-          ) || 105.9754,
-      };
+      const rawDeliveryLat = parseFloat(
+        meta.delivery_coords?.lat ||
+          (!isDuplicateAirportDelivery &&
+            (order.delivery_location?.latitude ||
+              order.delivery_location?.lat)),
+      );
+      const rawDeliveryLng = parseFloat(
+        meta.delivery_coords?.lng ||
+          (!isDuplicateAirportDelivery &&
+            (order.delivery_location?.longitude ||
+              order.delivery_location?.lng)),
+      );
+      const resolvedDeliveryCoords =
+        !isNaN(rawDeliveryLat) && !isNaN(rawDeliveryLng)
+          ? { lat: rawDeliveryLat, lng: rawDeliveryLng }
+          : null;
 
       const customerRequestedVehicle =
         meta.customer_requested_vehicle ||
@@ -274,7 +267,7 @@ const getAllOrders = async (req, res) => {
         order_code: order.order_code,
         customer: order.customer?.company_name || "Khách hàng",
         customer_phone:
-          order.receiver_phone || order.customer?.tax_code || "0988123456",
+          order.customer?.phone || order.receiver_phone || "",
         customer_email:
           meta.customer_email ||
           order.tracking_email ||
@@ -297,25 +290,45 @@ const getAllOrders = async (req, res) => {
         warehouse_name: order.warehouse_name || meta.warehouse_name || null,
         redirected_to_warehouse: Boolean(meta.redirected_to_warehouse || order.warehouse_name),
         source: isFromWeb ? "HOMEPAGE" : order.source || "HOTLINE",
-        package_count: totalPackageCount || 1,
-        package_unit: cargo.unit || (isBulk ? "Chuyến" : "Kiện"),
+        package_count:
+          totalPackageCount !== null && totalPackageCount !== undefined
+            ? totalPackageCount
+            : null,
+        package_unit: cargo.unit || (cargosList.length > 0 ? (isBulk ? "Chuyến" : "Kiện") : null),
         cargo_name:
           combinedCargoName ||
-          visibleNotes[0]?.content ||
-          (isBulk
-            ? "Hàng rời tính theo trọng tải"
-            : "Hàng bách hóa / Linh kiện"),
+          (cargosList.length > 0
+            ? (isBulk ? "Hàng rời tính theo trọng tải" : "Hàng bách hóa / Linh kiện")
+            : (visibleNotes[0]?.content || null)),
         cargo_type: detectedCargoType,
-        length_cm: isBulk ? 0 : parseFloat(cargo.length_cm) || 120,
-        width_cm: isBulk ? 0 : parseFloat(cargo.width_cm) || 100,
-        height_cm: isBulk ? 0 : parseFloat(cargo.height_cm) || 150,
-        weight: totalActualWeight || 1200,
+        length_cm:
+          cargo.length_cm !== null && cargo.length_cm !== undefined
+            ? parseFloat(cargo.length_cm)
+            : null,
+        width_cm:
+          cargo.width_cm !== null && cargo.width_cm !== undefined
+            ? parseFloat(cargo.width_cm)
+            : null,
+        height_cm:
+          cargo.height_cm !== null && cargo.height_cm !== undefined
+            ? parseFloat(cargo.height_cm)
+            : null,
+        weight:
+          totalActualWeight !== null && totalActualWeight !== undefined
+            ? totalActualWeight
+            : null,
         chargeable:
-          totalChargeableWeight ||
-          totalActualWeight ||
-          1200,
-        estimated_distance_km: parseFloat(meta.estimated_distance_km) || 35.5,
-        estimated_duration_mins: parseInt(meta.estimated_duration_mins, 10) || 45,
+          totalChargeableWeight !== null && totalChargeableWeight !== undefined
+            ? totalChargeableWeight
+            : null,
+        estimated_distance_km:
+          meta.estimated_distance_km !== undefined && meta.estimated_distance_km !== null
+            ? parseFloat(meta.estimated_distance_km)
+            : null,
+        estimated_duration_mins:
+          meta.estimated_duration_mins !== undefined && meta.estimated_duration_mins !== null
+            ? parseInt(meta.estimated_duration_mins, 10)
+            : null,
         vehicle_type_required: proposedVehicleType,
         customer_requested_vehicle: customerRequestedVehicle,
         proposed_vehicle_type: proposedVehicleType,
@@ -361,7 +374,7 @@ const getAllOrders = async (req, res) => {
           meta.contract_file ||
           meta.web_workflow?.signed_contract?.contract_file ||
           null,
-        contract_file_data: meta.contract_file_data || null,
+        contract_file_data: null,
         contract_uploaded_at:
           meta.contract_uploaded_at ||
           meta.web_workflow?.signed_contract?.signed_at ||
@@ -382,11 +395,11 @@ const getAllOrders = async (req, res) => {
           order.responsible_dispatcher?.full_name ||
           order.responsible_dispatcher?.username ||
           meta.dispatcher_name ||
-          "Điều phối viên NEXLOG",
+          null,
         dispatcher_phone:
           order.responsible_dispatcher?.phone ||
           meta.dispatcher_phone ||
-          "0988 123 456",
+          null,
         shipping_direction:
           meta.shipping_direction ||
           (order.order_type === "PICKUP" || order.order_type === "Export"

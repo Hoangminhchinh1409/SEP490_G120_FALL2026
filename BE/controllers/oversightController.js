@@ -108,7 +108,7 @@ const getDispatcherDashboardStats = async (req, res) => {
     const orders = serializePrisma(ordersRaw || []);
     const orderList = orders.map((o) => {
       const meta = parseOrderMeta(o);
-      const cargos = o.order_cargos ? [o.order_cargos] : [];
+      const cargos = Array.isArray(o.order_cargos) ? o.order_cargos : o.order_cargos ? [o.order_cargos] : [];
       const weight = cargos.reduce(
         (s, c) => s + (Number(c.chargeable_weight) || Number(c.weight_kg) || Number(c.chargeable_weight_kg) || Number(c.actual_weight_kg) || 0),
         0

@@ -718,54 +718,81 @@ const createTrip = async (payload, userId = 1) => {
       throw err;
     }
   }
-  if (!truckId) {
+  if (!truckId && !truck_plate) {
     truckId = await tripModel.findFirstTruck();
   }
 
   // Kiểm tra trạng thái xe (không gán xe đang chạy chuyến khác hoặc đang bảo trì) và tải trọng xe
+  let truckRow = null;
   if (truckId && prisma.trucks) {
-    const truckRow = await prisma.trucks.findUnique({
+    truckRow = await prisma.trucks.findUnique({
       where: { id: BigInt(Number(truckId)) },
     });
-    if (truckRow) {
-      const truckStatusUpper = String(truckRow.status || "")
-        .trim()
-        .toUpperCase()
-        .replace(/\s+/g, "_");
-      if (
-        ["ON_TRIP", "IN_TRANSIT", "IN_PROGRESS", "MAINTENANCE"].includes(
-          truckStatusUpper,
-        )
-      ) {
-        const err = new Error(
-          `Xe tải ${truckRow.plate_number} hiện đang ở trạng thái ${truckRow.status}, không thể phân bổ chuyến mới!`,
-        );
-        err.statusCode = 400;
-        throw err;
-      }
-
-      const cargosArr = Array.isArray(matchedOrder?.order_cargos)
-        ? matchedOrder.order_cargos
-        : matchedOrder?.order_cargos
-          ? [matchedOrder.order_cargos]
-          : [];
-      const totalOrderWeight = cargosArr.reduce(
-        (sum, c) =>
-          sum +
-          Math.max(
-            Number(c?.actual_weight_kg || 0),
-            Number(c?.chargeable_weight_kg || 0),
-          ),
-        0,
+    if (!truckRow) {
+      const err = new Error(`Không tìm thấy xe tải với ID ${truckId}`);
+      err.statusCode = 400;
+      throw err;
+    }
+    const truckStatusUpper = String(truckRow.status || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "_");
+    if (
+      ["ON_TRIP", "IN_TRANSIT", "IN_PROGRESS", "MAINTENANCE"].includes(
+        truckStatusUpper,
+      )
+    ) {
+      const err = new Error(
+        `Xe tải ${truckRow.plate_number} hiện đang ở trạng thái ${truckRow.status}, không thể phân bổ chuyến mới!`,
       );
-      const allowedPayload = Number(truckRow.allowed_payload || 0);
-      if (allowedPayload > 0 && totalOrderWeight > allowedPayload) {
-        const err = new Error(
-          `Tổng trọng lượng đơn hàng (${totalOrderWeight} kg) vượt quá tải trọng cho phép của xe ${truckRow.plate_number} (${allowedPayload} kg)!`,
-        );
-        err.statusCode = 400;
-        throw err;
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // Kiểm tra xe có đang nằm trong chuyến nào chưa kết thúc không (trip_trucks)
+    const activeTripTruck = await prisma.trip_trucks.findFirst({
+      where: {
+        truck_id: BigInt(Number(truckId)),
+        trips: {
+          status: {
+            in: ["Assigned", "Accepted", "In Progress", "In Transit", "Loading Started", "Loading Done"]
+          }
+        }
+      },
+      include: {
+        trips: { select: { trip_code: true, status: true } }
       }
+    });
+
+    if (activeTripTruck) {
+      const err = new Error(
+        `Xe tải ${truckRow.plate_number} hiện đang tham gia chuyến ${activeTripTruck.trips?.trip_code || ''} (trạng thái: ${activeTripTruck.trips?.status}), không thể phân bổ chuyến mới!`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const cargosArr = Array.isArray(matchedOrder?.order_cargos)
+      ? matchedOrder.order_cargos
+      : matchedOrder?.order_cargos
+        ? [matchedOrder.order_cargos]
+        : [];
+    const totalOrderWeight = cargosArr.reduce(
+      (sum, c) =>
+        sum +
+        Math.max(
+          Number(c?.actual_weight_kg || 0),
+          Number(c?.chargeable_weight_kg || 0),
+        ),
+      0,
+    );
+    const allowedPayload = Number(truckRow.allowed_payload || 0);
+    if (allowedPayload > 0 && totalOrderWeight > allowedPayload) {
+      const err = new Error(
+        `Tổng trọng lượng đơn hàng (${totalOrderWeight} kg) vượt quá tải trọng cho phép của xe ${truckRow.plate_number} (${allowedPayload} kg)!`,
+      );
+      err.statusCode = 400;
+      throw err;
     }
   }
 
@@ -891,9 +918,9 @@ const createTrip = async (payload, userId = 1) => {
     );
   }
 
-  const cleanPlate = truck_plate
+  const cleanPlate = truckRow?.plate_number || (truck_plate
     ? String(truck_plate).split(" ")[0].trim()
-    : "29H-995.72";
+    : "29H-995.72");
   const cleanDriverName = targetDriverName
     ? String(targetDriverName).split("·")[0].trim()
     : "Nguyễn Văn Lái";
@@ -993,7 +1020,7 @@ const createTrip = async (payload, userId = 1) => {
     raw_id: tripRecord.id,
     plate: cleanPlate,
     driver_name: cleanDriverName,
-    status: "IN_TRANSIT",
+    status: "Assigned",
     order_id: resolvedOrderId,
     order_code: matchedOrder?.order_code || order_code,
   };

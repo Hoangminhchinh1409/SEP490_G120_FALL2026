@@ -27,8 +27,20 @@ const locationController = require('../controllers/locationController');
 const { requireAuth, requireRole } = require('../middlewares/authMiddleware');
 const requireDispatcherOrAdmin = [requireAuth, requireRole(['DISPATCHER', 3, 'ADMINISTRATOR', 1])];
 
-// 1. Lấy danh sách đơn hàng
-router.get('/', getAllOrders);
+const requireDispatcherOnly = (req, res, next) => {
+  const roleId = Number(req.user?.role_id);
+  const roleName = String(req.user?.role || '').toUpperCase();
+  if (roleId === 3 || roleName === 'DISPATCHER') {
+    return next();
+  }
+  return res.status(403).json({
+    message: 'Forbidden: You do not have permission to access this resource',
+    code: 'MSG_FORBIDDEN'
+  });
+};
+
+// 1. Lấy danh sách đơn hàng (Chỉ dành riêng cho Điều phối viên - BUG-OL-01)
+router.get('/', requireAuth, requireDispatcherOnly, getAllOrders);
 
 // 1b. Khách hàng: Lấy danh sách hệ thống kho ALS công khai (Public)
 router.get('/public-locations', locationController.getPublicAlsWarehouses);

@@ -186,6 +186,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
 
   // State Phụ phí phát sinh
   const [extraFees, setExtraFees] = useState(order.extra_fees_list || []);
+  useEffect(() => {
+    setExtraFees(order.extra_fees_list || []);
+  }, [order.id, order.order_id, order.extra_fees_list]);
   const [newFeeType, setNewFeeType] = useState(EXTRA_FEE_TYPES[0]);
   const [newFeeAmount, setNewFeeAmount] = useState(0);
   const [newFeeReason, setNewFeeReason] = useState('');
@@ -419,6 +422,12 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
   const handleContractFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      message.error('Tệp hợp đồng tải lên bắt buộc phải là định dạng PDF (.pdf)!');
+      if (contractInputRef.current) contractInputRef.current.value = '';
+      return;
+    }
 
     const sizeFormatted = file.size > 1024 * 1024 
       ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 

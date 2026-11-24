@@ -216,8 +216,9 @@ export default function OrderContractTab({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith('.pdf') && !file.type.includes('pdf')) {
-      message.warning('Vui lòng chọn tệp hợp đồng định dạng PDF đã có chữ ký/dấu đỏ!');
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      message.error('Tệp hợp đồng tải lên bắt buộc phải là định dạng PDF (.pdf)!');
+      e.target.value = '';
       return;
     }
 

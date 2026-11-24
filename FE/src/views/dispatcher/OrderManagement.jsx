@@ -291,15 +291,29 @@ const OrderManagement = () => {
       dataIndex: 'agreed_price', 
       key: 'agreed_price', 
       width: '12%',
-      render: val => (
+      render: (val, record) => (
         val && val > 0 ? (
-          <span className="font-bold text-gray-800 text-xs whitespace-nowrap">
-            {val.toLocaleString()} đ
-          </span>
+          <div>
+            <div className="font-bold text-gray-800 text-xs whitespace-nowrap">
+              {val.toLocaleString()} đ
+            </div>
+            {record.extra_fees_surcharge > 0 && (
+              <div className="text-[11px] text-amber-700 font-semibold whitespace-nowrap mt-0.5">
+                + Phụ phí: {record.extra_fees_surcharge.toLocaleString()} đ
+              </div>
+            )}
+          </div>
         ): (
-          <span className="font-bold text-amber-600 text-xs whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-            Chờ chốt giá
-          </span>
+          <div>
+            <span className="font-bold text-amber-600 text-xs whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+              Chờ chốt giá
+            </span>
+            {record.extra_fees_surcharge > 0 && (
+              <div className="text-[11px] text-amber-700 font-semibold whitespace-nowrap mt-0.5">
+                + Phụ phí: {record.extra_fees_surcharge.toLocaleString()} đ
+              </div>
+            )}
+          </div>
         )
       )
     },
@@ -384,13 +398,11 @@ const OrderManagement = () => {
               </Tag>
             );
           }
-          if (record.web_workflow?.stage === 'DOCS_UPLOADED') {
-            return (
-              <Tag color="processing" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
-                Chờ duyệt chứng từ
-              </Tag>
-            );
-          }
+          return (
+            <Tag color="blue" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+              Đã xác nhận
+            </Tag>
+          );
         }
         return (
           <Tag color={statusColors[status] || 'default'} className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">

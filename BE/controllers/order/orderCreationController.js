@@ -508,7 +508,17 @@ const createDirectOrder = async (req, res) => {
         .json({ message: "Vui lòng nhập tên mặt hàng vận chuyển" });
     }
 
-    const parsedWeight = parseFloat(weight_kg);
+    const parsedWeight = parseFloat(
+      weight_kg ||
+        (hasItemsArr
+          ? req.body.items.reduce(
+              (sum, it) =>
+                sum +
+                (parseFloat(it.weight_kg || it.actual_weight || it.weight) || 0),
+              0,
+            )
+          : null),
+    );
     if (isNaN(parsedWeight) || parsedWeight <= 0) {
       return res
         .status(400)
@@ -621,57 +631,7 @@ const createDirectOrder = async (req, res) => {
       }
     }
 
-    // 3. Tìm hoặc tạo Customer (BUG-DO-03)
-    let customerId = null;
-
-    if (!is_new_customer) {
-      // Tìm khách hàng cũ theo Mã số thuế hoặc Email duy nhất (không tìm theo tên công ty để chống gộp nhầm)
-      const lookupConditions = [];
-      if (cleanTaxCode) lookupConditions.push({ tax_code: cleanTaxCode });
-      if (cleanCustomerEmail)
-        lookupConditions.push({ email: cleanCustomerEmail });
-
-      if (lookupConditions.length > 0) {
-        const existingCust = await prisma.customers.findFirst({
-          where: { OR: lookupConditions },
-          select: { id: true, tax_code: true, company_name: true },
-        });
-        if (existingCust) {
-          customerId = Number(existingCust.id);
-        }
-      }
-    } else {
-      // Nếu tick "Khách mới" mà MST đã tồn tại trong DB -> Cảnh báo lỗi chống tạo trùng lặp
-      if (cleanTaxCode) {
-        const duplicateCust = await prisma.customers.findFirst({
-          where: { tax_code: cleanTaxCode },
-          select: { id: true, company_name: true },
-        });
-        if (duplicateCust) {
-          return res.status(400).json({
-            message: `Mã số thuế ${cleanTaxCode} đã tồn tại trong hệ thống (Công ty: ${duplicateCust.company_name}). Vui lòng bỏ chọn 'Khách hàng mới' để tiếp tục!`,
-          });
-        }
-      }
-    }
-
-    // Nếu chưa tìm thấy khách cũ hoặc là khách mới, tạo bản ghi customer chuẩn
-    if (!customerId) {
-      const newCust = await prisma.customers.create({
-        data: {
-          company_name: String(customer_name).trim(),
-          contact_person: String(customer_name).trim(),
-          phone: cleanCustomerPhone,
-          tax_code: cleanTaxCode || null, // Lưu đúng MST đã nhập, để null nếu không nhập (BUG-DO-03)
-          registered_address: customer_address || delivery_address || "Hà Nội",
-          email: cleanCustomerEmail,
-          created_by: BigInt(directDispatcherId),
-        },
-        select: { id: true },
-      });
-      customerId = Number(newCust.id);
-    }
-
+    // 3. Chuẩn bị địa chỉ và tọa độ điểm lấy / điểm giao
     const finalPickupAddress =
       (pickup_address || "").trim() ||
       "Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội";
@@ -679,7 +639,6 @@ const createDirectOrder = async (req, res) => {
       (delivery_address || customer_address || "").trim() ||
       "KCN Tiên Sơn, Bắc Ninh";
 
-    const isNew = Boolean(is_new_customer || customerId === 16);
     const validatedPickupAlsId = await resolveAlsLocationIdIfValid(
       req.body.pickup_location_id,
     );
@@ -688,13 +647,13 @@ const createDirectOrder = async (req, res) => {
       (await getOrCreateLocation({
         name: finalPickupAddress,
         address: finalPickupAddress,
-        customerId: pickup_address ? customerId : null,
+        customerId: null,
         type: "CUSTOMER_SITE",
         lat: pickup_coords?.lat,
         lng: pickup_coords?.lng,
         contactName: customer_name,
         contactPhone: cleanCustomerPhone,
-        isNewCustomer: isNew,
+        isNewCustomer: Boolean(is_new_customer),
       }));
 
     const validatedDeliveryAlsId = await resolveAlsLocationIdIfValid(
@@ -705,35 +664,348 @@ const createDirectOrder = async (req, res) => {
       (await getOrCreateLocation({
         name: finalDeliveryAddress,
         address: finalDeliveryAddress,
-        customerId: delivery_address ? customerId : null,
+        customerId: null,
         type: "CUSTOMER_SITE",
         lat: delivery_coords?.lat,
         lng: delivery_coords?.lng,
         contactName: customer_name,
         contactPhone: cleanCustomerPhone,
-        isNewCustomer: isNew,
+        isNewCustomer: Boolean(is_new_customer),
       }));
 
-    const orderCode = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
-    const token = generateTrackingToken();
+    const hasUploadedDocs =
+      Array.isArray(req.body.documents) &&
+      req.body.documents.some((d) => d.file && d.file !== "Chờ tải lên");
 
-    const isBulk = cargo_type === "BULK";
-    const l = isBulk ? 1 : Math.max(1, parseFloat(length_cm) || 120);
-    const w = isBulk ? 1 : Math.max(1, parseFloat(width_cm) || 100);
-    const h = isBulk ? 1 : Math.max(1, parseFloat(height_cm) || 150);
-    const actualWeight = parsedWeight;
-    const finalChargeable = isBulk
-      ? actualWeight
-      : parseFloat(chargeable_weight) || actualWeight;
+    // 4. Thực thi toàn bộ quá trình tạo Khách hàng, Đơn hàng, Hàng hóa, Phụ phí và Chứng từ trong Transaction (BUG-DO-09)
+    const createdOrderRaw = await prisma.$transaction(async (tx) => {
+      // 4.1. Tìm hoặc tạo Customer (BUG-DO-03 & BUG-DO-09)
+      let customerId = null;
 
-    // Validate quá tải trọng Backend
-    const effectiveWeight = Math.max(actualWeight, finalChargeable);
-    const maxPayload = getVehicleMaxPayload(vehicle_type_required);
-    if (effectiveWeight > maxPayload) {
-      return res.status(400).json({
-        message: `Lô hàng nặng ${effectiveWeight.toLocaleString("vi-VN")} kg vượt quá tải trọng tối đa của loại xe ${vehicle_type_required || "đã chọn"} (${maxPayload.toLocaleString("vi-VN")} kg). Vui lòng chọn xe có tải trọng lớn hơn!`,
+      if (!is_new_customer) {
+        const lookupConditions = [];
+        if (cleanTaxCode) lookupConditions.push({ tax_code: cleanTaxCode });
+        if (cleanCustomerEmail)
+          lookupConditions.push({ email: cleanCustomerEmail });
+
+        if (lookupConditions.length > 0) {
+          const existingCust = await tx.customers.findFirst({
+            where: { OR: lookupConditions },
+            select: { id: true, tax_code: true, company_name: true },
+          });
+          if (existingCust) {
+            customerId = Number(existingCust.id);
+          }
+        }
+      } else {
+        if (cleanTaxCode) {
+          const duplicateCust = await tx.customers.findFirst({
+            where: { tax_code: cleanTaxCode },
+            select: { id: true, company_name: true },
+          });
+          if (duplicateCust) {
+            const err = new Error(
+              `Mã số thuế ${cleanTaxCode} đã tồn tại trong hệ thống (Công ty: ${duplicateCust.company_name}). Vui lòng bỏ chọn 'Khách hàng mới' để tiếp tục!`,
+            );
+            err.statusCode = 400;
+            throw err;
+          }
+        }
+      }
+
+      if (!customerId) {
+        const newCust = await tx.customers.create({
+          data: {
+            company_name: String(customer_name).trim(),
+            contact_person: String(customer_name).trim(),
+            phone: cleanCustomerPhone,
+            tax_code: cleanTaxCode || null,
+            registered_address: customer_address || delivery_address || "Hà Nội",
+            email: cleanCustomerEmail,
+            created_by: BigInt(directDispatcherId),
+          },
+          select: { id: true },
+        });
+        customerId = Number(newCust.id);
+      }
+
+      if (!customerId) {
+        throw new Error("Không thể khởi tạo hoặc xác thực thông tin khách hàng");
+      }
+
+      const orderCode = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
+      const token = generateTrackingToken();
+
+      // 4.2 Tạo đơn hàng (Status luôn bắt đầu từ CONFIRMED)
+      const orderRecord = await tx.orders.create({
+        data: {
+          order_code: orderCode,
+          order_type:
+            req.body.shipping_direction === "EXPORT" ? "Export" : "Import",
+          customer_id: BigInt(customerId),
+          tracking_token: token,
+          pickup_location_id: BigInt(Number(pickupLocationId)),
+          delivery_location_id: BigInt(Number(deliveryLocationId)),
+          receiver_name: String(receiver_name).trim(),
+          receiver_phone: cleanReceiverPhone,
+          agreed_price: BigInt(parsedPrice),
+          status: "CONFIRMED", // BUG-DO-01
+          source: req.body.source || "Direct", // BUG-DO-06: Lưu đúng nguồn tiếp nhận (Zalo, Hotline, Direct...)
+          responsible_dispatcher_id: BigInt(directDispatcherId), // BUG-DO-02
+          created_by: BigInt(directDispatcherId),
+          requested_pickup_date: toDateObj(
+            required_pickup_date || req.body.flight_arrival_date,
+          ),
+          truck_type_requested: vehicle_type_required || "TRUCK_2.5T",
+          loading_request:
+            loading_unloading_required === true ||
+            loading_unloading_required === "true"
+              ? "YES"
+              : "NO",
+          warehouse_type: "ALS warehouse",
+          customer_agrees_to_grouping: false,
+          document_status: hasUploadedDocs
+            ? "Pending Review"
+            : "Pending Documents", // BUG-DO-01
+          is_closed: false,
+          waiting_too_long: false,
+          late_risk: false,
+          ready_for_planning_at: null, // BUG-DO-01
+        },
       });
-    }
+
+      // 4.3 Tạo các dòng hàng hóa order_cargos (BUG-DO-07)
+      const cargoRows = [];
+      if (Array.isArray(req.body.items) && req.body.items.length > 0) {
+        for (const it of req.body.items) {
+          const itBulk = it.cargo_type === "BULK" || it.cargo_type === "Bulk";
+          const itActualWeight = parseFloat(it.weight_kg || it.actual_weight || it.weight) || 0;
+          let itLength = null;
+          let itWidth = null;
+          let itHeight = null;
+          let itStackable = true;
+          let itChargeable = itActualWeight;
+
+          if (itBulk) {
+            itStackable = false;
+            itLength = null;
+            itWidth = null;
+            itHeight = null;
+            itChargeable = itActualWeight;
+          } else {
+            const hasDimensions =
+              (it.length_cm && parseFloat(it.length_cm) > 0) ||
+              (it.width_cm && parseFloat(it.width_cm) > 0) ||
+              (it.height_cm && parseFloat(it.height_cm) > 0);
+            if (hasDimensions) {
+              itLength = parseFloat(it.length_cm) || 0;
+              itWidth = parseFloat(it.width_cm) || 0;
+              itHeight = parseFloat(it.height_cm) || 0;
+              const volWeight = (itLength * itWidth * itHeight) / 5000;
+              itChargeable = Math.max(itActualWeight, volWeight);
+              itStackable = it.stackable !== false;
+            } else {
+              itLength = null;
+              itWidth = null;
+              itHeight = null;
+              itChargeable = itActualWeight;
+              itStackable = it.stackable !== false;
+            }
+          }
+
+          cargoRows.push({
+            order_id: orderRecord.id,
+            cargo_type: itBulk
+              ? "Bulk"
+              : it.cargo_type === "PALLET" || it.cargo_type === "Pallet"
+                ? "Pallet"
+                : "General",
+            cargo_name: it.cargo_name || "Hàng hóa",
+            quantity: parseInt(it.package_count || it.quantity, 10) || 1,
+            unit: it.package_unit || (itBulk ? "Chuyến" : "Kiện"),
+            actual_weight_kg: itActualWeight,
+            length_cm: itLength,
+            width_cm: itWidth,
+            height_cm: itHeight,
+            stackable: itStackable,
+            chargeable_weight_kg: parseFloat(itChargeable.toFixed(2)),
+            declared_value: it.declared_value_usd
+              ? BigInt(Math.round(parseFloat(it.declared_value_usd) * 25000))
+              : 0n,
+            special_request_note: it.note || order_notes || null,
+          });
+        }
+      } else {
+        const isBulk = cargo_type === "BULK" || cargo_type === "Bulk";
+        let l = null;
+        let w = null;
+        let h = null;
+        let stackable = true;
+        let chargeable = parsedWeight;
+
+        if (isBulk) {
+          stackable = false;
+          l = null;
+          w = null;
+          h = null;
+          chargeable = parsedWeight;
+        } else {
+          const hasDims =
+            (length_cm && parseFloat(length_cm) > 0) ||
+            (width_cm && parseFloat(width_cm) > 0) ||
+            (height_cm && parseFloat(height_cm) > 0);
+          if (hasDims) {
+            l = parseFloat(length_cm) || 0;
+            w = parseFloat(width_cm) || 0;
+            h = parseFloat(height_cm) || 0;
+            const volWeight = (l * w * h) / 5000;
+            chargeable = Math.max(parsedWeight, volWeight);
+            stackable = true;
+          } else {
+            l = null;
+            w = null;
+            h = null;
+            chargeable = parsedWeight;
+            stackable = true;
+          }
+        }
+
+        cargoRows.push({
+          order_id: orderRecord.id,
+          cargo_type: isBulk
+            ? "Bulk"
+            : cargo_type === "PALLET" || cargo_type === "Pallet"
+              ? "Pallet"
+              : "General",
+          cargo_name:
+            cargo_name ||
+            (isBulk
+              ? "Hàng rời tính theo trọng tải"
+              : "Hàng bách hóa / Linh kiện"),
+          quantity: parseInt(package_count, 10) || 1,
+          unit: package_unit || (isBulk ? "Chuyến" : "Kiện"),
+          actual_weight_kg: parsedWeight,
+          length_cm: l,
+          width_cm: w,
+          height_cm: h,
+          stackable: stackable,
+          chargeable_weight_kg: parseFloat(chargeable.toFixed(2)),
+          declared_value: declared_value_usd
+            ? BigInt(Math.round(parseFloat(declared_value_usd) * 25000))
+            : 0n,
+          special_request_note: order_notes || null,
+        });
+      }
+
+      for (const cRow of cargoRows) {
+        await tx.order_cargos.create({ data: cRow });
+      }
+
+      // 4.4 Lưu phụ phí dịch vụ hải quan nếu được tick chọn (BUG-DO-06)
+      if (
+        req.body.customs_service_required === true ||
+        req.body.customs_service_required === "true" ||
+        Number(req.body.customs_fee) > 0
+      ) {
+        const customsAmount =
+          Number(req.body.customs_fee) > 0
+            ? Number(req.body.customs_fee)
+            : 500000;
+        await tx.extra_fees.create({
+          data: {
+            order_id: orderRecord.id,
+            fee_type: "Hải quan",
+            amount: BigInt(customsAmount),
+            reason: "Phí dịch vụ làm thủ tục hải quan",
+            suggested_by_system: false,
+            recorded_by: BigInt(directDispatcherId),
+            status: "CONFIRMED",
+            source: "Dispatcher",
+          },
+        });
+      }
+
+      // 4.5 Lưu phụ phí vận chuyển bổ sung nếu có (BUG-DO-06)
+      const extraFeeSurcharge = parseFloat(req.body.extra_fees_surcharge);
+      if (!isNaN(extraFeeSurcharge) && extraFeeSurcharge > 0) {
+        await tx.extra_fees.create({
+          data: {
+            order_id: orderRecord.id,
+            fee_type: "Phụ phí",
+            amount: BigInt(Math.round(extraFeeSurcharge)),
+            reason:
+              req.body.extra_fees_reason || "Phụ phí vận chuyển thỏa thuận",
+            suggested_by_system: false,
+            recorded_by: BigInt(directDispatcherId),
+            status: "CONFIRMED",
+            source: "Dispatcher",
+          },
+        });
+      }
+
+      const extraFeeCollection = parseFloat(req.body.extra_fees_collection);
+      if (!isNaN(extraFeeCollection) && extraFeeCollection > 0) {
+        await tx.extra_fees.create({
+          data: {
+            order_id: orderRecord.id,
+            fee_type: "Phát sinh",
+            amount: BigInt(Math.round(extraFeeCollection)),
+            reason: "Phí phát sinh khác",
+            suggested_by_system: false,
+            recorded_by: BigInt(directDispatcherId),
+            status: "CONFIRMED",
+            source: "Dispatcher",
+          },
+        });
+      }
+
+      // 4.6 Tạo bản ghi riêng chờ duyệt cho từng chứng từ (BUG-DO-06)
+      if (Array.isArray(req.body.documents) && req.body.documents.length > 0) {
+        for (const doc of req.body.documents) {
+          const hasFile = doc.file && doc.file !== "Chờ tải lên";
+          await tx.customer_documents.create({
+            data: {
+              order_id: orderRecord.id,
+              document_type: String(doc.name || doc.title || "Chứng từ").slice(
+                0,
+                50,
+              ),
+              is_required: true,
+              file_link: hasFile ? String(doc.file).slice(0, 255) : null,
+              file_type: doc.file_type ? String(doc.file_type).slice(0, 10) : (hasFile ? "pdf" : null),
+              file_size: doc.file_size ? parseInt(doc.file_size, 10) : null,
+              uploaded_by: hasFile ? BigInt(directDispatcherId) : null,
+              uploaded_time: hasFile ? new Date() : null,
+              status: hasFile ? "Pending Review" : "Required",
+            },
+          });
+        }
+      }
+
+      // 4.7 Lưu ghi chú điều phối (BUG-DO-08: created_by = directDispatcherId)
+      const noteParts = [
+        order_notes,
+        req.body.request_split_trucks && req.body.split_details
+          ? `[ĐIỀU PHỐI YÊU CẦU TÁCH ${req.body.split_details.split_count || 2} XE NHỎ]: Xe ${req.body.split_details.vehicle_target_label || req.body.split_details.vehicle_target}. Lý do: ${req.body.split_details.reason || "Kho hẹp"}`
+          : "",
+        pickup_address ? `Điểm lấy hàng: ${pickup_address}` : "",
+        customer_address ? `Địa chỉ KH: ${customer_address}` : "",
+        cargo_type ? `Loại hàng: ${cargo_type}` : "",
+        package_unit ? `Quy cách: ${package_count || 1} ${package_unit}` : "",
+      ].filter(Boolean);
+
+      if (noteParts.length > 0) {
+        await tx.order_notes.create({
+          data: {
+            order_id: orderRecord.id,
+            content: noteParts.join(" | ").slice(0, 500),
+            created_by: BigInt(directDispatcherId), // BUG-DO-08
+          },
+        });
+      }
+
+      return orderRecord;
+    });
 
     const directMeta = {
       shipping_direction: req.body.shipping_direction || "IMPORT",
@@ -755,128 +1027,14 @@ const createDirectOrder = async (req, res) => {
       request_split_trucks: Boolean(req.body.request_split_trucks),
       split_details: req.body.split_details || null,
       web_workflow: {
-        stage: "CREATED",
+        stage: hasUploadedDocs ? "DOCS_UPLOADED" : "CUSTOMER_CONFIRMED",
         request_split_trucks: Boolean(req.body.request_split_trucks),
         split_details: req.body.split_details || null,
       },
     };
 
-    const hasUploadedDocs =
-      Array.isArray(req.body.documents) &&
-      req.body.documents.some((d) => d.file && d.file !== "Chờ tải lên");
-
-    const createdOrderRaw = await prisma.orders.create({
-      data: {
-        order_code: orderCode,
-        order_type:
-          req.body.shipping_direction === "EXPORT" ? "Export" : "Import",
-        customer_id: BigInt(customerId),
-        tracking_token: token,
-        pickup_location_id: BigInt(Number(pickupLocationId)),
-        delivery_location_id: BigInt(Number(deliveryLocationId)),
-        receiver_name: String(receiver_name).trim(),
-        receiver_phone: cleanReceiverPhone,
-        agreed_price: BigInt(parsedPrice),
-        status: "CONFIRMED", // Luôn luôn bắt đầu từ CONFIRMED, không tự ý gán READY_FOR_PLANNING (BUG-DO-01)
-        source: req.body.source || "Direct",
-        responsible_dispatcher_id: BigInt(directDispatcherId), // Luôn gán chính người đang đăng nhập (BUG-DO-02)
-        created_by: BigInt(directDispatcherId),
-        requested_pickup_date: toDateObj(
-          required_pickup_date || req.body.flight_arrival_date,
-        ),
-        truck_type_requested: vehicle_type_required || "TRUCK_2.5T",
-        loading_request:
-          loading_unloading_required === true ||
-          loading_unloading_required === "true"
-            ? "YES"
-            : "NO",
-        warehouse_type: "ALS warehouse",
-        customer_agrees_to_grouping: false,
-        document_status: hasUploadedDocs
-          ? "Pending Review"
-          : "Pending Documents", // Chờ điều phối viên duyệt, không tự động Approved (BUG-DO-01)
-        is_closed: false,
-        waiting_too_long: false,
-        late_risk: false,
-        ready_for_planning_at: null, // Chỉ gán khi đơn được duyệt chứng từ và hoàn tất hợp đồng (BUG-DO-01)
-      },
-    });
-
     const createdOrder = serializePrisma(createdOrderRaw);
-    await saveOrderMeta(createdOrder.id, directMeta);
-
-    // Insert cargo - Bảng order_cargos có quan hệ 1-1 (order_id @unique); chi tiết từng mặt hàng đã nằm trong directMeta.items
-    try {
-      const hasItemsArr =
-        Array.isArray(req.body.items) && req.body.items.length > 0;
-      const firstIt = hasItemsArr ? req.body.items[0] : null;
-      const firstIsBulk = (firstIt?.cargo_type || cargo_type) === "BULK";
-      await prisma.order_cargos.create({
-        data: {
-          order_id: createdOrderRaw.id,
-          cargo_type: firstIsBulk
-            ? "Bulk"
-            : (firstIt?.cargo_type || cargo_type) === "PALLET"
-              ? "Pallet"
-              : "General",
-          cargo_name: hasItemsArr
-            ? req.body.items
-                .map((it, idx) => it.cargo_name || `Mặt hàng #${idx + 1}`)
-                .join(", ")
-                .slice(0, 255)
-            : cargo_name ||
-              (isBulk
-                ? "Hàng rời tính theo trọng tải"
-                : "Hàng bách hóa / Linh kiện"),
-          quantity:
-            parseInt(package_count, 10) ||
-            (hasItemsArr
-              ? req.body.items.reduce(
-                  (s, it) =>
-                    s + (parseInt(it.package_count || it.quantity, 10) || 1),
-                  0,
-                )
-              : 1),
-          unit:
-            package_unit ||
-            firstIt?.package_unit ||
-            (firstIsBulk ? "Chuyến" : "Kiện"),
-          actual_weight_kg: actualWeight,
-          length_cm: l,
-          width_cm: w,
-          height_cm: h,
-          stackable: true,
-          chargeable_weight_kg: parseFloat(finalChargeable.toFixed(2)),
-          declared_value: declared_value_usd
-            ? BigInt(Math.round(parseFloat(declared_value_usd) * 25000))
-            : 0n,
-          special_request_note: order_notes || null,
-        },
-      });
-    } catch (cargoErr) {
-      console.error("createDirectOrder Cargo Error:", cargoErr);
-    }
-
-    const noteParts = [
-      order_notes,
-      req.body.request_split_trucks && req.body.split_details
-        ? `[ĐIỀU PHỐI YÊU CẦU TÁCH ${req.body.split_details.split_count || 2} XE NHỎ]: Xe ${req.body.split_details.vehicle_target_label || req.body.split_details.vehicle_target}. Lý do: ${req.body.split_details.reason || "Kho hẹp"}`
-        : "",
-      pickup_address ? `Điểm lấy hàng: ${pickup_address}` : "",
-      customer_address ? `Địa chỉ KH: ${customer_address}` : "",
-      cargo_type ? `Loại hàng: ${cargo_type}` : "",
-      package_unit ? `Quy cách: ${package_count || 1} ${package_unit}` : "",
-    ].filter(Boolean);
-
-    if (noteParts.length > 0) {
-      await prisma.order_notes.create({
-        data: {
-          order_id: createdOrderRaw.id,
-          content: noteParts.join(" | ").slice(0, 500),
-          created_by: 1n,
-        },
-      });
-    }
+    await saveOrderMeta(createdOrder.id, directMeta, directDispatcherId);
 
     return res.status(201).json({
       message: "Tạo đơn vận chuyển thành công!",
@@ -884,7 +1042,10 @@ const createDirectOrder = async (req, res) => {
     });
   } catch (err) {
     console.error("createDirectOrder Exception:", err);
-    return res.status(500).json({ message: "Internal Server Error" });
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
+    }
+    return res.status(500).json({ message: err.message || "Internal Server Error" });
   }
 };
 

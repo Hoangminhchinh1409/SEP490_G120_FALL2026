@@ -101,11 +101,13 @@ export default function OrderFinancialTab({
             {extraFees.map(fee => (
               <div key={fee.id} className="p-3 flex justify-between items-center text-xs hover:bg-gray-50">
                 <div>
-                  <div className="font-bold text-gray-800">{fee.type}</div>
-                  <div className="text-[11px] text-gray-500 mt-0.5">{fee.reason} | Ghi nhận lúc: {fee.time}</div>
+                  <div className="font-bold text-gray-800">{fee.fee_type || fee.type || 'Phụ phí'}</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    {fee.reason || 'Phụ phí vận chuyển'} | Ghi nhận lúc: {fee.created_at ? new Date(fee.created_at).toLocaleString('vi-VN') : (fee.time || 'Vừa xong')}
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-bold font-mono text-indigo-700 text-sm">{fee.amount.toLocaleString()} VNĐ</span>
+                  <span className="font-bold font-mono text-indigo-700 text-sm">{(Number(fee.amount) || 0).toLocaleString()} VNĐ</span>
                   <Button 
                     type="text" 
                     danger 

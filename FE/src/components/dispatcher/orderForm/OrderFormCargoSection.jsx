@@ -9,7 +9,8 @@ export default function OrderFormCargoSection({
   updateCargoItem,
   removeCargoItem,
   addCargoItem,
-  totals
+  totals,
+  cargoErrors = {}
 }) {
   return (
     <>
@@ -67,9 +68,13 @@ export default function OrderFormCargoSection({
                   <Input 
                     placeholder="VD: Linh kiện điện tử, Trái cây..." 
                     className="text-xs" 
+                    status={cargoErrors[item.id]?.cargo_name ? 'error' : ''}
                     value={item.cargo_name}
                     onChange={e => updateCargoItem(item.id, 'cargo_name', e.target.value)}
                   />
+                  {cargoErrors[item.id]?.cargo_name && (
+                    <div className="text-red-500 text-[10px] mt-0.5">{cargoErrors[item.id].cargo_name}</div>
+                  )}
                 </div>
 
                 <div>
@@ -77,6 +82,7 @@ export default function OrderFormCargoSection({
                   <Select 
                     className="text-xs w-full" 
                     placeholder="Chọn loại hàng"
+                    status={cargoErrors[item.id]?.cargo_type ? 'error' : ''}
                     value={item.cargo_type}
                     onChange={val => updateCargoItem(item.id, 'cargo_type', val)}
                   >
@@ -87,6 +93,9 @@ export default function OrderFormCargoSection({
                     <Option value="VALUABLE">🔒 Hàng giá trị cao (Niêm chì)</Option>
                     <Option value="PERISHABLE">❄️ Hàng thực phẩm / Bảo quản lạnh</Option>
                   </Select>
+                  {cargoErrors[item.id]?.cargo_type && (
+                    <div className="text-red-500 text-[10px] mt-0.5">{cargoErrors[item.id].cargo_type}</div>
+                  )}
                 </div>
 
                 <div>
@@ -116,9 +125,13 @@ export default function OrderFormCargoSection({
                     className="w-full text-xs font-semibold text-indigo-700" 
                     placeholder="VD: 500" 
                     min={0.1}
+                    status={cargoErrors[item.id]?.weight ? 'error' : ''}
                     value={item.weight}
                     onChange={val => updateCargoItem(item.id, 'weight', val)}
                   />
+                  {cargoErrors[item.id]?.weight && (
+                    <div className="text-red-500 text-[10px] mt-0.5">{cargoErrors[item.id].weight}</div>
+                  )}
                 </div>
               </div>
 

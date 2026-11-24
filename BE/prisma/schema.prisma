@@ -281,7 +281,7 @@ model notifications {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model order_cargos {
   id                   BigInt   @id @default(autoincrement())
-  order_id             BigInt   @unique
+  order_id             BigInt
   cargo_type           String   @db.VarChar(50)
   cargo_name           String   @db.VarChar(255)
   quantity             Int
@@ -363,7 +363,7 @@ model orders {
   customer_documents                               customer_documents[]
   delivery_evidences                               delivery_evidences[]
   extra_fees                                       extra_fees[]
-  order_cargos                                     order_cargos?
+  order_cargos                                     order_cargos[]
   order_notes                                      order_notes[]
   order_status_history                             order_status_history[]
   transport_contracts                              transport_contracts?   @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction)

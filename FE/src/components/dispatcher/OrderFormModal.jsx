@@ -120,6 +120,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
       weight: null
     }
   ]);
+  const [cargoErrors, setCargoErrors] = useState({});
 
   const [shippingDirection, setShippingDirection] = useState('IMPORT');
 
@@ -313,9 +314,26 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   const removeCargoItem = (id) => {
     if (cargoItems.length <= 1) return;
     setCargoItems(prev => prev.filter(it => it.id !== id));
+    setCargoErrors(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   };
 
   const updateCargoItem = (id, field, value) => {
+    if (cargoErrors[id]?.[field]) {
+      setCargoErrors(prev => {
+        const next = { ...prev };
+        if (next[id]) {
+          const itemErr = { ...next[id] };
+          delete itemErr[field];
+          if (Object.keys(itemErr).length === 0) delete next[id];
+          else next[id] = itemErr;
+        }
+        return next;
+      });
+    }
     setCargoItems(prev => prev.map(it => {
       if (it.id === id) {
         const updated = { ...it, [field]: value };
@@ -328,6 +346,32 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
       }
       return it;
     }));
+  };
+
+  const validateCargoItems = () => {
+    const errors = {};
+    let hasError = false;
+    for (let i = 0; i < cargoItems.length; i++) {
+      const it = cargoItems[i];
+      const itemErr = {};
+      if (!it.cargo_name?.trim()) {
+        itemErr.cargo_name = 'Vui lòng nhập tên hàng hóa';
+        hasError = true;
+      }
+      if (!it.cargo_type) {
+        itemErr.cargo_type = 'Vui lòng chọn loại hàng';
+        hasError = true;
+      }
+      if (!it.weight || Number(it.weight) <= 0) {
+        itemErr.weight = 'Vui lòng nhập trọng lượng (> 0 kg)';
+        hasError = true;
+      }
+      if (Object.keys(itemErr).length > 0) {
+        errors[it.id] = itemErr;
+      }
+    }
+    setCargoErrors(errors);
+    return !hasError;
   };
 
   // Tính tổng hàng hóa theo chuẩn logistics (1 m3 = 200 kg)
@@ -545,16 +589,16 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
     setSelectedPickupPreset(defaultAlsId);
     setSelectedDeliveryPreset(defaultAlsId);
     setCustomsServiceRequired(false);
+    setCargoErrors({});
     onCancel();
   };
 
   const handleOk = () => {
+    const isCargoValid = validateCargoItems();
     form.validateFields().then((fieldValues) => {
-      for (let i = 0; i < cargoItems.length; i++) {
-        const it = cargoItems[i];
-        if (!it.cargo_name?.trim()) { message.error(`Vui lòng nhập tên hàng cho mặt hàng #${i + 1}`); return; }
-        if (!it.cargo_type) { message.error(`Vui lòng chọn loại hàng cho mặt hàng #${i + 1}`); return; }
-        if (!it.weight || Number(it.weight) <= 0) { message.error(`Vui lòng nhập trọng lượng hợp lệ (> 0 kg) cho mặt hàng #${i + 1}`); return; }
+      if (!isCargoValid) {
+        message.error('Vui lòng kiểm tra lại thông tin hàng hóa còn trống hoặc chưa hợp lệ!');
+        return;
       }
       // Validate tải trọng: Tổng tải trọng thực tế hoặc tải trọng quy đổi tính cước không được vượt quá tải trọng xe
       const selectedVehicleKey = fieldValues.vehicle_type_required || 'TRUCK_2.5T';
@@ -662,6 +706,10 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         created_at: new Date().toISOString()
       });
       handleReset();
+    }).catch(() => {
+      if (!isCargoValid) {
+        message.error('Vui lòng điền đầy đủ các thông tin bắt buộc còn trống!');
+      }
     });
   };
 
@@ -779,7 +827,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         layout="vertical" 
         initialValues={{ 
           source: 'HOTLINE',
-          status: 'READY_FOR_PLANNING',
+          status: 'CONFIRMED',
           is_new_customer: false,
           address_same_as_customer: false,
           pickup_address: '',
@@ -832,6 +880,7 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
           removeCargoItem={removeCargoItem}
           addCargoItem={addCargoItem}
           totals={totals}
+          cargoErrors={cargoErrors}
         />
 
         <OrderFormPricingSection
