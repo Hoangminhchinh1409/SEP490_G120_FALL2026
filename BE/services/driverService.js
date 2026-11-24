@@ -1252,9 +1252,14 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
     `nexlog/trips/${tripId}/extra-fees`,
   );
 
+  const resolvedOrderId =
+    order_id
+      ? parseInt(order_id, 10)
+      : (trip.stops || []).find((s) => s.order_id)?.order_id || null;
+
   const newFee = await driverModel.createProposedExtraFee({
     tripId,
-    orderId: order_id ? parseInt(order_id, 10) : null,
+    orderId: resolvedOrderId,
     feeType: fee_type,
     amount: parsedAmount,
     reason: reason.trim(),

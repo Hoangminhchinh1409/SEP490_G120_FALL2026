@@ -464,6 +464,21 @@ const approveWebOrderDocuments = async (req, res) => {
       ? approved_documents
       : (meta.documents || meta.web_workflow.documents || []);
 
+    if (!Array.isArray(docsToCheck) || docsToCheck.length === 0) {
+      return res.status(400).json({
+        message: 'Danh sách chứng từ trống, không thể duyệt hồ sơ!'
+      });
+    }
+
+    const missingUploadList = docsToCheck.filter(
+      (d) => !d.file || d.file === 'Chờ tải lên' || d.status === 'WAITING_UPLOAD'
+    );
+    if (missingUploadList.length > 0) {
+      return res.status(400).json({
+        message: `Chưa thể duyệt toàn bộ vì còn ${missingUploadList.length} chứng từ chưa được tải tệp lên!`
+      });
+    }
+
     // Chặn duyệt toàn bộ nếu vẫn còn chứng từ đang ở trạng thái REJECTED
     const rejectedList = docsToCheck.filter((d) => d.status === 'REJECTED');
     if (rejectedList.length > 0) {
@@ -527,6 +542,10 @@ const uploadContractFile = async (req, res) => {
 
     if (!file_name) {
       return res.status(400).json({ message: 'Vui lòng cung cấp tên tệp hợp đồng PDF đã scan' });
+    }
+
+    if (!/\.pdf$/i.test(String(file_name).trim())) {
+      return res.status(400).json({ message: 'Tệp hợp đồng tải lên bắt buộc phải là định dạng PDF (.pdf)!' });
     }
 
     const currentOrder = await findOrderByIdentifier(id, false);

@@ -51,6 +51,7 @@ const orderRelationInclude = {
   },
   order_cargos: true,
   order_notes: true,
+  extra_fees: true,
 };
 
 const mapOrderWithRelations = (row) => {
@@ -172,15 +173,18 @@ const getAllOrders = async (req, res) => {
               .join(", ")
           : cargo.cargo_name;
       const feStatus = mapDbStatusToFe(order.status, order, meta);
+      const isExplicitDirect =
+        order.source === "Direct" || order.source === "HOTLINE";
       const isFromWeb =
-        order.source === "HOMEPAGE" ||
-        order.source === "Web" ||
-        Boolean(meta.customer_email) ||
-        order.agreed_price === 0 ||
-        visibleNotes.some(
-          (n) =>
-            n.content?.includes("Website") || n.content?.includes("Homepage"),
-        );
+        !isExplicitDirect &&
+        (order.source === "HOMEPAGE" ||
+          order.source === "Web" ||
+          Boolean(meta.customer_email) ||
+          order.agreed_price === 0 ||
+          visibleNotes.some(
+            (n) =>
+              n.content?.includes("Website") || n.content?.includes("Homepage"),
+          ));
 
       const noteStr = visibleNotes.map((n) => n.content).join(" ") || "";
       const isBulk =
@@ -322,7 +326,10 @@ const getAllOrders = async (req, res) => {
           meta.vehicle_analysis_note ||
           "",
         agreed_price: parseInt(order.agreed_price, 10) || 0,
-        extra_fees_surcharge: 0,
+        extra_fees_surcharge: Array.isArray(order.extra_fees)
+          ? order.extra_fees.reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
+          : 0,
+        extra_fees_list: Array.isArray(order.extra_fees) ? order.extra_fees : [],
         extra_fees_collection: 0,
         cancel_reason: order.cancellation_reason || "",
         cancellation_reason: order.cancellation_reason || "",

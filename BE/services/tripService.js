@@ -669,11 +669,16 @@ const createTrip = async (payload, userId = 1) => {
     matchedOrder?.id ||
     (Number.isInteger(Number(order_id)) ? Number(order_id) : null);
 
-  // TRƯỜNG HỢP 1: BÀN GIAO NHÀ XE ĐỐI TÁC 3PL (UC-10, BR-13)
+  // TRƯỜNG HỢP 1: BÀN GIAO NHÀ XE ĐỐI TÁC 3PL
   const mode = String(
     allocation_type || transport_mode || "INTERNAL",
   ).toUpperCase();
   if (mode === "VENDOR" || Boolean(vendor_tracking_code)) {
+    if (!vendor_tracking_code || !String(vendor_tracking_code).trim()) {
+      const err = new Error("Vui lòng nhập mã vận đơn đối tác (vendor_tracking_code)");
+      err.statusCode = 400;
+      throw err;
+    }
     const matchedVendor = await tripModel.findVendorByNameOrId(
       vendor_id || vendor_name,
     );
@@ -703,28 +708,83 @@ const createTrip = async (payload, userId = 1) => {
     };
   }
 
-  // TRƯỜNG HỢP 2: PHÂN BỔ XE NỘI BỘ & TÀI XẾ (UC-06, UC-09, UC-41)
+  // TRƯỜNG HỢP 2: PHÂN BỔ XE NỘI BỘ & TÀI XẾ
   let truckId = truck_id ? Number(truck_id) : null;
   if (!truckId && truck_plate) {
     truckId = await tripModel.findTruckByPlate(truck_plate);
+    if (!truckId) {
+      const err = new Error(`Không tìm thấy xe tải với biển số ${truck_plate}`);
+      err.statusCode = 400;
+      throw err;
+    }
   }
   if (!truckId) {
     truckId = await tripModel.findFirstTruck();
+  }
+
+  // Kiểm tra trạng thái xe (không gán xe đang chạy chuyến khác hoặc đang bảo trì) và tải trọng xe
+  if (truckId && prisma.trucks) {
+    const truckRow = await prisma.trucks.findUnique({
+      where: { id: BigInt(Number(truckId)) },
+    });
+    if (truckRow) {
+      const truckStatusUpper = String(truckRow.status || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "_");
+      if (
+        ["ON_TRIP", "IN_TRANSIT", "IN_PROGRESS", "MAINTENANCE"].includes(
+          truckStatusUpper,
+        )
+      ) {
+        const err = new Error(
+          `Xe tải ${truckRow.plate_number} hiện đang ở trạng thái ${truckRow.status}, không thể phân bổ chuyến mới!`,
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const cargosArr = Array.isArray(matchedOrder?.order_cargos)
+        ? matchedOrder.order_cargos
+        : matchedOrder?.order_cargos
+          ? [matchedOrder.order_cargos]
+          : [];
+      const totalOrderWeight = cargosArr.reduce(
+        (sum, c) =>
+          sum +
+          Math.max(
+            Number(c?.actual_weight_kg || 0),
+            Number(c?.chargeable_weight_kg || 0),
+          ),
+        0,
+      );
+      const allowedPayload = Number(truckRow.allowed_payload || 0);
+      if (allowedPayload > 0 && totalOrderWeight > allowedPayload) {
+        const err = new Error(
+          `Tổng trọng lượng đơn hàng (${totalOrderWeight} kg) vượt quá tải trọng cho phép của xe ${truckRow.plate_number} (${allowedPayload} kg)!`,
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
   }
 
   let driverId = driver_id ? Number(driver_id) : null;
   const targetDriverName = driver_name || driver1_name;
   if (!driverId && targetDriverName) {
     driverId = await tripModel.findDriverByName(targetDriverName);
+    if (!driverId) {
+      const err = new Error(`Không tìm thấy tài xế ${targetDriverName}`);
+      err.statusCode = 400;
+      throw err;
+    }
   }
   if (!driverId) {
     driverId = await tripModel.findFirstDriver();
   }
 
-  // --- KIỂM TRA RÀNG BUỘC TÀI XẾ (BR-07, IT-TD-006) ---
+  // --- KIỂM TRA RÀNG BUỘC TÀI XẾ ---
   if (driverId) {
-    // BR-07: Tài xế phải có Ca làm việc được duyệt (Approved shift) bao trùm ngày chạy chuyến
-    // Tính ngày theo cả giờ VN (UTC+7) và UTC để tránh lệch múi giờ lúc nửa đêm / sáng sớm
     const nowVn = new Date(Date.now() + 7 * 3600 * 1000);
     const todayVnStr = nowVn.toISOString().split("T")[0];
     const todayUtcStr = new Date().toISOString().split("T")[0];
@@ -740,48 +800,7 @@ const createTrip = async (payload, userId = 1) => {
       select: { id: true, date: true, status: true, start_time: true, end_time: true },
     });
 
-    let approvedShift = shifts?.find((s) => s.status === 'Approved');
-
-    // Nếu tài xế đã đăng ký ca Requested trong ngày, tự động duyệt ca khi Điều phối viên gán vào chuyến xe
-    if (!approvedShift) {
-      const requestedShift = shifts?.find((s) => s.status === 'Requested');
-      if (requestedShift) {
-        await prisma.driver_shifts.update({
-          where: { id: requestedShift.id },
-          data: {
-            status: 'Approved',
-            reviewed_at: new Date(),
-            note: 'Tự động duyệt ca khi Điều phối viên gán chuyến xe',
-          },
-        });
-        approvedShift = { ...requestedShift, status: 'Approved' };
-      }
-    }
-
-    // Nếu tài xế chưa có ca nào trong ngày (môi trường test/demo hoặc phát sinh gấp)
-    if (!approvedShift) {
-      try {
-        const newShift = await prisma.driver_shifts.create({
-          data: {
-            driver_id: bigDriverId,
-            date: new Date(`${todayVnStr}T00:00:00.000Z`),
-            status: 'Approved',
-            start_time: new Date(`${todayVnStr}T06:00:00+07:00`),
-            end_time: new Date(`${todayVnStr}T22:00:00+07:00`),
-            note: 'Ca làm việc tạo tự động cho chuyến xe',
-          },
-        });
-
-        if (newShift) {
-          approvedShift = newShift;
-        }
-      } catch (insertErr) {
-        console.warn(
-          "Không thể tự động tạo ca làm việc fallback:",
-          insertErr.message,
-        );
-      }
-    }
+    const approvedShift = shifts?.find((s) => s.status === "Approved");
 
     if (!approvedShift) {
       const err = new Error(

@@ -1706,8 +1706,36 @@ const getClaims = async (req, res) => {
       };
     });
 
+    let extraFees = [];
+    try {
+      const rawExtraFees = await prisma.extra_fees.findMany({
+        orderBy: { id: 'desc' },
+        include: {
+          orders: { select: { id: true, order_code: true, receiver_name: true } },
+          trips: { select: { id: true, trip_code: true } }
+        }
+      });
+      extraFees = (serializePrisma(rawExtraFees) || []).map((ef) => ({
+        ...ef,
+        id: ef.id,
+        type: 'EXTRA_FEE',
+        fee_type: ef.fee_type,
+        order_id: ef.order_id,
+        order_code: ef.orders?.order_code || 'N/A',
+        trip_id: ef.trip_id,
+        trip_code: ef.trips?.trip_code || null,
+        amount: Number(ef.amount || 0),
+        reason: ef.reason,
+        status: ef.status || 'Proposed'
+      }));
+    } catch (efErr) {
+      console.warn('getClaims extra_fees query warning:', efErr.message);
+    }
+
     return res.json({
       claims: formattedClaims,
+      extra_fees: extraFees,
+      approvals: [...extraFees, ...formattedClaims],
       summary: {
         total: formattedClaims.length,
         pending: formattedClaims.filter((x) => x.status === 'PENDING').length,

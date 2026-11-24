@@ -399,11 +399,17 @@ const createDirectOrder = async (req, res) => {
     // Tìm hoặc tạo Customer
     let customerId = 16;
     const cleanPhone = (customer_phone || '').replace(/[^0-9]/g, '');
+    const cleanTaxCode =
+      (req.body.customer_tax_code && String(req.body.customer_tax_code).trim()) ||
+      cleanPhone.slice(-10) ||
+      `TX${Date.now().toString().slice(-8)}`;
 
     if (!is_new_customer) {
       const existingCust = await prisma.customers.findFirst({
         where: {
           OR: [
+            ...(req.body.customer_tax_code ? [{ tax_code: String(req.body.customer_tax_code).trim() }] : []),
+            ...(customer_email ? [{ email: String(customer_email).trim() }] : []),
             { company_name: customer_name || 'none' },
             { tax_code: cleanPhone || 'none' }
           ]
@@ -423,7 +429,7 @@ const createDirectOrder = async (req, res) => {
             company_name: customer_name || 'Khách hàng mới',
             contact_person: customer_name || 'Khách hàng',
             phone: cleanPhone || '0988123456',
-            tax_code: cleanPhone.slice(-10) || `TX${Date.now().toString().slice(-8)}`,
+            tax_code: cleanTaxCode,
             registered_address: customer_address || delivery_address || 'Hà Nội',
             email: customer_email || 'client@nexlog.vn',
             created_by: 1n
@@ -514,9 +520,10 @@ const createDirectOrder = async (req, res) => {
     };
 
     const hasUploadedDocs = Array.isArray(req.body.documents) && req.body.documents.some(d => d.file && d.file !== 'Chờ tải lên');
+    const isReadyImmediately = Boolean(hasUploadedDocs && req.body.contract_uploaded);
 
     // Nếu điều phối viên đang đăng nhập trực tiếp tạo đơn, gán chính điều phối viên đó
-    const directDispatcherId = req.body.dispatcher_id || req.user?.id || 1;
+    const directDispatcherId = req.user?.id || req.body.dispatcher_id || 1;
 
     const createdOrderRaw = await prisma.orders.create({
       data: {
@@ -529,8 +536,8 @@ const createDirectOrder = async (req, res) => {
         receiver_name: (receiver_name && (receiver_name + '').trim()) || customer_name || 'Người nhận',
         receiver_phone: (receiver_phone && (receiver_phone + '').replace(/[^0-9]/g, '')) || cleanPhone || '0988123456',
         agreed_price: BigInt(parseInt(agreed_price, 10) || 0),
-        status: hasUploadedDocs ? 'CONFIRMED' : 'READY_FOR_PLANNING',
-        source: 'Direct',
+        status: isReadyImmediately ? 'READY_FOR_PLANNING' : 'CONFIRMED',
+        source: req.body.source || 'Direct',
         responsible_dispatcher_id: BigInt(Number(directDispatcherId)),
         created_by: BigInt(Number(directDispatcherId)),
         requested_pickup_date: toDateObj(required_pickup_date || req.body.flight_arrival_date),
@@ -542,7 +549,7 @@ const createDirectOrder = async (req, res) => {
         is_closed: false,
         waiting_too_long: false,
         late_risk: false,
-        ready_for_planning_at: new Date()
+        ready_for_planning_at: isReadyImmediately ? new Date() : null
       }
     });
 
