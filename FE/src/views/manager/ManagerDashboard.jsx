@@ -47,60 +47,41 @@ const managerDashboardCache = new Map();
 
 export default function ManagerDashboard() {
   const router = useRouter();
-  const initialCache = managerDashboardCache.get('2026-10');
+  const initialMonth = useMemo(() => dayjs().startOf('month'), []);
+  const initialPeriod = initialMonth.format('YYYY-MM');
+  const initialDisplayPeriod = `Tháng ${initialMonth.format('MM/YYYY')}`;
+  const initialCache = managerDashboardCache.get(initialPeriod);
   const [loading, setLoading] = useState(!initialCache);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(dayjs('2026-10-01'));
-  const [period, setPeriod] = useState('2026-10');
-  const [displayPeriod, setDisplayPeriod] = useState('Tháng 10/2026');
+  const [selectedMonth, setSelectedMonth] = useState(() => initialMonth);
+  const [period, setPeriod] = useState(() => initialPeriod);
+  const [displayPeriod, setDisplayPeriod] = useState(() => initialDisplayPeriod);
   const [activeTab, setActiveTab] = useState('OVERVIEW'); // 'OVERVIEW' (Screen 16), 'DRIVERS' (Screen 41)
 
   // 1. Dashboard State — Cấu trúc chuẩn Hybrid BI (Screen 16)
   const [dashboardData, setDashboardData] = useState(() => initialCache?.dashboardData || {
-    period: '2026-10',
+    period: initialPeriod,
     kpiCards: {
-      revenueVnd: 482500000,
-      revenueFormatted: '482,5 tr',
-      revenuePerKmVnd: 18400,
-      revenuePerKmFormatted: '18.400 đ',
-      avgDispatcherSlaMinutes: 42,
-      avgSlaDispatchText: '42 phút',
-      successfulDeliveries: 38,
-      avgOrderCycleDays: 2.6,
-      orderCycleTime: '2,6 ngày',
-      perfectOrderRatePercent: 91
+      revenueVnd: 0,
+      revenueFormatted: '0 đ',
+      revenuePerKmVnd: 0,
+      revenuePerKmFormatted: '0 đ',
+      avgDispatcherSlaMinutes: 0,
+      avgSlaDispatchText: '0 phút',
+      successfulDeliveries: 0,
+      avgOrderCycleDays: 0,
+      orderCycleTime: 'Chưa có đơn hoàn thành',
+      perfectOrderRatePercent: 0
     },
     fleetGauges: {
-      truckUsePercent: 68,
-      vehicleFillPercent: 64,
-      emptyRunningPercent: 22
+      truckUsePercent: 0,
+      vehicleFillPercent: 0,
+      emptyRunningPercent: 0
     },
-    dwellTimeByLocationChart: [
-      { locationName: 'Kho ALS tại Sân bay Nội Bài', avgMinutes: 72, threshold: 60, status: 'OVER_LIMIT' },
-      { locationName: 'ALSC Nhà ga hàng hóa', avgMinutes: 65, threshold: 60, status: 'OVER_LIMIT' },
-      { locationName: 'ALSB Bắc Ninh', avgMinutes: 48, threshold: 60, status: 'NORMAL' },
-      { locationName: 'Kho B - KCN Quế Võ', avgMinutes: 31, threshold: 60, status: 'NORMAL' }
-    ],
-    lateStopsByCauseChart: [
-      { cause: 'Đi đường lâu', count: 9, color: '#F59E0B' },
-      { cause: 'Ở điểm lâu', count: 6, color: '#3B82F6' },
-      { cause: 'Sự cố vận tải', count: 2, color: '#EF4444' }
-    ],
-    incidentsByTypeChart: [
-      { type: 'ENGINE_BREAKDOWN', label: 'Hỏng xe', count: 2, color: '#F59E0B' },
-      { type: 'DAMAGED_LOST_CARGO', label: 'Hàng hư hỏng/mất', count: 1, color: '#EF4444' },
-      { type: 'TRAFFIC_ACCIDENT', label: 'Tai nạn', count: 1, color: '#DC2626' },
-      { type: 'OTHER', label: 'Khác', count: 1, color: '#64748B' }
-    ],
-    revenueTrendChart: [
-      { date: '01/10', revenue: 38000000, orders: 3 },
-      { date: '05/10', revenue: 58000000, orders: 5 },
-      { date: '10/10', revenue: 87000000, orders: 7 },
-      { date: '15/10', revenue: 106000000, orders: 9 },
-      { date: '20/10', revenue: 72000000, orders: 6 },
-      { date: '25/10', revenue: 72000000, orders: 5 },
-      { date: '30/10', revenue: 49500000, orders: 3 }
-    ]
+    dwellTimeByLocationChart: [],
+    lateStopsByCauseChart: [],
+    incidentsByTypeChart: [],
+    revenueTrendChart: []
   });
 
   // 2. Driver Performance State (Screen 41)

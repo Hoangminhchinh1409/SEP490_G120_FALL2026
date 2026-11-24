@@ -642,10 +642,13 @@ export default function StaffAccountsPage() {
                 <Form.Item
                   name="license_number"
                   label={<span className="font-semibold text-slate-700">Số GPLX</span>}
-                  rules={[{ required: true, message: 'Vui lòng nhập số GPLX' }]}
+                  rules={[
+                    { required: true, message: 'Vui lòng nhập số GPLX' },
+                    { max: 20, message: 'Số GPLX tối đa 20 ký tự' }
+                  ]}
                   className="mb-1"
                 >
-                  <Input placeholder="VD: GPLX-012345" className="rounded-xl h-10 font-mono" />
+                  <Input placeholder="VD: GPLX-012345" maxLength={20} className="rounded-xl h-10 font-mono" />
                 </Form.Item>
                 <Form.Item
                   name="license_class"

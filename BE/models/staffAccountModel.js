@@ -185,7 +185,7 @@ const staffAccountModel = {
         where: { id: user.id },
         select: STAFF_ACCOUNT_SELECT,
       });
-    });
+    }, { maxWait: 10000, timeout: 15000 });
 
     return serializeStaffRow(created);
   },
@@ -289,7 +289,7 @@ const staffAccountModel = {
       }
 
       return tx.users.findUnique({ where: { id: userId }, select: STAFF_ACCOUNT_SELECT });
-    });
+    }, { maxWait: 10000, timeout: 15000 });
 
     return serializeStaffRow(updated);
   },

@@ -86,6 +86,12 @@ const validateDriverLicensePayload = async (
     );
   }
   const cleanLicNum = license_number.trim();
+  if (cleanLicNum.length > 20) {
+    throw createHttpError(
+      "Số giấy phép lái xe (license_number) không được vượt quá 20 ký tự.",
+      400,
+    );
+  }
 
   let cleanLicClass = "C";
   if (license_class !== undefined) {

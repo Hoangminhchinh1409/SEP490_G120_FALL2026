@@ -1,8 +1,11 @@
 import { fetchWithAuth } from './apiClient';
 
+const getCurrentMonthPeriod = () =>
+  new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7);
+
 export const managerApi = {
   // 1. Thống kê Dashboard (Screen 16: Hybrid BI Overview)
-  getDashboardStats: async (period = '2026-10', options = {}) => {
+  getDashboardStats: async (period = getCurrentMonthPeriod(), options = {}) => {
     try {
       const params = new URLSearchParams({ period: period || 'ALL' });
       if (options?.refresh) params.set('refresh', '1');
@@ -50,7 +53,7 @@ export const managerApi = {
       });
       return data;
     } catch (error) {
-      console.error('managerApi.createDriver Error:', error);
+      if (!error?.status || error.status >= 500) console.error('managerApi.createDriver Error:', error);
       throw error;
     }
   },

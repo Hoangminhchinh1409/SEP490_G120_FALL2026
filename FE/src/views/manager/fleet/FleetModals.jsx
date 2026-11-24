@@ -220,35 +220,47 @@ export function FleetDriverModal({
         <Form.Item
           name="full_name"
           label={<span className="font-semibold text-slate-700">Họ và tên tài xế</span>}
-          rules={editingDriver ? [] : [{ required: true, message: 'Vui lòng nhập họ tên' }]}
+          rules={editingDriver ? [] : [
+            { required: true, message: 'Vui lòng nhập họ tên' },
+            { max: 100, message: 'Họ và tên tối đa 100 ký tự' }
+          ]}
         >
-          <Input placeholder="Nguyễn Văn A" disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
+          <Input placeholder="Nguyễn Văn A" maxLength={100} disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
         </Form.Item>
 
         <Form.Item
           name="phone"
           label={<span className="font-semibold text-slate-700">Số điện thoại liên lạc</span>}
-          rules={editingDriver ? [] : [{ required: true, message: 'Vui lòng nhập SĐT' }]}
+          rules={editingDriver ? [] : [
+            { required: true, message: 'Vui lòng nhập SĐT' },
+            { pattern: /^[0-9+() -]{9,15}$/, message: 'Số điện thoại không hợp lệ (9-15 ký tự số)' }
+          ]}
         >
-          <Input placeholder="0912345678" disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
+          <Input placeholder="0912345678" maxLength={15} disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
         </Form.Item>
 
         <Form.Item
           name="email"
           label={<span className="font-semibold text-slate-700">Email (Tùy chọn)</span>}
-          rules={editingDriver ? [] : [{ type: 'email', message: 'Email không đúng định dạng' }]}
+          rules={editingDriver ? [] : [
+            { type: 'email', message: 'Email không đúng định dạng' },
+            { max: 100, message: 'Email tối đa 100 ký tự' }
+          ]}
           extra={editingDriver ? "Họ tên, SĐT và email tài khoản chỉ đọc tại hồ sơ tài xế." : "Nếu để trống, hệ thống sẽ tự sinh email đăng nhập theo số điện thoại."}
         >
-          <Input placeholder="taixe@nexlog.vn" disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
+          <Input placeholder="taixe@nexlog.vn" maxLength={100} disabled={Boolean(editingDriver)} className="h-10 rounded-lg" />
         </Form.Item>
 
         <div className="grid grid-cols-2 gap-3">
           <Form.Item
             name="license_number"
             label={<span className="font-semibold text-slate-700">Số GPLX</span>}
-            rules={[{ required: true, message: 'Nhập số bằng lái' }]}
+            rules={[
+              { required: true, message: 'Nhập số bằng lái' },
+              { max: 20, message: 'Số GPLX tối đa 20 ký tự' }
+            ]}
           >
-            <Input placeholder="GPLX-012345" className="h-10 rounded-lg font-mono font-bold" />
+            <Input placeholder="GPLX-012345" maxLength={20} className="h-10 rounded-lg font-mono font-bold" />
           </Form.Item>
 
           <Form.Item
@@ -284,7 +296,11 @@ export function FleetDriverModal({
               className="h-10"
               options={[
                 { value: 'ACTIVE', label: 'Hoạt động (Active)' },
-                { value: 'INACTIVE', label: 'Tạm dừng (Inactive)' }
+                { value: 'INACTIVE', label: 'Tạm dừng (Inactive)' },
+                { value: 'RESTING', label: 'Đang nghỉ (Resting)' },
+                ...(String(editingDriver?.status || '').trim().toUpperCase().replace(/\s+/g, '_') === 'ON_TRIP'
+                  ? [{ value: 'ON_TRIP', label: 'Đang chạy chuyến (On Trip)', disabled: true }]
+                  : [])
               ]}
             />
           </Form.Item>

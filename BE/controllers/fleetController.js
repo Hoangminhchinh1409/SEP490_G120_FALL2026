@@ -10,6 +10,24 @@ const VALID_LICENSE_CLASSES = ['B2', 'C', 'FC'];
 const VALID_DRIVER_PROFILE_STATUSES = ['ACTIVE', 'INACTIVE', 'RESTING', 'SUSPENDED', 'LEAVE'];
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^[0-9+() -]{9,15}$/;
+const TX_OPTIONS = { maxWait: 10000, timeout: 15000 };
+
+const normalizeDriverProfileStatus = (rawStatus) => {
+  const norm = String(rawStatus || 'ACTIVE').trim().toUpperCase().replace(/\s+/g, '_');
+  return norm || 'ACTIVE';
+};
+
+const formatP2002Message = (error, fallbackMessage) => {
+  const target = Array.isArray(error?.meta?.target)
+    ? error.meta.target.join(',').toLowerCase()
+    : String(error?.meta?.target || '').toLowerCase();
+  if (target.includes('license_number')) return 'Số GPLX đã tồn tại trong hệ thống.';
+  if (target.includes('email')) return 'Email đã tồn tại trong hệ thống.';
+  if (target.includes('username')) return 'Tên đăng nhập đã tồn tại trong hệ thống.';
+  if (target.includes('user_account_id')) return 'Tài xế này đã có hồ sơ trong hệ thống.';
+  if (target.includes('id')) return 'Xung đột khóa chính khi lưu dữ liệu (sequence id), vui lòng thử lại.';
+  return fallbackMessage;
+};
 
 const createControllerError = (message, statusCode = 400) => {
   const err = new Error(message);
@@ -336,7 +354,7 @@ const getVehicles = async (req, res) => {
         license_number: dp.license_number,
         expiry: licExpStr,
         license_expiry: licExpStr,
-        status: dp.status,
+        status: normalizeDriverProfileStatus(dp.status),
         is_license_expired: isLicenseExpired
       };
     });
@@ -638,6 +656,9 @@ const createDriver = async (req, res) => {
       return res.status(400).json({ message: 'Họ và tên tài xế là bắt buộc.' });
     }
     const driverName = rawName.trim();
+    if (driverName.length > 100) {
+      return res.status(400).json({ message: 'Họ và tên tài xế không được vượt quá 100 ký tự.' });
+    }
 
     if (typeof phone !== 'string' || !phone.trim() || !PHONE_REGEX.test(phone.trim())) {
       return res.status(400).json({ message: 'Số điện thoại là bắt buộc và phải đúng định dạng.' });
@@ -650,12 +671,18 @@ const createDriver = async (req, res) => {
         return res.status(400).json({ message: 'Định dạng email không hợp lệ.' });
       }
       cleanEmailInput = email.trim().toLowerCase();
+      if (cleanEmailInput.length > 100) {
+        return res.status(400).json({ message: 'Email không được vượt quá 100 ký tự.' });
+      }
     }
 
     if (typeof license_number !== 'string' || !license_number.trim()) {
       return res.status(400).json({ message: 'Số giấy phép lái xe (license_number) là bắt buộc.' });
     }
     const licNum = license_number.trim();
+    if (licNum.length > 20) {
+      return res.status(400).json({ message: 'Số giấy phép lái xe (license_number) không được vượt quá 20 ký tự.' });
+    }
 
     const licClass = license_class !== undefined
       ? validateLicenseClassValue(license_class)
@@ -675,16 +702,24 @@ const createDriver = async (req, res) => {
 
     const userSelect = { id: true, full_name: true, phone: true, username: true, email: true, role_id: true };
 
-    let existingUser = await prisma.users.findFirst({
+    const userByPhone = await prisma.users.findFirst({
       where: { phone: cleanPhone },
       select: userSelect
     });
-    if (!existingUser && cleanEmailInput) {
-      existingUser = await prisma.users.findUnique({
-        where: { email: cleanEmailInput },
-        select: userSelect
+    const userByEmail = cleanEmailInput
+      ? await prisma.users.findUnique({
+          where: { email: cleanEmailInput },
+          select: userSelect
+        })
+      : null;
+
+    if (userByPhone && userByEmail && String(userByPhone.id) !== String(userByEmail.id)) {
+      return res.status(409).json({
+        message: 'Số điện thoại và Email thuộc về hai tài khoản khác nhau trong hệ thống.'
       });
     }
+
+    const existingUser = userByPhone || userByEmail;
 
     let userId = null;
     let finalUsername = '';
@@ -696,7 +731,10 @@ const createDriver = async (req, res) => {
     if (existingUser) {
       // BUG-MGR-01: Tuyệt đối không tự ý chuyển vai trò tài khoản khác thành Driver (BR-28)
       if (Number(existingUser.role_id) !== 4) {
-        return res.status(409).json({ message: 'Tài khoản không phải Driver' });
+        const matchedBy = userByPhone && String(userByPhone.id) === String(existingUser.id) ? 'Số điện thoại' : 'Email';
+        return res.status(409).json({
+          message: `Tài khoản không phải Driver: ${matchedBy} này đã thuộc về tài khoản "${existingUser.username}" (vai trò khác Tài xế). Vui lòng dùng SĐT/Email khác cho tài xế mới.`
+        });
       }
 
       // BUG-MGR-03: Không cho phép đăng ký lại tài xế đã có hồ sơ
@@ -783,7 +821,7 @@ const createDriver = async (req, res) => {
           }
         });
         return { userId: newUser.id, profile };
-      });
+      }, TX_OPTIONS);
       userId = txResult.userId;
       profileResult = txResult.profile;
     }
@@ -802,13 +840,18 @@ const createDriver = async (req, res) => {
         license_number: profileResult.license_number,
         expiry: formatDateOnly(profileResult.license_expiry),
         license_expiry: formatDateOnly(profileResult.license_expiry),
-        status: profileResult.status
+        status: normalizeDriverProfileStatus(profileResult.status)
       }
     });
   } catch (error) {
     console.error('Create Driver Error:', error);
     if (error && error.code === 'P2002') {
-      return res.status(409).json({ message: 'Thông tin bị trùng (số GPLX, email hoặc SĐT đã tồn tại).' });
+      return res.status(409).json({
+        message: formatP2002Message(error, 'Thông tin bị trùng (số GPLX, email hoặc SĐT đã tồn tại).')
+      });
+    }
+    if (error && error.code === 'P2000') {
+      return res.status(400).json({ message: 'Dữ liệu nhập vào vượt quá độ dài cho phép.' });
     }
     return res.status(error.statusCode || 500).json({ message: error.message || 'Không thể thêm tài xế', error: error.message });
   }
@@ -835,6 +878,9 @@ const updateDriverProfile = async (req, res) => {
         return res.status(400).json({ message: 'Số GPLX không được để trống.' });
       }
       const cleanLicNum = license_number.trim();
+      if (cleanLicNum.length > 20) {
+        return res.status(400).json({ message: 'Số giấy phép lái xe (license_number) không được vượt quá 20 ký tự.' });
+      }
       const dupLic = await prisma.driver_profiles.findFirst({
         where: { license_number: cleanLicNum, id: { not: bigId } },
         select: { id: true }
@@ -884,7 +930,12 @@ const updateDriverProfile = async (req, res) => {
   } catch (error) {
     console.error('Update Driver Profile Error:', error);
     if (error && error.code === 'P2002') {
-      return res.status(409).json({ message: 'Số GPLX đã tồn tại trong hệ thống.' });
+      return res.status(409).json({
+        message: formatP2002Message(error, 'Số GPLX đã tồn tại trong hệ thống.')
+      });
+    }
+    if (error && error.code === 'P2000') {
+      return res.status(400).json({ message: 'Dữ liệu nhập vào vượt quá độ dài cho phép.' });
     }
     return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi cập nhật hồ sơ tài xế', error: error.message });
   }

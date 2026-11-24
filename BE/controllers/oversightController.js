@@ -192,9 +192,12 @@ const getDispatcherDashboardStats = async (req, res) => {
 // B. MANAGER PERFORMANCE OVERSIGHT (SCREEN 16 & 41)
 // ==========================================
 
+const getCurrentPeriodGMT7 = () =>
+  new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7);
+
 const getPerformanceOverview = async (req, res) => {
   try {
-    const periodStr = req.query.period || 'ALL';
+    const periodStr = req.query.period || getCurrentPeriodGMT7();
     const refresh = req.query?.refresh === '1' || req.query?.refresh === 'true';
     const result = await oversightService.getPerformanceOverview(periodStr, { refresh });
     return res.json(result);

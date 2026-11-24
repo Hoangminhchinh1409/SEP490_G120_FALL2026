@@ -1,5 +1,6 @@
 import React from 'react';
 import { Spin } from 'antd';
+import { renderArticleContent } from '../../blog/components/BlogContentRenderer';
 
 export function BlogPreviewModal({
   previewArticle,
@@ -42,8 +43,12 @@ export function BlogPreviewModal({
               {previewArticle.summary}
             </p>
           )}
-          <div className="text-xs text-on-surface leading-relaxed whitespace-pre-line bg-surface-container-low/50 p-4 rounded-xl">
-            {previewArticle.content || 'Nội dung bài viết đang được soạn thảo...'}
+          <div className="bg-surface-container-low/40 p-5 rounded-xl border border-surface-container prose prose-sm max-w-none text-on-surface">
+            {previewArticle.content ? (
+              renderArticleContent(previewArticle.content)
+            ) : (
+              <p className="text-xs text-outline italic">Nội dung bài viết đang được soạn thảo...</p>
+            )}
           </div>
         </div>
         <div className="p-4 bg-surface-container-low border-t border-outline-variant/30 flex items-center justify-between">

@@ -273,4 +273,33 @@ describe('Manager Fleet, Drivers, Trucks & Staff Accounts Bug Fixes (BUG-MGR-01.
     await fleetController.createTruck({ body: { plate_number: '29H-99999', ...ok } }, goodRes);
     assert.equal(goodRes.statusCode, 201);
   });
+
+  test('Driver creation validates license_number max length (<= 20) and cross-account phone/email conflict', async () => {
+    const longLicRes = createMockRes();
+    await fleetController.createDriver({
+      body: {
+        full_name: 'Tài xế Mới',
+        phone: '0911223344',
+        license_number: 'GPLX-12345678901234567890',
+        license_class: 'C',
+        expiry: '2031-01-01'
+      }
+    }, longLicRes);
+    assert.equal(longLicRes.statusCode, 400);
+    assert.match(longLicRes.body.message, /20 ký tự/i);
+
+    const conflictRes = createMockRes();
+    await fleetController.createDriver({
+      body: {
+        full_name: 'Xung đột tài khoản',
+        phone: '0900000004',
+        email: 'dispatcher01@nexlog.vn',
+        license_number: 'GPLX-CONFLICT1',
+        license_class: 'C',
+        expiry: '2031-01-01'
+      }
+    }, conflictRes);
+    assert.equal(conflictRes.statusCode, 409);
+    assert.match(conflictRes.body.message, /hai tài khoản khác nhau/i);
+  });
 });

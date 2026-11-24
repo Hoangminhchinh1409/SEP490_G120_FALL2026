@@ -64,10 +64,13 @@ function parsePeriodRange(periodStr) {
   return null;
 }
 
+const getCurrentPeriodGMT7 = () =>
+  new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7);
+
 /**
  * 1. Lấy dữ liệu Tổng quan Hiệu suất Vận tải (Screen 16: Performance Dashboard - Hybrid BI)
  */
-async function getPerformanceOverview(periodStr = '2026-10') {
+async function getPerformanceOverview(periodStr = getCurrentPeriodGMT7()) {
   const dateRange = parsePeriodRange(periodStr);
 
   const createdAtFilter = dateRange
@@ -461,8 +464,9 @@ async function getPerformanceOverview(periodStr = '2026-10') {
   ];
 
   // 13. Xu hướng Doanh thu & Đơn hàng trong kỳ (Tạo theo tháng được chọn)
-  const targetYear = dateRange?.year || 2026;
-  const targetMonth = dateRange?.month || 10;
+  const nowGmt7 = new Date(Date.now() + 7 * 3600 * 1000);
+  const targetYear = dateRange?.year || nowGmt7.getUTCFullYear();
+  const targetMonth = dateRange?.month || (nowGmt7.getUTCMonth() + 1);
   const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
   const monthStr = String(targetMonth).padStart(2, '0');
 
@@ -725,13 +729,14 @@ const runWithShortTtlCache = async (cacheMap, inflightMap, key, fetcher, forceRe
   return promise;
 };
 
-const getPerformanceOverviewCached = (periodStr = 'ALL', options = {}) => {
-  const cacheKey = String(periodStr || 'ALL');
+const getPerformanceOverviewCached = (periodStr = getCurrentPeriodGMT7(), options = {}) => {
+  const effectivePeriod = periodStr || getCurrentPeriodGMT7();
+  const cacheKey = String(effectivePeriod);
   return runWithShortTtlCache(
     overviewCache,
     overviewInflight,
     cacheKey,
-    () => getPerformanceOverview(periodStr),
+    () => getPerformanceOverview(effectivePeriod),
     Boolean(options?.refresh)
   );
 };

@@ -38,6 +38,14 @@ export default function FleetDriversTab({
             ) : (
               drivers.map((driver) => {
                 const isExp = driver.is_license_expired;
+                const normStatus = String(driver.status || 'ACTIVE').trim().toUpperCase().replace(/\s+/g, '_');
+                const statusBadge = normStatus === 'ACTIVE'
+                  ? { label: 'Hoạt động', cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' }
+                  : normStatus === 'ON_TRIP'
+                    ? { label: 'Đang chạy chuyến', cls: 'bg-blue-50 text-blue-700 border border-blue-200' }
+                    : normStatus === 'RESTING'
+                      ? { label: 'Đang nghỉ', cls: 'bg-amber-50 text-amber-700 border border-amber-200' }
+                      : { label: 'Tạm dừng', cls: 'bg-slate-100 text-slate-500 border border-slate-200' };
                 return (
                   <tr key={driver.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3.5 px-4 font-semibold text-slate-900">
@@ -73,10 +81,8 @@ export default function FleetDriversTab({
                     </td>
 
                     <td className="py-3.5 px-4 text-center">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
-                        driver.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'
-                      }`}>
-                        {driver.status === 'ACTIVE' ? 'Hoạt động' : 'Tạm dừng'}
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${statusBadge.cls}`}>
+                        {statusBadge.label}
                       </span>
                     </td>
 

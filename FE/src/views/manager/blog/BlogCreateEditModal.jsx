@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { managerApi } from '../../../api/managerApi';
 import { uploadApi } from '../../../api/uploadApi';
+import RichTextEditor from './RichTextEditor';
+import { getContentMetrics } from '../../blog/components/BlogContentRenderer';
 
 export function BlogCreateEditModal({
   isOpen,
@@ -60,7 +62,8 @@ export function BlogCreateEditModal({
       showToast('Vui lòng nhập tiêu đề bài viết', 'error');
       return;
     }
-    if (status === 'PUBLISHED' && !newArticle.content?.trim()) {
+    const isContentEmpty = getContentMetrics(newArticle.content).isEmpty;
+    if (status === 'PUBLISHED' && isContentEmpty) {
       showToast('Vui lòng điền đủ Tiêu đề và Nội dung bài viết', 'error');
       return;
     }
@@ -92,7 +95,7 @@ export function BlogCreateEditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-      <div className="bg-surface-container-lowest w-full max-w-2xl rounded-2xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col">
+      <div className="bg-surface-container-lowest w-full max-w-5xl rounded-2xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col">
         <div className="p-5 bg-surface-container-low border-b border-surface-container flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h3 className="font-bold text-lg text-primary">
@@ -110,7 +113,7 @@ export function BlogCreateEditModal({
           </button>
         </div>
 
-        <form onSubmit={handleSaveArticle} className="p-6 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
+        <form onSubmit={handleSaveArticle} className="p-6 flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
           {/* (1) Tiêu đề * */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold text-primary uppercase">Tiêu đề *</label>
@@ -183,14 +186,12 @@ export function BlogCreateEditModal({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-primary uppercase">Nội dung chi tiết (Rich text / Markdown) *</label>
-            <textarea
-              rows={6}
-              required
+            <label className="text-xs font-bold text-primary uppercase">Nội dung chi tiết *</label>
+            <RichTextEditor
               value={newArticle.content}
-              onChange={e => setNewArticle({ ...newArticle, content: e.target.value })}
-              className="p-3 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-secondary resize-none font-mono"
-              placeholder="Soạn thảo nội dung chi tiết bài viết (hỗ trợ ### Tiêu đề mục, - Gạch đầu dòng, > Trích dẫn, **chữ in đậm**)..."
+              onChange={(nextContent) => setNewArticle(prev => ({ ...prev, content: nextContent }))}
+              showToast={showToast}
+              placeholder="Soạn thảo nội dung chi tiết bài viết (dùng thanh công cụ hoặc Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+K)..."
             />
           </div>
 

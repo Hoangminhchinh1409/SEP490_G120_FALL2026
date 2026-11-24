@@ -196,7 +196,7 @@ export default function FleetPage({ readOnly = false }) {
         license_number: driver.license_number,
         license_class: driver.license_class || driver.license,
         expiry: driver.expiry || driver.license_expiry ? dayjs(driver.expiry || driver.license_expiry): null,
-        status: driver.status || 'ACTIVE'
+        status: String(driver.status || 'ACTIVE').trim().toUpperCase().replace(/\s+/g, '_')
       });
     }, 0);
   };
@@ -212,7 +212,7 @@ export default function FleetPage({ readOnly = false }) {
           license_class: values.license_class,
           expiry: expiryStr,
           license_expiry: expiryStr,
-          status: values.status
+          ...(values.status && values.status !== 'ON_TRIP' ? { status: values.status } : {})
         };
         await managerApi.updateDriverProfile(editingDriver.id, updatePayload);
         message.success('Cập nhật hồ sơ tài xế thành công.');
@@ -235,7 +235,7 @@ export default function FleetPage({ readOnly = false }) {
       setIsDriverModalOpen(false);
       fetchFleetData();
     } catch (error) {
-      console.error('Lỗi khi lưu tài xế:', error);
+      if (!error?.status || error.status >= 500) console.error('Lỗi khi lưu tài xế:', error);
       message.error(error.message || 'Lỗi khi lưu hồ sơ tài xế.');
     } finally {
       setSubmittingDriver(false);
