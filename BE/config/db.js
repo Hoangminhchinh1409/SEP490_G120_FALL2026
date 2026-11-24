@@ -9,9 +9,15 @@ const isLocalhost = cleanConnectionString.includes("localhost") || cleanConnecti
 
 const pool = new Pool({
   connectionString: cleanConnectionString,
+  connectionTimeoutMillis: 15000,
+  idleTimeoutMillis: 30000,
   ssl: cleanConnectionString && !isLocalhost
     ? { rejectUnauthorized: false }
     : false
+});
+
+pool.on("error", (err) => {
+  console.warn("[PG Pool] Idle client disconnected:", err?.message || err);
 });
 
 module.exports = pool;

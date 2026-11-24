@@ -46,7 +46,7 @@ export default function OrderFormCustomerSection({ form, shippingDirection, setP
             {
               validator: (_, val) => {
                 if (!val || !val.trim()) return Promise.resolve();
-                const res = validateVietnamAddressText(val);
+                const res = validateVietnamAddressText(val, { requireVietmap: true });
                 if (!res.valid) return Promise.reject(new Error(res.reason));
                 return Promise.resolve();
               }

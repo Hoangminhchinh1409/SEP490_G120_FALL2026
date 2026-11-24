@@ -3,6 +3,18 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Select } from 'antd';
 import { MapPin, Loader2, X, Navigation, CheckCircle2, AlertCircle, Building2 } from 'lucide-react';
 import { autocompleteVietmap, searchVietmap, fetchVietmapPlace } from '../../utils/roadRouting';
+import {
+  normalizeVi,
+  validateVietnamAddressDetail,
+  validateVietnamAddressText,
+  stripAddressUnitPrefix,
+  doesVietmapItemMatchDetail,
+  markAddressVerified,
+  markAddressUnverified,
+  clearAddressVerification
+} from '../../utils/addressValidation';
+
+export { validateVietnamAddressText, validateVietnamAddressDetail };
 
 // Danh mục chuẩn 34 Tỉnh / Thành phố Việt Nam mới nhất 2026 (mô hình chính quyền địa phương 2 cấp: Tỉnh/Thành phố -> Phường/Xã)
 export const VIETNAM_PROVINCES_2026 = [
@@ -68,38 +80,6 @@ async function resolveVietmapCityId(provName, signal) {
     // Ignore fetch error
   }
   return null;
-}
-
-function normalizeVi(str = '') {
-  return (str || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase()
-    .trim();
-}
-
-/**
- * Kiểm tra địa chỉ chuẩn hóa theo địa giới hành chính Việt Nam 2026:
- * Bắt buộc có phần địa chỉ cụ thể hợp lệ VÀ có Phường/Xã + Tỉnh/Thành phố
- */
-export function validateVietnamAddressText(text = '') {
-  const clean = (text || '').trim();
-  if (!clean) {
-    return { valid: false, reason: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố.' };
-  }
-  if (clean.length < 8) {
-    return { valid: false, reason: 'Địa chỉ quá ngắn. Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố.' };
-  }
-  if (/(.)\1{4,}/i.test(clean)) {
-    return { valid: false, reason: 'Địa chỉ cụ thể chứa ký tự lặp không hợp lệ.' };
-  }
-  const parts = clean.split(',').map((s) => s.trim()).filter(Boolean);
-  if (parts.length < 2) {
-    return { valid: false, reason: 'Vui lòng chọn đầy đủ Tỉnh/Thành phố và Phường/Xã ở bên dưới.' };
-  }
-  return { valid: true, reason: '' };
 }
 
 /**
@@ -176,6 +156,9 @@ const LocationSearchInput = ({
   const [isLoading, setIsLoading] = useState(false);
   const [resolvingCoords, setResolvingCoords] = useState(false);
   const [isVerifiedCoords, setIsVerifiedCoords] = useState(Boolean(value && value.trim().length >= 10));
+  const [verifyStatus, setVerifyStatus] = useState('idle'); // 'idle' | 'verified' | 'unverified' | 'invalid'
+  const [verifyWarning, setVerifyWarning] = useState('');
+  const selectedFromDropdownRef = useRef(false);
   const containerRef = useRef(null);
 
   // Đồng bộ khi prop `value` thay đổi từ bên ngoài (ví dụ chọn Preset hoặc Reset form)
@@ -257,27 +240,57 @@ const LocationSearchInput = ({
     return [detail?.trim(), ward?.trim(), province?.trim()].filter(Boolean).join(', ');
   };
 
-  // Tự động tra cứu tọa độ VietMap v4 khi đã có đủ: Địa chỉ cụ thể + Phường/Xã + Tỉnh/Thành phố
+  // Tự động tra cứu & xác thực tọa độ VietMap v4 (không fallback lấy tâm Phường/Xã cho text vô nghĩa)
   useEffect(() => {
     const cleanDetail = (detailText || '').trim();
-    if (!cleanDetail || cleanDetail.length < 2 || !selectedWardName || !selectedProvinceName) {
+    if (!cleanDetail || !selectedWardName || !selectedProvinceName) {
       return;
     }
 
+    const detailCheck = validateVietnamAddressDetail(cleanDetail);
     const fullAddr = buildFullAddress(cleanDetail, selectedWardName, selectedProvinceName);
+
+    if (!detailCheck.valid && !selectedFromDropdownRef.current) {
+      markAddressUnverified(fullAddr, detailCheck.reason);
+      return;
+    }
+
+    // Nếu vừa chọn trực tiếp từ dropdown gợi ý VietMap thì không cần gọi tìm kiếm lại
+    if (selectedFromDropdownRef.current) {
+      selectedFromDropdownRef.current = false;
+      return;
+    }
+
     let isCancelled = false;
     const controller = new AbortController();
 
     const geocodeTimer = setTimeout(async () => {
       try {
         setResolvingCoords(true);
-        const searchData = await searchVietmap(fullAddr, { signal: controller.signal });
-        const first = searchData.length > 0 ? searchData[0] : null;
+        const strippedDetail = stripAddressUnitPrefix(cleanDetail);
+        const searchTasks = [searchVietmap(fullAddr, { signal: controller.signal })];
+        if (strippedDetail && strippedDetail !== cleanDetail && strippedDetail.length >= 3) {
+          searchTasks.push(
+            searchVietmap(
+              buildFullAddress(strippedDetail, selectedWardName, selectedProvinceName),
+              { signal: controller.signal }
+            )
+          );
+        }
 
-        if (!isCancelled && first?.ref_id) {
-          const placeData = await fetchVietmapPlace(first.ref_id, { signal: controller.signal });
+        const searchArrays = await Promise.all(searchTasks);
+        const candidates = searchArrays.flat().filter(Boolean);
+        const matchedItem = candidates.find((item) =>
+          doesVietmapItemMatchDetail(item, cleanDetail, selectedWardName, selectedProvinceName)
+        );
+
+        if (!isCancelled && matchedItem?.ref_id) {
+          const placeData = await fetchVietmapPlace(matchedItem.ref_id, { signal: controller.signal });
           if (!isCancelled && typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
             setIsVerifiedCoords(true);
+            setVerifyStatus('verified');
+            setVerifyWarning('');
+            markAddressVerified(fullAddr, placeData.lat, placeData.lng);
             if (onSelectLocation) {
               onSelectLocation({
                 address: fullAddr,
@@ -293,29 +306,22 @@ const LocationSearchInput = ({
           }
         }
 
-        // Nếu địa chỉ cụ thể quá chi tiết (VD số lô nội bộ), fallback lấy tọa độ trung tâm Phường/Xã + Tỉnh/Thành phố trên VietMap v4
-        const wardFallbackQuery = `${selectedWardName}, ${selectedProvinceName}`;
-        const fbData = await searchVietmap(wardFallbackQuery, { signal: controller.signal });
-        const fbFirst = fbData.length > 0 ? fbData[0] : null;
-        if (!isCancelled && fbFirst?.ref_id) {
-          const placeData = await fetchVietmapPlace(fbFirst.ref_id, { signal: controller.signal });
-          if (!isCancelled && typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
-            setIsVerifiedCoords(true);
-            if (onSelectLocation) {
-              onSelectLocation({
-                address: fullAddr,
-                mainName: cleanDetail,
-                ward: selectedWardName,
-                province: selectedProvinceName,
-                lat: placeData.lat,
-                lng: placeData.lng,
-                verified: true
-              });
-            }
+        if (!isCancelled) {
+          const notFoundMsg =
+            'Không tìm thấy địa chỉ cụ thể này trên bản đồ VietMap. Vui lòng chọn gợi ý từ VietMap hoặc kiểm tra lại số nhà, tên đường / KCN.';
+          setIsVerifiedCoords(false);
+          setVerifyStatus('unverified');
+          setVerifyWarning(notFoundMsg);
+          markAddressUnverified(fullAddr, notFoundMsg);
+          if (onSelectLocation) {
+            onSelectLocation(null);
           }
         }
       } catch {
-        // Ignore abort
+        // Khi mạng/API VietMap tạm gián đoạn: vẫn giữ kiểm tra ngữ nghĩa tiếng Việt, không gắn cờ sai
+        if (!isCancelled) {
+          clearAddressVerification(fullAddr);
+        }
       } finally {
         if (!isCancelled) {
           setResolvingCoords(false);
@@ -443,21 +449,24 @@ const LocationSearchInput = ({
 
   // Xử lý khi thay đổi ô Địa chỉ cụ thể
   const handleDetailChange = (e) => {
+    selectedFromDropdownRef.current = false;
     const nextDetail = e.target.value;
     setDetailText(nextDetail);
     setIsOpen(true);
+    setVerifyStatus('idle');
+    setVerifyWarning('');
 
     const combined = buildFullAddress(nextDetail, selectedWardName, selectedProvinceName);
+    clearAddressVerification(combined);
     if (onChange) onChange(combined);
 
-    if (!nextDetail.trim() || !selectedWardName || !selectedProvinceName) {
-      setIsVerifiedCoords(false);
-      if (onSelectLocation) onSelectLocation(null);
-    }
+    setIsVerifiedCoords(false);
+    if (onSelectLocation) onSelectLocation(null);
   };
 
   // Xử lý khi chọn Tỉnh/Thành phố (34 Tỉnh/Thành phố 2026)
   const handleProvinceChange = (provCode) => {
+    selectedFromDropdownRef.current = false;
     const provObj = VIETNAM_PROVINCES_2026.find((p) => p.code === provCode);
     const nextProvName = provObj ? provObj.name : '';
 
@@ -465,6 +474,8 @@ const LocationSearchInput = ({
     setSelectedProvinceName(nextProvName);
     setSelectedWardName(undefined);
     setIsVerifiedCoords(false);
+    setVerifyStatus('idle');
+    setVerifyWarning('');
 
     const combined = buildFullAddress(detailText, '', nextProvName);
     if (onChange) onChange(combined);
@@ -473,19 +484,23 @@ const LocationSearchInput = ({
 
   // Xử lý khi chọn Phường/Xã
   const handleWardChange = (wardName) => {
+    selectedFromDropdownRef.current = false;
     setSelectedWardName(wardName);
+    setVerifyStatus('idle');
+    setVerifyWarning('');
     const combined = buildFullAddress(detailText, wardName, selectedProvinceName);
+    clearAddressVerification(combined);
     if (onChange) onChange(combined);
 
-    if (!detailText?.trim() || !wardName || !selectedProvinceName) {
-      setIsVerifiedCoords(false);
-      if (onSelectLocation) onSelectLocation(null);
-    }
+    setIsVerifiedCoords(false);
+    if (onSelectLocation) onSelectLocation(null);
   };
 
   // Khi người dùng bấm chọn nhanh 1 gợi ý từ VietMap Autocomplete: tự động điền cả Địa chỉ cụ thể + Tỉnh/Thành + Phường/Xã
   const handleSelectSuggestion = async (item) => {
+    selectedFromDropdownRef.current = true;
     setIsOpen(false);
+    setVerifyWarning('');
     setDetailText(item.main);
 
     // Tự động khớp Tỉnh/Thành phố & Phường/Xã từ boundaries của VietMap
@@ -546,6 +561,9 @@ const LocationSearchInput = ({
 
           if (typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
             setIsVerifiedCoords(true);
+            setVerifyStatus('verified');
+            setVerifyWarning('');
+            markAddressVerified(resolvedFullAddr, placeData.lat, placeData.lng);
             if (onSelectLocation) {
               onSelectLocation({
                 address: resolvedFullAddr,
@@ -572,15 +590,34 @@ const LocationSearchInput = ({
   };
 
   const handleClearDetail = () => {
+    selectedFromDropdownRef.current = false;
     setDetailText('');
     setApiSuggestions([]);
     setIsVerifiedCoords(false);
+    setVerifyStatus('idle');
+    setVerifyWarning('');
     const combined = buildFullAddress('', selectedWardName, selectedProvinceName);
+    clearAddressVerification(combined);
     if (onChange) onChange(combined);
     if (onSelectLocation) onSelectLocation(null);
   };
 
-  const isComplete = Boolean(detailText?.trim().length >= 2 && selectedProvinceCode && selectedWardName);
+  const detailValidation = useMemo(() => {
+    if (!detailText?.trim()) return { valid: false, reason: '' };
+    return validateVietnamAddressDetail(detailText);
+  }, [detailText]);
+
+  const isDetailValid = Boolean(detailText?.trim() && (detailValidation.valid || isVerifiedCoords));
+  const hasValidationIssue = Boolean(
+    detailText?.trim() && ((!detailValidation.valid && !isVerifiedCoords) || verifyStatus === 'unverified')
+  );
+  const inlineErrorText =
+    verifyStatus === 'unverified'
+      ? verifyWarning
+      : !detailValidation.valid && !isVerifiedCoords
+        ? detailValidation.reason
+        : '';
+  const isComplete = Boolean(isDetailValid && selectedProvinceCode && selectedWardName && verifyStatus !== 'unverified');
   const visibleSuggestions = isOpen && (detailText?.trim().length >= 2) ? apiSuggestions : [];
 
   return (
@@ -639,9 +676,11 @@ const LocationSearchInput = ({
             }}
             placeholder={placeholder}
             className={`w-full pl-9 pr-8 py-2 bg-white text-gray-800 text-xs rounded-lg border transition-all shadow-inner placeholder:text-gray-400 focus:outline-none ${
-              isComplete
-                ? 'border-emerald-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
-                : 'border-gray-200 hover:border-indigo-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100'
+              hasValidationIssue
+                ? 'border-red-400 bg-red-50/30 focus:border-red-500 focus:ring-2 focus:ring-red-100'
+                : isComplete
+                  ? 'border-emerald-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
+                  : 'border-gray-200 hover:border-indigo-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100'
             }`}
           />
 
@@ -740,8 +779,13 @@ const LocationSearchInput = ({
         </div>
       </div>
 
-      {/* 3. Hiển thị chuỗi địa chỉ chuẩn hóa đầy đủ */}
-      {isComplete ? (
+      {/* 3. Hiển thị chuỗi địa chỉ chuẩn hóa đầy đủ hoặc cảnh báo địa chỉ không hợp lệ */}
+      {hasValidationIssue ? (
+        <div className="px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-700 flex items-start gap-1.5">
+          <AlertCircle size={13} className="text-red-500 shrink-0 mt-0.5" />
+          <span>{inlineErrorText}</span>
+        </div>
+      ) : isComplete ? (
         <div className="px-2.5 py-1.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[11px] text-emerald-900 flex items-center justify-between gap-2">
           <span className="truncate">
             <b>Địa chỉ:</b> {buildFullAddress(detailText, selectedWardName, selectedProvinceName)}
@@ -755,7 +799,7 @@ const LocationSearchInput = ({
               ? 'Vui lòng chọn Tỉnh / Thành phố.'
               : !selectedWardName
                 ? 'Vui lòng chọn Phường / Xã.'
-                : 'Vui lòng nhập thêm địa chỉ cụ thể.'}
+                : 'Vui lòng nhập thêm địa chỉ cụ thể hợp lệ hoặc chọn từ gợi ý VietMap.'}
           </span>
         </div>
       ) : null}

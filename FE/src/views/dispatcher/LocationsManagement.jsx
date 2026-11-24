@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Button, Input, Modal, Form, Select, InputNumber, Row, Col, Space, Card, message, Popconfirm, Tooltip } from 'antd';
 import { MapPin, Plus, Search, Edit3, Trash2, Phone, User, RefreshCw, Lock } from 'lucide-react';
 import { dispatcherApi } from '../../api/dispatcherApi';
-import LocationSearchInput, { VIETNAM_PROVINCES_2026 } from '../../components/common/LocationSearchInput';
+import LocationSearchInput, { VIETNAM_PROVINCES_2026, validateVietnamAddressText } from '../../components/common/LocationSearchInput';
 
 const { Option } = Select;
 
@@ -383,8 +383,15 @@ export default function LocationsManagement() {
           <Form.Item
             name="address"
             label={<span className="text-xs font-bold text-gray-700">Tìm kiếm &amp; Chọn địa chỉ (VietMap v4)</span>}
-            rules={[{ required: true, message: 'Vui lòng tìm và chọn địa chỉ hợp lệ từ VietMap' }]}
-            extra={<span className="text-[11px] text-gray-500">Chọn gợi ý từ VietMap hoặc điền Địa chỉ + Phường/Xã + Tỉnh/TP để hệ thống tự động lấy Tọa độ.</span>}
+            rules={[
+              {
+                validator: (_, val) => {
+                  const res = validateVietnamAddressText(val, { requireVietmap: true });
+                  return res.valid ? Promise.resolve() : Promise.reject(new Error(res.reason));
+                }
+              }
+            ]}
+            extra={<span className="text-[11px] text-gray-500">Gõ tên đường/KCN để chọn gợi ý từ VietMap hoặc điền đúng Địa chỉ + Phường/Xã + Tỉnh/TP để hệ thống xác thực tọa độ.</span>}
           >
             <LocationSearchInput
               placeholder="Gõ tên đường, khu công nghiệp, tòa nhà để tìm kiếm..."

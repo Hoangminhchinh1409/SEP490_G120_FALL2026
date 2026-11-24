@@ -3,6 +3,7 @@ const { getClientIp } = require('../../utils/ipHelper');
 const prisma = require('../../config/prisma');
 const { serializePrisma, toBigInt } = require('../../utils/prismaHelper');
 const { generateTrackingToken, resolveAlsLocationIdIfValid, getOrCreateLocation, saveOrderMeta, getNextDispatcherForWebOrder } = require('../../services/orderHelperService');
+const { validateVietnamAddressText } = require('../../utils/addressValidator');
 
 const toDateObj = (val) => {
   if (!val) return null;
@@ -75,6 +76,20 @@ const createConsultationOrder = async (req, res) => {
       payment_method,
       vat_required
     } = req.body;
+
+    // Validate chống nhập địa chỉ gõ bừa/vô nghĩa cho các điểm giao nhận không phải kho ALS
+    if (!req.body.pickup_location_id && pickup_address && String(pickup_address).trim()) {
+      const pCheck = validateVietnamAddressText(pickup_address);
+      if (!pCheck.valid) {
+        return res.status(400).json({ message: `Điểm lấy hàng không hợp lệ: ${pCheck.reason}` });
+      }
+    }
+    if (!req.body.delivery_location_id && delivery_address && String(delivery_address).trim()) {
+      const dCheck = validateVietnamAddressText(delivery_address);
+      if (!dCheck.valid) {
+        return res.status(400).json({ message: `Điểm giao hàng không hợp lệ: ${dCheck.reason}` });
+      }
+    }
 
     // 1. Tìm hoặc tạo Customer (kèm Mã số thuế)
     let customerId = 16;
@@ -360,6 +375,26 @@ const createDirectOrder = async (req, res) => {
       authorized_bank,
       accounting_email
     } = req.body;
+
+    // Validate chống nhập địa chỉ gõ bừa/vô nghĩa (trụ sở khách & điểm lấy/giao ngoài hệ thống ALS)
+    if (customer_address && String(customer_address).trim()) {
+      const cCheck = validateVietnamAddressText(customer_address);
+      if (!cCheck.valid) {
+        return res.status(400).json({ message: `Địa chỉ trụ sở / kho khách hàng không hợp lệ: ${cCheck.reason}` });
+      }
+    }
+    if (!req.body.pickup_location_id && pickup_address && String(pickup_address).trim()) {
+      const pCheck = validateVietnamAddressText(pickup_address);
+      if (!pCheck.valid) {
+        return res.status(400).json({ message: `Điểm lấy hàng không hợp lệ: ${pCheck.reason}` });
+      }
+    }
+    if (!req.body.delivery_location_id && delivery_address && String(delivery_address).trim()) {
+      const dCheck = validateVietnamAddressText(delivery_address);
+      if (!dCheck.valid) {
+        return res.status(400).json({ message: `Điểm giao hàng không hợp lệ: ${dCheck.reason}` });
+      }
+    }
 
     // Tìm hoặc tạo Customer
     let customerId = 16;

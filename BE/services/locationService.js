@@ -1,4 +1,5 @@
 const locationModel = require('../models/locationModel');
+const { validateVietnamAddressText } = require('../utils/addressValidator');
 
 const isAlsWarehouseType = (type) =>
   String(type || '').trim().toUpperCase().replace(/\s+/g, '_') === 'ALS_WAREHOUSE';
@@ -74,6 +75,13 @@ const createLocation = async (payload, userId = 3) => {
     throw new Error('Tên và địa chỉ địa điểm là bắt buộc');
   }
 
+  const addrCheck = validateVietnamAddressText(payload.address);
+  if (!addrCheck.valid) {
+    const err = new Error(addrCheck.reason);
+    err.statusCode = 400;
+    throw err;
+  }
+
   let dbType = 'CUSTOMER_SITE';
   if (payload.type === 'ALS_WAREHOUSE' || payload.type === 'ALS Warehouse') dbType = 'ALS Warehouse';
   else if (payload.type === 'KHO_HANG_KHONG' || payload.type === 'WAREHOUSE') dbType = 'WAREHOUSE';
@@ -131,7 +139,15 @@ const updateLocation = async (id, payload) => {
 
   const updatePayload = {};
   if (payload.name) updatePayload.name = payload.name.trim();
-  if (payload.address) updatePayload.address = payload.address.trim();
+  if (payload.address) {
+    const addrCheck = validateVietnamAddressText(payload.address);
+    if (!addrCheck.valid) {
+      const err = new Error(addrCheck.reason);
+      err.statusCode = 400;
+      throw err;
+    }
+    updatePayload.address = payload.address.trim();
+  }
   if (payload.province) updatePayload.province = String(payload.province).replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
   if (payload.contact_name !== undefined) updatePayload.contact_name = payload.contact_name?.trim() || null;
   if (payload.contact_phone !== undefined) updatePayload.contact_phone = payload.contact_phone?.trim() || null;

@@ -12,6 +12,7 @@ import {
 } from '../../data/dispatcherPresets';
 import { ConsultationRouteSection } from './consultation/ConsultationRouteSection';
 import { ConsultationReceiverSection, ConsultationCargoSection } from './consultation/ConsultationSections';
+import { validateVietnamAddressText } from '../common/LocationSearchInput';
 
 const CUSTOMS_SERVICE_FEE = 500000;
 
@@ -311,20 +312,20 @@ const ConsultationBookingModal = ({ open, onCancel, onSuccess }) => {
         form.getFieldValue('delivery_address') ||
         (shippingDirection === 'EXPORT' ? DEFAULT_ALS_WAREHOUSE.address : '');
 
-      // Kiểm tra nghiêm ngặt địa chỉ khách nhập: phải có đủ Địa chỉ cụ thể + Phường/Xã + Tỉnh/Thành phố (chuẩn hành chính 2026)
+      // Kiểm tra nghiêm ngặt địa chỉ khách nhập: phải có đủ Địa chỉ cụ thể hợp nghĩa + Phường/Xã + Tỉnh/TP + VietMap
       if (pickupMode === 'CUSTOM' || shippingDirection === 'EXPORT') {
-        const pickupParts = (resolvedPickupAddr || '').split(',').map(s => s.trim()).filter(Boolean);
-        if (pickupParts.length < 3 || (resolvedPickupAddr || '').trim().length < 10) {
-          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm lấy hàng (A)!');
+        const pickupCheck = validateVietnamAddressText(resolvedPickupAddr || '', { requireVietmap: true });
+        if (!pickupCheck.valid) {
+          message.error(`Điểm lấy hàng (A): ${pickupCheck.reason}`);
           setSubmitting(false);
           return;
         }
       }
 
       if (deliveryMode === 'CUSTOM' || shippingDirection === 'IMPORT') {
-        const deliveryParts = (resolvedDeliveryAddr || '').split(',').map(s => s.trim()).filter(Boolean);
-        if (deliveryParts.length < 3 || (resolvedDeliveryAddr || '').trim().length < 10) {
-          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm nhận hàng (B)!');
+        const deliveryCheck = validateVietnamAddressText(resolvedDeliveryAddr || '', { requireVietmap: true });
+        if (!deliveryCheck.valid) {
+          message.error(`Điểm nhận hàng (B): ${deliveryCheck.reason}`);
           setSubmitting(false);
           return;
         }

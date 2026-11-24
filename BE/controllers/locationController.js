@@ -38,7 +38,7 @@ const createLocation = async (req, res) => {
     return res.status(201).json({ message: 'Thêm địa điểm thành công', location: newLoc });
   } catch (err) {
     console.error('createLocation error:', err);
-    const statusCode = err.message.includes('bắt buộc') ? 400: 500;
+    const statusCode = err.statusCode || (err.message.includes('bắt buộc') ? 400 : 500);
     return res.status(statusCode).json({ message: err.message || 'Lỗi thêm địa điểm' });
   }
 };
@@ -50,7 +50,8 @@ const updateLocation = async (req, res) => {
     return res.json({ message: 'Cập nhật địa điểm thành công', location: updated });
   } catch (err) {
     console.error('updateLocation error:', err);
-    return res.status(500).json({ message: 'Lỗi cập nhật địa điểm', error: err.message });
+    const statusCode = err.statusCode || (err.message.includes('bắt buộc') ? 400 : 500);
+    return res.status(statusCode).json({ message: err.message || 'Lỗi cập nhật địa điểm', error: err.message });
   }
 };
 

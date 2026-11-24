@@ -23,6 +23,7 @@ import OrderFormVehicleSection from './orderForm/OrderFormVehicleSection';
 import OrderFormCargoSection from './orderForm/OrderFormCargoSection';
 import OrderFormPricingSection from './orderForm/OrderFormPricingSection';
 import OrderFormDocumentsSection from './orderForm/OrderFormDocumentsSection';
+import { validateVietnamAddressText } from '../common/LocationSearchInput';
 
 const CUSTOMS_SERVICE_FEE = 500000; // Phí dịch vụ làm thủ tục hải quan hộ (VNĐ)
 
@@ -576,19 +577,27 @@ const OrderFormModal = ({ open, onCancel, onSubmit }) => {
         return;
       }
 
-      // Kiểm tra bắt buộc đủ Địa chỉ cụ thể + Phường/Xã + Tỉnh/Thành phố chuẩn hành chính 2026
+      // Kiểm tra bắt buộc đủ Địa chỉ cụ thể hợp nghĩa + Phường/Xã + Tỉnh/Thành phố + VietMap (2026)
+      if (fieldValues.customer_address && String(fieldValues.customer_address).trim()) {
+        const custCheck = validateVietnamAddressText(fieldValues.customer_address, { requireVietmap: true });
+        if (!custCheck.valid) {
+          message.error(`Địa chỉ trụ sở / kho của khách hàng không hợp lệ: ${custCheck.reason}`);
+          return;
+        }
+      }
+
       if (pickupMode === 'CUSTOM' || shippingDirection === 'EXPORT') {
-        const pickupParts = (fieldValues.pickup_address || '').split(',').map(s => s.trim()).filter(Boolean);
-        if (pickupParts.length < 3 || (fieldValues.pickup_address || '').trim().length < 10) {
-          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm lấy hàng (A)!');
+        const pickupCheck = validateVietnamAddressText(fieldValues.pickup_address || '', { requireVietmap: true });
+        if (!pickupCheck.valid) {
+          message.error(`Điểm lấy hàng (A): ${pickupCheck.reason}`);
           return;
         }
       }
 
       if (deliveryMode === 'CUSTOM' || shippingDirection === 'IMPORT') {
-        const deliveryParts = (fieldValues.delivery_address || '').split(',').map(s => s.trim()).filter(Boolean);
-        if (deliveryParts.length < 3 || (fieldValues.delivery_address || '').trim().length < 10) {
-          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm giao hàng (B)!');
+        const deliveryCheck = validateVietnamAddressText(fieldValues.delivery_address || '', { requireVietmap: true });
+        if (!deliveryCheck.valid) {
+          message.error(`Điểm giao hàng (B): ${deliveryCheck.reason}`);
           return;
         }
       }

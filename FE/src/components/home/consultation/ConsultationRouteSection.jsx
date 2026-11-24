@@ -1,7 +1,12 @@
 import React from 'react';
 import { Form, Select, Input } from 'antd';
 import { MapPin, PlaneLanding, PlaneTakeoff } from 'lucide-react';
-import LocationSearchInput from '../../common/LocationSearchInput';
+import LocationSearchInput, { validateVietnamAddressText } from '../../common/LocationSearchInput';
+
+const validateConsultationAddressRule = (_, val) => {
+  const res = validateVietnamAddressText(val, { requireVietmap: true });
+  return res.valid ? Promise.resolve() : Promise.reject(new Error(res.reason));
+};
 import { formatAlsWarehouseOptionLabel } from '../../../data/dispatcherPresets';
 
 const { Option } = Select;
@@ -95,7 +100,7 @@ export function ConsultationRouteSection({
                 </Select>
 
                 {pickupMode === 'CUSTOM' ? (
-                  <Form.Item name="pickup_address" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố' }]} className="mb-0">
+                  <Form.Item name="pickup_address" rules={[{ validator: validateConsultationAddressRule }]} className="mb-0">
                     <LocationSearchInput
                       label="Địa chỉ kho bên ngoài của bạn"
                       markerLetter="A"
@@ -125,7 +130,7 @@ export function ConsultationRouteSection({
               </div>
             ) : (
               <div className="space-y-2">
-                <Form.Item name="pickup_address" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố' }]} className="mb-0">
+                <Form.Item name="pickup_address" rules={[{ validator: validateConsultationAddressRule }]} className="mb-0">
                   <LocationSearchInput
                     label="Địa chỉ lấy hàng của khách"
                     markerLetter="A"
@@ -243,7 +248,7 @@ export function ConsultationRouteSection({
                 </Select>
 
                 {deliveryMode === 'CUSTOM' ? (
-                  <Form.Item name="delivery_address" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố' }]} className="mb-0">
+                  <Form.Item name="delivery_address" rules={[{ validator: validateConsultationAddressRule }]} className="mb-0">
                     <LocationSearchInput
                       label="Địa chỉ kho bên ngoài của bạn"
                       markerLetter="B"
@@ -273,7 +278,7 @@ export function ConsultationRouteSection({
               </div>
             ) : (
               <div className="space-y-2">
-                <Form.Item name="delivery_address" rules={[{ required: true, message: 'Vui lòng nhập địa chỉ cụ thể và chọn Phường/Xã, Tỉnh/Thành phố' }]} className="mb-0">
+                <Form.Item name="delivery_address" rules={[{ validator: validateConsultationAddressRule }]} className="mb-0">
                   <LocationSearchInput
                     label="Địa chỉ nhận hàng của khách"
                     markerLetter="B"

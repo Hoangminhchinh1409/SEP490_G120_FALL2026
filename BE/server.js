@@ -71,14 +71,31 @@ app.use((err, req, res, next) => {
 
 const { initManagerJobs } = require("./jobs/managerJobs");
 
-app.listen(PORT, async () => {
+let managerJobsStarted = false;
+
+const connectPostgresWithRetry = async (attempt = 1, maxQuickRetries = 4) => {
     try {
         await prisma.$queryRaw`SELECT 1`;
         console.log("PostgreSQL (Prisma) connected successfully!");
-        // Khởi động các Background Jobs của Phân hệ Quản lý
-        initManagerJobs();
+        if (!managerJobsStarted) {
+            managerJobsStarted = true;
+            // Khởi động các Background Jobs của Phân hệ Quản lý
+            initManagerJobs();
+        }
     } catch (error) {
-        console.error("PostgreSQL connection failed:", error.message);
+        const delayMs = attempt <= maxQuickRetries
+            ? Math.min(15000, 1500 * Math.pow(2, attempt - 1))
+            : 30000;
+        console.warn(
+            `[PostgreSQL] Kết nối lần ${attempt} thất bại (${error?.message || error}). Tự động thử lại sau ${Math.round(delayMs / 1000)}s...`
+        );
+        setTimeout(() => {
+            connectPostgresWithRetry(attempt + 1, maxQuickRetries);
+        }, delayMs);
     }
+};
+
+app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
+    connectPostgresWithRetry();
 });
