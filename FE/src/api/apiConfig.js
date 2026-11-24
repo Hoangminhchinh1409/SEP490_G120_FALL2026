@@ -6,7 +6,11 @@ export const API_ENDPOINTS = {
     AUTH: {
         LOGIN: "/auth/login",
         LOGOUT: "/auth/logout",
-        ME: "/auth/me",
+        ME: "/auth/me",// lấy thông tin người dùng hiện tại
+        UPDATE_PROFILE: "/auth/me",
+        CHANGE_PASSWORD: "/auth/change-password",// thay đổi mật khẩu
+        FORGOT_PASSWORD: "/auth/forgot-password",
+        RESET_PASSWORD: "/auth/reset-password",
     },
 
     USERS: {
@@ -21,4 +25,15 @@ export const API_ENDPOINTS = {
         GET_USERS: "/admin/users",
     },
 
+    MANAGER: {
+        DASHBOARD_STATS: "/manager/dashboard/stats",
+        VEHICLES: "/manager/vehicles",
+        DRIVERS: "/manager/drivers",
+        ORDERS: "/manager/orders",
+        REASSIGN_ORDER: (id) => `/manager/orders/${id}/reassign`,
+        VENDORS: "/manager/vendors",
+        APPROVE_VENDOR: (id) => `/manager/vendors/${id}/approve`,
+        APPROVALS: "/manager/approvals",
+        DECIDE_APPROVAL: (id) => `/manager/approvals/${id}/decide`,
+    },
 };

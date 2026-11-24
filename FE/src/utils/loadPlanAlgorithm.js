@@ -1,0 +1,734 @@
+export const DEFAULT_PALETTES = [
+  { color: "#bbf7d0", strokeColor: "#16a34a", badgeColor: "green", topColor: "#dcfce7", sideColor: "#86efac" },
+  { color: "#fed7aa", strokeColor: "#ea580c", badgeColor: "orange", topColor: "#ffedd5", sideColor: "#fdba74" },
+  { color: "#bfdbfe", strokeColor: "#2563eb", badgeColor: "blue", topColor: "#dbeafe", sideColor: "#93c5fd" },
+  { color: "#fef08a", strokeColor: "#ca8a04", badgeColor: "yellow", topColor: "#fef9c3", sideColor: "#fde047" },
+  { color: "#ddd6fe", strokeColor: "#7c3aed", badgeColor: "purple", topColor: "#ede9fe", sideColor: "#c4b5fd" },
+  { color: "#fbcfe8", strokeColor: "#db2777", badgeColor: "pink", topColor: "#fce7f3", sideColor: "#f9a8d4" },
+];
+
+// Bảng màu phân biệt sắc thái theo từng Loại hàng hóa (Cargo Type / Commodity Category)
+export const CARGO_TYPE_COLORS = {
+  GENERAL: { color: "#38bdf8", strokeColor: "#0284c7", topColor: "#bae6fd", sideColor: "#7dd3fc", name: "Hàng tiêu dùng / Bách hóa" },
+  ELECTRONICS: { color: "#818cf8", strokeColor: "#4f46e5", topColor: "#c7d2fe", sideColor: "#a5b4fc", name: "Linh kiện điện tử / PCBA" },
+  CABLE_ROLL: { color: "#f59e0b", strokeColor: "#d97706", topColor: "#fde68a", sideColor: "#fbbf24", name: "Cuộn cáp / Cuộn dây thép" },
+  BULK: { color: "#a8a29e", strokeColor: "#57534e", topColor: "#e7e5e4", sideColor: "#d6d3d1", name: "Hàng rời / Hàng xao" },
+  FRAGILE: { color: "#fb7185", strokeColor: "#e11d48", topColor: "#fecdd3", sideColor: "#fda4af", name: "Hàng dễ vỡ / Kính / Thiết bị đo" },
+  PERISHABLE: { color: "#34d399", strokeColor: "#059669", topColor: "#a7f3d0", sideColor: "#6ee7b7", name: "Hàng bảo quản lạnh / Thực phẩm" },
+  VALUABLE: { color: "#facc15", strokeColor: "#ca8a04", topColor: "#fef08a", sideColor: "#fde047", name: "Hàng giá trị cao / Hàng nhạy cảm" }
+};
+
+/**
+ * Phân tích hình dạng (shapeType) và loại hàng (cargoCategory) dựa trên tên và quy cách đóng gói:
+ * - 'CYLINDER': Hàng cuộn (cuộn cáp quang, cuộn màng bọc, cuộn thép, ống cuộn, lô cuộn...)
+ * - 'BULK_MOUND': Hàng rời, xao xuyến xao hoặc đổ đống
+ * - 'DRUM': Thùng phuy tròn
+ * - 'BOX': Thùng carton, pallet, kiện kiện hình chữ nhật
+ */
+export function detectCargoShapeAndCategory(cargoName = '', packageUnit = '', cargoType = 'GENERAL') {
+  const normName = `${cargoName} ${packageUnit}`.toLowerCase();
+
+  // 1. Nhận diện hàng cuộn tròn (Cylinder)
+  if (
+    normName.includes('cuộn') ||
+    normName.includes('cable') ||
+    normName.includes('cáp') ||
+    normName.includes('lô cuộn') ||
+    normName.includes('coil') ||
+    normName.includes('wire') ||
+    normName.includes('ống') ||
+    normName.includes('drum roll')
+  ) {
+    return {
+      shapeType: 'CYLINDER',
+      cargoCategory: 'CABLE_ROLL',
+      palette: CARGO_TYPE_COLORS.CABLE_ROLL
+    };
+  }
+
+  // 2. Nhận diện thùng phuy tròn (Drum)
+  if (normName.includes('phuy') || normName.includes('thùng phuy') || normName.includes('phi')) {
+    return {
+      shapeType: 'DRUM',
+      cargoCategory: 'BULK',
+      palette: CARGO_TYPE_COLORS.BULK
+    };
+  }
+
+  // 3. Nhận diện hàng rời (Bulk Mound)
+  if (
+    normName.includes('hàng rời') ||
+    normName.includes('bulk') ||
+    normName.includes('xao') ||
+    normName.includes('xá') ||
+    cargoType === 'BULK'
+  ) {
+    return {
+      shapeType: 'BULK_MOUND',
+      cargoCategory: 'BULK',
+      palette: CARGO_TYPE_COLORS.BULK
+    };
+  }
+
+  // 4. Nhận diện linh kiện điện tử / viễn thông (Electronics)
+  if (
+    normName.includes('điện tử') ||
+    normName.includes('pcba') ||
+    normName.includes('bo mạch') ||
+    normName.includes('viễn thông') ||
+    normName.includes('chip') ||
+    normName.includes('board') ||
+    normName.includes('linh kiện')
+  ) {
+    return {
+      shapeType: 'BOX',
+      cargoCategory: 'ELECTRONICS',
+      palette: CARGO_TYPE_COLORS.ELECTRONICS
+    };
+  }
+
+  // 5. Hàng dễ vỡ (Fragile)
+  if (normName.includes('kính') || normName.includes('dễ vỡ') || normName.includes('gốm') || cargoType === 'FRAGILE') {
+    return {
+      shapeType: 'BOX',
+      cargoCategory: 'FRAGILE',
+      palette: CARGO_TYPE_COLORS.FRAGILE
+    };
+  }
+
+  // Mặc định: Thùng / Pallet hình hộp tiêu chuẩn (BOX)
+  const defaultPalette = CARGO_TYPE_COLORS[cargoType] || CARGO_TYPE_COLORS.GENERAL;
+  return {
+    shapeType: 'BOX',
+    cargoCategory: cargoType || 'GENERAL',
+    palette: defaultPalette
+  };
+}
+
+// Kích thước chuẩn mặc định thùng xe tải (cm)
+export const DEFAULT_TRUCK_SPEC = {
+  length_cm: 500, // 5.0m
+  width_cm: 205,  // 2.05m
+  height_cm: 205, // 2.05m
+  max_payload: 3500, // 3500 kg
+  model: "Xe tải 3.5 tấn",
+};
+
+/**
+ * Tìm bộ ước số (nx, ny, nz) sao cho nx * ny * nz >= count và gần count nhất
+ * để chia một khối lô tổng (L x W x H) thành các kiện hàng thực tế cân đối
+ */
+function computeBestGridSubdivision(count, lotL, lotW, lotH) {
+  if (count <= 1) return { nx: 1, ny: 1, nz: 1 };
+
+  let best = { nx: count, ny: 1, nz: 1, score: Infinity };
+
+  for (let nx = 1; nx <= count; nx++) {
+    for (let ny = 1; ny <= count; ny++) {
+      for (let nz = 1; nz <= count; nz++) {
+        const capacity = nx * ny * nz;
+        if (capacity < count) continue;
+        if (capacity > count + Math.max(2, Math.ceil(count * 0.25))) continue;
+
+        const pkgL = lotL / nx;
+        const pkgW = lotW / ny;
+        const pkgH = lotH / nz;
+
+        // Ưu tiên kiện hàng có tỉ lệ các cạnh cân đối (gần thùng carton / pallet thực tế)
+        const maxDim = Math.max(pkgL, pkgW, pkgH);
+        const minDim = Math.max(1, Math.min(pkgL, pkgW, pkgH));
+        const aspectPenalty = maxDim / minDim;
+        const wastePenalty = (capacity - count) * 2.5;
+        const score = aspectPenalty + wastePenalty;
+
+        if (score < best.score) {
+          best = { nx, ny, nz, score };
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Kiểm tra 2 hình hộp 3D có giao nhau không
+ */
+function boxesOverlap3D(a, b) {
+  const eps = 0.01;
+  return (
+    a.x < b.x + b.dx - eps &&
+    a.x + a.dx > b.x + eps &&
+    a.y < b.y + b.dy - eps &&
+    a.y + a.dy > b.y + eps &&
+    a.z < b.z + b.dz - eps &&
+    a.z + a.dz > b.z + eps
+  );
+}
+
+/**
+ * Kiểm tra diện tích đỡ bên dưới khi xếp chồng (z > 0)
+ * Đảm bảo kiện hàng tầng trên có ít nhất 65% diện tích đáy đặt trên các kiện hàng stackable bên dưới
+ */
+function hasAdequateFloorSupport(candidateBox, placedBoxes) {
+  if (candidateBox.z <= 0.1) return true; // Đặt trực tiếp trên sàn thùng xe
+
+  const eps = 1.5;
+  let supportedArea = 0;
+  const baseArea = candidateBox.dx * candidateBox.dy;
+  if (baseArea <= 0) return false;
+
+  for (const b of placedBoxes) {
+    if (!b.stackable) continue;
+    const topZ = b.z + b.dz;
+    if (Math.abs(topZ - candidateBox.z) <= eps) {
+      const overlapX = Math.max(
+        0,
+        Math.min(candidateBox.x + candidateBox.dx, b.x + b.dx) - Math.max(candidateBox.x, b.x)
+      );
+      const overlapY = Math.max(
+        0,
+        Math.min(candidateBox.y + candidateBox.dy, b.y + b.dy) - Math.max(candidateBox.y, b.y)
+      );
+      supportedArea += overlapX * overlapY;
+    }
+  }
+
+  return supportedArea / baseArea >= 0.6;
+}
+
+/**
+ * THUẬT TOÁN XẾP HÀNG 3D TỐI ƯU:
+ * 3D Extreme-Point + LIFO Multi-Stop + Gravity/Stability Layer Bin Packing
+ *
+ * @param {Array} orders - Danh sách đơn hàng trong chuyến xe
+ * @param {Object} truckConfig - Kích thước & tải trọng thùng xe + stops + packingMode
+ *   packingMode:
+ *     - 'AUTO' (mặc định): Tự động nhận diện nếu khách nhập kích thước tổng cả lô (VD: 20 thùng, 200x200x200cm)
+ *       thì chia thành 20 kiện thùng carton để xếp 3D trực quan đủ 20 kiện.
+ *     - 'LOT_SUBDIVIDED': Chia kích thước lô cho số lượng kiện (hiển thị đủ N kiện).
+ *     - 'SINGLE_LOT_BLOCK': Giữ nguyên 1 khối lô tổng đúng số đo DxRxC.
+ *     - 'PER_PACKAGE': Xem DxRxC là kích thước của từng kiện riêng lẻ (N kiện x DxRxC).
+ * @returns {Object} { stops, blocks, overflowBlocks, bulkCargos, summary, cargoSpecSummary }
+ */
+export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
+  const truck = {
+    length_cm: Number(truckConfig.length_cm || truckConfig.truck_length) || 500,
+    width_cm: Number(truckConfig.width_cm || truckConfig.truck_width) || 205,
+    height_cm: Number(truckConfig.height_cm || truckConfig.truck_height) || 205,
+    max_payload: Number(truckConfig.max_payload) || 3500,
+  };
+
+  const packingMode = truckConfig.packingMode || "AUTO";
+
+  const truckVolumeM3 = Number(
+    ((truck.length_cm * truck.width_cm * truck.height_cm) / 1000000).toFixed(2)
+  );
+
+  // 1. Xác định danh sách Điểm trả hàng (Stops)
+  // Mặc định luôn là 1 điểm trả duy nhất theo đúng đơn hàng, trừ khi điều phối chọn Ghép nhiều điểm trả
+  const isMultiDrop = truckConfig.is_multi_drop === true;
+  const assignmentDropoffs = Array.isArray(truckConfig.assignment_stops)
+    ? truckConfig.assignment_stops.filter((s) => s.type === "DROPOFF")
+    : [];
+
+  const rawOrders =
+    Array.isArray(orders) && orders.length > 0
+      ? orders
+      : truckConfig.order
+        ? [truckConfig.order]
+        : [];
+
+  if (rawOrders.length === 0) {
+    return {
+      stops: [],
+      blocks: [],
+      overflowBlocks: [],
+      bulkCargos: [],
+      truck,
+      summary: {
+        totalWeight: 0,
+        packedWeight: 0,
+        maxPayload: truck.max_payload,
+        weightPercent: 0,
+        totalVolume: 0,
+        packedVolume: 0,
+        maxVolume: truckVolumeM3,
+        volumePercent: 0,
+        ordersCount: 0,
+        stopsCount: 0,
+        totalPackagesCount: 0,
+        packedPackagesCount: 0,
+        overflowPackagesCount: 0,
+        isOverloaded: false,
+      },
+    };
+  }
+
+  let stops = [];
+
+  if (isMultiDrop && assignmentDropoffs.length > 1) {
+    stops = assignmentDropoffs.map((drop, idx) => {
+      const palette = DEFAULT_PALETTES[idx % DEFAULT_PALETTES.length];
+      const letter = String.fromCharCode(65 + idx);
+      const cleanName = (drop.rawAddress || drop.name || "")
+        .replace(/^Điểm trả(\s+\d+)?:?\s*/i, "")
+        .trim();
+      return {
+        id: letter,
+        key: drop.id || letter,
+        stopSequence: idx + 1,
+        name: `${letter} - ${cleanName}`,
+        rawAddress: cleanName,
+        orders: rawOrders,
+        ordersCount: rawOrders.length,
+        packageCount: 0,
+        weight: 0,
+        color: palette.color,
+        strokeColor: palette.strokeColor,
+        badgeColor: palette.badgeColor,
+        topColor: palette.topColor,
+        sideColor: palette.sideColor,
+        visible: true,
+      };
+    });
+  } else {
+    const singleDropName =
+      assignmentDropoffs[0]?.rawAddress ||
+      assignmentDropoffs[0]?.name ||
+      rawOrders[0]?.delivery_address ||
+      rawOrders[0]?.dropoff ||
+      rawOrders[0]?.customer ||
+      "Kho khách hàng";
+
+    const cleanName = singleDropName.replace(/^Điểm trả(\s+\d+)?:?\s*/i, "").trim();
+    const palette = DEFAULT_PALETTES[0];
+    stops = [
+      {
+        id: "A",
+        key: "A",
+        stopSequence: 1,
+        name: `A - ${cleanName}`,
+        rawAddress: cleanName,
+        orders: rawOrders,
+        ordersCount: rawOrders.length,
+        packageCount: 0,
+        weight: 0,
+        color: palette.color,
+        strokeColor: palette.strokeColor,
+        badgeColor: palette.badgeColor,
+        topColor: palette.topColor,
+        sideColor: palette.sideColor,
+        visible: true,
+      },
+    ];
+  }
+
+  // 2. Thu thập danh sách kiện hàng thực tế từ dữ liệu khách cung cấp
+  const bulkCargos = [];
+  const dimensionalItems = [];
+  const cargoSpecDetails = [];
+
+  let totalCustomerWeightKg = 0;
+  let totalCustomerVolumeCm3 = 0;
+  let totalRequestedPackages = 0;
+
+  rawOrders.forEach((ord, ordIdx) => {
+    const orderCode = ord.order_id || ord.id || `ORD-${ordIdx + 1}`;
+    const customerName = ord.customer || ord.customer_name || "Khách hàng";
+
+    // Lấy danh sách loại hàng trong đơn (nếu có mảng items), hoặc lấy trực tiếp từ order
+    // Tự động đối chiếu với tổng trọng lượng đơn hàng (ord.weight = 700 kg) để xác định it.weight là tổng trọng lượng dòng hàng (450 + 250 = 700 kg) hay trọng lượng từng kiện
+    const orderKnownTotalKg = Number(ord.weight || ord.actual_weight_kg || ord.chargeable) || 0;
+    const sumDirectKg = Array.isArray(ord.items)
+      ? ord.items.reduce((s, it) => s + (Number(it.weight || it.weight_kg) || 0), 0)
+      : 0;
+    const sumMultipliedKg = Array.isArray(ord.items)
+      ? ord.items.reduce(
+          (s, it) => s + (Number(it.weight || it.weight_kg) || 0) * Math.max(1, parseInt(it.package_count) || 1),
+          0
+        )
+      : 0;
+    const isItemWeightAlreadyTotal =
+      orderKnownTotalKg > 0
+        ? Math.abs(sumDirectKg - orderKnownTotalKg) <= Math.abs(sumMultipliedKg - orderKnownTotalKg)
+        : true;
+
+    const rawItems =
+      Array.isArray(ord.items) && ord.items.length > 0
+        ? ord.items.map((it) => {
+            const pCount = Math.max(1, parseInt(it.package_count) || 1);
+            const rawW = Number(it.weight || it.weight_kg) || 0;
+            const totalKg =
+              Number(it.total_weight) ||
+              (isItemWeightAlreadyTotal ? rawW : rawW * pCount);
+            return {
+              cargo_name: it.cargo_name || ord.cargo_name || "Hàng hóa",
+              cargo_type: it.cargo_type || ord.cargo_type || "GENERAL",
+              package_count: pCount,
+              package_unit: it.package_unit || ord.package_unit || "Thùng Carton",
+              length_cm: parseFloat(it.length_cm) || parseFloat(ord.length_cm) || 0,
+              width_cm: parseFloat(it.width_cm) || parseFloat(ord.width_cm) || 0,
+              height_cm: parseFloat(it.height_cm) || parseFloat(ord.height_cm) || 0,
+              weight_kg: totalKg > 0 ? totalKg: Number(ord.weight || ord.actual_weight_kg || ord.chargeable || 200),
+            };
+          })
+        : [
+            {
+              cargo_name: ord.cargo_name || "Hàng hóa",
+              cargo_type: ord.cargo_type || "GENERAL",
+              package_count: Math.max(1, parseInt(ord.package_count) || 1),
+              package_unit: ord.package_unit || "Thùng Carton",
+              length_cm: parseFloat(ord.length_cm) || 0,
+              width_cm: parseFloat(ord.width_cm) || 0,
+              height_cm: parseFloat(ord.height_cm) || 0,
+              weight_kg: Number(ord.weight || ord.actual_weight_kg || ord.chargeable) || 200,
+            },
+          ];
+
+    rawItems.forEach((cargoItem, itemIdx) => {
+      const pkgCount = Math.max(1, cargoItem.package_count);
+      const totalItemWeight = Math.max(1, cargoItem.weight_kg);
+      totalCustomerWeightKg += totalItemWeight;
+      totalRequestedPackages += pkgCount;
+
+      const note = (ord.order_notes || ord.user_note || "").toUpperCase();
+      const isExplicitBulk =
+        note.includes("BULK") ||
+        note.includes("HÀNG RỜI") ||
+        cargoItem.cargo_type === "BULK";
+
+      let inputL = cargoItem.length_cm;
+      let inputW = cargoItem.width_cm;
+      let inputH = cargoItem.height_cm;
+
+      if (!inputL || !inputW || !inputH) {
+        if (!isExplicitBulk) {
+          inputL = 100;
+          inputW = 80;
+          inputH = 80;
+        }
+      }
+
+      if (isExplicitBulk) {
+        bulkCargos.push({
+          id: orderCode,
+          customer: customerName,
+          weight: `${totalItemWeight} kg`,
+          spec: `${pkgCount} ${cargoItem.package_unit}`,
+          stopName: stops[0]?.name || "Kho khách hàng",
+        });
+        return;
+      }
+
+      // Quyết định quy cách kích thước kiện hàng dựa trên packingMode:
+      // Trong vận tải thực tế, DxRxC là kích thước của từng kiện (PER_PACKAGE).
+      // Chỉ khi người dùng chọn rõ ràng LOT_SUBDIVIDED hoặc khi kích thước nhập vào vượt quá lòng thùng xe container (L > 1200 hoặc W > 240 hoặc H > 250 hoặc singleVolume >= 25 m³ và pkgCount > 1), hệ thống mới phân tách lô.
+      const singleVolumeM3 = (inputL * inputW * inputH) / 1000000;
+      let effectiveMode = packingMode;
+      if (effectiveMode === "AUTO") {
+        if (
+          pkgCount > 1 &&
+          (singleVolumeM3 >= 25 || inputL > 1200 || inputW > 240 || inputH > 250)
+        ) {
+          effectiveMode = "LOT_SUBDIVIDED";
+        } else {
+          effectiveMode = "PER_PACKAGE";
+        }
+      }
+
+      let unitL = inputL;
+      let unitW = inputW;
+      let unitH = inputH;
+      let boxesToCreate = pkgCount;
+      let unitWeightKg = Number((totalItemWeight / pkgCount).toFixed(1));
+
+      if (effectiveMode === "LOT_SUBDIVIDED" && pkgCount > 1) {
+        const grid = computeBestGridSubdivision(pkgCount, inputL, inputW, inputH);
+        unitL = Math.max(20, Math.round(inputL / grid.nx));
+        unitW = Math.max(20, Math.round(inputW / grid.ny));
+        unitH = Math.max(20, Math.round(inputH / grid.nz));
+        boxesToCreate = pkgCount;
+        totalCustomerVolumeCm3 += inputL * inputW * inputH;
+      } else if (effectiveMode === "SINGLE_LOT_BLOCK") {
+        unitL = inputL;
+        unitW = inputW;
+        unitH = inputH;
+        boxesToCreate = stops.length;
+        unitWeightKg = Number((totalItemWeight / boxesToCreate).toFixed(1));
+        totalCustomerVolumeCm3 += inputL * inputW * inputH;
+      } else {
+        // PER_PACKAGE: mỗi kiện có kích thước inputL x inputW x inputH
+        unitL = inputL;
+        unitW = inputW;
+        unitH = inputH;
+        boxesToCreate = pkgCount;
+        totalCustomerVolumeCm3 += inputL * inputW * inputH * pkgCount;
+      }
+
+      cargoSpecDetails.push({
+        orderCode,
+        cargoName: cargoItem.cargo_name,
+        cargoType: cargoItem.cargo_type,
+        packageCount: pkgCount,
+        packageUnit: cargoItem.package_unit,
+        inputDimensionsCm: `${inputL} × ${inputW} × ${inputH} cm`,
+        unitDimensionsCm: `${unitL} × ${unitW} × ${unitH} cm`,
+        totalWeightKg: totalItemWeight,
+        unitWeightKg,
+        effectiveMode,
+      });
+
+      const isFragile = cargoItem.cargo_type === "FRAGILE";
+      const isLightCarton = unitWeightKg <= 45 && unitH <= 60;
+      const isStackable = (!isFragile || isLightCarton) && unitH <= truck.height_cm * 0.75;
+
+      for (let k = 0; k < boxesToCreate; k++) {
+        // Phân bổ kiện hàng vào các điểm dừng (nếu có nhiều điểm trả thì chia đều theo stop)
+        const assignedStopIdx = stops.length > 1 ? k % stops.length: 0;
+        const assignedStop = stops[assignedStopIdx];
+
+        assignedStop.packageCount += effectiveMode === "SINGLE_LOT_BLOCK" ? Math.round(pkgCount / stops.length): 1;
+        assignedStop.weight = Math.round(assignedStop.weight + unitWeightKg);
+
+        const codeSuffix = boxesToCreate > 1 ? `#${String(k + 1).padStart(2, "0")}` : "";
+        const shapeMeta = detectCargoShapeAndCategory(cargoItem.cargo_name, cargoItem.package_unit, cargoItem.cargo_type);
+
+        dimensionalItems.push({
+          id: `${orderCode}-${itemIdx + 1}-${k + 1}`,
+          orderCode,
+          palletCode: `${orderCode}${codeSuffix ? ` (${codeSuffix})`: ""}`,
+          shortLabel: boxesToCreate > 1 ? `${cargoItem.package_unit} ${codeSuffix}`: orderCode,
+          packageIndex: k + 1,
+          totalPackagesInLot: pkgCount,
+          packageUnit: cargoItem.package_unit,
+          stopId: assignedStop.id,
+          stopIndex: assignedStopIdx,
+          stopName: assignedStop.name,
+          customer: customerName,
+          cargoName: cargoItem.cargo_name,
+          cargoType: cargoItem.cargo_type,
+          shapeType: shapeMeta.shapeType,
+          cargoCategory: shapeMeta.cargoCategory,
+          palette: shapeMeta.palette,
+          length_cm: unitL,
+          width_cm: unitW,
+          height_cm: unitH,
+          inputDimensionsCm: `${inputL} × ${inputW} × ${inputH} cm`,
+          weight_kg: unitWeightKg,
+          stackable: isStackable,
+          effectiveMode,
+        });
+      }
+    });
+  });
+
+  // 3. Sắp xếp kiện hàng theo quy tắc LIFO + Độ ổn định trọng tâm (Nặng dưới sàn, lớn xếp trước)
+  // - Điểm dừng giao sau cùng (stopIndex lớn hơn) được xếp vào trước (sát vách đầu xe X = 0)
+  // - Trong cùng điểm dừng: Kiện nặng hơn và diện tích đáy lớn hơn xếp trước xuống sàn
+  dimensionalItems.sort((a, b) => {
+    if (stops.length > 1 && a.stopIndex !== b.stopIndex) {
+      return b.stopIndex - a.stopIndex; // LIFO: Giao sau xếp trong (X nhỏ), giao trước xếp ngoài (X lớn)
+    }
+    if (a.stackable !== b.stackable) {
+      return a.stackable ? -1: 1; // Kiện chịu lực (stackable) đặt dưới sàn trước
+    }
+    if (Math.abs(b.weight_kg - a.weight_kg) > 0.5) {
+      return b.weight_kg - a.weight_kg; // Kiện nặng ở dưới
+    }
+    const volA = a.length_cm * a.width_cm * a.height_cm;
+    const volB = b.length_cm * b.width_cm * b.height_cm;
+    return volB - volA;
+  });
+
+  // 4. THUẬT TOÁN 3D EXTREME-POINT BIN PACKING TRONG HỆ TỌA ĐỘ THÙNG XE (X: Dài, Y: Rộng, Z: Cao)
+  // Gốc tọa độ (0, 0, 0): Vách trước Đầu xe (x=0), Vách trái (y=0), Sàn xe (z=0)
+  const placedBoxes = [];
+  const overflowBlocks = [];
+  let candidatePoints = [{ x: 0, y: 0, z: 0 }];
+  let cumulativeWeightKg = 0;
+  let packedVolumeCm3 = 0;
+
+  for (const item of dimensionalItems) {
+    // Kiểm tra tải trọng cho phép
+    const exceedsPayload = cumulativeWeightKg + item.weight_kg > truck.max_payload + 0.01;
+
+    // 2 hướng xoay ngang trên mặt sàn (giữ nguyên trục đứng Z = height_cm)
+    const orientations = [
+      { dx: item.length_cm, dy: item.width_cm, dz: item.height_cm, rotated: false },
+    ];
+    if (item.length_cm !== item.width_cm) {
+      orientations.push({
+        dx: item.width_cm,
+        dy: item.length_cm,
+        dz: item.height_cm,
+        rotated: true,
+      });
+    }
+
+    // Sắp xếp các điểm Extreme Point ứng viên theo quy chuẩn An toàn Logistics:
+    // Ưu tiên cao nhất: Sát mặt sàn (z thấp nhất) để hạ trọng tâm xe, chống rung lắc lật xe
+    // Khi cùng độ cao Z: Xếp từ vách đầu xe (x nhỏ) về phía sau, và từ vách trái (y nhỏ) sang phải
+    candidatePoints.sort((p1, p2) => {
+      if (Math.abs(p1.z - p2.z) > 1) return p1.z - p2.z;
+      if (Math.abs(p1.x - p2.x) > 1) return p1.x - p2.x;
+      return p1.y - p2.y;
+    });
+
+    let bestPlacement = null;
+
+    for (const pt of candidatePoints) {
+      for (const orient of orientations) {
+        // Kiểm tra vừa lòng thùng xe
+        if (
+          pt.x + orient.dx > truck.length_cm + 0.1 ||
+          pt.y + orient.dy > truck.width_cm + 0.1 ||
+          pt.z + orient.dz > truck.height_cm + 0.1
+        ) {
+          continue;
+        }
+
+        const candidateBox = {
+          x: pt.x,
+          y: pt.y,
+          z: pt.z,
+          dx: orient.dx,
+          dy: orient.dy,
+          dz: orient.dz,
+        };
+
+        // Kiểm tra va chạm với các kiện đã xếp
+        let hasCollision = false;
+        for (const placed of placedBoxes) {
+          if (boxesOverlap3D(candidateBox, placed)) {
+            hasCollision = true;
+            break;
+          }
+        }
+        if (hasCollision) continue;
+
+        // Kiểm tra độ vững chắc khi xếp chồng (z > 0)
+        if (!hasAdequateFloorSupport(candidateBox, placedBoxes)) {
+          continue;
+        }
+
+        bestPlacement = {
+          ...candidateBox,
+          rotated: orient.rotated,
+        };
+        break;
+      }
+      if (bestPlacement) break;
+    }
+
+    if (bestPlacement && !exceedsPayload) {
+      const tierLevel = bestPlacement.z > 0.5 ? Math.floor(bestPlacement.z / Math.max(1, item.height_cm)) + 1: 1;
+      const placedRecord = {
+        ...item,
+        x: Math.round(bestPlacement.x),
+        y: Math.round(bestPlacement.y),
+        z: Math.round(bestPlacement.z),
+        dx: Math.round(bestPlacement.dx),
+        dy: Math.round(bestPlacement.dy),
+        dz: Math.round(bestPlacement.dz),
+        rotated: bestPlacement.rotated,
+        tierLevel,
+        dimensions: `${Math.round(bestPlacement.dx)} × ${Math.round(bestPlacement.dy)} × ${Math.round(bestPlacement.dz)} cm`,
+        weight: `${item.weight_kg} kg`,
+        positionText: `Dài X: ${Math.round(bestPlacement.x)}–${Math.round(bestPlacement.x + bestPlacement.dx)}cm · Rộng Y: ${Math.round(bestPlacement.y)}–${Math.round(bestPlacement.y + bestPlacement.dy)}cm · Cao Z: ${Math.round(bestPlacement.z)}–${Math.round(bestPlacement.z + bestPlacement.dz)}cm (Tầng ${tierLevel})`,
+        stackableText:
+          tierLevel > 1
+            ? `Có (Đang xếp Tầng ${tierLevel})`
+            : item.stackable
+              ? "Có (Chịu lực tầng dưới)"
+              : "Không (Hàng không xếp chồng)",
+      };
+
+      placedBoxes.push(placedRecord);
+      cumulativeWeightKg += item.weight_kg;
+      packedVolumeCm3 += bestPlacement.dx * bestPlacement.dy * bestPlacement.dz;
+
+      // Sinh thêm 3 Extreme Points mới từ góc của kiện vừa đặt
+      const newPts = [
+        { x: bestPlacement.x + bestPlacement.dx, y: bestPlacement.y, z: bestPlacement.z },
+        { x: bestPlacement.x, y: bestPlacement.y + bestPlacement.dy, z: bestPlacement.z },
+        { x: bestPlacement.x, y: bestPlacement.y, z: bestPlacement.z + bestPlacement.dz },
+      ];
+
+      for (const np of newPts) {
+        if (
+          np.x < truck.length_cm &&
+          np.y < truck.width_cm &&
+          np.z < truck.height_cm &&
+          !candidatePoints.some(
+            (ep) =>
+              Math.abs(ep.x - np.x) < 1 &&
+              Math.abs(ep.y - np.y) < 1 &&
+              Math.abs(ep.z - np.z) < 1
+          )
+        ) {
+          candidatePoints.push(np);
+        }
+      }
+    } else {
+      // Kiện hàng bị tràn kích thước hoặc vượt tải trọng
+      let reason = "Hết không gian thể tích thùng xe";
+      if (
+        item.length_cm > truck.length_cm ||
+        item.width_cm > truck.width_cm ||
+        item.height_cm > truck.height_cm
+      ) {
+        reason = `Kích thước kiện (${item.length_cm}×${item.width_cm}×${item.height_cm} cm) vượt lòng thùng xe (${truck.length_cm}×${truck.width_cm}×${truck.height_cm} cm)`;
+      } else if (exceedsPayload) {
+        reason = `Vượt tải trọng cho phép của xe (${truck.max_payload.toLocaleString()} kg)`;
+      }
+
+      overflowBlocks.push({
+        ...item,
+        dimensions: `${item.length_cm} × ${item.width_cm} × ${item.height_cm} cm`,
+        weight: `${item.weight_kg} kg`,
+        overflowReason: reason,
+      });
+    }
+  }
+
+  const totalVolumeM3 = Number((totalCustomerVolumeCm3 / 1000000).toFixed(2));
+  const packedVolumeM3 = Number((packedVolumeCm3 / 1000000).toFixed(2));
+
+  return {
+    stops,
+    blocks: placedBoxes,
+    overflowBlocks,
+    bulkCargos,
+    cargoSpecDetails,
+    truck,
+    summary: {
+      totalWeight: Math.round(totalCustomerWeightKg),
+      packedWeight: Math.round(cumulativeWeightKg),
+      maxPayload: truck.max_payload,
+      weightPercent:
+        truck.max_payload > 0
+          ? Math.round((totalCustomerWeightKg / truck.max_payload) * 100)
+          : 0,
+      totalVolume: totalVolumeM3,
+      packedVolume: packedVolumeM3,
+      maxVolume: truckVolumeM3,
+      volumePercent:
+        truckVolumeM3 > 0
+          ? Math.round((totalVolumeM3 / truckVolumeM3) * 100)
+          : 0,
+      ordersCount: rawOrders.length,
+      stopsCount: stops.length,
+      totalPackagesCount: totalRequestedPackages,
+      packedPackagesCount:
+        placedBoxes.length === 1 && placedBoxes[0]?.effectiveMode === "SINGLE_LOT_BLOCK"
+          ? totalRequestedPackages
+          : placedBoxes.length,
+      overflowPackagesCount: overflowBlocks.length,
+      isOverloaded:
+        overflowBlocks.length > 0 ||
+        totalCustomerWeightKg > truck.max_payload ||
+        totalVolumeM3 > truckVolumeM3,
+    },
+  };
+}

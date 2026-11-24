@@ -1,0 +1,556 @@
+import React from 'react';
+import { Modal, Upload, Input, InputNumber, Checkbox, Select, Button, App } from 'antd';
+import { Camera, Ban, DollarSign, FileText } from 'lucide-react';
+import { uploadApi } from '../../../api/uploadApi';
+
+const buildPhotoUploadProps = ({ value, setter, folder, name, uid, messageApi }) => ({
+  listType: 'picture-card',
+  maxCount: 1,
+  accept: 'image/*',
+  fileList: value ? [{ uid, name, status: 'done', url: value }] : [],
+  customRequest: async ({ file, onSuccess, onError }) => {
+    try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const dataUrl = await uploadApi.fileToDataUrl(file);
+        setter(dataUrl);
+        onSuccess?.({ url: dataUrl });
+        messageApi?.info('Đã lưu ảnh tạm ngoại tuyến, sẽ đẩy lên Cloudinary khi đồng bộ.');
+        return;
+      }
+      const uploaded = await uploadApi.uploadToCloudinary(file, folder);
+      setter(uploaded.url);
+      onSuccess?.({ url: uploaded.url });
+      messageApi?.success('Đã tải ảnh lên Cloudinary thành công.');
+    } catch (err) {
+      messageApi?.error(err.message || 'Lỗi tải ảnh lên Cloudinary');
+      onError?.(err);
+    }
+  },
+  onRemove: () => {
+    setter('');
+    return true;
+  }
+});
+
+const darkModalStyles = {
+  content: {
+    backgroundColor: '#0f172a',
+    border: '1px solid #334155',
+    borderRadius: '1.5rem',
+    color: '#f8fafc',
+    padding: '1.25rem'
+  },
+  header: {
+    backgroundColor: 'transparent',
+    borderBottom: '1px solid #1e293b',
+    paddingBottom: '0.75rem',
+    marginBottom: '0.75rem'
+  }
+};
+
+export default function DriverDashboardModals({
+  trip,
+  tripData,
+  stops,
+  truck,
+  activeStopTarget,
+  actionLoading,
+  // Accept Modal
+  acceptModalOpen,
+  setAcceptModalOpen,
+  handleAcceptTrip,
+  // Seal / Pickup Modal
+  sealModalOpen,
+  setSealModalOpen,
+  handleSubmitPickup,
+  cargoPhotoUrl,
+  setCargoPhotoUrl,
+  loadedCargoPhotoUrl,
+  setLoadedCargoPhotoUrl,
+  sealPhotoUrl,
+  setSealPhotoUrl,
+  sealNumber,
+  setSealNumber,
+  loadedPackages,
+  setLoadedPackages,
+  loadedWeight,
+  setLoadedWeight,
+  // POD / Delivery Modal
+  podModalOpen,
+  setPodModalOpen,
+  handleSubmitDelivery,
+  podPhotoUrl,
+  setPodPhotoUrl,
+  cutSealPhotoUrl,
+  setCutSealPhotoUrl,
+  unloadedCargoPhotoUrl,
+  setUnloadedCargoPhotoUrl,
+  receiverName,
+  setReceiverName,
+  deliveredPackages,
+  setDeliveredPackages,
+  docsHandedOver,
+  setDocsHandedOver,
+  // Refusal Modal
+  refusalModalOpen,
+  setRefusalModalOpen,
+  handleSubmitRefusal,
+  refusalReason,
+  setRefusalReason,
+  refusalCargoPhoto,
+  setRefusalCargoPhoto,
+  refusalNote,
+  setRefusalNote,
+  // Extra Fee Modal
+  extraFeeModalOpen,
+  setExtraFeeModalOpen,
+  handleSubmitExtraFee,
+  feeType,
+  setFeeType,
+  feeAmount,
+  setFeeAmount,
+  feeReason,
+  setFeeReason,
+  feePhotoUrl,
+  setFeePhotoUrl,
+  // Docs Modal
+  docsModalOpen,
+  setDocsModalOpen
+}) {
+  const { message } = App.useApp();
+  return (
+    <>
+      {/* MODAL 0: XÁC NHẬN NHẬN CHUYẾN */}
+      <Modal
+        centered
+        open={acceptModalOpen}
+        onCancel={() => setAcceptModalOpen(false)}
+        title={<span className="font-bold text-white">Xác nhận nhận chuyến xe</span>}
+        styles={darkModalStyles}
+        okText="Tôi đồng ý nhận chuyến"
+        cancelText="Đóng"
+        confirmLoading={actionLoading}
+        okButtonProps={{ className: "!bg-blue-600 hover:!bg-blue-500 !border-none !rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
+        onOk={() => handleAcceptTrip(trip?.id)}
+      >
+        <p className="text-sm text-slate-300 my-2">
+          Bạn có chắc chắn muốn nhận chuyến xe <b>{trip?.trip_code}</b> không?
+        </p>
+        <p className="text-xs text-slate-400">
+          Sau khi xác nhận, chuyến xe sẽ chuyển sang trạng thái Đã nhận (Accepted).
+        </p>
+      </Modal>
+
+      {/* MODAL 1: BỐC HÀNG & NIÊM CHÌ 3 BƯỚC */}
+      <Modal
+        centered 
+        open={sealModalOpen} 
+        onCancel={() => setSealModalOpen(false)} 
+        title={<span className="font-bold text-white">Lấy hàng & Niêm chì 3 Bước</span>}
+        styles={darkModalStyles} 
+        okText="Lưu lấy hàng"
+        confirmLoading={actionLoading}
+        okButtonProps={{ className: "!bg-blue-600 hover:!bg-blue-500 !border-none !rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
+        onOk={handleSubmitPickup}
+      >
+        <div className="space-y-3 py-2 text-xs">
+          <p className="text-slate-400">
+            Bắt buộc chụp đủ 3 ảnh: Hàng trước bốc, Hàng trong thùng xe, và Niêm chì kèm biển số xe.
+          </p>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="font-bold text-slate-200 block mb-1">1. Hàng trước bốc (*)</label>
+              <Upload
+                {...buildPhotoUploadProps({
+                  value: cargoPhotoUrl,
+                  setter: setCargoPhotoUrl,
+                  folder: 'nexlog/driver/pickup',
+                  name: 'cargo.jpg',
+                  uid: '-1',
+                  messageApi: message
+                })}
+              >
+                {!cargoPhotoUrl && (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <Camera size={16}/>
+                    <span className="text-[10px]">Trước bốc</span>
+                  </div>
+                )}
+              </Upload>
+            </div>
+
+            <div>
+              <label className="font-bold text-slate-200 block mb-1">2. Hàng trên xe (*)</label>
+              <Upload
+                {...buildPhotoUploadProps({
+                  value: loadedCargoPhotoUrl,
+                  setter: setLoadedCargoPhotoUrl,
+                  folder: 'nexlog/driver/pickup',
+                  name: 'loaded.jpg',
+                  uid: '-2',
+                  messageApi: message
+                })}
+              >
+                {!loadedCargoPhotoUrl && (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <Camera size={16}/>
+                    <span className="text-[10px]">Trong thùng</span>
+                  </div>
+                )}
+              </Upload>
+            </div>
+
+            <div>
+              <label className="font-bold text-slate-200 block mb-1">3. Chì & Biển số (*)</label>
+              <Upload
+                {...buildPhotoUploadProps({
+                  value: sealPhotoUrl,
+                  setter: setSealPhotoUrl,
+                  folder: 'nexlog/driver/pickup',
+                  name: 'seal.jpg',
+                  uid: '-3',
+                  messageApi: message
+                })}
+              >
+                {!sealPhotoUrl && (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <Camera size={16}/>
+                    <span className="text-[10px]">Chì & biển</span>
+                  </div>
+                )}
+              </Upload>
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Số chì niêm phong (*)</label>
+            <Input 
+              value={sealNumber} 
+              onChange={(e) => setSealNumber(e.target.value)} 
+              placeholder="VD: SEAL-998811" 
+              className="py-1.5 font-mono font-bold"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-slate-200 block mb-1">Số kiện bốc (*)</label>
+              <InputNumber 
+                min={1} 
+                value={loadedPackages} 
+                onChange={setLoadedPackages} 
+                className="w-full"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-slate-200 block mb-1">Khối lượng (kg) (*)</label>
+              <InputNumber 
+                min={1} 
+                value={loadedWeight} 
+                onChange={setLoadedWeight} 
+                className="w-full"
+              />
+            </div>
+          </div>
+          {tripData?.trip?.truck && (
+            <span className="text-[11px] text-slate-400 block">
+              Tải trọng cho phép của xe: <b>{tripData.trip.truck.allowed_payload} kg</b>
+            </span>
+          )}
+        </div>
+      </Modal>
+
+      {/* MODAL 2: GIAO HÀNG & BIÊN BẢN POD */}
+      <Modal
+        centered 
+        open={podModalOpen} 
+        onCancel={() => setPodModalOpen(false)} 
+        title={<span className="font-bold text-white">Biên bản Giao nhận Hàng POD</span>}
+        styles={darkModalStyles} 
+        okText="Lưu giao hàng"
+        confirmLoading={actionLoading}
+        okButtonProps={{ className: "!bg-emerald-600 hover:!bg-emerald-500 !border-none !rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
+        onOk={handleSubmitDelivery}
+      >
+        <div className="space-y-3 py-2 text-xs">
+          {activeStopTarget?.order?.order_type === "Export" ? (
+            <div>
+              <p className="text-blue-400 font-bold mb-2">Đơn hàng Xuất Khẩu: Chụp ảnh cắt chì & ảnh dỡ hàng</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-200 block mb-1">Ảnh cắt chì (*)</label>
+                  <Upload
+                    {...buildPhotoUploadProps({
+                      value: cutSealPhotoUrl,
+                      setter: setCutSealPhotoUrl,
+                      folder: 'nexlog/driver/delivery',
+                      name: 'cut.jpg',
+                      uid: '-1',
+                      messageApi: message
+                    })}
+                  >
+                    {!cutSealPhotoUrl && (
+                      <div className="flex flex-col items-center text-slate-400">
+                        <Camera size={16}/>
+                        <span className="text-[10px]">Cắt chì</span>
+                      </div>
+                    )}
+                  </Upload>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-200 block mb-1">Ảnh dỡ hàng (*)</label>
+                  <Upload
+                    {...buildPhotoUploadProps({
+                      value: unloadedCargoPhotoUrl,
+                      setter: setUnloadedCargoPhotoUrl,
+                      folder: 'nexlog/driver/delivery',
+                      name: 'unloaded.jpg',
+                      uid: '-2',
+                      messageApi: message
+                    })}
+                  >
+                    {!unloadedCargoPhotoUrl && (
+                      <div className="flex flex-col items-center text-slate-400">
+                        <Camera size={16}/>
+                        <span className="text-[10px]">Dỡ hàng</span>
+                      </div>
+                    )}
+                  </Upload>
+                </div>
+              </div>
+            </div>
+          ): (
+            <div>
+              <label className="font-bold text-slate-200 block mb-1">Ảnh biên bản POD có ký nhận (*)</label>
+              <Upload
+                {...buildPhotoUploadProps({
+                  value: podPhotoUrl,
+                  setter: setPodPhotoUrl,
+                  folder: 'nexlog/driver/delivery',
+                  name: 'pod.jpg',
+                  uid: '-1',
+                  messageApi: message
+                })}
+              >
+                {!podPhotoUrl && (
+                  <div className="flex flex-col items-center text-slate-400">
+                    <Camera size={16}/>
+                    <span className="text-[10px]">Chụp POD</span>
+                  </div>
+                )}
+              </Upload>
+              <div>
+                <label className="font-bold text-slate-200 block mb-1 mt-2">Họ tên người nhận hàng (*)</label>
+                <Input 
+                  value={receiverName} 
+                  onChange={(e) => setReceiverName(e.target.value)} 
+                  placeholder="VD: Nguyễn Văn C" 
+                  className="py-1.5"
+                />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Số kiện đã giao thực tế</label>
+            <InputNumber 
+              min={1} 
+              value={deliveredPackages} 
+              onChange={setDeliveredPackages} 
+              className="w-full"
+            />
+          </div>
+
+          <div className="pt-1">
+            <Checkbox 
+              checked={docsHandedOver} 
+              onChange={(e) => setDocsHandedOver(e.target.checked)}
+              className="font-bold text-slate-200"
+            >
+              Đã bàn giao đủ chứng từ
+            </Checkbox>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL 3: KHÁCH KHÔNG NHẬN HÀNG */}
+      <Modal
+        centered
+        open={refusalModalOpen}
+        onCancel={() => setRefusalModalOpen(false)}
+        title={<span className="font-bold text-red-400 flex items-center gap-1.5"><Ban size={18}/> Khách không nhận hàng</span>}
+        styles={darkModalStyles}
+        okText="Gửi báo cáo từ chối"
+        confirmLoading={actionLoading}
+        okButtonProps={{ danger: true, className: "!rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
+        onOk={handleSubmitRefusal}
+      >
+        <div className="space-y-3 py-2 text-xs">
+          <p className="text-slate-400">
+            Ghi nhận khách từ chối nhận hàng tại điểm giao. Đơn hàng sẽ được chuyển sang <b>Delivered (Exception)</b> và gửi cảnh báo cho Điều phối viên.
+          </p>
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Lý do từ chối (*) (Bắt buộc)</label>
+            <Input 
+              value={refusalReason} 
+              onChange={(e) => setRefusalReason(e.target.value)} 
+              placeholder="VD: Hàng móp méo, khách không nhận; sai địa chỉ..." 
+              className="py-1.5"
+            />
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Ảnh hiện trường hàng hóa (*) (Bắt buộc)</label>
+            <Upload
+              {...buildPhotoUploadProps({
+                value: refusalCargoPhoto,
+                setter: setRefusalCargoPhoto,
+                folder: 'nexlog/driver/refusal',
+                name: 'refusal.jpg',
+                uid: '-1',
+                messageApi: message
+              })}
+            >
+              {!refusalCargoPhoto && (
+                <div className="flex flex-col items-center text-slate-400">
+                  <Camera size={16}/>
+                  <span className="text-[10px]">Ảnh hàng</span>
+                </div>
+              )}
+            </Upload>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Ghi chú bổ sung (Tùy chọn)</label>
+            <Input.TextArea 
+              rows={2}
+              value={refusalNote} 
+              onChange={(e) => setRefusalNote(e.target.value)} 
+              placeholder="Ý kiến của khách, thời gian chờ..." 
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL 4: ĐỀ XUẤT PHỤ PHÍ */}
+      <Modal
+        centered
+        open={extraFeeModalOpen}
+        onCancel={() => setExtraFeeModalOpen(false)}
+        title={<span className="font-bold text-amber-400 flex items-center gap-1.5"><DollarSign size={18}/> Đề xuất Phụ phí</span>}
+        styles={darkModalStyles}
+        okText="Gửi đề xuất phí"
+        confirmLoading={actionLoading}
+        okButtonProps={{ className: "!bg-amber-600 hover:!bg-amber-500 !border-none !rounded-xl !font-bold" }}
+        cancelButtonProps={{ className: "!rounded-xl" }}
+        onOk={handleSubmitExtraFee}
+      >
+        <div className="space-y-3 py-2 text-xs">
+          <p className="text-slate-400">
+            Phụ phí đề xuất sẽ ở trạng thái <b>Proposed</b>. Điều phối viên sẽ nhận được thông báo để xác nhận hoặc từ chối.
+          </p>
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Loại phụ phí (*) (Bắt buộc)</label>
+            <Select 
+              value={feeType} 
+              onChange={setFeeType} 
+              className="w-full"
+            >
+              <Select.Option value="Bốc xếp thêm">Bốc xếp thêm</Select.Option>
+              <Select.Option value="Nâng hạ">Nâng hạ</Select.Option>
+              <Select.Option value="Trả kho thay khách">Trả kho thay khách</Select.Option>
+            </Select>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Số tiền đề xuất (VND) (*)</label>
+            <InputNumber 
+              min={1000} 
+              step={10000} 
+              value={feeAmount} 
+              onChange={setFeeAmount} 
+              formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+              className="w-full"
+            />
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Lý do phát sinh (*) (Bắt buộc)</label>
+            <Input 
+              value={feeReason} 
+              onChange={(e) => setFeeReason(e.target.value)} 
+              placeholder="VD: Không có xe nâng, phải thuê nhân công bốc dỡ ngoài..." 
+              className="py-1.5"
+            />
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-200 block mb-1">Ảnh chứng từ / Biên lai (*) (Bắt buộc)</label>
+            <Upload
+              {...buildPhotoUploadProps({
+                value: feePhotoUrl,
+                setter: setFeePhotoUrl,
+                folder: 'nexlog/driver/extra-fees',
+                name: 'receipt.jpg',
+                uid: '-1',
+                messageApi: message
+              })}
+            >
+              {!feePhotoUrl && (
+                <div className="flex flex-col items-center text-slate-400">
+                  <Camera size={16}/>
+                  <span className="text-[10px]">Chứng từ</span>
+                </div>
+              )}
+            </Upload>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL 5: CHỨNG TỪ CHUYẾN XE */}
+      <Modal
+        centered
+        open={docsModalOpen}
+        onCancel={() => setDocsModalOpen(false)}
+        title={<span className="font-bold text-white flex items-center gap-1.5"><FileText size={18} className="text-blue-400"/> Chứng từ chuyến xe</span>}
+        styles={darkModalStyles}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setDocsModalOpen(false)} className="!bg-blue-600 hover:!bg-blue-500 !border-none !rounded-xl !font-bold !px-5">
+            Đóng
+          </Button>
+        ]}
+      >
+        <div className="py-2 text-xs space-y-3">
+          <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/80">
+            <span className="font-bold text-white block mb-1">1. Giấy vận tải điện tử (Waybill)</span>
+            <p className="text-slate-300">Mã chuyến: <b>{trip?.trip_code}</b></p>
+            <p className="text-slate-300">Xe phụ trách: <b>{truck?.plate_number}</b> ({truck?.model})</p>
+            <p className="text-slate-300">Lộ trình: {stops.length} điểm dừng</p>
+          </div>
+
+          <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/80">
+            <span className="font-bold text-white block mb-1">2. Chứng từ khách hàng đính kèm</span>
+            {stops.map((s) => (
+              <div key={s.id} className="py-1 border-b border-slate-700/80 last:border-0">
+                <span className="font-semibold text-slate-200">Điểm #{s.sequence} - Đơn {s.order?.order_code || 'N/A'}:</span>
+                <p className="text-slate-400 text-[11px]">Người nhận: {s.order?.receiver_name || 'Khách hàng'} • ĐT: {s.order?.receiver_phone || 'N/A'}</p>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-[11px] text-slate-400 italic">
+            Chứng từ chuyến xe đã được lưu đệm trên thiết bị để bạn có thể xem lại ngay cả khi mất sóng.
+          </p>
+        </div>
+      </Modal>
+    </>
+  );
+}
+

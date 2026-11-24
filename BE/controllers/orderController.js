@@ -1,0 +1,80 @@
+/**
+ * Order Controller Barrel Export
+ * Phân chia trách nhiệm các luồng nghiệp vụ Order:
+ * - Query: BE/controllers/order/orderQueryController.js
+ * - Creation: BE/controllers/order/orderCreationController.js
+ * - Document & Pricing: BE/controllers/order/orderDocumentController.js
+ * - Workflow (Confirm, Cancel, Close, Assign): BE/controllers/order/orderWorkflowController.js
+ * - Helper Service: BE/services/orderHelperService.js
+ */
+
+const {
+  mapDbStatusToFe,
+  generateTrackingToken,
+  getOrCreateLocation
+} = require('../services/orderHelperService');
+
+const {
+  getAllOrders,
+  getOrderByToken
+} = require('./order/orderQueryController');
+
+const {
+  createConsultationOrder,
+  createDirectOrder
+} = require('./order/orderCreationController');
+
+const {
+  updateAgreedPrice,
+  customerAgreeOrderPrice,
+  customerUploadDocuments,
+  rejectOrderDocument,
+  approveWebOrderDocuments,
+  uploadContractFile,
+  uploadOrderDocuments,
+  issueInvoiceToAccounting,
+  sendContractToCustomer,
+  confirmHardcopyContractReceived
+} = require('./order/orderDocumentController');
+
+const {
+  confirmOrder,
+  assignTrip,
+  cancelOrder,
+  closeOrder,
+  splitOrder
+} = require('./order/orderWorkflowController');
+
+module.exports = {
+  // Helpers
+  mapDbStatusToFe,
+  generateTrackingToken,
+  getOrCreateLocation,
+
+  // Query
+  getAllOrders,
+  getOrderByToken,
+
+  // Creation
+  createConsultationOrder,
+  createDirectOrder,
+
+  // Documents & Pricing
+  updateAgreedPrice,
+  customerAgreeOrderPrice,
+  customerUploadDocuments,
+  rejectOrderDocument,
+  approveWebOrderDocuments,
+  uploadContractFile,
+  uploadOrderDocuments,
+  issueInvoiceToAccounting,
+  sendContractToCustomer,
+  confirmHardcopyContractReceived,
+
+  // Workflow
+  confirmOrder,
+  assignTrip,
+  cancelOrder,
+  closeOrder,
+  splitOrder
+};

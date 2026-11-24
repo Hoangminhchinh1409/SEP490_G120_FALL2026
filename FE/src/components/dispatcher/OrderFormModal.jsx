@@ -1,319 +1,870 @@
-import { useState, useMemo } from 'react';
-import { Modal, Form, Input, InputNumber, Switch, Select, Checkbox, Tooltip } from 'antd';
-import { Sparkles, FileText, CheckCircle2, ShieldAlert, HelpCircle } from 'lucide-react';
-import { SAMPLE_ORDER_PRESETS, DOCUMENT_TYPES } from '../../data/dispatcherPresets';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Modal, Form, Input, message, Progress } from 'antd';
+import { FileText, Sparkles, UploadCloud, CheckCircle2 } from 'lucide-react';
+import { 
+  calculateRouteEstimate, 
+  calculateAlsPricing,
+  calculateExportPickupSuggestion,
+  getCoordsFromAddress,
+  analyzeVehicleRecommendation,
+  getVehicleSpecByKey,
+  BASIC_CUSTOMS_DOCUMENTS,
+  SPECIALIZED_CARGO_CATEGORIES,
+  DEFAULT_ALS_WAREHOUSE
+} from '../../data/dispatcherPresets';
+import { dispatcherApi } from '../../api/dispatcherApi';
+import { uploadApi } from '../../api/uploadApi';
+import DocumentAssistantDrawer from './DocumentAssistantDrawer';
 
-const { Option } = Select;
+// Các module chức năng đã được tách gọn
+import OrderFormCustomerSection from './orderForm/OrderFormCustomerSection';
+import OrderFormRouteSection from './orderForm/OrderFormRouteSection';
+import OrderFormVehicleSection from './orderForm/OrderFormVehicleSection';
+import OrderFormCargoSection from './orderForm/OrderFormCargoSection';
+import OrderFormPricingSection from './orderForm/OrderFormPricingSection';
+import OrderFormDocumentsSection from './orderForm/OrderFormDocumentsSection';
+
+const CUSTOMS_SERVICE_FEE = 500000; // Phí dịch vụ làm thủ tục hải quan hộ (VNĐ)
 
 const OrderFormModal = ({ open, onCancel, onSubmit }) => {
   const [form] = Form.useForm();
-  const [noDocsRequired, setNoDocsRequired] = useState(false);
-  const [activePreset, setActivePreset] = useState(null);
+  const [dbLocations, setDbLocations] = useState([]);
 
-  // Watch for dimension changes to auto-calculate chargeable weight (BR-02)
-  const values = Form.useWatch([], form);
+  // Chế độ chọn kho bãi: 'PRESET' hoặc 'CUSTOM'
+  const [pickupMode, setPickupMode] = useState('PRESET');
+  const [deliveryMode, setDeliveryMode] = useState('CUSTOM');
+  const [selectedPickupPreset, setSelectedPickupPreset] = useState(undefined);
+  const [selectedDeliveryPreset, setSelectedDeliveryPreset] = useState(undefined);
 
-  // BR-02: Tính trực tiếp Max giữa Trọng lượng thực tế và Trọng lượng quy đổi (D*R*C/5000)
-  const chargeableWeight = useMemo(() => {
-    if (!values) return '0.00';
-    const { length_cm, width_cm, height_cm, weight_kg } = values;
-    if (length_cm && width_cm && height_cm) {
-      const volumeWeight = (length_cm * width_cm * height_cm) / 5000;
-      return Math.max(weight_kg || 0, volumeWeight).toFixed(2);
+  // Tích chọn làm thủ tục hải quan hộ
+  const [customsServiceRequired, setCustomsServiceRequired] = useState(false);
+
+  const [pickupCoords, setPickupCoords] = useState(null);
+  const [deliveryCoords, setDeliveryCoords] = useState(null);
+
+  // State Hồ sơ chứng từ đính kèm (khách gửi qua Zalo / Hotline)
+  const [documents, setDocuments] = useState(() => {
+    return BASIC_CUSTOMS_DOCUMENTS.map((doc, idx) => ({
+      key: `doc-basic-${idx + 1}`,
+      name: doc.name,
+      description: doc.description,
+      file: 'Chờ tải lên',
+      status: 'WAITING_UPLOAD',
+      size: '-',
+      uploadDate: '-',
+      isBasic: true,
+      isCustom: false
+    }));
+  });
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
+  const [uploadingDocKey, setUploadingDocKey] = useState(null);
+  const [selectedSpecializedDoc, setSelectedSpecializedDoc] = useState('');
+  const [newCustomDocName, setNewCustomDocName] = useState('');
+  const fileInputRef = useRef(null);
+
+  // State AI Document Agent (OCR Tờ khai / HAWB)
+  const [isAiScanning, setIsAiScanning] = useState(false);
+  const [aiScanProgress, setAiScanProgress] = useState(0);
+  const [aiScanResult, setAiScanResult] = useState(null);
+  const aiFileInputRef = useRef(null);
+
+  // Tải danh sách kho thực tế của ALS từ database
+  useEffect(() => {
+    let active = true;
+    const fetchLocations = async () => {
+      try {
+        const locs = await dispatcherApi.getAlsWarehouses();
+        const alsLocs = Array.isArray(locs) ? locs.filter(l => l.is_als_hub === true) : [];
+        if (active && alsLocs.length > 0) {
+          setDbLocations(alsLocs);
+          const defaultAls = alsLocs.find(l => Number(l.raw_id) === 1) || alsLocs[0];
+          const defaultAlsId = defaultAls.raw_id || defaultAls.id;
+          const alsAddr = defaultAls.address || defaultAls.name;
+          const alsCoords = {
+            lat: defaultAls.lat || DEFAULT_ALS_WAREHOUSE.lat,
+            lng: defaultAls.lng || DEFAULT_ALS_WAREHOUSE.lng
+          };
+          setSelectedPickupPreset(defaultAlsId);
+          setSelectedDeliveryPreset(defaultAlsId);
+          const currentDir = form.getFieldValue('shipping_direction') || 'IMPORT';
+          if (currentDir === 'EXPORT') {
+            form.setFieldsValue({ delivery_address: alsAddr });
+            setDeliveryCoords(alsCoords);
+          } else {
+            form.setFieldsValue({ pickup_address: alsAddr });
+            setPickupCoords(alsCoords);
+          }
+        }
+      } catch (err) {
+        console.error('Không tải được danh sách kho ALS:', err);
+      }
+    };
+    if (open) {
+      fetchLocations();
     }
-    return (weight_kg || 0).toFixed(2);
-  }, [values]);
+    return () => { active = false; };
+  }, [open, form]);
 
-  const applyPreset = (presetKey) => {
-    const preset = SAMPLE_ORDER_PRESETS.find(p => p.key === presetKey);
-    if (!preset) return;
-    setActivePreset(presetKey);
-    setNoDocsRequired(false);
-    form.setFieldsValue({
-      ...preset.data,
-      no_documents: false
-    });
+  // Danh sách mặt hàng
+  const [cargoItems, setCargoItems] = useState([
+    {
+      id: 1,
+      cargo_name: '',
+      cargo_type: undefined,
+      package_count: null,
+      package_unit: '',
+      length_cm: null,
+      width_cm: null,
+      height_cm: null,
+      weight: null
+    }
+  ]);
+
+  const [shippingDirection, setShippingDirection] = useState('IMPORT');
+
+  // Khởi tạo địa chỉ theo chiều vận chuyển
+  const applyDirectionPreset = (direction) => {
+    setShippingDirection(direction);
+    form.setFieldsValue({ shipping_direction: direction });
+    const custAddr = form.getFieldValue('customer_address') || '';
+    const alsLocs = dbLocations.filter(l => l.is_als_hub === true);
+    const defaultAls = alsLocs.find(l => Number(l.raw_id) === 1) || alsLocs[0] || DEFAULT_ALS_WAREHOUSE;
+
+    if (direction === 'IMPORT') {
+      setPickupMode('PRESET');
+      setSelectedPickupPreset(defaultAls.raw_id || defaultAls.id);
+      form.setFieldsValue({
+        pickup_address: defaultAls.address || defaultAls.name,
+        delivery_address: custAddr || ''
+      });
+      setPickupCoords({ lat: defaultAls.lat || 21.2187, lng: defaultAls.lng || 105.8042 });
+      if (custAddr) {
+        setDeliveryMode('CUSTOM');
+        setDeliveryCoords(getCoordsFromAddress(custAddr, 'B'));
+      } else {
+        setDeliveryCoords(null);
+      }
+    } else {
+      setDeliveryMode('PRESET');
+      setSelectedDeliveryPreset(defaultAls.raw_id || defaultAls.id);
+      form.setFieldsValue({
+        pickup_address: custAddr || '',
+        delivery_address: defaultAls.address || defaultAls.name
+      });
+      setDeliveryCoords({ lat: defaultAls.lat || 21.2187, lng: defaultAls.lng || 105.8042 });
+      if (custAddr) {
+        setPickupMode('CUSTOM');
+        setPickupCoords(getCoordsFromAddress(custAddr, 'A'));
+      } else {
+        setPickupCoords(null);
+      }
+    }
   };
 
-  const handleNoDocsChange = (e) => {
-    const checked = e.target.checked;
-    setNoDocsRequired(checked);
-    if (checked) {
-      form.setFieldsValue({ required_documents: [] });
-    } else {
-      form.setFieldsValue({ 
-        required_documents: ['CUSTOMS_DECLARATION', 'DELIVERY_ORDER', 'COMMERCIAL_INVOICE', 'PACKING_LIST'] 
-      });
+  const handleSelectPickupPreset = (val) => {
+    setSelectedPickupPreset(val);
+    setPickupMode('PRESET');
+    const found = dbLocations.find(l => (l.raw_id || l.id) === val);
+    if (found) {
+      form.setFieldsValue({ pickup_address: found.address || found.name });
+      setPickupCoords(found.lat && found.lng ? { lat: parseFloat(found.lat), lng: parseFloat(found.lng) } : null);
     }
+  };
+
+  const handleSelectDeliveryPreset = (val) => {
+    setSelectedDeliveryPreset(val);
+    setDeliveryMode('PRESET');
+    const found = dbLocations.find(l => (l.raw_id || l.id) === val);
+    if (found) {
+      form.setFieldsValue({ delivery_address: found.address || found.name });
+      setDeliveryCoords(found.lat && found.lng ? { lat: parseFloat(found.lat), lng: parseFloat(found.lng) } : null);
+    }
+  };
+
+  // --- XỬ LÝ AI DOCUMENT AGENT (OCR & TỰ ĐỘNG ĐIỀN FORM TRONG 15S) ---
+  const handleAiFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset input
+    e.target.value = '';
+
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      message.error('Vui lòng chọn tệp định dạng PDF hoặc ảnh (JPG, PNG) của Tờ khai / Chứng từ!');
+      return;
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      message.error('Dung lượng tệp không được vượt quá 15MB!');
+      return;
+    }
+
+    setIsAiScanning(true);
+    setAiScanProgress(15);
+    setAiScanResult(null);
+
+    // Hiệu ứng tiến trình quét trong 12-15s
+    const progressInterval = setInterval(() => {
+      setAiScanProgress(prev => {
+        if (prev >= 90) return prev;
+        return prev + Math.floor(Math.random() * 12) + 5;
+      });
+    }, 600);
+
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const fileBase64 = await base64Promise;
+
+      const extracted = await dispatcherApi.extractOrderDocument({
+        fileBase64,
+        mimeType: file.type,
+        fileName: file.name
+      });
+
+      clearInterval(progressInterval);
+      setAiScanProgress(100);
+
+      if (extracted) {
+        setAiScanResult(extracted);
+        message.success('AI Document Agent đã trích xuất thành công dữ liệu chứng từ!');
+
+        // 1. Tự động điền hướng vận chuyển (IMPORT/EXPORT)
+        const direction = extracted.order_type === 'EXPORT' ? 'EXPORT' : 'IMPORT';
+        applyDirectionPreset(direction);
+
+        // 2. Tự động điền thông tin khách hàng & người nhận
+        form.setFieldsValue({
+          customer_name: extracted.customer_name || form.getFieldValue('customer_name'),
+          customer_tax_code: extracted.customer_tax_code || form.getFieldValue('customer_tax_code'),
+          customer_phone: extracted.customer_phone || form.getFieldValue('customer_phone'),
+          customer_email: extracted.customer_email || form.getFieldValue('customer_email'),
+          receiver_name: extracted.receiver_name || extracted.customer_name || form.getFieldValue('receiver_name'),
+          receiver_phone: extracted.receiver_phone || extracted.customer_phone || form.getFieldValue('receiver_phone'),
+          customer_address: extracted.delivery_address || form.getFieldValue('customer_address'),
+          delivery_address: extracted.delivery_address || form.getFieldValue('delivery_address'),
+          declaration_number: extracted.declaration_number || '',
+          order_notes: `[AI OCR: ${file.name}] Mã tờ khai: ${extracted.declaration_number || 'N/A'}`
+        });
+
+        // Tự động Geocode tọa độ địa chỉ giao hàng
+        if (extracted.delivery_address) {
+          const coords = getCoordsFromAddress(extracted.delivery_address, 'B');
+          if (coords) setDeliveryCoords(coords);
+        }
+
+        // 3. Tự động điền các dòng hàng hóa
+        if (Array.isArray(extracted.cargo_lines) && extracted.cargo_lines.length > 0) {
+          const newCargos = extracted.cargo_lines.map((c, idx) => ({
+            id: Date.now() + idx,
+            cargo_name: c.cargo_name || 'Hàng hóa linh kiện',
+            cargo_type: c.cargo_type || 'GENERAL',
+            package_count: Number(c.package_count) || 1,
+            package_unit: c.package_unit || 'Kiện',
+            length_cm: Number(c.length_cm) || 60,
+            width_cm: Number(c.width_cm) || 40,
+            height_cm: Number(c.height_cm) || 40,
+            weight: Number(c.actual_weight_kg) || 50
+          }));
+          setCargoItems(newCargos);
+        }
+
+        // 4. Gợi ý loại xe tối ưu
+        if (extracted.recommended_vehicle) {
+          form.setFieldsValue({
+            vehicle_type_required: extracted.recommended_vehicle
+          });
+        }
+      }
+    } catch (scanErr) {
+      clearInterval(progressInterval);
+      console.error('AI Scan Document error:', scanErr);
+      message.error(scanErr.message || 'Lỗi khi quét chứng từ với AI. Vui lòng thử lại hoặc nhập liệu thủ công!');
+    } finally {
+      setTimeout(() => {
+        setIsAiScanning(false);
+      }, 500);
+    }
+  };
+
+  const addCargoItem = () => {
+    setCargoItems(prev => [
+      ...prev,
+      {
+        id: Date.now(),
+        cargo_name: '',
+        cargo_type: undefined,
+        package_count: null,
+        package_unit: '',
+        length_cm: null,
+        width_cm: null,
+        height_cm: null,
+        weight: null
+      }
+    ]);
+  };
+
+  const removeCargoItem = (id) => {
+    if (cargoItems.length <= 1) return;
+    setCargoItems(prev => prev.filter(it => it.id !== id));
+  };
+
+  const updateCargoItem = (id, field, value) => {
+    setCargoItems(prev => prev.map(it => {
+      if (it.id === id) {
+        const updated = { ...it, [field]: value };
+        if (field === 'cargo_type' && value === 'BULK') {
+          updated.length_cm = null;
+          updated.width_cm = null;
+          updated.height_cm = null;
+        }
+        return updated;
+      }
+      return it;
+    }));
+  };
+
+  // Tính tổng hàng hóa theo chuẩn logistics (1 m3 = 200 kg)
+  const totals = useMemo(() => {
+    let totalCount = 0;
+    let actualWeight = 0;
+    let chargeableWeight = 0;
+
+    cargoItems.forEach(it => {
+      const cnt = Math.max(1, parseInt(it.package_count, 10) || 1);
+      const unitW = Number(it.weight) || 0;
+      const totalItemWeight = unitW * cnt;
+      totalCount += cnt;
+      actualWeight += totalItemWeight;
+
+      if (it.cargo_type === 'BULK') {
+        chargeableWeight += totalItemWeight;
+      } else {
+        const l = Number(it.length_cm) || 0;
+        const width = Number(it.width_cm) || 0;
+        const h = Number(it.height_cm) || 0;
+        // Quy đổi thể tích chuẩn IATA / Vận tải đường bộ: (D x R x C cm) / 5000
+        const itemVolWeight = ((l * width * h) / 5000) * cnt;
+        chargeableWeight += Math.max(totalItemWeight, itemVolWeight);
+      }
+    });
+
+    return {
+      totalCount,
+      actualWeight: actualWeight.toFixed(2),
+      chargeableWeight: chargeableWeight.toFixed(2)
+    };
+  }, [cargoItems]);
+
+  const watchedValues = Form.useWatch([], form);
+
+  // Phân tích loại xe tối ưu theo tải trọng & kích thước hàng
+  const vehicleRecommendation = useMemo(() => {
+    return analyzeVehicleRecommendation({
+      actualWeightKg: parseFloat(totals.actualWeight) || 0,
+      chargeableWeightKg: parseFloat(totals.chargeableWeight) || 0,
+      items: cargoItems,
+      customerRequestedVehicle: watchedValues?.vehicle_type_required || 'TRUCK_2.5T'
+    });
+  }, [totals.actualWeight, totals.chargeableWeight, cargoItems, watchedValues?.vehicle_type_required]);
+
+  // Tính lộ trình & cước phí
+  const routeInfo = useMemo(() => {
+    const pCoords = pickupCoords || getCoordsFromAddress(watchedValues?.pickup_address, 'A');
+    const dCoords = deliveryCoords || getCoordsFromAddress(watchedValues?.delivery_address, 'B');
+    if (!pCoords || !dCoords) {
+      return { distanceKm: 0, durationMins: 0, isDefault: true };
+    }
+    return calculateRouteEstimate(pCoords.lat, pCoords.lng, dCoords.lat, dCoords.lng);
+  }, [pickupCoords, deliveryCoords, watchedValues?.pickup_address, watchedValues?.delivery_address]);
+
+  const hasBothLocations = Boolean(
+    (pickupCoords || watchedValues?.pickup_address) && 
+    (deliveryCoords || watchedValues?.delivery_address) && 
+    routeInfo.distanceKm > 0
+  );
+
+  const estimatedPricing = useMemo(() => {
+    if (!hasBothLocations) {
+      return { baseTransportFee: 0, loadingFee: 0, customsFee: 0, totalRate: 0, isFixedRoute: false };
+    }
+    return calculateAlsPricing({
+      distanceKm: routeInfo.distanceKm,
+      chargeableWeightKg: parseFloat(totals.chargeableWeight) || 0,
+      vehicleType: watchedValues?.vehicle_type_required || 'TRUCK_2.5T',
+      timeSlot: watchedValues?.operating_time_slot || 'FULL_DAY',
+      pickupAddress: watchedValues?.pickup_address || '',
+      deliveryAddress: watchedValues?.delivery_address || '',
+      loadingUnloadingRequired: watchedValues?.loading_unloading_required === true,
+      customsServiceRequired: customsServiceRequired
+    });
+  }, [
+    hasBothLocations,
+    routeInfo.distanceKm,
+    totals.chargeableWeight,
+    watchedValues?.vehicle_type_required,
+    watchedValues?.operating_time_slot,
+    watchedValues?.pickup_address,
+    watchedValues?.delivery_address,
+    watchedValues?.loading_unloading_required,
+    customsServiceRequired
+  ]);
+
+  const estimatedBaselineRate = estimatedPricing.totalRate || 0;
+
+  const flightDatetime = watchedValues?.flight_datetime;
+  const exportPickupSuggestion = useMemo(() => {
+    if (shippingDirection !== 'EXPORT' || !flightDatetime) return null;
+    return calculateExportPickupSuggestion(flightDatetime, routeInfo.distanceKm || 30);
+  }, [shippingDirection, flightDatetime, routeInfo.distanceKm]);
+
+  useEffect(() => {
+    if (estimatedBaselineRate > 0 && !form.isFieldTouched('agreed_price')) {
+      form.setFieldsValue({ agreed_price: estimatedBaselineRate });
+    }
+  }, [estimatedBaselineRate, form]);
+
+  const handleTriggerAiSuggestDocs = () => {
+    setAssistantDrawerOpen(true);
+  };
+
+  const handleApplyAssistantDocs = (newDocList) => {
+    setDocuments(newDocList);
+    setAssistantDrawerOpen(false);
+    message.success(`Đã cập nhật ${newDocList.length} loại chứng từ theo tư vấn của Gemini AI!`);
+  };
+
+  const triggerUploadDoc = (docKey) => {
+    setUploadingDocKey(docKey);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleDocFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadingDocKey) return;
+
+    const fileSizeStr = file.size > 1024 * 1024
+      ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.round(file.size / 1024)} KB`;
+
+    const now = new Date();
+    const dateStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate()}/${now.getMonth() + 1}`;
+    const targetDocKey = uploadingDocKey;
+
+    try {
+      const uploaded = await uploadApi.uploadToCloudinary(file, 'nexlog/orders/new/docs');
+      setDocuments(prev => prev.map(d => {
+        if (d.key === targetDocKey) {
+          return {
+            ...d,
+            file: file.name,
+            file_url: uploaded.url,
+            file_data: uploaded.url,
+            size: fileSizeStr,
+            uploadDate: dateStr,
+            status: 'APPROVED'
+          };
+        }
+        return d;
+      }));
+      message.success(`Đã tải lên Cloudinary và đính kèm tệp "${file.name}" cho chứng từ!`);
+    } catch (err) {
+      message.error(err.message || 'Không thể tải tệp chứng từ lên Cloudinary.');
+    } finally {
+      setUploadingDocKey(null);
+    }
+  };
+
+  const handleAddDirectCustomDoc = () => {
+    const title = (newCustomDocName || selectedSpecializedDoc || '').trim();
+    if (!title) {
+      message.warning('Vui lòng chọn hoặc nhập tên loại chứng từ cần thêm!');
+      return;
+    }
+
+    if (documents.some(d => d.name.toLowerCase() === title.toLowerCase())) {
+      message.warning('Loại chứng từ này đã có trong danh mục của đơn!');
+      return;
+    }
+
+    let docDesc = 'Chứng từ chuyên ngành bổ sung theo yêu cầu hàng hóa/khách hàng.';
+    let catName = 'Chứng từ bổ sung';
+    for (const cat of SPECIALIZED_CARGO_CATEGORIES) {
+      const match = cat.specializedDocs.find(d => d.name === title);
+      if (match) {
+        docDesc = match.description;
+        catName = cat.categoryName;
+        break;
+      }
+    }
+
+    const newKey = `custom-direct-doc-${Date.now()}`;
+    const newDoc = {
+      key: newKey,
+      name: title,
+      description: docDesc,
+      file: 'Chờ tải lên',
+      status: 'WAITING_UPLOAD',
+      size: '-',
+      uploadDate: '-',
+      isBasic: false,
+      isCustom: true,
+      categoryName: catName
+    };
+
+    setDocuments(prev => [...prev, newDoc]);
+    setNewCustomDocName('');
+    setSelectedSpecializedDoc('');
+    message.success(`Đã thêm chứng từ: "${newDoc.name}"`);
+  };
+
+  const handleDeleteDirectDoc = (docKey) => {
+    setDocuments(prev => prev.filter(d => d.key !== docKey));
+    message.info('Đã xóa loại chứng từ khỏi danh mục.');
+  };
+
+  const handleReset = () => {
+    form.resetFields();
+    setCargoItems([{ id: 1, cargo_name: '', cargo_type: undefined, package_count: null, package_unit: '', length_cm: null, width_cm: null, height_cm: null, weight: null }]);
+    setPickupCoords(null);
+    setDeliveryCoords(null);
+    setPickupMode('PRESET');
+    setDeliveryMode('CUSTOM');
+    const alsLocs = dbLocations.filter(l => l.is_als_hub === true);
+    const defaultAls = alsLocs.find(l => Number(l.raw_id) === 1) || alsLocs[0];
+    const defaultAlsId = defaultAls ? (defaultAls.raw_id || defaultAls.id) : undefined;
+    setSelectedPickupPreset(defaultAlsId);
+    setSelectedDeliveryPreset(defaultAlsId);
+    setCustomsServiceRequired(false);
+    onCancel();
   };
 
   const handleOk = () => {
     form.validateFields().then((fieldValues) => {
-      onSubmit({ 
-        ...fieldValues, 
-        chargeable_weight: parseFloat(chargeableWeight) || fieldValues.weight_kg,
+      for (let i = 0; i < cargoItems.length; i++) {
+        const it = cargoItems[i];
+        if (!it.cargo_name?.trim()) { message.error(`Vui lòng nhập tên hàng cho mặt hàng #${i + 1}`); return; }
+        if (!it.cargo_type) { message.error(`Vui lòng chọn loại hàng cho mặt hàng #${i + 1}`); return; }
+        if (!it.weight || Number(it.weight) <= 0) { message.error(`Vui lòng nhập trọng lượng hợp lệ (> 0 kg) cho mặt hàng #${i + 1}`); return; }
+      }
+      // Validate tải trọng: Tổng tải trọng thực tế hoặc tải trọng quy đổi tính cước không được vượt quá tải trọng xe
+      const selectedVehicleKey = fieldValues.vehicle_type_required || 'TRUCK_2.5T';
+      const vehicleSpec = getVehicleSpecByKey(selectedVehicleKey);
+      const effectiveWeight = Math.max(parseFloat(totals.actualWeight) || 0, parseFloat(totals.chargeableWeight) || 0);
+
+      if (vehicleSpec && effectiveWeight > vehicleSpec.maxPayloadKg) {
+        const recommendedName = vehicleRecommendation?.recommendedSpec?.label || 'loại xe có tải trọng lớn hơn';
+        message.error(
+          `Lô hàng (${effectiveWeight.toLocaleString('vi-VN')} kg) vượt quá tải trọng tối đa của ${vehicleSpec.label} (${vehicleSpec.maxPayloadKg.toLocaleString('vi-VN')} kg). Vui lòng chọn ${recommendedName} phù hợp hơn!`
+        );
+        return;
+      }
+
+      // Validate kích thước lòng thùng & thể tích xếp hàng 3D: Không cho phép chọn loại xe quá nhỏ không thể xếp vừa toàn bộ kiện hàng
+      if (vehicleRecommendation && vehicleRecommendation.status === 'UNDER_CAPACITY') {
+        message.error(
+          `Loại xe đã chọn (${vehicleRecommendation.customerSpec.label}) không đủ không gian chứa toàn bộ các kiện hàng. Vui lòng chọn ${vehicleRecommendation.recommendedSpec.label} để đảm bảo xếp đủ hàng!`
+        );
+        return;
+      }
+
+      // Kiểm tra bắt buộc đủ Địa chỉ cụ thể + Phường/Xã + Tỉnh/Thành phố chuẩn hành chính 2026
+      if (pickupMode === 'CUSTOM' || shippingDirection === 'EXPORT') {
+        const pickupParts = (fieldValues.pickup_address || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (pickupParts.length < 3 || (fieldValues.pickup_address || '').trim().length < 10) {
+          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm lấy hàng (A)!');
+          return;
+        }
+      }
+
+      if (deliveryMode === 'CUSTOM' || shippingDirection === 'IMPORT') {
+        const deliveryParts = (fieldValues.delivery_address || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (deliveryParts.length < 3 || (fieldValues.delivery_address || '').trim().length < 10) {
+          message.error('Vui lòng nhập Địa chỉ cụ thể và chọn đầy đủ Phường/Xã, Tỉnh/Thành phố cho Điểm giao hàng (B)!');
+          return;
+        }
+      }
+
+      const primaryItem = cargoItems[0] || {};
+      const cargoDescription = cargoItems
+        .map(it => `${it.cargo_name}${it.package_count ? ` (${it.package_count} ${it.package_unit || 'kiện'})` : ''}`)
+        .join(', ');
+
+      let currentDispatcherId = null;
+      try {
+        const cached = typeof window !== 'undefined' ? window.sessionStorage.getItem('nexlog_cached_user') : null;
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.id && !isNaN(Number(parsed.id))) {
+            currentDispatcherId = Number(parsed.id);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      onSubmit({
+        ...fieldValues,
+        dispatcher_id: currentDispatcherId,
+        required_pickup_date: shippingDirection === 'IMPORT'
+          ? (fieldValues.flight_arrival_date || fieldValues.required_pickup_date || null)
+          : (fieldValues.required_pickup_date || null),
+        required_delivery_date: fieldValues.required_delivery_date || fieldValues.required_pickup_date || null,
+        flight_arrival_date: fieldValues.flight_arrival_date || null,
+        flight_arrival_time: fieldValues.flight_arrival_time || null,
+        flight_datetime: fieldValues.flight_datetime || null,
+        export_pickup_suggestion: exportPickupSuggestion?.latestPickupFormatted || null,
+        shipping_direction: shippingDirection,
+        customs_service_required: customsServiceRequired,
+        customs_fee: customsServiceRequired ? CUSTOMS_SERVICE_FEE : 0,
+        items: cargoItems,
+        cargo_name: cargoDescription,
+        cargo_type: primaryItem.cargo_type || 'GENERAL',
+        package_count: totals.totalCount || 1,
+        package_unit: cargoItems.length > 1 ? 'Loại hàng kết hợp' : (primaryItem.package_unit || 'Kiện'),
+        length_cm: primaryItem.cargo_type === 'BULK' ? 0 : (primaryItem.length_cm || 0),
+        width_cm: primaryItem.cargo_type === 'BULK' ? 0 : (primaryItem.width_cm || 0),
+        height_cm: primaryItem.cargo_type === 'BULK' ? 0 : (primaryItem.height_cm || 0),
+        weight_kg: parseFloat(totals.actualWeight) || 0,
+        chargeable_weight: parseFloat(totals.chargeableWeight) || 0,
+        pickup_location_id: shippingDirection === 'IMPORT' && typeof selectedPickupPreset === 'number' ? selectedPickupPreset : null,
+        delivery_location_id: shippingDirection === 'EXPORT' && typeof selectedDeliveryPreset === 'number' ? selectedDeliveryPreset : null,
+        pickup_coords: pickupCoords,
+        delivery_coords: deliveryCoords,
+        estimated_distance_km: routeInfo.distanceKm,
+        estimated_duration_mins: routeInfo.durationMins,
+        estimated_baseline_rate: estimatedBaselineRate,
+        documents: documents,
+        request_split_trucks: Boolean(fieldValues.request_split_trucks),
+        split_details: fieldValues.request_split_trucks ? {
+          split_count: fieldValues.split_truck_count || 2,
+          vehicle_target: fieldValues.split_target_vehicle || 'TRUCK_2.5T',
+          vehicle_target_label: getVehicleSpecByKey(fieldValues.split_target_vehicle || 'TRUCK_2.5T')?.label || fieldValues.split_target_vehicle || 'Xe tải 2.5 tấn',
+          reason: fieldValues.split_reason || 'Đường kho hẹp/cấm xe tải lớn'
+        } : null,
         created_at: new Date().toISOString()
       });
-      form.resetFields();
-      setActivePreset(null);
+      handleReset();
     });
   };
+
+  useEffect(() => {
+    if (open) {
+      const timer = setTimeout(() => {
+        applyDirectionPreset('IMPORT');
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
 
   return (
     <Modal
       title={
         <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
-          <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+          <div className="p-2 bg-indigo-50 text-[#7367f0] rounded-lg">
             <FileText size={20} />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-gray-800">Tạo Đơn Hàng Vận Tải Mới (Order Intake)</h3>
-            <p className="text-xs text-gray-500 font-normal">Tiếp nhận đơn, chốt giá thỏa thuận & thiết lập chứng từ hải quan bắt buộc</p>
+            <h3 className="text-lg font-bold text-gray-800">Tạo đơn vận chuyển</h3>
+            <p className="text-xs text-gray-500 font-normal">Điều phối viên tạo đơn trực tiếp</p>
           </div>
         </div>
       }
       open={open}
+      destroyOnHidden={true}
       onOk={handleOk}
-      onCancel={() => {
-        onCancel();
-        setActivePreset(null);
-      }}
-      width={860}
-      okText="Xác nhận Tạo Đơn Nháp"
+      onCancel={handleReset}
+      width={960}
+      okText="Xác nhận tạo đơn"
       cancelText="Đóng"
       okButtonProps={{ className: "bg-[#7367f0] hover:bg-[#5e50ee] font-semibold h-9 px-5" }}
       cancelButtonProps={{ className: "h-9 px-4" }}
     >
-      {/* Nút bấm Chọn Dữ liệu mẫu thực tế */}
-      <div className="mt-3 mb-4 p-3.5 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-xl border border-blue-100">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-blue-800 flex items-center gap-1.5">
-            <Sparkles size={14} className="text-amber-500 fill-amber-400" />
-            Nạp nhanh hồ sơ mẫu thực tế (Adtek & Lô 2):
-          </span>
-          <span className="text-xs text-gray-500">Tự động điền đầy đủ dữ liệu & chứng từ mẫu</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {SAMPLE_ORDER_PRESETS.map((preset) => (
+      <div className="pt-2"></div>
+
+      {/* AI DOCUMENT AGENT BANNER & OCR TRIGGER */}
+      <div className="mb-4 p-3.5 bg-gradient-to-r from-indigo-50 via-purple-50 to-blue-50 border border-indigo-200/70 rounded-xl shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
+              <Sparkles size={18} className="animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-800 text-sm">AI Document Agent</span>
+                <span className="text-[11px] px-2 py-0.5 bg-indigo-100 text-indigo-700 font-semibold rounded-full">
+                  OCR 15s
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Tự động bóc tách Tờ khai hải quan (VNACCS) / Chứng từ vận chuyển để điền form tự động
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <input
+              type="file"
+              ref={aiFileInputRef}
+              className="hidden"
+              accept=".pdf,image/png,image/jpeg,image/jpg"
+              onChange={handleAiFileSelect}
+            />
             <button
-              key={preset.key}
               type="button"
-              onClick={() => applyPreset(preset.key)}
-              className={`text-left p-2.5 rounded-lg border transition-all text-xs flex flex-col gap-1 ${
-                activePreset === preset.key 
-                  ? 'border-indigo-500 bg-white shadow-sm ring-2 ring-indigo-200' 
-                  : 'border-blue-200 bg-white/70 hover:bg-white hover:border-indigo-300'
+              disabled={isAiScanning}
+              onClick={() => aiFileInputRef.current?.click()}
+              className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg shadow-sm transition-all ${
+                isAiScanning
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white cursor-pointer'
               }`}
             >
-              <div className="font-bold text-gray-800 flex items-center justify-between">
-                <span>{preset.name}</span>
-                {activePreset === preset.key && <CheckCircle2 size={14} className="text-indigo-600" />}
-              </div>
-              <div className="text-gray-500 line-clamp-1">{preset.description}</div>
+              <UploadCloud size={15} />
+              {isAiScanning ? 'Đang phân tích...' : 'Tải lên Tờ khai để AI đọc'}
             </button>
-          ))}
+          </div>
         </div>
+
+        {/* Thanh tiến trình khi AI đang OCR */}
+        {isAiScanning && (
+          <div className="mt-3 pt-2.5 border-t border-indigo-100/80">
+            <div className="flex justify-between items-center text-xs mb-1">
+              <span className="text-indigo-700 font-medium flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
+                Gemini Vision đang đọc cấu trúc chứng từ và trích xuất hàng hóa...
+              </span>
+              <span className="font-bold text-indigo-600">{aiScanProgress}%</span>
+            </div>
+            <Progress 
+              percent={aiScanProgress} 
+              showInfo={false} 
+              strokeColor={{ '0%': '#7367f0', '100%': '#6366f1' }}
+              size="small" 
+            />
+          </div>
+        )}
+
+        {/* Kết quả scan thành công */}
+        {aiScanResult && !isAiScanning && (
+          <div className="mt-2.5 pt-2 border-t border-indigo-100 flex items-center justify-between text-xs text-emerald-700 bg-emerald-50/60 px-3 py-1.5 rounded-md">
+            <div className="flex items-center gap-1.5 font-medium">
+              <CheckCircle2 size={14} className="text-emerald-600" />
+              <span>Đã tự động điền form: {aiScanResult.customer_name || 'Doanh nghiệp'} ({aiScanResult.cargo_lines?.length || 1} dòng hàng)</span>
+            </div>
+            <span className="text-[11px] text-gray-400">Độ tin cậy: {Math.round((aiScanResult.confidence_score || 0.95) * 100)}%</span>
+          </div>
+        )}
       </div>
 
       <Form 
         form={form} 
         layout="vertical" 
         initialValues={{ 
-          is_stackable: true, 
-          cargo_type: 'GENERAL',
-          package_unit: 'Pallet',
-          package_count: 1,
-          required_documents: ['CUSTOMS_DECLARATION', 'DELIVERY_ORDER', 'COMMERCIAL_INVOICE', 'PACKING_LIST']
+          source: 'HOTLINE',
+          status: 'READY_FOR_PLANNING',
+          is_new_customer: false,
+          address_same_as_customer: false,
+          pickup_address: '',
+          delivery_address: '',
+          customer_address: '',
+          vehicle_type_required: 'TRUCK_2.5T',
+          operating_time_slot: 'FULL_DAY',
+          loading_unloading_required: false
         }}
       >
-        {/* Phân vùng 1: Thông tin Khách hàng & Mã HAWB */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider flex items-center gap-2">
-          <span>1. Thông tin Khách hàng & Mã Vận Đơn (HAWB)</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
-          <Form.Item label="Khách hàng / Doanh nghiệp" name="customer_name" rules={[{ required: true, message: 'Nhập tên khách hàng' }]} className="lg:col-span-2 mb-2">
-            <Input placeholder="VD: ADTEK VIETNAM CO., LTD" />
-          </Form.Item>
-          <Form.Item label="Mã HAWB / Số vận đơn" name="hawb_code" rules={[{ required: true, message: 'Nhập mã HAWB' }]} className="mb-2">
-            <Input placeholder="VD: HNAE25090222" className="font-mono text-indigo-700 font-semibold" />
-          </Form.Item>
-          <Form.Item label="Mã số thuế Doanh nghiệp" name="customer_tax_code" className="mb-2">
-            <Input placeholder="VD: 2300987654" />
-          </Form.Item>
-          <Form.Item label="Số điện thoại liên hệ" name="customer_phone" rules={[{ required: true, message: 'Nhập SĐT' }]} className="mb-0">
-            <Input placeholder="0977887918" />
-          </Form.Item>
-          <Form.Item label="Email nhận Tracking Link" name="customer_email" rules={[{ required: true, type: 'email', message: 'Email hợp lệ' }]} className="mb-0">
-            <Input placeholder="ops@company.com" />
-          </Form.Item>
-          <Form.Item label="Nhà máy / Bộ phận giao" name="factory_name" className="lg:col-span-2 mb-0">
-            <Input placeholder="VD: Nhà máy ADTEK KCN Tiên Sơn / Kho ngoại quan Nội Bài" />
-          </Form.Item>
-        </div>
+        <OrderFormCustomerSection
+          form={form}
+          shippingDirection={shippingDirection}
+          setPickupCoords={setPickupCoords}
+          setDeliveryCoords={setDeliveryCoords}
+        />
 
-        {/* Phân vùng 2: Tuyến đường Giao Nhận */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider flex items-center gap-2">
-          <span>2. Địa điểm Lấy hàng & Điểm Giao nhận</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
-          <Form.Item label="Điểm lấy hàng (Kho ALS / Nhà máy xuất phát)" name="pickup_address" rules={[{ required: true, message: 'Nhập điểm lấy' }]} className="mb-0">
-            <Input.TextArea rows={2} placeholder="Nhập địa chỉ chi tiết hoặc chọn Kho ALS Nội Bài, KCN Tiên Sơn..." />
-          </Form.Item>
-          <Form.Item label="Điểm giao hàng thực tế (Kho nhận / Cảng)" name="delivery_address" rules={[{ required: true, message: 'Nhập điểm giao' }]} className="mb-0">
-            <Input.TextArea rows={2} placeholder="Nhập địa chỉ nhà máy người nhận, bãi ICD hoặc Ga hàng hóa..." />
-          </Form.Item>
-        </div>
+        <OrderFormRouteSection
+          form={form}
+          shippingDirection={shippingDirection}
+          applyDirectionPreset={applyDirectionPreset}
+          pickupMode={pickupMode}
+          deliveryMode={deliveryMode}
+          selectedPickupPreset={selectedPickupPreset}
+          selectedDeliveryPreset={selectedDeliveryPreset}
+          handleSelectPickupPreset={handleSelectPickupPreset}
+          handleSelectDeliveryPreset={handleSelectDeliveryPreset}
+          pickupCoords={pickupCoords}
+          deliveryCoords={deliveryCoords}
+          setPickupCoords={setPickupCoords}
+          setDeliveryCoords={setDeliveryCoords}
+          dbLocations={dbLocations}
+          routeInfo={routeInfo}
+          exportPickupSuggestion={exportPickupSuggestion}
+        />
 
-        {/* Phân vùng 3: Quy cách Hàng hóa & Tính toán Tải trọng Quy đổi */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider flex items-center justify-between">
-          <span>3. Quy cách Lô hàng & Tải trọng Quy đổi</span>
-          <span className="text-gray-400 font-normal">Công thức: max(Trọng lượng thực, D x R x C / 5000)</span>
-        </div>
-        <div className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-100 mb-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
-            <Form.Item label="Số lượng" name="package_count" rules={[{ required: true }]} className="mb-0">
-              <InputNumber min={1} className="w-full" />
-            </Form.Item>
-            <Form.Item label="Đơn vị tính" name="package_unit" className="mb-0">
-              <Select>
-                <Option value="Pallet">Pallet</Option>
-                <Option value="Kiện thùng gỗ">Kiện / Crate</Option>
-                <Option value="Thùng carton">Thùng carton</Option>
-                <Option value="Cuộn cáp">Cuộn / Reel</Option>
-              </Select>
-            </Form.Item>
-            <Form.Item label="Dài (cm)" name="length_cm" rules={[{ required: true }]} className="mb-0">
-              <InputNumber className="w-full" min={1} />
-            </Form.Item>
-            <Form.Item label="Rộng (cm)" name="width_cm" rules={[{ required: true }]} className="mb-0">
-              <InputNumber className="w-full" min={1} />
-            </Form.Item>
-            <Form.Item label="Cao (cm)" name="height_cm" rules={[{ required: true }]} className="mb-0">
-              <InputNumber className="w-full" min={1} />
-            </Form.Item>
-            <Form.Item label="TL thực tế (kg)" name="weight_kg" rules={[{ required: true }]} className="mb-0">
-              <InputNumber className="w-full" min={1} />
-            </Form.Item>
-          </div>
+        <OrderFormVehicleSection
+          shippingDirection={shippingDirection}
+          estimatedPricing={estimatedPricing}
+          routeInfo={routeInfo}
+          totals={totals}
+          vehicleRecommendation={vehicleRecommendation}
+          form={form}
+          watchedValues={watchedValues}
+        />
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center pt-2 border-t border-gray-200">
-            <Form.Item label="Tính chất hàng hóa" name="cargo_type" className="mb-0">
-              <Select>
-                <Option value="GENERAL">Hàng bách hóa thông thường (General)</Option>
-                <Option value="FRAGILE">Hàng điện tử dễ vỡ (Fragile)</Option>
-                <Option value="VALUABLE">Hàng giá trị cao (High Value / Seal Lock)</Option>
-              </Select>
-            </Form.Item>
+        <OrderFormCargoSection
+          cargoItems={cargoItems}
+          updateCargoItem={updateCargoItem}
+          removeCargoItem={removeCargoItem}
+          addCargoItem={addCargoItem}
+          totals={totals}
+        />
 
-            <Form.Item label="Cho phép xếp chồng (Stackable)" name="is_stackable" valuePropName="checked" className="mb-0">
-              <Switch checkedChildren="Cho phép chồng tầng" unCheckedChildren="Cấm xếp chồng" />
-            </Form.Item>
-
-            <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded-lg flex flex-col justify-center">
-              <span className="text-[11px] font-semibold text-amber-900">Tải trọng tính cước (Chargeable Weight):</span>
-              <span className="text-lg font-bold text-amber-600">{chargeableWeight} kg</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Phân vùng 4: Thiết lập Chứng từ Hải quan Bắt buộc */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider flex items-center justify-between">
-          <span className="flex items-center gap-1.5">
-            <ShieldAlert size={14} className="text-blue-600" />
-            4. Danh mục Chứng từ Hải quan Thu thập Bắt buộc
-          </span>
-          <Checkbox checked={noDocsRequired} onChange={handleNoDocsChange} className="text-xs text-gray-600">
-            Không cần chứng từ hải quan (Hàng nội địa thuần túy)
-          </Checkbox>
-        </div>
-        <div className="p-3.5 bg-blue-50/40 rounded-xl border border-blue-100 mb-4">
-          <p className="text-xs text-gray-500 mb-2.5">
-            Hệ thống sẽ tạo checklist trên Tracking Link để khách hàng tải lên các file scan tương ứng trước khi Dispatcher xác nhận duyệt (Ready for Planning).
-          </p>
-          <Form.Item name="required_documents" className="mb-0">
-            <Checkbox.Group className="w-full" disabled={noDocsRequired}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {DOCUMENT_TYPES.map(doc => (
-                  <div key={doc.key} className="p-2 bg-white rounded-lg border border-gray-200 hover:border-blue-300">
-                    <Checkbox value={doc.key} className="w-full text-xs font-semibold text-gray-800">
-                      <div>{doc.label}</div>
-                      <div className="text-[11px] text-gray-400 font-normal mt-0.5">{doc.description}</div>
-                    </Checkbox>
-                  </div>
-                ))}
-              </div>
-            </Checkbox.Group>
-          </Form.Item>
-        </div>
-
-        {/* Phân vùng 5: Tài chính & Phân định Phí Phát sinh */}
-        <div className="text-xs font-bold text-gray-600 uppercase mb-2 tracking-wider flex items-center justify-between">
-          <span>5. Giá Thỏa thuận Chốt ngoài & Phân định Thu hộ</span>
-          <span className="text-emerald-600 font-semibold text-xs">Doanh thu ALS vs. Cô lập Thuế VAT</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-gray-50/70 p-3.5 rounded-xl border border-gray-100 mb-4">
-          <Form.Item 
-            label={
-              <span className="flex items-center gap-1">
-                Giá cước chốt thỏa thuận (Agreed Price - VNĐ)
-                <Tooltip title="Giá cước vận tải thỏa thuận trực tiếp qua Zalo/Hotline, chưa bao gồm các phụ phí"><HelpCircle size={13} className="text-gray-400" /></Tooltip>
-              </span>
-            } 
-            name="agreed_price" 
-            rules={[{ required: true, message: 'Nhập giá thỏa thuận' }]} 
-            className="mb-0"
-          >
-            <InputNumber 
-              className="w-full font-bold text-blue-700" 
-              formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 
-              parser={value => value.replace(/\$\s?|(,*)/g, '')} 
-              min={0}
-            />
-          </Form.Item>
-
-          <Form.Item 
-            label={
-              <span className="flex items-center gap-1">
-                Phí phụ trội Surcharge (Doanh thu ALS - VNĐ)
-                <Tooltip title="Lưu đêm, bốc dỡ thêm, chờ xe - Tính vào doanh thu ALS và chịu thuế VAT"><HelpCircle size={13} className="text-gray-400" /></Tooltip>
-              </span>
-            } 
-            name="extra_fees_surcharge" 
-            className="mb-0"
-          >
-            <InputNumber 
-              className="w-full text-indigo-700" 
-              formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 
-              parser={value => value.replace(/\$\s?|(,*)/g, '')} 
-              min={0} 
-            />
-          </Form.Item>
-
-          <Form.Item 
-            label={
-              <span className="flex items-center gap-1">
-                Phí Thu hộ chi hộ (Off-book - VNĐ)
-                <Tooltip title="Chi hộ hải quan, hạ bãi cảng, lệ phí biên phòng - Không tính doanh thu ALS, cô lập VAT"><HelpCircle size={13} className="text-gray-400" /></Tooltip>
-              </span>
-            } 
-            name="extra_fees_collection" 
-            className="mb-0"
-          >
-            <InputNumber 
-              className="w-full text-emerald-700" 
-              formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 
-              parser={value => value.replace(/\$\s?|(,*)/g, '')} 
-              min={0} 
-            />
-          </Form.Item>
-        </div>
+        <OrderFormPricingSection
+          customsServiceRequired={customsServiceRequired}
+          setCustomsServiceRequired={setCustomsServiceRequired}
+          estimatedPricing={estimatedPricing}
+          estimatedBaselineRate={estimatedBaselineRate}
+          routeInfo={routeInfo}
+        />
 
         {/* Ghi chú vận hành */}
-        <Form.Item label="Ghi chú Vận hành (Order Notes)" name="order_notes" className="mb-0">
-          <Input.TextArea rows={2} placeholder="Yêu cầu kiểm tra niêm phong chì, số điện thoại tài xế, khung giờ nhận hàng..." />
+        <Form.Item label="Ghi chú vận hành" name="order_notes" className="mb-4">
+          <Input.TextArea rows={2} placeholder="Ghi chú cho tài xế, yêu cầu đặc biệt về bốc xếp, nhiệt độ bảo quản..." />
         </Form.Item>
 
+        <OrderFormDocumentsSection
+          documents={documents}
+          handleTriggerAiSuggestDocs={handleTriggerAiSuggestDocs}
+          triggerUploadDoc={triggerUploadDoc}
+          handleDeleteDirectDoc={handleDeleteDirectDoc}
+          selectedSpecializedDoc={selectedSpecializedDoc}
+          setSelectedSpecializedDoc={setSelectedSpecializedDoc}
+          newCustomDocName={newCustomDocName}
+          setNewCustomDocName={setNewCustomDocName}
+          handleAddDirectCustomDoc={handleAddDirectCustomDoc}
+        />
       </Form>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleDocFileChange}
+        className="hidden"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
+      />
+
+      <DocumentAssistantDrawer
+        open={assistantDrawerOpen}
+        onClose={() => setAssistantDrawerOpen(false)}
+        currentCargo={cargoItems.map(it => it.cargo_name).filter(Boolean).join(', ') || 'Hàng hóa xuất nhập khẩu'}
+        onApplyRecommendations={handleApplyAssistantDocs}
+      />
     </Modal>
   );
 };

@@ -4,7 +4,7 @@ import { ProtectedRoute } from '../../src/contexts/ProtectedRoute';
 
 export default function Layout({ children }) {
   return (
-    <ProtectedRoute allowedRoles={[3]}>
+    <ProtectedRoute allowedRoles={[1, 2, 3]}>
       <DispatcherLayout>{children}</DispatcherLayout>
     </ProtectedRoute>
   );

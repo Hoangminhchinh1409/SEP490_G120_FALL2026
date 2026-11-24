@@ -1,1 +1,4 @@
 ﻿.agents/
+*.md
+
+_rules_backup/

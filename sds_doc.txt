@@ -1,0 +1,7056 @@
+﻿
+
+CAPSTONE PROJECT REPORT
+
+Report 4 – Software Design Specification
+
+NEXLOG - Smart Logistics Tracking and Dispatch System
+
+INSTRUCTOR: Trần Thu Thủy
+
+CLASS: SEP490_G120
+
+Team Members:
+
+Hoàng Minh Chính	            	HE171181
+
+Trần Quỳnh Chi			HE171032
+
+Nguyễn Hoàng Sơn		HE171238
+
+Nguyễn Tuấn Minh		           HE181912
+
+Vũ Đức Trung         	            	HE162769
+
+– Hanoi, Oct 2026 –
+
+Table of Contents
+
+ TOC \h \u \z \t "Heading 1,1,Heading 2,2,Heading 3,3,"Change Log	3
+
+I. High Level Design	5
+
+1. Software Architecture	5
+
+2. Package Diagram	6
+
+3. Database Design	9
+
+II. Detailed Code Design	32
+
+1. Order Intake and Confirmation (UC-03, 05, 08, 39, 40)	32
+
+2. Trip Planning, ETA and Assignment (UC-06, 07, 09, 10, 41)	38
+
+3. GPS, Driving Hours and ETA Recalculation (UC-11, 42; JOB-02)	42
+
+III. Design for Non-Functional Requirements	44
+
+1. Security Design	44
+
+2. Performance & Scalability Design	48
+
+IV. Other Design Specifications	49
+
+1. Algorithms	49
+
+2. State Transitions	54
+
+3. Other Feature Designs	56
+
+4. Offline Sync (Driver PWA)	65
+
+5. Background Jobs	65
+
+6. System Integrations	66
+
+7. API Errors	66
+
+Change Log
+
+ |  | 
+
+Date |  | 
+
+A*M, D |  | 
+
+In charge |  | 
+
+Change Description
+
+ |  |  |  | 
+
+29/09/2026 |  | 
+
+A  |  |  |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Added High-Level Design: architecture, package diagrams, and PostgreSQL database design. 
+
+ |  |  |  | 
+
+29/09/2026 |  | 
+
+A |  |  |  | 
+
+Nguyễn Tuấn Minh |  |  |  | 
+
+Added Detailed Code Design for Trip Planning & Assignment, Driver PWA Evidence Capture, and Order Intake & Customs Documents.
+
+ |  |  |  | 
+
+30/09/2026 |  | 
+
+A |  |  |  | 
+
+Nguyễn Tuấn Minh |  |  |  | 
+
+Added Design for Non-Functional Requirements and Other Design Specifications.
+
+ |  | 
+
+03/10/2026 |  | 
+
+M |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Moved the database to Supabase. Updated the architecture and packages for Locations, waybills, trip events, GPS tracks, the AI order draft (Google Gemini), trip suggestions and the 3D load plan.
+
+ |  | 
+
+03/10/2026 |  | 
+
+M |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Updated the database design to Report 3 of 03/10/2026: renamed warehouses to locations and driver_actions to trip_events, added gps_points and the waybill columns of trips, changed 17 tables. Fixed missing indexes and checks.
+
+ |  | 
+
+03/10/2026 |  | 
+
+M |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Updated the detailed design: Create Trip, Assign, Record Pickup, Record Delivery and Create Order. Added the Suggest Trip Grouping and Create Order Draft from Message sequence diagrams.
+
+ |  | 
+
+03/10/2026 |  | 
+
+M |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Updated security, data protection, caching and indexes, and Other Design Specifications: algorithms, state transitions, offline sync on iPhone, integrations and the API errors for MSG42 to MSG66.
+
+ |  | 
+
+04/10/2026 |  | 
+
+M |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Fixed design gaps found in review: trip completion after a failed delivery, return to warehouse, replacement trip pickup, payload total at pickup, waybill version, error and warning messages, job schedules and the module dependency rule. Moved the waybill into the trips table (32 tables). Added the customs documents to the driver app: own trips only, saved offline when the trip is accepted.
+
+ |  | 
+
+24/10/2026 |  | 
+
+M |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Rewrote the design to follow Report 3 of 22/10/2026 (UC-01 to UC-48, BR-01 to BR-60, MSG01 to MSG86, JOB-01 to JOB-05, API-01 to API-07). Removed the rate card, the trip price, the trip grouping suggestion and the AI order draft.
+
+ |  | 
+
+24/10/2026 |  | 
+
+M |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Database design: 36 tables (Prisma schema). Added trip_stop_orders (one pickup stop for several orders), waybills, order_cargos, trip_trucks, trip_drivers, driver_shifts, news_posts, status history tables, sessions and code_counters. Added the SQL rules that Prisma cannot write.
+
+ |  | 
+
+24/10/2026 |  | 
+
+M |  | 
+
+Nguyễn Tuấn Minh |  | 
+
+Detailed Code Design: 3 design sets (order intake, trip planning with ETA, GPS and driving hours) as the template asks, each with a class diagram and layered sequence diagrams (Web, Controller, Service, adapters). The other features moved to IV.3. Rewrote security, caching, algorithms, state transitions, background jobs, integrations and API errors. The API is JavaScript.
+
+ |  | 
+
+ |  | 
+
+ |  | 
+
+ |  | 
+
+ |  | 
+
+ |  | 
+
+ |  | 
+
+ |  | 
+
+*A - Added M - Modified D - Deleted
+
+I. High Level Design
+
+1. Software Architecture
+
+NEXLOG uses a three-tier architecture. One Next.js web app serves the public website and the staff portals, and also the Driver PWA. It calls one Express REST API. The API stores data in PostgreSQL, hosted on Supabase, and calls external systems through adapters. A separate worker process runs the five scheduled jobs (JOB-01 to JOB-05).
+
+Why this style. The system is for one company, so one deployable API (a modular monolith) is easier to build, test and run than many services. The worker is a separate process, so a slow job never blocks a user request. The Driver PWA keeps its own queue on the phone, because trucks lose the signal (BR-27).
+
+Technology. Node.js and Express 5 in JavaScript, PostgreSQL 16, Prisma as the data access layer, Next.js for the web app, Cloudinary for files, JWT for sign-in. Supabase is only the PostgreSQL host. Auth and storage of Supabase are not used.
+
+Figure 1. Software Architecture of NEXLOG
+
+Architecture component descriptions
+
+ |  |  |  | 
+
+No |  |  |  | 
+
+Component |  |  |  | 
+
+Description
+
+ |  | 
+
+Client Tier
+
+ |  |  |  | 
+
+01 |  |  |  | 
+
+Web app |  |  |  | 
+
+Next.js (App Router), React. Public website: home, News, Order Form, Order Tracking Page (/t/{token}). Staff portals of the Administrator, Manager and Dispatcher. Calls the API.
+
+ |  |  |  | 
+
+02 |  |  |  | 
+
+Driver PWA |  |  |  | 
+
+Same Next.js app (route group /driver), service worker, IndexedDB queue. My Trips, Trip Execution, Report Incident, Shift Registration. Works offline: actions wait in the queue (50 at most, MSG39) and are sent with the phone time (BR-27). Trip documents opened once stay available offline.
+
+ |  | 
+
+Application Tier
+
+ |  |  |  | 
+
+03 |  |  |  | 
+
+API |  |  |  | 
+
+Node.js, Express 5, JavaScript. REST API under /api/v1. Sign-in, role checks, business rules, transactions. Modular monolith (see the Package Diagram).
+
+ |  |  |  | 
+
+04 |  |  |  | 
+
+Job Worker |  |  |  | 
+
+Node.js, node-cron, same code base, own process. Runs JOB-01 to JOB-05. A PostgreSQL advisory lock makes one job run in one place only.
+
+ |  | 
+
+Data Tier
+
+ |  |  |  | 
+
+05 |  |  |  | 
+
+Database |  |  |  | 
+
+PostgreSQL 16 on Supabase (session pooler for the app, direct connection for migrations). All business data. Constraints that Prisma cannot write are in SQL migrations (IV.1 of this part).
+
+ |  | 
+
+External Systems
+
+ |  |  |  | 
+
+06 |  |  |  | 
+
+Cloudinary |  |  |  | 
+
+Cloudinary (API-02, API-03). Photos and documents. The browser or the PWA uploads directly with a signature from the API, so large files do not pass through the API.
+
+ |  |  |  | 
+
+07 |  |  |  | 
+
+Google Maps Platform |  |  |  | 
+
+Routes API (API-01), Geocoding API (API-05). Driving time and distance of each leg with traffic; latitude and longitude of an address on Location save.
+
+ |  |  |  | 
+
+08 |  |  |  | 
+
+Vehicle GPS System |  |  |  | 
+
+Supplier API (API-04, to be confirmed with ALS). Latest position and speed of each truck. Polled by JOB-02 every minute.
+
+ |  |  |  | 
+
+09 |  |  |  | 
+
+AI Document Assistant |  |  |  | 
+
+Google Gemini (API-06). Suggests the customer documents of an order. Only cargo type, cargo name and provinces are sent.
+
+ |  |  |  | 
+
+10 |  |  |  | 
+
+Email service |  |  |  | 
+
+SMTP or a mail API. Tracking link, document list, vendor tracking code, password reset link.
+
+ |  |  |  | 
+
+11 |  |  |  | 
+
+Vendor systems |  |  |  | 
+
+Call API-07 on NEXLOG. Send Picked Up, Delivered (with POD) or Not received for an order that a vendor carries.
+
+Table 1. Architecture component descriptions
+
+Main design decisions
+
+·      One origin for the browser. The web app calls the API with cookies (JWT in an httpOnly cookie). CORS allows only the web origin and credentials.
+
+·      Prisma for data access. One schema file describes the 36 tables. Migrations keep every developer on the same schema. A few rules that need SQL (no overlapping shifts, one open trip for each truck) are written in the migration files.
+
+·      Business rules live in services. A controller only reads the request and sends the answer. A service holds the rules (BR-xx) and the transaction. A repository holds the Prisma calls.
+
+·      ETA is our own code. Google gives driving time. The ETA of each stop is calculated in the trips module (BR-04), at planning and again from JOB-02.
+
+·      The tracking page is public but narrow. It uses a random token, shows milestones only, and never shows the seal & plate photo or the POD (BR-13, BR-21).
+
+2. Package Diagram
+
+One Git repository with two applications and one shared folder: BE (the API and the worker) and FE (the Next.js app). The API is split by feature into modules. A module has routes, a controller, a service, a repository and a validation schema.
+
+Figure 2. Package Diagram of the API
+
+Figure 3. Package Diagram of the Next.js app
+
+Package descriptions
+
+ |  |  |  | 
+
+No |  |  |  | 
+
+Package |  |  |  | 
+
+Description
+
+ |  | 
+
+API (BE/src/modules)
+
+ |  |  |  | 
+
+01 |  |  |  | 
+
+auth |  |  |  | 
+
+Login and logout, refresh with sessions, change password, reset link by email (30 minutes, once). Use cases: UC-37, 38, 46.
+
+ |  |  |  | 
+
+02 |  |  |  | 
+
+users |  |  |  | 
+
+Staff accounts, roles and permissions, activity log, system settings. Use cases: UC-17, 33, 34, 35, 36.
+
+ |  |  |  | 
+
+03 |  |  |  | 
+
+locations |  |  |  | 
+
+Saved places. Calls Geocoding on save (API-05). Use cases: UC-40.
+
+ |  |  |  | 
+
+04 |  |  |  | 
+
+customers |  |  |  | 
+
+Customers and transport contracts with cancellation tiers. Use cases: UC-24.
+
+ |  |  |  | 
+
+05 |  |  |  | 
+
+orders |  |  |  | 
+
+Order form (Guest and Dispatcher), Draft, Confirm, cancel, extra fees, order notes, reassign. Use cases: UC-03, 04, 08, 12, 13, 22.
+
+ |  |  |  | 
+
+06 |  |  |  | 
+
+documents |  |  |  | 
+
+Customer documents, signed upload to Cloudinary, Document Assistant (API-06). Use cases: UC-02, 05, 39.
+
+ |  |  |  | 
+
+07 |  |  |  | 
+
+tracking |  |  |  | 
+
+Public page by token, customer claim in 14 days. Use cases: UC-01, 47.
+
+ |  |  |  | 
+
+08 |  |  |  | 
+
+trips |  |  |  | 
+
+Group order into trip, route distance and ETA (API-01), assign truck and drivers, waybill, 3D load plan. Use cases: UC-06, 07, 09, 41.
+
+ |  |  |  | 
+
+09 |  |  |  | 
+
+fleet |  |  |  | 
+
+Trucks, driver profiles, driver shifts. Use cases: UC-18, 19, 20.
+
+ |  |  |  | 
+
+10 |  |  |  | 
+
+vendors |  |  |  | 
+
+Vendors, hand over to a vendor, status API (API-07). Use cases: UC-10, 23.
+
+ |  |  |  | 
+
+11 |  |  |  | 
+
+monitoring |  |  |  | 
+
+Trip Monitoring, GPS data (API-04), replay, driver performance, Dispatcher dashboard. Use cases: UC-11, 42, 43, 48.
+
+ |  |  |  | 
+
+12 |  |  |  | 
+
+driver |  |  |  | 
+
+Driver PWA API: accept trip, stop events, pickup, delivery, refusal, incident, offline sync. Use cases: UC-28, 29, 30, 31, 32.
+
+ |  |  |  | 
+
+13 |  |  |  | 
+
+incidents |  |  |  | 
+
+Incidents, replacement truck or driver, escalation to the Manager. Use cases: UC-14, 15, 16, 25.
+
+ |  |  |  | 
+
+14 |  |  |  | 
+
+claims |  |  |  | 
+
+Compensation claims review. Use cases: UC-26.
+
+ |  |  |  | 
+
+15 |  |  |  | 
+
+news |  |  |  | 
+
+News posts and the public News page. Use cases: UC-44, 45.
+
+ |  |  |  | 
+
+16 |  |  |  | 
+
+dashboard |  |  |  | 
+
+Performance Dashboard, Order Workload. Use cases: UC-21, 27.
+
+ |  |  |  | 
+
+17 |  |  |  | 
+
+notifications |  |  |  | 
+
+Alerts and messages to users (MSG).
+
+ |  |  |  | 
+
+18 |  |  |  | 
+
+workflows |  |  |  | 
+
+Flows that touch several modules in both directions, for example cancel an order before loading (release truck and trip), or change the truck in the middle of a trip. Use cases: UC-04, 15.
+
+ |  |  |  | 
+
+19 |  |  |  | 
+
+shared |  |  |  | 
+
+Errors, auth middleware, validation, activity log writer, clock, pagination.
+
+ |  | 
+
+Web app (FE)
+
+ |  |  |  | 
+
+20 |  |  |  | 
+
+app/(public) |  |  |  | 
+
+Home, News, Login, Forgot Password, Order Form (/f/{token}), Order Tracking Page (/t/{token}). Route folder names are lowercase; one folder for each page.
+
+ |  |  |  | 
+
+21 |  |  |  | 
+
+app/admin, app/manager, app/dispatcher |  |  |  | 
+
+Staff portals. One folder for each role; each page is a folder with a page file.
+
+ |  |  |  | 
+
+22 |  |  |  | 
+
+app/driver |  |  |  | 
+
+Driver PWA pages: My Trips, Trip Execution, Report Incident, Shift Registration.
+
+ |  |  |  | 
+
+23 |  |  |  | 
+
+src/components |  |  |  | 
+
+Shared UI parts. File names are PascalCase (TripAssignmentModal.jsx).
+
+ |  |  |  | 
+
+24 |  |  |  | 
+
+src/api |  |  |  | 
+
+apiClient and one file for each API module. The only place that calls fetch; maps error codes to MSG texts.
+
+ |  |  |  | 
+
+25 |  |  |  | 
+
+src/pwa |  |  |  | 
+
+Service worker, IndexedDB queue, sync manager, photo compressor.
+
+ |  |  |  | 
+
+26 |  |  |  | 
+
+src/contexts |  |  |  | 
+
+Auth state and role guard.
+
+Table 2. Package descriptions
+
+Naming conventions.
+
+·      API module folder: lowercase plural noun (orders, trips).
+
+·      Files by layer: orders.routes.js, orders.controller.js, orders.service.js, orders.repository.js, orders.schema.js.
+
+·      Classes: PascalCase with the layer name (OrderService, TripController, RoutesAdapter).
+
+·      Web: page folders lowercase, component files PascalCase, hooks start with use.
+
+Dependency rule. Calls go one way only:
+
+·      driver → trips, orders, documents, incidents
+
+·      trips → orders, fleet, locations, vendors
+
+·      incidents → trips, orders, claims
+
+·      tracking → orders, documents, claims
+
+·      dashboard, monitoring → read from all
+
+Nothing calls driver or tracking. A two-way flow goes to workflows. A controller never writes SQL. A module reads another module’s data only through its service.
+
+Other conventions. Tables and columns are snake_case. Prisma models are PascalCase and map to the table names with @@map. Errors use one JSON shape: code, message (an MSG number) and fields. Every write that changes an order or a trip status also writes the status history table and the activity log in the same transaction.
+
+3. Database Design
+
+Each entity of the Report 3 ERD becomes a table. Parts that Report 3 keeps inside an entity (cargo lines, notes, stops, events, evidence, GPS track, shifts) get their own table. Two technical tables are added: sessions and code_counters. Total: 36 tables.
+
+·      Primary keys are BIGSERIAL (SERIAL for small reference tables). Business codes (order_code, trip_code, waybill_number) are unique text columns.
+
+·      Money is BIGINT in VND. Weight is NUMERIC in kg, sizes are in cm, coordinates are NUMERIC(9,6). Times are TIMESTAMPTZ in UTC; the screens show Vietnam time.
+
+·      Order and Trip are many-to-many through trip_stop_orders. One pickup stop can serve several orders of the same customer (BR-05): the driver records the stop events once, but each order keeps its own weight, seal and POD (BR-29). A drop-off stop serves one order.
+
+·      Status values are PostgreSQL enums. Every status change of an order or a trip is also a row of order_status_history or trip_status_history (BR-51).
+
+·      The price is the agreed price on the order (BR-01). There is no rate card and no trip price. The route reference price is calculated when needed and is not stored.
+
+·      A waybill is its own table, because it has its own status (Valid or Replaced) and its own file. A trip has one Valid waybill at a time; a truck or driver change makes a new one (BR-35).
+
+·      Truck and driver changes on a trip are rows of trip_trucks and trip_drivers with a replacement reason and release time. The trip itself stays the same (BR-10, UC-15).
+
+·      Every foreign key has an index. Files are stored as Cloudinary public IDs or links, never as blobs. Only trucks are soft-deleted (deleted_at); other records are kept or purged by JOB-01 (BR-22).
+
+Figure 4. Database diagram
+
+Files description
+
+Files are not stored in PostgreSQL. They are private files in Cloudinary; the database keeps only the link or public ID. Retention is run by JOB-01 (BR-22), counted from Delivered or Cancelled.
+
+ |  |  |  | 
+
+File |  |  |  | 
+
+Cloudinary folder |  |  |  | 
+
+Type and size |  |  |  | 
+
+Uploaded by |  |  |  | 
+
+Kept
+
+ |  |  |  | 
+
+Customer documents (customs declaration, delivery authorization letter, others) |  |  |  | 
+
+orders/{orderId}/documents |  |  |  | 
+
+PDF, JPG, PNG, Excel, Word; 10 MB or less (BR-31) |  |  |  | 
+
+Guest (tracking page), Dispatcher |  |  |  | 
+
+60 days
+
+ |  |  |  | 
+
+Order contract and signed order contract |  |  |  | 
+
+orders/{orderId}/contract |  |  |  | 
+
+PDF, JPG, PNG; 10 MB or less |  |  |  | 
+
+Dispatcher |  |  |  | 
+
+With the order
+
+ |  |  |  | 
+
+Seal & plate photo, loaded cargo photo (pickup) |  |  |  | 
+
+trips/{tripId}/{clientActionId} |  |  |  | 
+
+JPG; 2 MB or less after compression |  |  |  | 
+
+Driver PWA |  |  |  | 
+
+2 years
+
+ |  |  |  | 
+
+POD photo, cut seal and unloaded cargo photos, refusal photo (delivery) |  |  |  | 
+
+trips/{tripId}/{clientActionId} |  |  |  | 
+
+JPG; 2 MB or less |  |  |  | 
+
+Driver PWA |  |  |  | 
+
+2 years
+
+ |  |  |  | 
+
+Incident photos |  |  |  | 
+
+trips/{tripId}/incidents/{clientActionId}-{n} |  |  |  | 
+
+JPG; at most 5 |  |  |  | 
+
+Driver PWA |  |  |  | 
+
+2 years
+
+ |  |  |  | 
+
+Claim photos |  |  |  | 
+
+claims/{claimId} |  |  |  | 
+
+JPG, PNG; at most 5 |  |  |  | 
+
+Guest, Dispatcher |  |  |  | 
+
+2 years; kept while the claim is Pending
+
+ |  |  |  | 
+
+Waybill (data, PDF drawn when opened) |  |  |  | 
+
+Not a file |  |  |  | 
+
+PDF on request |  |  |  | 
+
+System |  |  |  | 
+
+3 years
+
+ |  |  |  | 
+
+Contract attachment, vendor POD, news images |  |  |  | 
+
+contracts/{id}, orders/{orderId}/vendor, news/{id} |  |  |  | 
+
+PDF, JPG, PNG |  |  |  | 
+
+Manager, Dispatcher |  |  |  | 
+
+Until deleted
+
+Table 3. Files description
+
+Table list
+
+ |  |  |  | 
+
+Group |  |  |  | 
+
+Table |  |  |  | 
+
+Purpose
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+users |  |  |  | 
+
+Staff account (Administrator, Manager, Dispatcher, Driver) with its role and its order form token.
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+roles |  |  |  | 
+
+A role name. Role names are unique.
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+permissions |  |  |  | 
+
+One action that a role may do, from the Permission Matrix.
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+role_permissions |  |  |  | 
+
+Links a role to the actions it may do.
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+sessions |  |  |  | 
+
+One sign-in session (refresh token hash). JOB-04 deletes old rows. Technical table.
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+notifications |  |  |  | 
+
+A message for one user about an order, trip or incident.
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+activity_logs |  |  |  | 
+
+Who did what, when, on which record. Append-only.
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+system_settings |  |  |  | 
+
+One setting of the System Settings screen.
+
+ |  |  |  | 
+
+Users and system |  |  |  | 
+
+code_counters |  |  |  | 
+
+Counter for OrderID and trip code per day. Technical table.
+
+ |  |  |  | 
+
+Customers, places and contracts |  |  |  | 
+
+customers |  |  |  | 
+
+A customer company.
+
+ |  |  |  | 
+
+Customers, places and contracts |  |  |  | 
+
+locations |  |  |  | 
+
+A saved place: company location, ALS warehouse, airport warehouse, customs checkpoint or customer site.
+
+ |  |  |  | 
+
+Customers, places and contracts |  |  |  | 
+
+vendors |  |  |  | 
+
+A truck rental company. The Manager approves it. It may use the status API (API-07).
+
+ |  |  |  | 
+
+Customers, places and contracts |  |  |  | 
+
+transport_contracts |  |  |  | 
+
+A contract with one customer or one vendor.
+
+ |  |  |  | 
+
+Customers, places and contracts |  |  |  | 
+
+contract_cancellation_tiers |  |  |  | 
+
+One cancellation fee tier of a contract.
+
+ |  |  |  | 
+
+Orders |  |  |  | 
+
+orders |  |  |  | 
+
+One transport order, from pickup to delivery.
+
+ |  |  |  | 
+
+Orders |  |  |  | 
+
+order_cargos |  |  |  | 
+
+One cargo line of an order.
+
+ |  |  |  | 
+
+Orders |  |  |  | 
+
+order_notes |  |  |  | 
+
+A message between the Dispatcher and the driver on an order.
+
+ |  |  |  | 
+
+Orders |  |  |  | 
+
+order_status_history |  |  |  | 
+
+Every status change of an order (BR-51).
+
+ |  |  |  | 
+
+Orders |  |  |  | 
+
+customer_documents |  |  |  | 
+
+A customer document type required for an order, and its file.
+
+ |  |  |  | 
+
+Orders |  |  |  | 
+
+extra_fees |  |  |  | 
+
+A surcharge, a waiting fee or a collection-on-behalf fee on an order.
+
+ |  |  |  | 
+
+Fleet and drivers |  |  |  | 
+
+trucks |  |  |  | 
+
+A truck of the ALS fleet.
+
+ |  |  |  | 
+
+Fleet and drivers |  |  |  | 
+
+driver_profiles |  |  |  | 
+
+Licence data of a driver, linked to a Driver account.
+
+ |  |  |  | 
+
+Fleet and drivers |  |  |  | 
+
+driver_shifts |  |  |  | 
+
+One working shift of a driver on one day.
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+trips |  |  |  | 
+
+One run that carries one or more orders.
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+trip_stops |  |  |  | 
+
+One stop of a trip.
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+trip_stop_orders |  |  |  | 
+
+Links a stop to the orders handled there, with the loaded and delivered quantity and weight of each order.
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+trip_trucks |  |  |  | 
+
+The truck of a trip, with each change of truck (UC-15).
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+trip_drivers |  |  |  | 
+
+The drivers of a trip, with each change of driver.
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+trip_events |  |  |  | 
+
+A driver event at a stop (arrived, loading started, loading done, left).
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+delivery_evidences |  |  |  | 
+
+Photos of pickup and delivery: cargo, seal and plate, POD, cut seal, refusal.
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+trip_status_history |  |  |  | 
+
+Every status change of a trip (BR-51).
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+trip_track_points |  |  |  | 
+
+One GPS position of a truck on a trip.
+
+ |  |  |  | 
+
+Trips |  |  |  | 
+
+waybills |  |  |  | 
+
+The transport document of a trip. A trip has one Valid waybill.
+
+ |  |  |  | 
+
+Incidents, claims and news |  |  |  | 
+
+incidents |  |  |  | 
+
+An operational problem reported during a trip.
+
+ |  |  |  | 
+
+Incidents, claims and news |  |  |  | 
+
+compensation_claims |  |  |  | 
+
+A claim from an incident or from the customer.
+
+ |  |  |  | 
+
+Incidents, claims and news |  |  |  | 
+
+news_posts |  |  |  | 
+
+A news article on the public News page.
+
+Table 4. Tables of NEXLOG
+
+users
+
+Staff account (Administrator, Manager, Dispatcher, Driver) with its role and its order form token.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+username |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+email |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+full_name |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+phone |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+password_hash |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+role_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK roles |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+UserStatus |  |  |  | 
+
+NOT NULL, DEFAULT ACTIVE |  |  |  | 
+
+ |  |  |  | 
+
+order_form_token |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE |  |  |  | 
+
+Dispatcher only: the order form link (BR-44)
+
+ |  |  |  | 
+
+zalo_link |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+password_reset_token |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+password_reset_expires |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+last_login_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+roles
+
+A role name. Role names are unique.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+name |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+permissions
+
+One action that a role may do, from the Permission Matrix.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+key |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+role_permissions
+
+Links a role to the actions it may do.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+role_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK roles |  |  |  | 
+
+ |  |  |  | 
+
+permission_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK permissions |  |  |  | 
+
+Indexes and keys: id([roleId, permissionId]).
+
+sessions
+
+One sign-in session (refresh token hash). JOB-04 deletes old rows. Technical table.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+user_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK users |  |  |  | 
+
+ |  |  |  | 
+
+refresh_hash |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+SHA-256 of the refresh token
+
+ |  |  |  | 
+
+expires_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+revoked_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+user_agent |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+Indexes and keys: index([userId]).
+
+notifications
+
+A message for one user about an order, trip or incident.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+user_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK users |  |  |  | 
+
+ |  |  |  | 
+
+target_type |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+target_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+message |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+created_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+read_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+Indexes and keys: index([userId, readAt]).
+
+activity_logs
+
+Who did what, when, on which record. Append-only.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+actor_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+actor_type |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+action |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+target_type |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+target_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+changes |  |  |  | 
+
+JSONB |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+ip_address |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+Indexes and keys: index([targetType, targetId]); index([createdAt]).
+
+system_settings
+
+One setting of the System Settings screen.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+key |  |  |  | 
+
+TEXT |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+value |  |  |  | 
+
+JSONB |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+updated_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+updated_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+code_counters
+
+Counter for OrderID and trip code per day. Technical table.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+key |  |  |  | 
+
+TEXT |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+value |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, DEFAULT 0 |  |  |  | 
+
+customers
+
+A customer company.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+tax_code |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+company_name |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+registered_address |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+contact_person |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+email |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+phone |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+locations
+
+A saved place: company location, ALS warehouse, airport warehouse, customs checkpoint or customer site.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+name |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+type |  |  |  | 
+
+LocationType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+customer_id is required for CUSTOMER_SITE (CHECK)
+
+ |  |  |  | 
+
+customer_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+FK customers |  |  |  | 
+
+ |  |  |  | 
+
+address |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+province |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+latitude |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+longitude |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+contact_name |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+contact_phone |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+receiving_from |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+receiving_to |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+geofence_radius |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+Meters. Empty = default radius setting (BR-36)
+
+ |  |  |  | 
+
+created_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Indexes and keys: unique([customerId, address]).
+
+vendors
+
+A truck rental company. The Manager approves it. It may use the status API (API-07).
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+company_name |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+contact_person |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+phone |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+truck_types |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+uses_status_api |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+ |  |  |  | 
+
+api_key_hash |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+Hash of the key given to the vendor (API-07)
+
+ |  |  |  | 
+
+approval_status |  |  |  | 
+
+VendorApproval |  |  |  | 
+
+NOT NULL, DEFAULT PENDING |  |  |  | 
+
+Manager approves (UC-23)
+
+ |  |  |  | 
+
+approved_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+approved_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+approval_notes |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+transport_contracts
+
+A contract with one customer or one vendor.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+contract_number |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+type |  |  |  | 
+
+ContractType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+customer_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+FK customers |  |  |  | 
+
+ |  |  |  | 
+
+vendor_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+FK vendors |  |  |  | 
+
+ |  |  |  | 
+
+terms |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+pricing_conditions |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+free_waiting_time |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+waiting_fee_rate |  |  |  | 
+
+BIGINT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+liability_cap |  |  |  | 
+
+BIGINT |  |  |  | 
+
+ |  |  |  | 
+
+VND. Empty = 500,000,000 VND (BR-37)
+
+ |  |  |  | 
+
+compensation_terms |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+valid_from |  |  |  | 
+
+DATE |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+valid_to |  |  |  | 
+
+DATE |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+attachment_link |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+ContractStatus |  |  |  | 
+
+NOT NULL, DEFAULT ACTIVE |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+contract_cancellation_tiers
+
+One cancellation fee tier of a contract.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+contract_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK transport_contracts |  |  |  | 
+
+ |  |  |  | 
+
+hours_from |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+hours_to |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+fee_percent |  |  |  | 
+
+NUMERIC(5,2) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+orders
+
+One transport order, from pickup to delivery.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+order_code |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+OrderID: prefix (setting) + yyMMdd + number, e.g. ALS261024-0012 (code_counters)
+
+ |  |  |  | 
+
+customer_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK customers |  |  |  | 
+
+ |  |  |  | 
+
+responsible_dispatcher_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK users |  |  |  | 
+
+ |  |  |  | 
+
+order_type |  |  |  | 
+
+OrderType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+source |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+WEB or HOTLINE
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+OrderStatus |  |  |  | 
+
+NOT NULL, DEFAULT DRAFT |  |  |  | 
+
+See State Transitions (IV.2)
+
+ |  |  |  | 
+
+pickup_location_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK locations |  |  |  | 
+
+ |  |  |  | 
+
+delivery_location_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK locations |  |  |  | 
+
+ |  |  |  | 
+
+receiver_name |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+receiver_phone |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+requested_pickup_date |  |  |  | 
+
+DATE |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+truck_type_requested |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+loading_request |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+ |  |  |  | 
+
+customs_service_required |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+ |  |  |  | 
+
+operation_note |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+agreed_price |  |  |  | 
+
+BIGINT |  |  |  | 
+
+ |  |  |  | 
+
+VND, agreed with the customer (BR-01); can change only before pickup (BR-32)
+
+ |  |  |  | 
+
+documents_verified |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+Set by Confirm Documents (UC-05); needed to Confirm (BR-50)
+
+ |  |  |  | 
+
+contract_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+FK transport_contracts |  |  |  | 
+
+Active transport contract of the customer, set on Confirm (BR-47)
+
+ |  |  |  | 
+
+order_contract_file |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+signed_order_contract_file |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+Required to Confirm (BR-50)
+
+ |  |  |  | 
+
+tracking_email |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+tracking_token |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE |  |  |  | 
+
+32 random bytes, base64url. Revoke = a new token (BR-21)
+
+ |  |  |  | 
+
+tracking_token_expiry |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+End of the POD photo retention (BR-21)
+
+ |  |  |  | 
+
+document_deadline |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+vendor_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+FK vendors |  |  |  | 
+
+ |  |  |  | 
+
+vendor_tracking_code |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+Tracking code given by the vendor (BR-15)
+
+ |  |  |  | 
+
+vendor_pod_file |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+vendor_refusal_file |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+current_warehouse_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+Where the cargo was unloaded (BR-58)
+
+ |  |  |  | 
+
+cancellation_reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+cancellation_fee |  |  |  | 
+
+BIGINT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+is_closed |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+true when the order is closed and locked (BR-19). Flag, not a status
+
+ |  |  |  | 
+
+flag_waiting_too_long |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+Set by JOB-03 (BR-25)
+
+ |  |  |  | 
+
+flag_documents_overdue |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+Set by JOB-03 (BR-25)
+
+ |  |  |  | 
+
+created_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+version |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, DEFAULT 0 |  |  |  | 
+
+Optimistic locking
+
+Indexes and keys: index([status]); index([responsibleDispatcherId, status]).
+
+order_cargos
+
+One cargo line of an order.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+order_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK orders |  |  |  | 
+
+ |  |  |  | 
+
+cargo_name |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+cargo_type |  |  |  | 
+
+CargoType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+quantity |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+unit |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+actual_weight_kg |  |  |  | 
+
+NUMERIC(8,2) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Sum per order is 4,000 kg or less (MSG81), checked by the service
+
+ |  |  |  | 
+
+length_cm |  |  |  | 
+
+NUMERIC(6,1) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+width_cm |  |  |  | 
+
+NUMERIC(6,1) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+height_cm |  |  |  | 
+
+NUMERIC(6,1) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+stackable |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+BR-56
+
+ |  |  |  | 
+
+chargeable_weight_kg |  |  |  | 
+
+NUMERIC(8,2) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+BR-02, set on save
+
+Indexes and keys: index([orderId]).
+
+order_notes
+
+A message between the Dispatcher and the driver on an order.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+order_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK orders |  |  |  | 
+
+ |  |  |  | 
+
+content |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+created_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+Indexes and keys: index([orderId]).
+
+order_status_history
+
+Every status change of an order (BR-51).
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+order_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK orders |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+OrderStatus |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+changed_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+changed_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+Indexes and keys: index([orderId]).
+
+customer_documents
+
+A customer document type required for an order, and its file.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+order_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK orders |  |  |  | 
+
+ |  |  |  | 
+
+document_type |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+is_required |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT true |  |  |  | 
+
+ |  |  |  | 
+
+file_link |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+file_type |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+file_size |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+required_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+uploaded_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+uploaded_by_guest |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+ |  |  |  | 
+
+uploaded_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+checked_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+checked_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+reject_reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+DocumentStatus |  |  |  | 
+
+NOT NULL, DEFAULT MISSING |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Indexes and keys: index([orderId]).
+
+extra_fees
+
+A surcharge, a waiting fee or a collection-on-behalf fee on an order.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+order_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK orders |  |  |  | 
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+FK trips |  |  |  | 
+
+ |  |  |  | 
+
+type |  |  |  | 
+
+ExtraFeeType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+amount |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+photo_url |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+source |  |  |  | 
+
+ExtraFeeSource |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+recorded_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+ExtraFeeStatus |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+reject_reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+confirmed_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+confirmed_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+Indexes and keys: index([orderId]).
+
+trucks
+
+A truck of the ALS fleet.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+plate_number |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+model |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+allowed_payload |  |  |  | 
+
+NUMERIC(8,2) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+box_length |  |  |  | 
+
+NUMERIC(5,2) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+box_width |  |  |  | 
+
+NUMERIC(5,2) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+box_height |  |  |  | 
+
+NUMERIC(5,2) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+required_license_class |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+inspection_expiry |  |  |  | 
+
+DATE |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+insurance_expiry |  |  |  | 
+
+DATE |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+gps_device_id |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+TruckStatus |  |  |  | 
+
+NOT NULL, DEFAULT AVAILABLE |  |  |  | 
+
+ |  |  |  | 
+
+last_lat |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+last_lng |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+last_located_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+deleted_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+driver_profiles
+
+Licence data of a driver, linked to a Driver account.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+user_account_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+UNIQUE, NOT NULL, FK users |  |  |  | 
+
+ |  |  |  | 
+
+license_number |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+license_class |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+license_expiry |  |  |  | 
+
+DATE |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+DriverStatus |  |  |  | 
+
+NOT NULL, DEFAULT ACTIVE |  |  |  | 
+
+ |  |  |  | 
+
+last_trip_ended_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+driver_shifts
+
+One working shift of a driver on one day.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+driver_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK driver_profiles |  |  |  | 
+
+ |  |  |  | 
+
+date |  |  |  | 
+
+DATE |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+start_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+end_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+note |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+ShiftStatus |  |  |  | 
+
+NOT NULL, DEFAULT REQUESTED |  |  |  | 
+
+BR-60
+
+ |  |  |  | 
+
+rejection_reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+registered_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+reviewed_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+reviewed_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Indexes and keys: index([driverId, date]).
+
+trips
+
+One run that carries one or more orders.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_code |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+TripStatus |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+See State Transitions (IV.2). Locked from creation (BR-41)
+
+ |  |  |  | 
+
+number_of_drivers |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, DEFAULT 1 |  |  |  | 
+
+1 or 2
+
+ |  |  |  | 
+
+planned_start |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+planned_distance |  |  |  | 
+
+NUMERIC(8,2) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+planned_duration |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+Minutes, from BR-04
+
+ |  |  |  | 
+
+actual_distance |  |  |  | 
+
+NUMERIC(8,2) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+actual_duration |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+version |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, DEFAULT 0 |  |  |  | 
+
+Indexes and keys: index([status]).
+
+trip_stops
+
+One stop of a trip.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trips |  |  |  | 
+
+ |  |  |  | 
+
+sequence |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+type |  |  |  | 
+
+StopType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+location_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+FK locations |  |  |  | 
+
+Empty for the transit stop at the incident place; lat and lng are used then
+
+ |  |  |  | 
+
+lat |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+lng |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+planned_arrival |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+latest_eta |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+Last ETA (BR-04). The planned ETA is planned_arrival
+
+ |  |  |  | 
+
+actual_arrival |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+planned_stop_minutes |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+Stop time by BR-04, editable by the Dispatcher
+
+ |  |  |  | 
+
+distance_from_previous |  |  |  | 
+
+NUMERIC(8,2) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+StopStatus |  |  |  | 
+
+NOT NULL, DEFAULT PLANNED |  |  |  | 
+
+Indexes and keys: unique([tripId, sequence]).
+
+trip_stop_orders
+
+Links a stop to the orders handled there, with the loaded and delivered quantity and weight of each order.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_stop_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trip_stops |  |  |  | 
+
+ |  |  |  | 
+
+order_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK orders |  |  |  | 
+
+ |  |  |  | 
+
+loaded_quantity |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+loaded_weight |  |  |  | 
+
+NUMERIC(8,2) |  |  |  | 
+
+ |  |  |  | 
+
+Sum of an order lines at pickup; checked against the truck payload (BR-33)
+
+ |  |  |  | 
+
+delivered_quantity |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+delivered_weight |  |  |  | 
+
+NUMERIC(8,2) |  |  |  | 
+
+ |  |  |  | 
+
+Indexes and keys: unique([tripStopId, orderId]); index([orderId]).
+
+trip_trucks
+
+The truck of a trip, with each change of truck (UC-15).
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trips |  |  |  | 
+
+ |  |  |  | 
+
+truck_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK trucks |  |  |  | 
+
+ |  |  |  | 
+
+assignment_type |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+incident_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+assigned_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+released_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+replacement_reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+Indexes and keys: index([truckId, releasedAt]).
+
+trip_drivers
+
+The drivers of a trip, with each change of driver.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trips |  |  |  | 
+
+ |  |  |  | 
+
+driver_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK driver_profiles |  |  |  | 
+
+ |  |  |  | 
+
+driver_role |  |  |  | 
+
+DriverRole |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+incident_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+assigned_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+released_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+replacement_reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+Indexes and keys: index([driverId, releasedAt]).
+
+trip_events
+
+A driver event at a stop (arrived, loading started, loading done, left).
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+client_action_id |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+UUID made on the phone. Makes a re-sent event harmless (BR-27)
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trips |  |  |  | 
+
+ |  |  |  | 
+
+trip_stop_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trip_stops |  |  |  | 
+
+ |  |  |  | 
+
+driver_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+event_type |  |  |  | 
+
+EventType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+phone_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+received_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+time_flagged |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+Phone time was replaced by the server time (BR-27)
+
+ |  |  |  | 
+
+lat |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+lng |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+accuracy_m |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+Phone accuracy in metres (A10)
+
+ |  |  |  | 
+
+distance_m |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+Distance to the stop in metres (A10)
+
+ |  |  |  | 
+
+outside_radius_flag |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+BR-36
+
+ |  |  |  | 
+
+payload |  |  |  | 
+
+JSONB |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+Indexes and keys: index([tripId, receivedAt]).
+
+delivery_evidences
+
+Photos of pickup and delivery: cargo, seal and plate, POD, cut seal, refusal.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_stop_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trip_stops |  |  |  | 
+
+ |  |  |  | 
+
+order_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK orders |  |  |  | 
+
+ |  |  |  | 
+
+type |  |  |  | 
+
+EvidenceType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+file_link |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+file_type |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+file_size |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+seal_number |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+Pickup seal & plate photo (BR-11)
+
+ |  |  |  | 
+
+receiver_name |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+captured_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+received_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+lat |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+lng |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+purged |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+Indexes and keys: index([orderId]).
+
+trip_status_history
+
+Every status change of a trip (BR-51).
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trips |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+TripStatus |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+changed_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+changed_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+Indexes and keys: index([tripId]).
+
+trip_track_points
+
+One GPS position of a truck on a trip.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trips |  |  |  | 
+
+ |  |  |  | 
+
+lat |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+lng |  |  |  | 
+
+NUMERIC(9,6) |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+speed |  |  |  | 
+
+NUMERIC(5,1) |  |  |  | 
+
+ |  |  |  | 
+
+km/h (BR-34)
+
+ |  |  |  | 
+
+recorded_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Indexes and keys: index([tripId, recordedAt]).
+
+waybills
+
+The transport document of a trip. A trip has one Valid waybill.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trips |  |  |  | 
+
+ |  |  |  | 
+
+waybill_number |  |  |  | 
+
+TEXT |  |  |  | 
+
+UNIQUE, NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+issue_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+issued_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+WaybillStatus |  |  |  | 
+
+NOT NULL, DEFAULT VALID |  |  |  | 
+
+ |  |  |  | 
+
+trip_data_snapshot |  |  |  | 
+
+JSONB |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Copy of the trip data at issue time (BR-35)
+
+ |  |  |  | 
+
+file_link |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+Indexes and keys: index([tripId]).
+
+incidents
+
+An operational problem reported during a trip.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+trip_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK trips |  |  |  | 
+
+ |  |  |  | 
+
+trip_stop_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+FK trip_stops |  |  |  | 
+
+ |  |  |  | 
+
+type |  |  |  | 
+
+IncidentType |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+description |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+photos |  |  |  | 
+
+TEXT[] |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+fault |  |  |  | 
+
+Fault |  |  |  | 
+
+ |  |  |  | 
+
+Set by the Manager on a major incident (UC-25)
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+IncidentStatus |  |  |  | 
+
+NOT NULL, DEFAULT REPORTED |  |  |  | 
+
+ |  |  |  | 
+
+reported_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+reported_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+escalated_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+escalated_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+escalation_reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+resolution_note |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+resolved_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+resolved_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Indexes and keys: index([tripId]).
+
+compensation_claims
+
+A claim from an incident or from the customer.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+BIGSERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+order_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL, FK orders |  |  |  | 
+
+ |  |  |  | 
+
+incident_id |  |  |  | 
+
+BIGINT |  |  |  | 
+
+FK incidents |  |  |  | 
+
+ |  |  |  | 
+
+source |  |  |  | 
+
+ClaimSource |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+INCIDENT or CUSTOMER
+
+ |  |  |  | 
+
+claim_type |  |  |  | 
+
+ClaimType |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+amount |  |  |  | 
+
+BIGINT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+reason |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+evidence |  |  |  | 
+
+TEXT[] |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+ClaimStatus |  |  |  | 
+
+NOT NULL, DEFAULT PENDING |  |  |  | 
+
+ |  |  |  | 
+
+created_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+created_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+reviewed_by |  |  |  | 
+
+INTEGER |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+reviewed_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+review_comment |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Indexes and keys: index([status]).
+
+news_posts
+
+A news article on the public News page.
+
+ |  |  |  | 
+
+Column |  |  |  | 
+
+Type |  |  |  | 
+
+Constraints |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+id |  |  |  | 
+
+SERIAL |  |  |  | 
+
+PK |  |  |  | 
+
+ |  |  |  | 
+
+author_id |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, FK users |  |  |  | 
+
+ |  |  |  | 
+
+title |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+category |  |  |  | 
+
+NewsCategory |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+summary |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+content |  |  |  | 
+
+TEXT |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+ |  |  |  | 
+
+cover_image_link |  |  |  | 
+
+TEXT |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+is_featured |  |  |  | 
+
+BOOLEAN |  |  |  | 
+
+NOT NULL, DEFAULT false |  |  |  | 
+
+ |  |  |  | 
+
+view_count |  |  |  | 
+
+INTEGER |  |  |  | 
+
+NOT NULL, DEFAULT 0 |  |  |  | 
+
+ |  |  |  | 
+
+published_time |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+ |  |  |  | 
+
+ |  |  |  | 
+
+status |  |  |  | 
+
+NewsStatus |  |  |  | 
+
+NOT NULL, DEFAULT DRAFT |  |  |  | 
+
+ |  |  |  | 
+
+created_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL, DEFAULT now() |  |  |  | 
+
+ |  |  |  | 
+
+updated_at |  |  |  | 
+
+TIMESTAMPTZ |  |  |  | 
+
+NOT NULL |  |  |  | 
+
+Indexes and keys: index([status, publishedAt]).
+
+Enum types
+
+ |  |  |  | 
+
+Enum |  |  |  | 
+
+Values
+
+ |  |  |  | 
+
+UserStatus |  |  |  | 
+
+ACTIVE, LOCKED
+
+ |  |  |  | 
+
+LocationType |  |  |  | 
+
+COMPANY, ALS_WAREHOUSE, AIRPORT_WAREHOUSE, CUSTOMS_CHECKPOINT, CUSTOMER_SITE
+
+ |  |  |  | 
+
+OrderType |  |  |  | 
+
+IMPORT, EXPORT
+
+ |  |  |  | 
+
+OrderStatus |  |  |  | 
+
+DRAFT, CONFIRMED, ASSIGNED, ACCEPTED, PICKED_UP, IN_TRANSIT, DELIVERED, DELIVERED_EXCEPTION, CANCELLED, HANDED_OVER_VENDOR
+
+ |  |  |  | 
+
+CargoType |  |  |  | 
+
+PALLET, BULK, GENERAL, FRAGILE_ELECTRONICS, HIGH_VALUE, OTHER
+
+ |  |  |  | 
+
+DocumentStatus |  |  |  | 
+
+MISSING, UPLOADED, CONFIRMED, REJECTED, PURGED
+
+ |  |  |  | 
+
+ExtraFeeType |  |  |  | 
+
+SURCHARGE, WAITING, COLLECTION_ON_BEHALF
+
+ |  |  |  | 
+
+ExtraFeeSource |  |  |  | 
+
+DISPATCHER, SYSTEM, DRIVER
+
+ |  |  |  | 
+
+ExtraFeeStatus |  |  |  | 
+
+PROPOSED, CONFIRMED, REJECTED
+
+ |  |  |  | 
+
+TripStatus |  |  |  | 
+
+DISPATCHED, ACCEPTED, IN_PROGRESS, COMPLETED, CANCELLED
+
+ |  |  |  | 
+
+StopType |  |  |  | 
+
+START, PICKUP, TRANSIT, DROP_OFF
+
+ |  |  |  | 
+
+StopStatus |  |  |  | 
+
+PLANNED, ARRIVED, DONE, SKIPPED
+
+ |  |  |  | 
+
+EventType |  |  |  | 
+
+ARRIVED, LOADING_STARTED, LOADING_DONE, LEFT
+
+ |  |  |  | 
+
+EvidenceType |  |  |  | 
+
+CARGO, LOADED_CARGO, SEAL_PLATE, POD, CUT_SEAL, UNLOADED_CARGO, REFUSAL
+
+ |  |  |  | 
+
+DriverRole |  |  |  | 
+
+PRIMARY, SECONDARY
+
+ |  |  |  | 
+
+TruckStatus |  |  |  | 
+
+AVAILABLE, ON_TRIP, MAINTENANCE, INACTIVE
+
+ |  |  |  | 
+
+DriverStatus |  |  |  | 
+
+ACTIVE, INACTIVE
+
+ |  |  |  | 
+
+ShiftStatus |  |  |  | 
+
+REQUESTED, APPROVED, REJECTED
+
+ |  |  |  | 
+
+IncidentType |  |  |  | 
+
+DAMAGED_LOST_CARGO, TRAFFIC_ACCIDENT, CARGO_HELD, ENGINE_BREAKDOWN, ROAD_BAN, OTHER
+
+ |  |  |  | 
+
+IncidentStatus |  |  |  | 
+
+REPORTED, ESCALATED, RESOLVED
+
+ |  |  |  | 
+
+Fault |  |  |  | 
+
+COMPANY, CUSTOMER, THIRD_PARTY
+
+ |  |  |  | 
+
+ClaimSource |  |  |  | 
+
+INCIDENT, CUSTOMER
+
+ |  |  |  | 
+
+ClaimType |  |  |  | 
+
+DAMAGE, SHORTAGE, LOSS
+
+ |  |  |  | 
+
+ClaimStatus |  |  |  | 
+
+PENDING, APPROVED, REJECTED
+
+ |  |  |  | 
+
+VendorApproval |  |  |  | 
+
+PENDING, APPROVED
+
+ |  |  |  | 
+
+ContractType |  |  |  | 
+
+CUSTOMER, VENDOR
+
+ |  |  |  | 
+
+ContractStatus |  |  |  | 
+
+ACTIVE, EXPIRED, INACTIVE
+
+ |  |  |  | 
+
+WaybillStatus |  |  |  | 
+
+VALID, REPLACED
+
+ |  |  |  | 
+
+NewsStatus |  |  |  | 
+
+DRAFT, PUBLISHED, UNPUBLISHED
+
+ |  |  |  | 
+
+NewsCategory |  |  |  | 
+
+MARKET_OPERATIONS, TECHNOLOGY_AI, AIR_CARGO_TERMINALS, POLICY_CUSTOMS, COMPANY_NEWS
+
+Table 5. Enum types
+
+Rules written in SQL migrations
+
+Prisma cannot describe the rules below. They are created in the migration files with raw SQL (the btree_gist extension is needed for the exclusion rules). A test in the first sprint checks that prisma migrate shows no false drift.
+
+-- no overlapping Requested/Approved shifts of one driver (BR-60)
+
+ALTER TABLE driver_shifts ADD CONSTRAINT driver_shifts_no_overlap
+
+  EXCLUDE USING gist (driver_id WITH =, tstzrange(start_time, end_time) WITH &&)
+
+  WHERE (status IN ('REQUESTED','APPROVED'));
+
+-- one unfinished trip for each truck and driver (BR-08, data rule)
+
+CREATE UNIQUE INDEX trip_trucks_one_open ON trip_trucks (truck_id) WHERE released_at IS NULL;
+
+CREATE UNIQUE INDEX trip_drivers_one_open ON trip_drivers (driver_id) WHERE released_at IS NULL;
+
+-- one Valid waybill for each trip (BR-35)
+
+CREATE UNIQUE INDEX waybills_one_valid ON waybills (trip_id) WHERE status = 'VALID';
+
+-- one POD for each order
+
+CREATE UNIQUE INDEX evidences_one_pod ON delivery_evidences (order_id) WHERE type = 'POD' AND purged = false;
+
+-- one Active contract for each customer; a contract belongs to one party
+
+CREATE UNIQUE INDEX contracts_one_active ON transport_contracts (customer_id) WHERE status = 'ACTIVE' AND customer_id IS NOT NULL;
+
+ALTER TABLE transport_contracts ADD CONSTRAINT contract_one_party CHECK ((customer_id IS NULL) <> (vendor_id IS NULL));
+
+-- a customer site has a customer
+
+ALTER TABLE locations ADD CONSTRAINT site_has_customer CHECK (type <> 'CUSTOMER_SITE' OR customer_id IS NOT NULL);
+
+-- cancellation tiers of one contract do not overlap
+
+ALTER TABLE contract_cancellation_tiers ADD CONSTRAINT tiers_no_overlap
+
+  EXCLUDE USING gist (contract_id WITH =, int4range(hours_from, COALESCE(hours_to, 100000)) WITH &&);
+
+II. Detailed Code Design
+
+The three features with the most integrations are designed in detail: order intake, trip planning with ETA, and GPS with driving hours. Each has a class diagram, sequence diagrams and the rules of each step. External systems are called through adapters.
+
+1. Order Intake and Confirmation
+
+The Guest or the Dispatcher fills in the Order Form. The order is saved as Draft. The Dispatcher then sets the price and the required documents, sends the tracking link, verifies the customer documents, makes and uploads the signed order contract, and confirms the order (BR-44, BR-45, BR-50).
+
+Class Diagram
+
+Figure 5. Class Diagram of Order Intake and Confirmation
+
+Classes and responsibilities
+
+ |  |  |  | 
+
+Class |  |  |  | 
+
+Responsibility
+
+ |  |  |  | 
+
+OrderController |  |  |  | 
+
+Receives the form (Guest by order form token, Dispatcher by login), the Confirm, Cancel Draft and Revoke Link requests. Returns MSG codes.
+
+ |  |  |  | 
+
+OrderService |  |  |  | 
+
+Applies BR-01, BR-02, BR-32, BR-44, BR-50. Creates the customer when it is new or matches by tax code or email. Makes the OrderID. Saves the order and its cargo lines in one transaction. Changes status and writes order_status_history.
+
+ |  |  |  | 
+
+OrderRepository |  |  |  | 
+
+Prisma calls on orders, order_cargos, order_status_history, code_counters.
+
+ |  |  |  | 
+
+CargoCalculator |  |  |  | 
+
+Chargeable weight of each line (BR-02). Checks the order weight of 4,000 kg or less (MSG81).
+
+ |  |  |  | 
+
+LocationService |  |  |  | 
+
+Finds or creates the Location; GeocodingAdapter fills latitude and longitude (API-05). If the address is not found the order is still saved (MSG54).
+
+ |  |  |  | 
+
+DocumentService |  |  |  | 
+
+Required document types, upload by the Guest or the Dispatcher, confirm, reject, delete before confirmation, Documents Verified (BR-06).
+
+ |  |  |  | 
+
+UploadSigner / CloudinaryAdapter |  |  |  | 
+
+Makes a signed upload request (API-02) for files of 10 MB or less (MSG09). Deletes files (API-03).
+
+ |  |  |  | 
+
+DocumentAssistantService / GeminiAdapter |  |  |  | 
+
+Sends only cargo type, cargo name and provinces (API-06). Stores nothing (BR-42).
+
+ |  |  |  | 
+
+ContractService |  |  |  | 
+
+Makes the order contract file, links the order to the Active transport contract of the customer (BR-45, BR-47).
+
+ |  |  |  | 
+
+EmailAdapter |  |  |  | 
+
+Sends the tracking link and the document list (MSG08). If sending fails, the API returns the link so the Dispatcher can copy it (MSG32).
+
+Submit Order Form
+
+Figure 6. Sequence Diagram of Submit Order Form
+
+Send Tracking Link
+
+Figure 7. Sequence Diagram of Send Tracking Link
+
+Upload and Confirm Documents
+
+Figure 8. Sequence Diagram of Upload and Confirm Documents
+
+Create Contract and Confirm Order
+
+Figure 9. Sequence Diagram of Create Contract and Confirm Order
+
+Main flow
+
+·      1. The Guest opens the order form link of a Dispatcher. The API finds the Dispatcher by the order form token (BR-44).
+
+·      2. The form is sent. OrderService validates it, finds or creates the customer, resolves the two Locations (saved ones, or new ones geocoded), calculates the chargeable weight of each cargo line.
+
+·      3. In one transaction: insert the order with status DRAFT, its cargo lines, the first order_status_history row. The OrderID comes from code_counters (prefix + yyMMdd + number).
+
+·      4. NotificationService alerts the responsible Dispatcher (MSG52). The order has no trip and no tracking link yet.
+
+·      5. The Dispatcher opens Order Details. The API calls Calculate Route Distance & Time (see Trip Planning) and returns distance, trip time and the suggested number of drivers. A Draft only gets these numbers (BR-46).
+
+·      6. The Dispatcher enters the agreed price and the required document types (or ticks “no documents”). Send Tracking Link creates the tracking token and emails the link and the list (BR-21).
+
+·      7. The customer uploads files (Guest, by token) or the Dispatcher uploads on behalf. Each file goes straight to Cloudinary with a signature from the API; the API saves the link.
+
+·      8. The Dispatcher confirms or rejects each file, then Confirm Documents. Every required type needs a file. The order becomes Documents Verified; documents can no longer be deleted.
+
+·      9. Create Contract makes the order contract file. The Dispatcher uploads the signed contract.
+
+·      10. Confirm Order checks BR-50 in a transaction: documents verified (or none needed), agreed price set, signed contract present. It links the Active transport contract of the customer, sets CONFIRMED and writes the history row. If a check fails the API returns MSG02 (no price), MSG11 (a document type has no file) or MSG67 (no signed contract). MSG57 asks the Dispatcher to confirm.
+
+·      Concurrency. orders.version is checked on every update. A second user who saves an old version gets a conflict error and reloads the order.
+
+·      After pickup cargo, price and Locations cannot change (BR-32, MSG33). A change before pickup that affects a trip recalculates the route.
+
+2. Trip Planning, ETA and Assignment
+
+A Confirmed order is planned into a trip. The system calculates the route distance, the trip time and the ETA of each stop (BR-04). The Dispatcher chooses the truck, one or two drivers, the stop order and the planned start, then assigns. The system makes the waybill and sends the trip to the driver (BR-35, BR-23).
+
+Class Diagram
+
+Figure 10. Class Diagram of Trip Planning and Assignment
+
+Classes and responsibilities
+
+ |  |  |  | 
+
+Class |  |  |  | 
+
+Responsibility
+
+ |  |  |  | 
+
+TripController |  |  |  | 
+
+Calculate, group, assign, view trip documents, 3D load plan.
+
+ |  |  |  | 
+
+TripPlanner |  |  |  | 
+
+Builds the stop list: pickup stops, then drop-off stops, with the ALS warehouse as a transit stop when the order needs it. Applies BR-05 and BR-29.
+
+ |  |  |  | 
+
+EtaCalculator |  |  |  | 
+
+BR-04: driving time × truck time factor + stop times; ETA of each stop from the planned start. Recalculates from a position or from real times.
+
+ |  |  |  | 
+
+RoutesAdapter |  |  |  | 
+
+Calls Google Routes (API-01) for the legs, with the planned start as departure time. Result is cached for 10 minutes for the same legs.
+
+ |  |  |  | 
+
+TruckSelector |  |  |  | 
+
+Suggests the smallest truck that carries the weight; warns about volume; nearest first (BR-03, BR-33). Shows what a vendor truck needs when none fits.
+
+ |  |  |  | 
+
+DriverEligibility |  |  |  | 
+
+BR-08: Approved shift that covers the trip, working time within BR-34, no other open trip, minimum rest, licence class of the truck.
+
+ |  |  |  | 
+
+TripService |  |  |  | 
+
+In one transaction locks the truck, the drivers and the orders; checks them again (MSG35, MSG36, MSG14, MSG45, MSG46, MSG47); creates the trip, stops, trip_trucks, trip_drivers; sets the orders ASSIGNED and the trip DISPATCHED; writes the history rows.
+
+ |  |  |  | 
+
+WaybillService |  |  |  | 
+
+Makes the waybill number and the snapshot of the trip data; makes the PDF when it is opened (BR-35).
+
+ |  |  |  | 
+
+LoadPlanBuilder |  |  |  | 
+
+Places each cargo line with a size in the truck box (BR-43, BR-56). Not stored.
+
+ |  |  |  | 
+
+NotificationService |  |  |  | 
+
+Sends the trip to the driver (BR-23).
+
+Calculate Route Distance & Time
+
+Figure 11. Sequence Diagram of Calculate Route Distance & Time
+
+Assign Truck & Driver
+
+Figure 12. Sequence Diagram of Assign Truck & Driver
+
+Main flow
+
+·      1. Calculate Route Distance & Time: Routes gives the leg times at the planned start; the API multiplies them by the truck factor and adds the stop times (A3).
+
+·      2. The trip time is shown. Over 8 hours the screen suggests two drivers (MSG62). The Dispatcher can change the stop time of a stop.
+
+·      3. The Dispatcher opens Trip Assignment for a Confirmed order. If the same customer has an open trip, the screen offers it (BR-05). The lists show only free trucks and eligible drivers.
+
+·      4. The Dispatcher picks the truck, the number of drivers, the drivers, the planned start and the stop order. The screen shows the ETA of each stop and warns when an ETA is outside the receiving hours of the Location (MSG84).
+
+·      5. Assign: TripService locks the rows, checks payload, shifts and open trips again, creates the trip (DISPATCHED), the stops, the truck and driver rows; sets the orders ASSIGNED; reserves the truck (BR-24).
+
+·      6. WaybillService stores the waybill row (VALID) with the trip snapshot. The trip documents become available to the Dispatcher and the driver.
+
+·      7. The driver gets the trip in My Trips and an alert. The tracking page now shows Truck assigned (BR-14).
+
+·      8. If no fleet truck is free, the Dispatcher uses Hand Over to Vendor instead (UC-10, see IV.3.3).
+
+·      Only the planned ETA is saved (trip_stops.planned_arrival). The latest ETA is saved in latest_eta and is for staff only; it is not shown on the tracking page and there is no late flag (BR-04).
+
+·      Driver rest breaks are not planned in the trip time (BR-04).
+
+3. GPS, Driving Hours and ETA Recalculation
+
+JOB-02 runs every minute. It pulls the position of the trucks on active trips, saves the track, counts driving time and recalculates ETA.
+
+Class Diagram
+
+Figure 13. Class Diagram of GPS and ETA
+
+Classes and responsibilities
+
+ |  |  |  | 
+
+Class |  |  |  | 
+
+Responsibility
+
+ |  |  |  | 
+
+GpsPullJob |  |  |  | 
+
+Finds trucks with an ACCEPTED or IN_PROGRESS trip and calls the Vehicle GPS adapter (API-04).
+
+ |  |  |  | 
+
+GpsAdapter |  |  |  | 
+
+Calls the supplier API with the truck IDs; maps the supplier truck to gps_device_id.
+
+ |  |  |  | 
+
+TrackService |  |  |  | 
+
+Saves the latest position on the truck and a point in trip_track_points.
+
+ |  |  |  | 
+
+DrivingTimeService |  |  |  | 
+
+From the speed: over 3 km/h is driving; a stop of 15 minutes or more is a break; a GPS gap between Left and Arrived counts as driving. On a 2-driver trip the time counts for both. Alerts the Dispatcher near 4 hours (MSG65) (BR-34).
+
+ |  |  |  | 
+
+ShiftEndWatcher |  |  |  | 
+
+Finds trips not done when the shift of a driver ends and alerts the Dispatcher (MSG83).
+
+ |  |  |  | 
+
+EtaCalculator |  |  |  | 
+
+Every 5 minutes calculates the ETA of the next stops from the position of the truck (BR-04, API-01).
+
+Pull Truck Locations and Recalculate ETA
+
+Figure 14. Sequence Diagram of Pull Truck Locations and Recalculate ETA
+
+Main flow
+
+·      1. The job takes an advisory lock so only one worker runs it.
+
+·      2. It reads the active trips and calls the GPS adapter. If the call fails the last known position stays; Trip Monitoring shows “last updated”; the track has a gap.
+
+·      3. For each truck it saves the position and the track point.
+
+·      4. DrivingTimeService updates the continuous driving time and the daily and weekly totals of each driver of the trip.
+
+·      5. Every fifth run EtaCalculator calls Routes with the truck position and the remaining stops, and saves latest_eta on each stop. A stop event, a truck change and the first run after planning also trigger it.
+
+·      6. The job logs how many trucks it updated.
+
+III. Design for Non-Functional Requirements
+
+Targets come from the Non-Functional Requirements of Report 3 (IV.2). Each row says how the design reaches the target.
+
+1. Security Design
+
+Authentication Flow
+
+NEXLOG uses stateless JWT sign-in with a refresh token kept in the database. The web app and the Driver PWA never keep a token in JavaScript storage: both tokens are in httpOnly cookies, so a script cannot read them (XSS). The API checks the access token on every protected request.
+
+Figure 15. Sequence Diagram of Sign-in and Token Refresh
+
+Token Design
+
+ |  |  |  | 
+
+Aspect |  |  |  | 
+
+Design Decision
+
+ |  |  |  | 
+
+Token format |  |  |  | 
+
+Access token: JWT signed with HS256 and a secret from the environment. Refresh token: 32 random bytes, not a JWT.
+
+ |  |  |  | 
+
+Access token expiry |  |  |  | 
+
+15 minutes. A short life limits the damage if a token leaks.
+
+ |  |  |  | 
+
+Refresh token expiry |  |  |  | 
+
+30 days, or the browser session when “Remember me” is off. Only its SHA-256 hash is stored in sessions.
+
+ |  |  |  | 
+
+Cookie flags |  |  |  | 
+
+httpOnly, Secure, SameSite=Lax, path /api/v1.
+
+ |  |  |  | 
+
+Rotation |  |  |  | 
+
+Each refresh replaces the refresh token. A used refresh token revokes the whole session (token theft).
+
+ |  |  |  | 
+
+Logout and password change |  |  |  | 
+
+Logout deletes the session row. A new password signs out all other sessions (MSG60).
+
+ |  |  |  | 
+
+Wrong sign-in |  |  |  | 
+
+One message for every cause (BR-26). Rate limit by IP and by account.
+
+CORS Configuration
+
+The web app and the API may run on different origins, so the API allows only the web origin with credentials (needed for the httpOnly cookies). The vendor API route is called server to server and uses an API key, not cookies.
+
+ |  |  |  | 
+
+Environment |  |  |  | 
+
+Allowed Origins |  |  |  | 
+
+Allowed Methods |  |  |  | 
+
+Allow Credentials |  |  |  | 
+
+Max Age
+
+ |  |  |  | 
+
+Development |  |  |  | 
+
+http://localhost:3000 |  |  |  | 
+
+GET, POST, PUT, PATCH, DELETE, OPTIONS |  |  |  | 
+
+true |  |  |  | 
+
+3600s
+
+ |  |  |  | 
+
+Staging |  |  |  | 
+
+Staging web origin (to be set when the host is chosen) |  |  |  | 
+
+GET, POST, PUT, PATCH, DELETE, OPTIONS |  |  |  | 
+
+true |  |  |  | 
+
+3600s
+
+ |  |  |  | 
+
+Production |  |  |  | 
+
+Production web origin (to be set when the host is chosen) |  |  |  | 
+
+GET, POST, PUT, PATCH, DELETE, OPTIONS |  |  |  | 
+
+true |  |  |  | 
+
+86400s
+
+Sign-in, reset and maintenance mode
+
+·      Sign-in. Username or email and password. Passwords are hashed with bcrypt (cost 12). A failed sign-in shows one message for every cause (BR-26). A locked account cannot sign in (MSG06).
+
+·      Reset and change password. The reset token is random, one-time, valid 30 minutes, and only its hash is stored. A new password signs out all other sessions (MSG60).
+
+·      Maintenance mode. When the setting is on, only the Administrator can sign in (MSG86).
+
+Authorization & RBAC Implementation
+
+ |  |  |  | 
+
+Aspect |  |  |  | 
+
+Decision
+
+ |  |  |  | 
+
+RBAC implementation |  |  |  | 
+
+A PermissionGuard middleware on each route checks the permission of the role (roles, permissions, role_permissions). A denied request returns MSG30. Public routes (order form, tracking page, login, vendor API) are listed in one file and use their own token or key.
+
+ |  |  |  | 
+
+Role hierarchy |  |  |  | 
+
+No inheritance. Each role has its own permission set from the Permission Matrix of Report 3.
+
+ |  |  |  | 
+
+Row rules |  |  |  | 
+
+Checked in the service: a Dispatcher works on orders of the shift (the responsible Dispatcher is the contact, BR-20); a Driver sees only the trips assigned to the driver; the Manager sees orders read only.
+
+ |  |  |  | 
+
+Cache |  |  |  | 
+
+The permission set of a role is cached in memory for 5 minutes.
+
+ |  |  |  | 
+
+Role |  |  |  | 
+
+Main permissions
+
+ |  |  |  | 
+
+Administrator |  |  |  | 
+
+User accounts (all roles), roles and permissions, activity log, system settings, admin dashboard.
+
+ |  |  |  | 
+
+Manager |  |  |  | 
+
+Dispatcher and Driver accounts, trucks, driver profiles, shifts, vendors, performance, order workload and reassign, major incidents, claims, news. Orders and trips read only.
+
+ |  |  |  | 
+
+Dispatcher |  |  |  | 
+
+Orders, customer documents, locations, contracts, trip planning and assignment, incidents, extra fees, trip monitoring and replay.
+
+ |  |  |  | 
+
+Driver |  |  |  | 
+
+Own trips, stop events, pickup, delivery, incidents, own shifts.
+
+ |  |  |  | 
+
+Guest (no login) |  |  |  | 
+
+Order form by order form token, tracking page by tracking token, news, customer documents and claims through the tracking token. Vendor systems use an API key on API-07.
+
+Table 6. Roles and permissions
+
+Public endpoints and abuse control
+
+·      Order form. Rate limit: 5 sends per IP in 10 minutes (MSG37). The form is bound to one Dispatcher by the order form token (BR-44).
+
+·      Tracking page. The token has 32 random bytes; the server looks it up by hash. It shows only milestones (BR-13, BR-14); no prices, tax code, contract data or photos. A wrong token returns the same page for all causes (MSG28).
+
+·      Vendor API. API key in a header; the key is stored as a hash; a wrong key, an unknown code or a closed order is refused and logged.
+
+·      Sign-in and reset. Rate limit by IP and by account to slow guessing.
+
+Data Protection
+
+ |  |  |  | 
+
+Data Category |  |  |  | 
+
+At Rest |  |  |  | 
+
+In Transit |  |  |  | 
+
+Notes
+
+ |  |  |  | 
+
+Passwords |  |  |  | 
+
+bcrypt, cost 12 |  |  |  | 
+
+TLS |  |  |  | 
+
+Never logged; never returned by the API.
+
+ |  |  |  | 
+
+Refresh and reset tokens |  |  |  | 
+
+Only SHA-256 hash stored |  |  |  | 
+
+TLS |  |  |  | 
+
+Reset token: one-time, 30 minutes.
+
+ |  |  |  | 
+
+Tracking token and API keys |  |  |  | 
+
+Hash stored (tracking token is also kept for the link of the Dispatcher) |  |  |  | 
+
+TLS |  |  |  | 
+
+A revoked token is replaced (BR-21).
+
+ |  |  |  | 
+
+Customer documents, seal and plate photos, POD |  |  |  | 
+
+Cloudinary, private files |  |  |  | 
+
+TLS, signed links of a few minutes |  |  |  | 
+
+Retention by JOB-01 (BR-22).
+
+ |  |  |  | 
+
+Secrets (database URL, JWT secret, Cloudinary, Google, Gemini keys) |  |  |  | 
+
+Environment variables of the host |  |  |  | 
+
+TLS |  |  |  | 
+
+Never in the repository or the logs.
+
+Files
+
+·      Uploads go from the browser to Cloudinary with a signature made by the API after it checks the right to upload. Allowed types: PDF, JPG, PNG, Excel, Word; 10 MB or less (MSG09). Photos are made smaller on the phone (2 MB or less).
+
+·      Files are private. A staff member opens a file with a signed link of a few minutes, made after the API checks that the user may view the order. The Guest never gets a link to a seal & plate photo or a POD.
+
+Other data rules
+
+·      HTTPS everywhere. Secrets (database URL, JWT secret, Cloudinary secret, Google and Gemini keys) are environment variables on the host, never in the repository.
+
+·      Retention (BR-22) is run by JOB-01: customer documents 60 days, seal & plate, POD and incident photos 2 years, waybills and trip events 3 years, GPS tracks 90 days, counted from Delivered or Cancelled. Orders with a Pending claim are skipped.
+
+·      Only the cargo type, cargo name and provinces go to the AI service (BR-42). Driver positions are saved only with stop events and by the GPS supplier tracks.
+
+·      The activity log is append-only: the database role of the application has no UPDATE or DELETE on activity_logs.
+
+2. Performance & Scalability Design
+
+ |  |  |  | 
+
+Target (Report 3) |  |  |  | 
+
+Design
+
+ |  |  |  | 
+
+Pages open within 3 seconds, forms save within 2 seconds, 50 staff users |  |  |  | 
+
+Indexed queries, pagination of 10 to 50 rows, no N+1 reads (Prisma include and select). One Express process is enough; the API is stateless and can run as more than one copy.
+
+ |  |  |  | 
+
+Tracking page within 3 seconds on cellular |  |  |  | 
+
+Server-rendered page, small payload (no photos), one query by token hash.
+
+ |  |  |  | 
+
+Photo upload within 10 seconds |  |  |  | 
+
+Photo made smaller on the phone; direct upload to Cloudinary; retry in the PWA queue.
+
+ |  |  |  | 
+
+Offline sync starts within 30 seconds |  |  |  | 
+
+The PWA listens to the online event and also retries every 15 seconds while the app is open. Each action has a client action ID.
+
+ |  |  |  | 
+
+Truck position 2 minutes old or less |  |  |  | 
+
+JOB-02 runs every minute; the last position and its time are shown even when GPS fails.
+
+ |  |  |  | 
+
+Replay within 3 seconds for 1,000 points |  |  |  | 
+
+Index on (trip_id, recorded_time); the API returns the points in one query and simplifies the line on the server.
+
+ |  |  |  | 
+
+Backup, restore within 4 hours |  |  |  | 
+
+Daily backup of the Supabase database; migration files rebuild the schema.
+
+Table 7. Performance design
+
+Caching Strategy
+
+ |  |  |  | 
+
+What is Cached |  |  |  | 
+
+Key |  |  |  | 
+
+TTL |  |  |  | 
+
+Invalidation Trigger |  |  |  | 
+
+NFR
+
+ |  |  |  | 
+
+Routes API result |  |  |  | 
+
+hash of legs + departure hour |  |  |  | 
+
+10 minutes |  |  |  | 
+
+None; the key includes the departure hour |  |  |  | 
+
+Same legs are asked many times while the Dispatcher edits the plan; saves cost
+
+ |  |  |  | 
+
+System settings |  |  |  | 
+
+settings |  |  |  | 
+
+1 minute, in memory |  |  |  | 
+
+Administrator saves a setting |  |  |  | 
+
+Read on most requests
+
+ |  |  |  | 
+
+Permission set of a role |  |  |  | 
+
+role id |  |  |  | 
+
+5 minutes, in memory |  |  |  | 
+
+Administrator changes a role |  |  |  | 
+
+Checked on every request
+
+ |  |  |  | 
+
+Latest truck position |  |  |  | 
+
+truck row (latest_position) |  |  |  | 
+
+Until JOB-02 runs again |  |  |  | 
+
+Next JOB-02 run |  |  |  | 
+
+Position 2 minutes old or less; Trip Monitoring does not call the GPS supplier
+
+Database Query Optimization
+
+·      Every foreign key has an index. Extra indexes: orders (status), orders (responsible_dispatcher_id, status), trips (status), trip_events (trip_id, received_time), trip_track_points (trip_id, recorded_time), driver_shifts (driver_id, date), notifications (user_id, read_time), order_status_history (order_id), news_posts (status, published_time).
+
+Scalability
+
+·      The API keeps no state in memory except short caches, so more copies can run behind one address. The Job Worker is one process; a PostgreSQL advisory lock stops two workers from running the same job.
+
+·      Large tables are trip_track_points and trip_events. JOB-01 purges old GPS tracks after 90 days; the queries always filter by trip.
+
+IV. Other Design Specifications
+
+1. Algorithms
+
+Each algorithm is written as steps. The “Source” column says where the number or rule comes from, so the team can change it when ALS confirms. Values marked “team” were set by the team and are settings.
+
+ |  |  |  | 
+
+# |  |  |  | 
+
+Algorithm |  |  |  | 
+
+Steps |  |  |  | 
+
+Module |  |  |  | 
+
+Source
+
+ |  |  |  | 
+
+A1 |  |  |  | 
+
+Chargeable weight (BR-02) |  |  |  | 
+
+For each cargo line with a size: max(actual weight, L × W × H in cm ÷ 5000). Without a size: the actual weight. The order value is the sum of the lines. |  |  |  | 
+
+orders · CargoCalculator |  |  |  | 
+
+Air-cargo practice. Factor 5000 not confirmed by ALS.
+
+ |  |  |  | 
+
+A2 |  |  |  | 
+
+Truck suggestion (BR-03, BR-33) |  |  |  | 
+
+Keep trucks that are free and valid (inspection and insurance not expired) with payload ≥ total actual weight. Sort by payload, smallest first, then by distance to the first pickup. Volume above the box: warning (MSG64). No truck fits: show the payload and volume a vendor truck needs (MSG13). |  |  |  | 
+
+trips · TruckSelector |  |  |  | 
+
+Team
+
+ |  |  |  | 
+
+A3 |  |  |  | 
+
+Trip time and ETA (BR-04) |  |  |  | 
+
+Detailed below. |  |  |  | 
+
+trips · EtaCalculator |  |  |  | 
+
+Routes API. 60 minutes: ALSC service standard. 1.2, 15 minutes, minutes per tonne, 8 hours: team (settings).
+
+ |  |  |  | 
+
+A4 |  |  |  | 
+
+ETA recalculation (BR-04) |  |  |  | 
+
+Detailed below. |  |  |  | 
+
+trips · EtaCalculator, jobs |  |  |  | 
+
+Team
+
+ |  |  |  | 
+
+A5 |  |  |  | 
+
+Driver filter (BR-08) |  |  |  | 
+
+A driver is listed only if: an Approved shift covers the planned trip time; working time with this trip stays within 10 h a day and 48 h a week; no unfinished trip; the minimum rest since the last trip has passed; the licence class fits the truck and has not expired. |  |  |  | 
+
+trips · DriverEligibility |  |  |  | 
+
+Law and ALS
+
+ |  |  |  | 
+
+A6 |  |  |  | 
+
+Driving time (BR-34) |  |  |  | 
+
+Detailed below. |  |  |  | 
+
+monitoring · DrivingTimeService |  |  |  | 
+
+Law 36/2024/QH15 Art. 64; Circular 05/2024/TT-BGTVT
+
+ |  |  |  | 
+
+A7 |  |  |  | 
+
+Waiting fee (BR-40) |  |  |  | 
+
+Waiting time = Loading Started − Arrived. If it is more than the free waiting time of the contract, suggest waiting fee = (waiting time − free time) × waiting fee rate. The Dispatcher confirms or rejects. |  |  |  | 
+
+driver · WaitingFeeService |  |  |  | 
+
+Contract terms
+
+ |  |  |  | 
+
+A8 |  |  |  | 
+
+Cancellation fee (BR-18, BR-47) |  |  |  | 
+
+Hours before the planned start (or before the requested pickup date when there is no trip) → find the tier of the contract that contains this number → fee = tier percent × agreed price. The Dispatcher may change it. |  |  |  | 
+
+orders · CancelOrderWorkflow |  |  |  | 
+
+Contract
+
+ |  |  |  | 
+
+A9 |  |  |  | 
+
+3D load plan (BR-43, BR-56) |  |  |  | 
+
+Detailed below. |  |  |  | 
+
+trips · LoadPlanBuilder |  |  |  | 
+
+Team
+
+ |  |  |  | 
+
+A10 |  |  |  | 
+
+Geofence check (BR-36) |  |  |  | 
+
+Detailed below. |  |  |  | 
+
+driver · StopEventService |  |  |  | 
+
+Team
+
+ |  |  |  | 
+
+A11 |  |  |  | 
+
+Waiting-too-long flags (BR-25, JOB-03) |  |  |  | 
+
+Flag an order that stays DRAFT, or CONFIRMED with no trip, longer than the limit; flag an order whose documents are not verified by the document deadline. Remove flags that no longer apply. |  |  |  | 
+
+jobs · FlagOrdersJob |  |  |  | 
+
+Limits set by ALS
+
+ |  |  |  | 
+
+A12 |  |  |  | 
+
+Shift overlap (BR-60) |  |  |  | 
+
+Two Requested or Approved shifts of one driver must not overlap; the database also refuses it (exclusion constraint). |  |  |  | 
+
+fleet · ShiftService + SQL |  |  |  | 
+
+Team
+
+ |  |  |  | 
+
+A13 |  |  |  | 
+
+Open trip per truck and driver |  |  |  | 
+
+At most one trip_trucks row and one trip_drivers row without released_at for a truck or a driver (unique partial index). Assign locks the rows and checks again. |  |  |  | 
+
+trips · TripService + SQL |  |  |  | 
+
+Data rule
+
+ |  |  |  | 
+
+A14 |  |  |  | 
+
+Reference price (BR-01) |  |  |  | 
+
+A price from the route distance for reference only; not saved. The agreed price is typed by the Dispatcher. |  |  |  | 
+
+orders · OrderService |  |  |  | 
+
+Team
+
+ |  |  |  | 
+
+A15 |  |  |  | 
+
+Retention purge (BR-22, JOB-01) |  |  |  | 
+
+For each data type, find records older than the period counted from Delivered or Cancelled; skip orders with a Pending claim; delete the Cloudinary file; mark the file Purged; delete old GPS points. |  |  |  | 
+
+jobs · PurgeJob |  |  |  | 
+
+Commercial Law 2005; Decree 158/2024/ND-CP; team
+
+ |  |  |  | 
+
+A16 |  |  |  | 
+
+Expiry reminder (JOB-05) |  |  |  | 
+
+Find inspection, insurance and licence dates inside the warning period; one alert per item per day; set a truck with an expired inspection to Inactive. |  |  |  | 
+
+jobs · ExpiryJob |  |  |  | 
+
+Team
+
+ |  |  |  | 
+
+A17 |  |  |  | 
+
+Refused delivery (BR-57) |  |  |  | 
+
+On a refusal the order becomes DELIVERED_EXCEPTION; the Dispatcher picks an ALS warehouse; the API adds it as the next stop; when the cargo is unloaded there, the order is closed and current warehouse is set (BR-58). |  |  |  | 
+
+driver, orders · DeliveryService |  |  |  | 
+
+Team
+
+ |  |  |  | 
+
+A18 |  |  |  | 
+
+Dashboard indicators |  |  |  | 
+
+Truck use = hours on trips ÷ available hours. Dispatcher SLA = average time from Confirmed to assigned. Vehicle fill = weight ÷ payload. Empty running = empty km ÷ all km. Revenue per km = revenue ÷ all km (revenue without collection-on-behalf fees, BR-30). Perfect order = delivered in full, documents handed over, no damage. |  |  |  | 
+
+dashboard |  |  |  | 
+
+Logistics practice
+
+Table 8. Algorithms
+
+Five algorithms need more detail. Each has input, steps, output, settings and the reason for the choice.
+
+A3 and A4. Trip time and ETA (BR-04)
+
+Input: the stops in order (Location, stop type, weight loaded or unloaded at the stop), the planned start T0, the truck, and the settings.
+
+t = T0
+
+for each stop k (k = 1..n):
+
+    leg = Routes.computeRoutes(stop k-1 -> stop k, departure = t, traffic = TRAFFIC_AWARE)
+
+    drive_k   = leg.duration x truck_time_factor          # 1.2 for trucks
+
+    arrive_k  = t + drive_k
+
+    if arrive_k outside receiving hours of the Location: warn MSG84 (no waiting is added)
+
+    stop_k    = base_stop_time(stop k) + minutes_per_tonne x weight_k
+
+                # base: 60 min at an ALS import warehouse, 15 min elsewhere
+
+                # the Dispatcher may type another stop time
+
+    t = arrive_k + stop_k
+
+trip_time = t - T0
+
+if trip_time > 8 h: suggest 2 drivers
+
+Recalculation (A4). It runs after a stop event, after a truck change, and every 5 minutes for trips In Progress (JOB-02).
+
+origin = last truck GPS point if it is less than 5 min old
+
+         else the Location and Left time of the last finished stop
+
+skip if no new event AND the truck moved less than 500 m since the last run
+
+legs = one Routes call: origin -> remaining stops (as intermediates), departure = now
+
+rest_here = max(0, planned stop time - (now - Arrived))   # only if the truck is at a stop
+
+ETA of each remaining stop = now + rest_here + legs and stop times before it
+
+save latest_eta on each remaining stop; the planned ETA is never changed
+
+Output: planned ETA per stop (saved at assignment) and latest ETA (saved at each run). Settings: truck time factor, stop times, minutes per tonne, two-driver limit, recalculation interval, skip distance.
+
+Why:
+
+·      Delivery platforms (Onfleet) build the ETA from a routing service plus a service time per stop.
+
+·      Routes gives car times; the truck factor covers the slower truck.
+
+·      One Routes call per trip and the 500 m skip rule keep the API cost low.
+
+A6. Driving time from the GPS track (BR-34)
+
+Input: GPS points of the truck (time, position, speed) sorted by time, the trip events, and the drivers of the trip.
+
+for each pair of points (p_i, p_i+1):
+
+    dt = time difference
+
+    v  = speed of p_i, or distance(p_i, p_i+1) / dt if the speed is empty
+
+    if dt <= 5 min:
+
+        if v > 3 km/h: add dt to driving, add dt to continuous
+
+        else:          add dt to standing
+
+    else (GPS gap):
+
+        if the gap is between a Left event and the next Arrived event: count dt as driving
+
+        else: do not count it
+
+    if standing time without a break >= 15 min: it is a break, continuous = 0
+
+    if continuous >= 4 h and no alert since the last break: alert MSG65
+
+on a 2-driver trip the driving time counts for both drivers
+
+Output: driving time per driver per day, continuous driving time, alerts. The 10-hour day and 48-hour week limits are checked against the approved shifts when a driver is assigned (A5). Settings: speed threshold 3 km/h, break 15 minutes, gap 5 minutes; the 4 h, 10 h and 48 h limits are law and are locked.
+
+Why:
+
+·      The limits are law: Law 36/2024/QH15 Art. 64 and Circular 05/2024/TT-BGTVT.
+
+·      A tachograph reads the wheel; NEXLOG only has GPS points, so it uses a speed threshold and a minimum stop length.
+
+·      A gap on the road counts as driving, so a lost signal never hides driving time.
+
+A9. 3D load plan (BR-43, BR-56)
+
+Input: the truck box (length L, width W, height H in cm, payload in kg), the stops in order, and the cargo lines of the trip (quantity, length, width, height, weight, stackable, drop-off stop number). Axes: x goes from the front wall (x = 0, next to the cab) to the door (x = L), y across the box, z up.
+
+1. blocks = each package of each cargo line with a size (quantity 3 -> 3 blocks)
+
+   lines without a size are listed and only their weight is counted
+
+   more than 500 blocks: draw the first 500, list the rest
+
+2. sort blocks by:
+
+   drop-off stop number, last stop first      # last drop-off goes deepest
+
+   then not stackable first, then bigger base area, then heavier
+
+3. extreme points EP = {(0,0,0)}
+
+4. for each block b:
+
+     best = none
+
+     for each EP p and each turn of b (L x W or W x L; height never turns):
+
+        put the corner of b at p and keep the position if:
+
+          a. b is inside the box
+
+          b. b does not overlap any placed block
+
+          c. support: if z > 0, at least 75% of the base of b lies on tops of
+
+             placed blocks at height z, and every block under b is stackable
+
+             and is delivered at the same stop as b or later
+
+          d. reach: no placed block that is delivered after b lies between b
+
+             and the door with an overlap in y and z (b can be unloaded first)
+
+        score = (x + length of b, z, y)          # deepest, then lowest, then left
+
+        keep the position with the smallest score
+
+     if best = none: mark b as not fitting (red, MSG66)
+
+     else: place b, add the three projected points of its corners to EP,
+
+           remove points that are now inside a block
+
+5. result: position and turn of each block, blocks that do not fit,
+
+   used volume % = placed volume / box volume, total weight / payload
+
+Output: a JSON list of blocks (order, stop, x, y, z, length, width, height, colour by stop) that the web draws with Three.js. Nothing is saved. The plan never blocks the assignment. Settings: support share 75%, block limit 500. Cost: about n² × points; 500 blocks take well under one second.
+
+Why:
+
+·      The three rules (last in first out, nothing on non-stackable cargo, minimum supported base) are the standard rules of loading research (3L-CVRP, Gendreau et al. 2006).
+
+·      Extreme points (Crainic, Perboli and Tadei 2008) find the free corners fast.
+
+·      Load planners such as xflp add a search step and axle checks. NEXLOG keeps only the greedy step: the plan is a guide and the loader decides.
+
+A10. Position check at a stop (geofence, BR-36)
+
+Input: the driver event (type, phone time, phone latitude and longitude, accuracy in metres from the browser), the Location of the stop (latitude, longitude, radius or empty), and the truck GPS points.
+
+r = radius of the Location, or the default radius (setting, 150 m)
+
+if the phone gives no position (no permission, or no fix within 10 s):
+
+    save the event, distance = empty, outside_radius_flag = true, alert MSG50
+
+else:
+
+    d = haversine(phone position, Location)
+
+        # d = 2R asin( sqrt( sin²(dφ/2) + cos φ1 cos φ2 sin²(dλ/2) ) ), R = 6 371 000 m
+
+    margin = min(accuracy, 50 m)            # allow for phone GPS error
+
+    outside = d > r + margin
+
+    truck_point = truck GPS point closest to the phone time, within 2 min
+
+    truck_inside = truck_point exists and haversine(truck_point, Location) <= r
+
+    save the event with distance_m = d, outside_radius_flag = outside
+
+    if outside: alert MSG50 with d and r, and add "truck GPS inside the radius"
+
+                when truck_inside is true
+
+never refuse the event
+
+Output: the flag and the distance on the trip event, the alert, and the red marker on Trip Monitoring and Replay Trip. Dwell time for Driver Performance (UC-43) = Left − Arrived of the same stop. Settings: default radius, accuracy margin, phone fix timeout.
+
+Why:
+
+·      TMS products (Qargo, Yojee) use one default radius with a radius per location, and compare the geofence time with the time the driver tapped.
+
+·      Android advises a radius of at least 100–150 m because phone positions are often 20–50 m off. Hence the 150 m default and the accuracy margin.
+
+·      The truck GPS is a second witness: it tells a phone error from a false record.
+
+2. State Transitions
+
+Every status change of an order or a trip also writes a row to order_status_history or trip_status_history with the user (or the system) and the time (BR-51).
+
+Order
+
+ |  |  |  | 
+
+From |  |  |  | 
+
+To |  |  |  | 
+
+Trigger |  |  |  | 
+
+Condition
+
+ |  |  |  | 
+
+(new) |  |  |  | 
+
+DRAFT |  |  |  | 
+
+Submit Order Form, or the Dispatcher enters an order |  |  |  | 
+
+Linked to the customer and the Dispatcher of the link (BR-44)
+
+ |  |  |  | 
+
+DRAFT |  |  |  | 
+
+DRAFT (documents verified) |  |  |  | 
+
+Confirm Documents (UC-05) |  |  |  | 
+
+Each required type has a file; documents can no longer be deleted
+
+ |  |  |  | 
+
+DRAFT |  |  |  | 
+
+CONFIRMED |  |  |  | 
+
+Confirm Order (UC-03) |  |  |  | 
+
+Documents verified or none needed, agreed price, signed order contract (BR-50)
+
+ |  |  |  | 
+
+DRAFT |  |  |  | 
+
+CANCELLED |  |  |  | 
+
+Cancel Draft |  |  |  | 
+
+No fee
+
+ |  |  |  | 
+
+CONFIRMED |  |  |  | 
+
+ASSIGNED |  |  |  | 
+
+Assign Truck & Driver (UC-09) |  |  |  | 
+
+Trip is created as DISPATCHED
+
+ |  |  |  | 
+
+CONFIRMED |  |  |  | 
+
+HANDED_OVER_VENDOR |  |  |  | 
+
+Hand Over to Vendor (UC-10) |  |  |  | 
+
+Vendor is Approved; tracking code entered
+
+ |  |  |  | 
+
+ASSIGNED |  |  |  | 
+
+ACCEPTED |  |  |  | 
+
+Driver accepts the trip (UC-28) |  |  |  | 
+
+No reject (BR-09)
+
+ |  |  |  | 
+
+ACCEPTED |  |  |  | 
+
+PICKED_UP |  |  |  | 
+
+Save Pickup (UC-29) |  |  |  | 
+
+Photos and seal number (BR-11)
+
+ |  |  |  | 
+
+PICKED_UP |  |  |  | 
+
+IN_TRANSIT |  |  |  | 
+
+Event Left at the pickup stop (UC-30) |  |  |  | 
+
+ |  |  |  | 
+
+IN_TRANSIT |  |  |  | 
+
+DELIVERED |  |  |  | 
+
+Save Delivery (UC-31) |  |  |  | 
+
+Delivery photos (BR-12); order is closed (BR-19)
+
+ |  |  |  | 
+
+IN_TRANSIT |  |  |  | 
+
+DELIVERED_EXCEPTION |  |  |  | 
+
+Customer refuses (UC-31) |  |  |  | 
+
+Reason and photo (BR-57); closed when the cargo is unloaded at the ALS warehouse
+
+ |  |  |  | 
+
+CONFIRMED, ASSIGNED, ACCEPTED |  |  |  | 
+
+CANCELLED |  |  |  | 
+
+Cancel Order (UC-04) |  |  |  | 
+
+Before Loading Started (BR-18); fee from the contract tiers; truck and drivers released
+
+ |  |  |  | 
+
+HANDED_OVER_VENDOR |  |  |  | 
+
+CANCELLED |  |  |  | 
+
+Cancel Order (the customer cancels) |  |  |  | 
+
+Dispatcher; the money with the vendor is handled outside the system. The order is closed
+
+ |  |  |  | 
+
+HANDED_OVER_VENDOR |  |  |  | 
+
+DELIVERED or DELIVERED_EXCEPTION |  |  |  | 
+
+Vendor status (API-07) or the Dispatcher uploads the result |  |  |  | 
+
+A repeated status, or one that comes after a later one, is ignored (BR-15)
+
+Table 9. Order status transitions
+
+is_closed is a flag, not a status. It becomes true when the order is Delivered or Cancelled, and for a refused order when the cargo is unloaded at the ALS warehouse. A closed order is locked (BR-19). The flags waiting too long and documents overdue are set by JOB-03 (BR-25).
+
+Figure 16. State Diagram of Order
+
+Trip
+
+ |  |  |  | 
+
+From |  |  |  | 
+
+To |  |  |  | 
+
+Trigger |  |  |  | 
+
+Condition
+
+ |  |  |  | 
+
+(new) |  |  |  | 
+
+DISPATCHED |  |  |  | 
+
+Assign Truck & Driver |  |  |  | 
+
+Truck and drivers reserved (BR-24); waybill made; locked from now (BR-41)
+
+ |  |  |  | 
+
+DISPATCHED |  |  |  | 
+
+ACCEPTED |  |  |  | 
+
+Driver accepts |  |  |  | 
+
+Order becomes ACCEPTED
+
+ |  |  |  | 
+
+ACCEPTED |  |  |  | 
+
+IN_PROGRESS |  |  |  | 
+
+First stop event at the pickup stop |  |  |  | 
+
+Truck becomes ON_TRIP
+
+ |  |  |  | 
+
+IN_PROGRESS |  |  |  | 
+
+COMPLETED |  |  |  | 
+
+Last stop done |  |  |  | 
+
+Truck becomes AVAILABLE
+
+ |  |  |  | 
+
+DISPATCHED, ACCEPTED, IN_PROGRESS |  |  |  | 
+
+CANCELLED |  |  |  | 
+
+Last order of the trip is cancelled |  |  |  | 
+
+No Loading Started on the trip yet (BR-18). Truck and drivers are released
+
+Table 10. Trip status transitions
+
+An incident or a change of truck or driver (UC-15) does not change the trip status. A trip with an open incident has a red mark on Trip Monitoring. After Loading Started no order can be cancelled, so a loaded trip always ends Completed. It closes one trip_trucks or trip_drivers row, opens another, and replaces the waybill. Every row of the trip table is kept as history.
+
+Figure 17. State Diagram of Trip
+
+Other entities
+
+ |  |  |  | 
+
+Entity |  |  |  | 
+
+Statuses and transitions
+
+ |  |  |  | 
+
+Truck |  |  |  | 
+
+AVAILABLE ⇄ ON_TRIP (system); AVAILABLE ⇄ MAINTENANCE or INACTIVE (Manager); INACTIVE by JOB-05 when the inspection expires (BR-24).
+
+ |  |  |  | 
+
+Stop |  |  |  | 
+
+PLANNED → ARRIVED → DONE; the events arrived, loading started, loading done, left are rows of trip_events.
+
+ |  |  |  | 
+
+Incident |  |  |  | 
+
+REPORTED → RESOLVED (Dispatcher); REPORTED → ESCALATED → RESOLVED (Manager, major incident).
+
+ |  |  |  | 
+
+Compensation claim |  |  |  | 
+
+PENDING → APPROVED or REJECTED (Manager). A customer claim is created within 14 days of delivery.
+
+ |  |  |  | 
+
+Customer document |  |  |  | 
+
+MISSING → UPLOADED → CONFIRMED or REJECTED (upload again); PURGED by JOB-01. The order is Documents Verified when each required type is Confirmed.
+
+ |  |  |  | 
+
+Extra fee |  |  |  | 
+
+PROPOSED → CONFIRMED or REJECTED. A fee the Dispatcher records is CONFIRMED at once.
+
+ |  |  |  | 
+
+Driver shift |  |  |  | 
+
+REQUESTED → APPROVED or REJECTED (Manager). A shift that the Manager adds is APPROVED.
+
+ |  |  |  | 
+
+Waybill |  |  |  | 
+
+VALID → REPLACED when the truck or a driver changes; one VALID waybill for each trip.
+
+ |  |  |  | 
+
+Vendor |  |  |  | 
+
+PENDING → APPROVED (Manager).
+
+ |  |  |  | 
+
+Transport contract |  |  |  | 
+
+ACTIVE → EXPIRED or INACTIVE; one ACTIVE contract for each customer.
+
+ |  |  |  | 
+
+News post |  |  |  | 
+
+DRAFT → PUBLISHED ⇄ UNPUBLISHED; the Manager can delete.
+
+Table 11. Other status transitions
+
+3. Other Feature Designs
+
+The other features of Report 3 follow the same layers (Controller, Service, Repository, adapters). Each has its classes, one sequence diagram and its main flow.
+
+Incidents and Replacement Truck (UC-14, 15, 16, 25, 32)
+
+A driver reports an incident. The Dispatcher resolves it, sends a replacement truck or driver on the same trip, or escalates a major incident to the Manager. A truck breakdown is the fault of ALS and has no extra fee for the customer. After the cargo is moved the old truck is set to Maintenance.
+
+Classes and responsibilities
+
+ |  |  |  | 
+
+Class |  |  |  | 
+
+Responsibility
+
+ |  |  |  | 
+
+IncidentController |  |  |  | 
+
+Report (driver), resolve, escalate, manager decision.
+
+ |  |  |  | 
+
+IncidentService |  |  |  | 
+
+Creates the incident as REPORTED at the current stop. Major types (damaged or lost cargo, traffic accident, cargo held by authorities) must be escalated (BR-16). Resolve needs a note.
+
+ |  |  |  | 
+
+ReplacementWorkflow (workflows) |  |  |  | 
+
+Changes the truck or a driver of the trip in one transaction: closes the old trip_trucks or trip_drivers row, opens the new one with the reason, adds a Transit stop at the incident place, recalculates the ETA from the new truck, makes a new waybill and sets the old one to REPLACED (BR-10, BR-35, BR-41).
+
+ |  |  |  | 
+
+ClaimService |  |  |  | 
+
+Creates a Pending claim from an incident when the cargo of the customer is affected (BR-17).
+
+ |  |  |  | 
+
+ActivityLogWriter |  |  |  | 
+
+Saves the reason of every truck or driver change (BR-41).
+
+Figure 18. Sequence Diagram of Report Incident and Dispatch Replacement Truck
+
+Main flow
+
+·      1. The driver sends the report (offline allowed, BR-27). IncidentService saves it and shows MSG21 to the driver and alerts the Dispatcher on Trip Monitoring.
+
+·      2. The Dispatcher opens Incident Details. For a major incident only Escalate is offered; the Manager records the fault and closes it (UC-25).
+
+·      3. For a truck that cannot go, the Dispatcher opens Trip Assignment from the incident (UC-15). The screen shows the new route: from the new truck to the incident place, a Transit stop for moving the cargo, then the remaining stops with a new ETA each.
+
+·      4. Save Change calls ReplacementWorkflow. The driver of the old truck is told (MSG15). The new driver gets the new trip documents. The old waybill is Replaced.
+
+·      5. At the Transit stop the driver uploads a new seal & plate photo (BR-11). The old truck is set to Maintenance by the Manager or the workflow.
+
+·      6. If the cargo of the customer is affected, the Dispatcher creates a Pending claim with amount, reason and evidence.
+
+·      One open row for each truck and driver. The partial unique indexes on trip_trucks and trip_drivers (released_at IS NULL) make sure the new row can only be opened after the old row is released.
+
+Driver PWA: Pickup, Delivery and Offline Sync (UC-28, 29, 30, 31)
+
+The driver accepts the trip, records the stop events, pickup photos and delivery photos on the phone. Every action is saved on the phone first and sent when a signal is available.
+
+Classes and responsibilities
+
+ |  |  |  | 
+
+Class |  |  |  | 
+
+Responsibility
+
+ |  |  |  | 
+
+TripListController (driver) |  |  |  | 
+
+My Trips, Accept Trip (BR-09: no reject).
+
+ |  |  |  | 
+
+StopEventService |  |  |  | 
+
+Saves arrived, loading started, loading done, left. Replaces a phone time in the future or off by more than the phone clock limit with the server time and flags it (BR-27). Marks an event outside the geofence radius (BR-36). Sets the trip IN_PROGRESS on the first event at the pickup stop, and the order IN_TRANSIT on Left at its pickup.
+
+ |  |  |  | 
+
+PickupService |  |  |  | 
+
+Checks the required photos and the seal number (BR-11); stores the packages and the weight; a weight above the payload shows MSG45 (BR-33); sets the orders PICKED_UP.
+
+ |  |  |  | 
+
+DeliveryService |  |  |  | 
+
+Checks the delivery photos (BR-12); sets the order DELIVERED and closed (BR-19); at the last stop sets the trip COMPLETED and the truck AVAILABLE. A refusal sets DELIVERED_EXCEPTION (BR-57).
+
+ |  |  |  | 
+
+SyncController |  |  |  | 
+
+Takes a batch of queued actions, each with a client action ID. A repeated ID is accepted and ignored.
+
+ |  |  |  | 
+
+WaitingFeeService |  |  |  | 
+
+Waiting time from Arrived to Loading Started; over the free waiting time of the contract it suggests a waiting fee (BR-40).
+
+ |  |  |  | 
+
+PWA OfflineQueue (client) |  |  |  | 
+
+IndexedDB queue: at most 50 updates (MSG39). Sync Now button on iPhone.
+
+Figure 19. Sequence Diagram of Record Cargo Pickup (offline, then sync)
+
+Main flow
+
+·      1. The driver opens My Trips (trips in DISPATCHED status). Accept Trip asks to confirm (MSG17) and sets the trip ACCEPTED and the order ACCEPTED.
+
+·      2. At a stop the driver taps the next event. The phone saves the event with the phone time and position, and adds it to the queue with a new client action ID.
+
+·      3. When there is a signal the queue is sent in order. For each action the API checks the client action ID, the trip state and the clock, saves it in a transaction and returns the result.
+
+·      4. Save Pickup: photos go straight to Cloudinary (API-02). The API saves the photos and seal number as delivery_evidences, the packages and weight on trip_stop_orders, and sets the orders PICKED_UP.
+
+·      5. Save Delivery: import needs the POD photo (and the receiver name, optional); export needs the cut seal and unloaded cargo photos. The driver ticks that the documents were handed over. The order becomes DELIVERED and closed.
+
+·      6. Customer refuses at an import drop-off: the driver sends a reason and a cargo photo. The order becomes DELIVERED_EXCEPTION (MSG74) and the Dispatcher gets an alert (MSG75). The Dispatcher chooses an ALS warehouse; the API adds it as a new stop and tells the driver (BR-57). The order closes when the cargo is unloaded there.
+
+·      7. If the trip changed while the phone was offline, the Dispatcher is alerted (MSG38).
+
+·      Idempotency. trip_events.client_action_id is unique. A photo uses the client action ID as its Cloudinary public ID, so a repeated upload does not make a second file.
+
+Vendors (UC-10, 23; API-07)
+
+The Manager adds and approves vendors. The Dispatcher hands an order to an approved vendor when no fleet truck is free (BR-07). A vendor that uses the status API sends the status of its order.
+
+Classes and responsibilities
+
+ |  |  |  | 
+
+Class |  |  |  | 
+
+Responsibility
+
+ |  |  |  | 
+
+VendorController |  |  |  | 
+
+Manager: add, update, approve, issue API key. Dispatcher: list approved vendors.
+
+ |  |  |  | 
+
+VendorService |  |  |  | 
+
+Approval (Pending → Approved) and the API key (stored as a hash).
+
+ |  |  |  | 
+
+HandOverService |  |  |  | 
+
+Checks the order is CONFIRMED and the vendor is Approved; cancels the trip if there is one; saves vendor and tracking code; sets HANDED_OVER_VENDOR; emails the vendor tracking code to the customer (BR-15, MSG16).
+
+ |  |  |  | 
+
+VendorStatusController (API-07) |  |  |  | 
+
+Public endpoint with an API key. Finds the order by vendor and vendor tracking code. Accepts Picked Up, Delivered (with POD file) and Not received (with refusal report). A repeated status or one that comes after a later status is ignored. A wrong key, an unknown code or a closed order is refused and logged.
+
+Figure 20. Sequence Diagram of Hand Over to Vendor and Vendor Status Update
+
+Main flow
+
+·      1. The Manager approves the vendor and, if it uses the API, issues an API key (shown once).
+
+·      2. The Dispatcher opens Trip Assignment, chooses the vendor mode, picks an approved vendor, enters the vendor tracking code and presses Hand Over to Vendor.
+
+·      3. HandOverService saves the vendor data in one transaction and writes the history. The customer receives the tracking code by email.
+
+·      4. The vendor calls API-07 with its key. The API checks key, order and status order, then saves the status. The tracking page shows the milestones from the vendor status (BR-14).
+
+·      5. A vendor without the API: the Dispatcher uploads the vendor POD or the refusal report on Order Details.
+
+·      6. If the customer cancels after the hand over, the Dispatcher presses Cancel Order. The order becomes CANCELLED and is closed. The money with the vendor is handled outside the system; there is no cancellation fee calculation for a vendor order.
+
+Order Tracking, Customer Claim and Cancellation (UC-01, 04, 26, 47)
+
+The Guest follows an order by the tracking link and can send a claim for 14 days after delivery. The Dispatcher cancels an order until Loading Started. The Manager approves or rejects claims.
+
+Classes and responsibilities
+
+ |  |  |  | 
+
+Class |  |  |  | 
+
+Responsibility
+
+ |  |  |  | 
+
+TrackingController |  |  |  | 
+
+Public GET /t/{token}. Returns milestones, required documents, Dispatcher contact, vendor notice and claim results. Never returns the seal & plate photo or the POD (BR-13).
+
+ |  |  |  | 
+
+TrackingService |  |  |  | 
+
+Finds the order by the hash of the token. A wrong, expired or revoked token returns MSG28 with no order data.
+
+ |  |  |  | 
+
+CustomerClaimService |  |  |  | 
+
+Accepts a claim only for a DELIVERED order within the claim window (14 days, setting) (BR-59): type, description, amount, up to 5 photos. MSG76 on success, MSG79 after 14 days.
+
+ |  |  |  | 
+
+CancelOrderWorkflow |  |  |  | 
+
+Cancels until Loading Started (BR-18): fee from the contract tiers by hours before the planned start; if the truck has left, adds the cost of the driven part (price × share of distance); releases truck and drivers; cancels the trip when no order is left.
+
+ |  |  |  | 
+
+ClaimReviewService |  |  |  | 
+
+Manager decision with a comment; over the liability limit (contract cap, or 500 million VND) needs a comment (BR-37, MSG56); notifies the Dispatcher (MSG27).
+
+Figure 21. Sequence Diagram of Open Tracking Page and Send Compensation Claim
+
+Main flow
+
+·      1. The customer opens /t/{token}. The server finds the order and builds the milestones from the status history (BR-14).
+
+·      2. After delivery the customer sends a claim. CustomerClaimService checks the window and saves a Pending claim with source CUSTOMER. JOB-01 keeps the GPS track and the photos of the trip while the claim is Pending (BR-59).
+
+·      3. The Manager opens Claim Details, sees the evidence, the contract rules and the liability limit, and approves or rejects with a comment.
+
+·      4. A cancellation: the Dispatcher presses Cancel Order, confirms (MSG22) and enters the reason and the fee (suggested from the tiers). The workflow sets the order CANCELLED and closes it. After Loading Started the screen shows MSG23.
+
+Accounts, Shifts and Fleet (UC-17, 18, 19, 20, 33, 34, 37, 38, 46)
+
+Sign-in, password reset, driver shift registration and truck status.
+
+Classes and responsibilities
+
+ |  |  |  | 
+
+Class |  |  |  | 
+
+Responsibility
+
+ |  |  |  | 
+
+AuthService |  |  |  | 
+
+Login by username or email; a wrong sign-in message never says which part was wrong (BR-26); a locked account cannot sign in; in maintenance mode only the Administrator can sign in (MSG86). Issues an access JWT (15 minutes) and a refresh token (stored as a hash in sessions).
+
+ |  |  |  | 
+
+PasswordService |  |  |  | 
+
+Change password (MSG58, 59, 60). Reset link by email: one-time, 30 minutes (setting) (BR-49); the same message is shown whether the email exists or not (MSG70). After a reset all other sessions are signed out.
+
+ |  |  |  | 
+
+ShiftService |  |  |  | 
+
+Driver registers a shift (REQUESTED); the Manager approves or rejects with a reason; a shift added by the Manager is APPROVED (BR-60). Warns at 10 hours a day or 48 hours a week (BR-34). Overlap is refused (MSG78).
+
+ |  |  |  | 
+
+TruckService |  |  |  | 
+
+Manager sets Maintenance, Inactive, Available. The system sets On Trip and Available again (BR-24). JOB-05 sets Inactive when the inspection expires.
+
+ |  |  |  | 
+
+PermissionGuard |  |  |  | 
+
+Checks the role against the Permission Matrix on every route.
+
+Figure 22. Sequence Diagram of Forgot and Reset Password
+
+Main flow
+
+·      1. Login checks the account, creates a session row and sets httpOnly cookies. A refresh call replaces the refresh token (rotation); a used refresh token revokes the session.
+
+·      2. Forgot Password creates a random token (hash stored with the expiry in users); the link is emailed. Set password checks the token, saves the password hash, marks the token used and revokes other sessions.
+
+·      3. The driver registers a shift on Shift Registration. ShiftService checks overlap, saves REQUESTED and notifies the Manager. The Manager approves or rejects on the Driver Shift Schedule; the driver gets the result (MSG80).
+
+4. Offline Sync (Driver PWA)
+
+·      Queue. Every driver action is saved in IndexedDB with a client action ID, the phone time and the position, then shown on screen at once. At most 50 actions can wait (MSG39).
+
+·      Send. When the browser is online, or when the driver taps Sync Now (iPhone), the queue is sent in order. The server saves each action in a transaction. A repeated client action ID returns the first result.
+
+·      Clock. A phone time in the future, or off by more than the phone clock limit, is replaced by the server time and flagged (BR-27).
+
+·      Photos. A photo is uploaded to Cloudinary with its client action ID as the public ID. Then the action that refers to it is sent.
+
+·      Conflict. If the trip changed while the phone was offline (truck or driver changed, trip cancelled), the server saves the action, marks it and alerts the Dispatcher (MSG38).
+
+·      Documents offline. After the driver opens the waybill and the customer documents once, they are kept in the cache; they are removed when the trip is Completed or the waybill is Replaced.
+
+5. Background Jobs
+
+ |  |  |  | 
+
+Job |  |  |  | 
+
+Schedule |  |  |  | 
+
+What it does |  |  |  | 
+
+If it fails
+
+ |  |  |  | 
+
+JOB-01 Purge Expired Files and Data |  |  |  | 
+
+Daily 02:00 |  |  |  | 
+
+Deletes files and GPS tracks past their period (A15). Skips orders with a Pending claim. |  |  |  | 
+
+Cloudinary error: the file record stays; the job tries again next run. A type without a period: nothing is deleted and a critical error is logged.
+
+ |  |  |  | 
+
+JOB-02 Pull Truck Locations from GPS |  |  |  | 
+
+Every 1 minute |  |  |  | 
+
+Position, track, driving time (A6), shift end alert, ETA every 5 minutes (A4). |  |  |  | 
+
+GPS API down: last position kept, track has a gap, next run tries again.
+
+ |  |  |  | 
+
+JOB-03 Flag Orders Waiting Too Long |  |  |  | 
+
+Every 15 minutes |  |  |  | 
+
+Sets or clears the two order flags (A11); alerts the Dispatcher on overdue documents (MSG41). |  |  |  | 
+
+Database down: tries 3 times 30 seconds apart.
+
+ |  |  |  | 
+
+JOB-04 Clean Up Sessions and Notifications |  |  |  | 
+
+Daily 03:00 |  |  |  | 
+
+Deletes sessions expired or signed out 7 days ago, and notifications older than 90 days. |  |  |  | 
+
+Nothing is deleted; runs again the next day.
+
+ |  |  |  | 
+
+JOB-05 Remind Expiry Dates |  |  |  | 
+
+Daily 06:00 |  |  |  | 
+
+Alerts the Manager for inspection, insurance and licence dates inside the warning period; sets an expired-inspection truck to INACTIVE (A16). |  |  |  | 
+
+Nothing changes; runs again the next day.
+
+Table 12. Background jobs
+
+Each job takes a PostgreSQL advisory lock at the start and writes one log line with its counts. The Worker process starts node-cron with these schedules (time zone Asia/Ho_Chi_Minh).
+
+6. System Integrations
+
+ |  |  |  | 
+
+API |  |  |  | 
+
+Called by |  |  |  | 
+
+Request and answer |  |  |  | 
+
+Timeout and retry |  |  |  | 
+
+If it is down
+
+ |  |  |  | 
+
+API-01 Google Routes (computeRouteMatrix) |  |  |  | 
+
+trips · RoutesAdapter |  |  |  | 
+
+Legs between stops, departureTime = planned start, TRAFFIC_AWARE_OPTIMAL. Fields asked: duration, distance for each leg. |  |  |  | 
+
+10 s; 1 retry |  |  |  | 
+
+MSG34 on the screen; the Dispatcher can type the stop times by hand. Last good ETA is kept.
+
+ |  |  |  | 
+
+API-02 Cloudinary upload |  |  |  | 
+
+Browser or PWA, with a signature from the API |  |  |  | 
+
+Signed request; answer has public ID and link. |  |  |  | 
+
+Retry from the PWA queue |  |  |  | 
+
+Photo stays on the phone until it uploads.
+
+ |  |  |  | 
+
+API-03 Cloudinary delete |  |  |  | 
+
+JOB-01, Manage Customer Documents |  |  |  | 
+
+Delete by public ID (signed). |  |  |  | 
+
+10 s; next run |  |  |  | 
+
+File record is not changed; logged.
+
+ |  |  |  | 
+
+API-04 Vehicle GPS |  |  |  | 
+
+JOB-02 · GpsAdapter |  |  |  | 
+
+List of truck IDs; answer has position, speed, time. Supplier and format to be confirmed with ALS. |  |  |  | 
+
+10 s; next minute |  |  |  | 
+
+Last position kept; “last updated” shown.
+
+ |  |  |  | 
+
+API-05 Google Geocoding |  |  |  | 
+
+locations · GeocodingAdapter |  |  |  | 
+
+Address → latitude, longitude, on save. |  |  |  | 
+
+5 s |  |  |  | 
+
+Location is saved without a position (MSG54); the Dispatcher can drag the pin.
+
+ |  |  |  | 
+
+API-06 Gemini |  |  |  | 
+
+documents · GeminiAdapter |  |  |  | 
+
+Cargo type, cargo name, provinces, optional question. Answer: document types with a short reason. |  |  |  | 
+
+10 s |  |  |  | 
+
+MSG42; the Dispatcher chooses documents by hand; a setting turns it off.
+
+ |  |  |  | 
+
+API-07 Vendor status (inbound) |  |  |  | 
+
+Vendor system |  |  |  | 
+
+POST with API key: tracking code, status (Picked Up, Delivered, Not received), time, POD file or refusal report. |  |  |  | 
+
+— |  |  |  | 
+
+Vendor retries; a repeated status is ignored.
+
+Table 13. External APIs
+
+Every adapter is one class that hides the supplier. A test double replaces it in tests. Keys are environment variables.
+
+7. API Errors
+
+All errors use one JSON shape: { code, message, fields }. message is the MSG number of Report 3 so the screen can show the text.
+
+ |  |  |  | 
+
+HTTP |  |  |  | 
+
+code |  |  |  | 
+
+When |  |  |  | 
+
+MSG
+
+ |  |  |  | 
+
+400 |  |  |  | 
+
+VALIDATION_ERROR |  |  |  | 
+
+A field is empty, too long or not valid |  |  |  | 
+
+MSG02, MSG03, MSG04, MSG59, MSG81, MSG82
+
+ |  |  |  | 
+
+401 |  |  |  | 
+
+UNAUTHENTICATED |  |  |  | 
+
+No valid access token, or wrong sign-in |  |  |  | 
+
+MSG05
+
+ |  |  |  | 
+
+403 |  |  |  | 
+
+FORBIDDEN |  |  |  | 
+
+The role may not do the action; locked account; maintenance mode |  |  |  | 
+
+MSG30, MSG06, MSG86
+
+ |  |  |  | 
+
+404 |  |  |  | 
+
+NOT_FOUND |  |  |  | 
+
+Unknown id; wrong, expired or revoked tracking token |  |  |  | 
+
+MSG28
+
+ |  |  |  | 
+
+409 |  |  |  | 
+
+CONFLICT |  |  |  | 
+
+Another user was faster; truck, driver or shift not free; business rule broken |  |  |  | 
+
+MSG33, MSG35, MSG36, MSG14, MSG45, MSG46, MSG47, MSG49, MSG78
+
+ |  |  |  | 
+
+422 |  |  |  | 
+
+RULE_VIOLATION |  |  |  | 
+
+A rule is not met (for example, no signed contract, documents not verified) |  |  |  | 
+
+MSG11, MSG43, MSG67
+
+ |  |  |  | 
+
+429 |  |  |  | 
+
+TOO_MANY_REQUESTS |  |  |  | 
+
+Rate limit (order form, sign-in, reset) |  |  |  | 
+
+MSG37
+
+ |  |  |  | 
+
+502 |  |  |  | 
+
+UPSTREAM_ERROR |  |  |  | 
+
+Google, Cloudinary, GPS or the AI service did not answer |  |  |  | 
+
+MSG34, MSG42, MSG32
+
+ |  |  |  | 
+
+500 |  |  |  | 
+
+INTERNAL_ERROR |  |  |  | 
+
+Unexpected error; logged with a request ID |  |  |  | 
+
+—
+
+Table 14. API errors
+

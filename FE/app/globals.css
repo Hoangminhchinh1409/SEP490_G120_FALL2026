@@ -154,7 +154,31 @@
   --foreground: var(--color-on-background);
 }
 
+/* Mobile Touch & PWA Ergonomics */
+html, body {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   background-color: var(--background);
   color: var(--foreground);
+  overscroll-behavior-y: contain;
 }
+
+/* Ant Design Message / Toast & Notification - Fix tràn lấn Tai Thỏ & Dynamic Island trên iPhone (iOS Safe Area) */
+.ant-message {
+  top: max(68px, calc(env(safe-area-inset-top, 0px) + 52px)) !important;
+  z-index: 99999 !important;
+}
+
+.ant-message-notice {
+  text-align: center;
+}
+
+.ant-notification {
+  top: max(68px, calc(env(safe-area-inset-top, 0px) + 52px)) !important;
+  z-index: 99999 !important;
+}
+

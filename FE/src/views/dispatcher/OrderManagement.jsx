@@ -1,301 +1,573 @@
-import { useState } from 'react';
-import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip } from 'antd';
-import { Search, Plus, Download, Eye, Sparkles, Truck } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Table, Tag, Button, Input, DatePicker, Select, Row, Col, message, Badge, Tooltip, Space } from 'antd';
+import { Search, Plus, Download, Eye, PhoneCall, Globe, RefreshCw, ArrowUpRight, XCircle, Sparkles, Bot } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import OrderFormModal from '../../components/dispatcher/OrderFormModal';
 import OrderDetailsModal from '../../components/dispatcher/OrderDetailsModal';
+import CancelOrderModal from '../../components/dispatcher/CancelOrderModal';
 import DocumentAssistantDrawer from '../../components/dispatcher/DocumentAssistantDrawer';
-import TripAssignmentModal from '../../components/dispatcher/TripAssignmentModal';
+import { orderApi } from '../../api/orderApi';
+import { useAuth } from '../../providers/AuthProvider';
+import ReadOnlyBanner from '../../components/common/ReadOnlyBanner';
+import AccessDenied from '../../components/common/AccessDenied';
 
 const { RangePicker } = DatePicker;
 
-// Dữ liệu đơn hàng mẫu khởi tạo bao gồm đơn ADTEK và Lô 2
-const initialOrders = [
-  { 
-    key: '1', 
-    order_id: 'NEX-827364', 
-    hawb_code: 'HNAE25090222',
-    customer: 'ADTEK (VIET NAM) COMPANY LIMITED', 
-    pickup: 'KCN Tiên Sơn, Bắc Ninh', 
-    dropoff: 'Kho Apex - Sân bay Nội Bài', 
-    status: 'READY_FOR_PLANNING', 
-    package_count: 18,
-    package_unit: 'Pallet',
-    weight: 2850,
-    chargeable: 2850,
-    agreed_price: 6500000,
-    extra_fees_surcharge: 450000,
-    extra_fees_collection: 1200000,
-    order_notes: 'LƯU Ý: OP tại sân bay kiểm tra seal chì thùng xe trước khi dỡ hàng. Chụp ảnh SOP đầy đủ.',
-    date: '2026-10-12 08:30' 
-  },
-  { 
-    key: '2', 
-    order_id: 'NEX-827365', 
-    hawb_code: 'SLVN-2026-HQ7N',
-    customer: 'CÔNG TY TNHH ÂM THANH ÁNH SÁNG SLVN', 
-    pickup: 'Kho ALS Cảng HKQT Nội Bài', 
-    dropoff: 'CCN Lai Xá, Hoài Đức, Hà Nội', 
-    status: 'CONFIRMED', 
-    package_count: 42,
-    package_unit: 'Kiện thùng gỗ',
-    weight: 1850,
-    chargeable: 2160,
-    agreed_price: 5200000,
-    extra_fees_surcharge: 300000,
-    extra_fees_collection: 2450000,
-    order_notes: 'Hàng thiết bị âm thanh ánh sáng nhập khẩu (Lô 2). Cần đối chiếu Tờ khai HQ 108187779340.',
-    date: '2026-10-12 09:15' 
-  },
-  { 
-    key: '3', 
-    order_id: 'NEX-827366', 
-    hawb_code: 'SAM-VN-9921',
-    customer: 'Samsung Electronics VN', 
-    pickup: 'Yên Phong, Bắc Ninh', 
-    dropoff: 'Kho ALS Cảng Nội Bài', 
-    status: 'ASSIGNED', 
-    package_count: 12,
-    package_unit: 'Pallet',
-    weight: 1200,
-    chargeable: 1200,
-    agreed_price: 4200000,
-    date: '2026-10-12 10:00' 
-  },
-  { 
-    key: '4', 
-    order_id: 'NEX-827367', 
-    hawb_code: 'FOX-GL-4412',
-    customer: 'Foxconn Bắc Giang', 
-    pickup: 'KCN Quang Châu, Bắc Giang', 
-    dropoff: 'Cảng Hải Phòng', 
-    status: 'IN_TRANSIT', 
-    package_count: 30,
-    package_unit: 'Pallet',
-    weight: 4500,
-    chargeable: 4500,
-    agreed_price: 8900000,
-    date: '2026-10-11 14:00' 
-  },
-  { 
-    key: '5', 
-    order_id: 'NEX-827368', 
-    hawb_code: 'VIN-HP-1122',
-    customer: 'VinFast Hải Phòng', 
-    pickup: 'Cát Hải, Hải Phòng', 
-    dropoff: 'Khu CNC Hòa Lạc, Hà Nội', 
-    status: 'DRAFT', 
-    package_count: 8,
-    package_unit: 'Kiện',
-    weight: 850,
-    chargeable: 920,
-    agreed_price: 3500000,
-    date: '2026-10-12 11:20' 
-  }
-];
-
 const statusColors = {
   'DRAFT': 'default',
-  'CONFIRMED': 'blue', 
-  'READY_FOR_PLANNING': 'cyan', 
+  'CONFIRMED': 'blue',
+  'READY_FOR_PLANNING': 'cyan',
   'ASSIGNED': 'orange',
-  'IN_TRANSIT': 'purple', 
-  'DELIVERED': 'green', 
-  'CANCELLED': 'red'
+  'ACCEPTED': 'geekblue',
+  'PICKED_UP': 'gold',
+  'IN_TRANSIT': 'purple',
+  'HANDED_OVER_VENDOR': 'volcano',
+  'DELIVERED': 'green',
+  'DELIVERED_EXCEPTION': 'error',
+  'CANCELLED': 'red',
+  'CLOSED': 'default'
+};
+
+const statusLabels = {
+  'DRAFT': 'Đơn nháp',
+  'CONFIRMED': 'Đã xác nhận',
+  'READY_FOR_PLANNING': 'Sẵn sàng xếp xe',
+  'ASSIGNED': 'Đã gán xe',
+  'ACCEPTED': 'Tài xế đã nhận',
+  'PICKED_UP': 'Đã lấy hàng',
+  'IN_TRANSIT': 'Đang vận chuyển',
+  'HANDED_OVER_VENDOR': 'Đã giao nhà xe ngoài',
+  'DELIVERED': 'Đã giao hàng',
+  'DELIVERED_EXCEPTION': 'Từ chối nhận hàng',
+  'CANCELLED': 'Đã hủy',
+  'CLOSED': 'Đã đóng'
 };
 
 const OrderManagement = () => {
-  const [orders, setOrders] = useState(initialOrders);
+  const router = useRouter();
+  const { user, isReadOnly, hasPermission } = useAuth();
+  const isManager = Number(user?.role_id) === 2;
+  const readOnly = isReadOnly('ORDER_MANAGE') || isManager;
+  const allowed = !user || Number(user.role_id) === 1 || Number(user.role_id) === 3 || (hasPermission && hasPermission('ORDER_MANAGE'));
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState(null);
-  const [selectedOrderForAssign, setSelectedOrderForAssign] = useState(null);
-  const [isAIDrawerOpen, setIsAIDrawerOpen] = useState(false);
+  const [selectedOrderForCancel, setSelectedOrderForCancel] = useState(null);
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
 
-  const handleCreateOrder = (values) => {
-    const newOrder = {
-      key: Date.now().toString(),
-      order_id: `NEX-${Math.floor(100000 + Math.random() * 900000)}`,
-      hawb_code: values.hawb_code || 'HAWB-AUTO',
-      customer: values.customer_name,
-      pickup: values.pickup_address,
-      dropoff: values.delivery_address,
-      package_count: values.package_count || 1,
-      package_unit: values.package_unit || 'Pallet',
-      weight: values.weight_kg,
-      chargeable: values.chargeable_weight,
-      agreed_price: values.agreed_price,
-      extra_fees_surcharge: values.extra_fees_surcharge || 0,
-      extra_fees_collection: values.extra_fees_collection || 0,
-      order_notes: values.order_notes,
-      status: 'DRAFT',
-      date: new Date().toISOString().slice(0, 16).replace('T', ' ')
+  // Tải danh sách đơn hàng từ Backend Supabase (silent: true khi cập nhật nền không bật loading)
+  const fetchOrders = useCallback(async (isSilent = false) => {
+    if (!allowed) {
+      setLoading(false);
+      return;
+    }
+    try {
+      if (!isSilent) setLoading(true);
+      const data = await orderApi.getAllOrders();
+      setOrders(data);
+    } catch (err) {
+      console.error('Fetch orders error:', err);
+      message.error('Không thể kết nối đến máy chủ BE để lấy danh sách đơn');
+    } finally {
+      if (!isSilent) setLoading(false);
+    }
+  }, [allowed]);
+
+  useEffect(() => {
+    let isSubscribed = true;
+
+    const loadInitialData = async () => {
+      if (!allowed) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const data = await orderApi.getAllOrders();
+        if (isSubscribed) {
+          setOrders(data);
+          setLoading(false);
+        }
+      } catch (err) {
+        if (isSubscribed) {
+          console.error('Fetch orders error:', err);
+          message.error('Không thể kết nối đến máy chủ BE để lấy danh sách đơn');
+          setLoading(false);
+        }
+      }
     };
-    setOrders([newOrder, ...orders]);
-    setIsCreateModalOpen(false);
-    message.success(`Đã tạo thành công đơn hàng nháp: ${newOrder.order_id}!`);
+
+    loadInitialData();
+
+    // Tự động kiểm tra cập nhật mỗi 5 giây để đồng bộ trạng thái mới nhất
+    const pollInterval = setInterval(async () => {
+      try {
+        const latestOrders = await orderApi.getAllOrders();
+        if (isSubscribed && Array.isArray(latestOrders)) {
+          setOrders(latestOrders);
+          setSelectedOrderForDetails(prevSelected => {
+            if (!prevSelected) return null;
+            const found = latestOrders.find(o => o.id === prevSelected.id || o.order_id === prevSelected.order_id);
+            return found ? {...prevSelected,...found }: prevSelected;
+          });
+        }
+      } catch (e) {
+        // bỏ qua lỗi polling
+      }
+    }, 5000);
+
+    const handleStorageChange = () => {
+      fetchOrders(true);
+    };
+
+    window.addEventListener('nexlog_orders_updated', handleStorageChange);
+    return () => {
+      isSubscribed = false;
+      clearInterval(pollInterval);
+      window.removeEventListener('nexlog_orders_updated', handleStorageChange);
+    };
+  }, [fetchOrders]);
+
+  const handleCreateOrder = async (values) => {
+    try {
+      setLoading(true);
+      const newOrder = await orderApi.createDirectOrder(values);
+      message.success(`Đã tạo thành công đơn hàng vào Backend: ${newOrder.order_code}!`);
+      setIsCreateModalOpen(false);
+      await fetchOrders();
+    } catch (err) {
+      console.error(err);
+      message.error(err.message || 'Không thể tạo đơn hàng trên máy chủ');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdateOrder = (updatedOrder) => {
-    setOrders(prev => prev.map(o => o.key === updatedOrder.key ? updatedOrder : o));
+    setOrders(prev => prev.map(o => (o.id === updatedOrder.id || o.order_id === updatedOrder.order_id) ? {...o,...updatedOrder }: o));
     setSelectedOrderForDetails(updatedOrder);
+    fetchOrders(true);
   };
 
-  const handleAssignSuccess = (assignedOrder) => {
-    setOrders(prev => prev.map(o => o.key === assignedOrder.key ? assignedOrder : o));
+  const handleConfirmCancel = async (cancelData) => {
+    try {
+      const orderTargetId = cancelData.id || cancelData.order_id;
+      await orderApi.cancelOrder(orderTargetId, cancelData);
+      
+      setOrders(prev => prev.map(o => (o.id === cancelData.id || o.order_id === cancelData.order_id)
+        ? {...o, status: 'CANCELLED', cancel_reason: cancelData.cancellation_reason, cancellation_fee: cancelData.cancellation_fee }
+        : o
+      ));
+      setSelectedOrderForCancel(null);
+
+      if (!cancelData.cancellation_fee || cancelData.cancellation_fee === 0) {
+        message.success(`Đã hủy đơn hàng ${cancelData.order_id || cancelData.id} (Miễn phí hủy: 0 VNĐ)!`);
+      } else {
+        message.warning(`Đã hủy đơn hàng ${cancelData.order_id || cancelData.id}! Phí phạt / tiền công: ${Number(cancelData.cancellation_fee).toLocaleString()} VNĐ`);
+      }
+      fetchOrders();
+    } catch (err) {
+      console.error('cancelOrder error:', err);
+      message.error(err.message || 'Không thể hủy đơn hàng trên hệ thống');
+    }
   };
 
-  // Filter logic
-  const filteredData = orders.filter(item => {
-    const matchSearch = filterText === '' || 
-      item.order_id.toLowerCase().includes(filterText.toLowerCase()) ||
-      item.customer.toLowerCase().includes(filterText.toLowerCase()) ||
-      (item.hawb_code && item.hawb_code.toLowerCase().includes(filterText.toLowerCase()));
-    const matchStatus = filterStatus === 'all' || item.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  // Filter logic (Lọc theo dispatcher phụ trách nếu đang đăng nhập là Điều phối viên)
+  const filteredData = useMemo(() => {
+    const searchLower = filterText.trim().toLowerCase();
+    const currentUserId = user?.id ? Number(user.id): null;
+    const isDispatcher = user && (Number(user.role_id) === 3 || user.role === 'DISPATCHER' || user.role_name === 'DISPATCHER');
 
-  const columns = [
+    return orders.filter(item => {
+      // Nếu là Dispatcher, chỉ xem đơn được phân công cho mình
+      if (isDispatcher && currentUserId) {
+        const orderDispId = item.responsible_dispatcher_id ? Number(item.responsible_dispatcher_id): null;
+        if (orderDispId && orderDispId !== currentUserId) {
+          return false;
+        }
+      }
+
+      const matchSearch = !searchLower || 
+        (item.order_id && item.order_id.toLowerCase().includes(searchLower)) ||
+        (item.customer && item.customer.toLowerCase().includes(searchLower));
+      
+      let matchStatus = true;
+      if (filterStatus !== 'all') {
+        if (filterStatus === 'CLOSED') {
+          matchStatus = item.status === 'CLOSED';
+        } else {
+          matchStatus = item.status === filterStatus;
+        }
+      }
+      return matchSearch && matchStatus;
+    });
+  }, [orders, filterText, filterStatus, user]);
+
+  const columns = useMemo(() => [
     { 
-      title: 'Mã Đơn / HAWB', 
-      key: 'order_id', 
+      title: 'Đơn hàng & Khách hàng', 
+      key: 'order_customer', 
+      width: '26%',
       render: (_, record) => (
         <div>
-          <span className="font-bold text-[#7367f0] block cursor-pointer hover:underline" onClick={() => setSelectedOrderForDetails(record)}>
-            {record.order_id}
-          </span>
-          <span className="text-[11px] font-mono text-gray-400 block">HAWB: {record.hawb_code}</span>
-        </div>
-      )
-    },
-    { 
-      title: 'Khách hàng', 
-      dataIndex: 'customer', 
-      key: 'customer', 
-      render: text => <span className="font-medium text-gray-800 text-xs">{text}</span> 
-    },
-    { 
-      title: 'Quy cách & Tải trọng', 
-      key: 'specs',
-      render: (_, record) => (
-        <div className="text-xs">
-          <div>{record.package_count} {record.package_unit}</div>
-          <div className="text-gray-400 text-[11px]">
-            Thực: {record.weight}kg | <span className="font-semibold text-amber-600">Cước: {record.chargeable}kg</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span 
+              className="font-bold text-[#7367f0] cursor-pointer hover:underline text-xs" 
+              onClick={() => setSelectedOrderForDetails(record)}
+            >
+              {record.order_id}
+            </span>
+            {record.shipping_direction === 'EXPORT' ? (
+              <Tag color="purple" className="text-[10px] px-1.5 py-0 rounded font-semibold border-purple-300 bg-purple-50 text-purple-700 inline-flex items-center gap-1">
+                🛫 Xuất khẩu
+              </Tag>
+            ): (
+              <Tag color="cyan" className="text-[10px] px-1.5 py-0 rounded font-semibold border-cyan-300 bg-cyan-50 text-cyan-700 inline-flex items-center gap-1">
+                🛬 Nhập khẩu
+              </Tag>
+            )}
+            {record.source === 'HOMEPAGE' ? (
+              <Tag color="orange" className="text-[10px] px-1.5 py-0 rounded font-semibold border-amber-300 bg-amber-50 text-amber-700 inline-flex items-center gap-1">
+                <Globe size={10} /> Đơn Web
+              </Tag>
+            ): (
+              <Tag color="processing" className="text-[10px] px-1.5 py-0 rounded font-semibold border-blue-200 bg-blue-50 text-blue-700 inline-flex items-center gap-1">
+                <PhoneCall size={10} /> Hotline / Trực tiếp
+              </Tag>
+            )}
+          </div>
+          <div className="font-semibold text-gray-800 text-xs mt-1 leading-snug">
+            {record.customer}
           </div>
         </div>
       )
     },
     { 
-      title: 'Hành lang Vận chuyển', 
+      title: 'Tuyến đường', 
       key: 'route', 
+      width: '26%',
       render: (_, record) => (
-        <div className="text-xs max-w-[200px] truncate">
-          <div className="truncate"><span className="text-blue-600 font-semibold">Từ:</span> {record.pickup}</div>
-          <div className="truncate"><span className="text-emerald-600 font-semibold">Đến:</span> {record.dropoff}</div>
+        <div className="text-xs space-y-1">
+          <div className="text-gray-700 leading-snug">
+            <span className="text-blue-600 font-bold mr-1">Lấy:</span>
+            <span>{record.pickup}</span>
+          </div>
+          <div className="text-gray-700 leading-snug">
+            <span className="text-emerald-600 font-bold mr-1">Giao:</span>
+            <span>{record.dropoff}</span>
+          </div>
+          {record.customs_location && record.customs_location !== 'NOI_BAI' && (
+            <div className="text-[10px] text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded inline-block">
+              ICD thông quan: {record.customs_location === 'MY_DINH' ? 'Mỹ Đình': record.customs_location === 'BAC_NINH' ? 'Bắc Ninh': 'Gia Lâm'}
+            </div>
+          )}
         </div>
       )
     },
     { 
-      title: 'Giá chốt (Agreed Price)', 
+      title: 'Hàng hóa & Tải trọng', 
+      key: 'specs', 
+      width: '16%',
+      render: (_, record) => (
+        <div className="text-xs">
+          <div className="font-semibold text-gray-800">{record.package_count} {record.package_unit}</div>
+          <div className="text-gray-400 text-[11px] mt-0.5">
+            Thực: {record.weight}kg | <span className="font-bold text-amber-600">Cước: {record.chargeable}kg</span>
+          </div>
+        </div>
+      )
+    },
+    { 
+      title: 'Giá cước', 
       dataIndex: 'agreed_price', 
-      key: 'agreed_price',
-      render: val => <span className="font-bold text-gray-800 text-xs">{val ? val.toLocaleString() + ' đ' : 'Chưa chốt'}</span>
+      key: 'agreed_price', 
+      width: '12%',
+      render: val => (
+        val && val > 0 ? (
+          <span className="font-bold text-gray-800 text-xs whitespace-nowrap">
+            {val.toLocaleString()} đ
+          </span>
+        ): (
+          <span className="font-bold text-amber-600 text-xs whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+            Chờ chốt giá
+          </span>
+        )
+      )
     },
     { 
       title: 'Trạng thái', 
       dataIndex: 'status', 
       key: 'status', 
-      render: (status) => (
-        <Tag color={statusColors[status] || 'default'} className="font-semibold text-[11px] rounded-md px-2 py-0.5">
-          {status}
-        </Tag>
-      )
+      width: '10%',
+      render: (status, record) => {
+        if (status === 'CLOSED' || status === 'CANCELLED' || status === 'DELIVERED') {
+          if (record.cancel_reason || record.cancellation_reason || status === 'CANCELLED') {
+            return (
+              <Tag color="red" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                Đã hủy (Đã đóng)
+              </Tag>
+            );
+          }
+          return (
+            <Tag color="green" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+              Đã giao (Đã đóng)
+            </Tag>
+          );
+        }
+        if (record.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' && status === 'DRAFT') {
+          return (
+            <Tag color="cyan" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap border-cyan-400 text-cyan-800 bg-cyan-50">
+              Đã báo giá (Chờ khách chốt)
+            </Tag>
+          );
+        }
+        if (status === 'CONFIRMED') {
+          const hasRej = record.web_workflow?.stage === 'DOCS_REJECTED' || (record.documents || []).some(d => d.status === 'REJECTED');
+          if (hasRej) {
+            return (
+              <Tag color="error" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                Chờ nộp lại chứng từ
+              </Tag>
+            );
+          }
+          if (record.web_workflow?.stage === 'CONTRACT_SENT') {
+            return (
+              <Tag color="cyan" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap border-cyan-400 text-cyan-800 bg-cyan-50">
+                Đã gửi HĐ - Chờ khách ký
+              </Tag>
+            );
+          }
+          if (record.web_workflow?.stage === 'DOCS_APPROVED') {
+            return (
+              <Tag color="cyan" className="font-bold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                Đã duyệt CT - Chờ gửi HĐ
+              </Tag>
+            );
+          }
+          if (record.web_workflow?.stage === 'DOCS_UPLOADED') {
+            return (
+              <Tag color="processing" className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+                Chờ duyệt chứng từ
+              </Tag>
+            );
+          }
+        }
+        return (
+          <Tag color={statusColors[status] || 'default'} className="font-semibold text-[11px] rounded-md px-2 py-0.5 whitespace-nowrap">
+            {statusLabels[status] || status}
+          </Tag>
+        );
+      }
     },
     { 
-      title: 'Thao tác Nghiệp vụ', 
+      title: 'Thao tác', 
       key: 'action', 
-      render: (_, record) => (
-        <div className="flex items-center gap-1.5">
-          <Tooltip title="Xem chi tiết & kiểm duyệt chứng từ">
-            <Button 
-              size="small" 
-              icon={<Eye size={14} />} 
-              className="text-gray-600 hover:text-[#7367f0]"
-              onClick={() => setSelectedOrderForDetails(record)}
-            >
-              Hồ sơ
-            </Button>
-          </Tooltip>
-
-          {record.status === 'READY_FOR_PLANNING' && (
-            <Tooltip title="Lập kế hoạch & Gán xe">
+      width: '14%',
+      render: (_, record) => {
+        if (readOnly) {
+          return (
+            <Tooltip title="Xem chi tiết hồ sơ đơn hàng (Chỉ xem)">
               <Button 
                 size="small" 
-                type="primary" 
-                icon={<Truck size={14} />}
-                className="bg-[#7367f0] hover:bg-[#5e50ee]"
-                onClick={() => setSelectedOrderForAssign(record)}
-              >
-                Gán xe
-              </Button>
-            </Tooltip>
-          )}
-
-          {record.status === 'DRAFT' && (
-            <Tooltip title="Mở chi tiết để tải Hợp đồng & Xác nhận">
-              <Button 
-                size="small" 
-                type="primary" 
-                ghost
+                icon={<Eye size={14} />} 
+                className="text-gray-600 hover:text-[#7367f0]"
                 onClick={() => setSelectedOrderForDetails(record)}
               >
-                Xác nhận
+                Hồ sơ
+              </Button>
+            </Tooltip>
+          );
+        }
+        return (
+          <Space size="small" wrap>
+            {record.status === 'DRAFT' ? (
+            <>
+              {record.web_workflow?.stage === 'PRICE_AGREED_BY_DISPATCHER' ? (
+                <Tooltip title="Đã gửi báo giá qua email cho khách. Nhấn để xem chi tiết / điều chỉnh lại">
+                  <Button 
+                    size="small" 
+                    type="primary"
+                    className="text-xs bg-cyan-600 hover:bg-cyan-700 border-cyan-600 font-semibold"
+                    onClick={() => setSelectedOrderForDetails(record)}
+                  >
+                    Xem báo giá
+                  </Button>
+                </Tooltip>
+              ): (
+                <Tooltip title="Xử lý đơn nháp">
+                  <Button 
+                    size="small" 
+                    type="primary"
+                    ghost
+                    className="text-xs border-indigo-400 text-indigo-700 font-semibold"
+                    onClick={() => setSelectedOrderForDetails(record)}
+                  >
+                    Xử lý
+                  </Button>
+                </Tooltip>
+              )}
+              <Tooltip title="Hủy đơn (Miễn phí)">
+                <Button 
+                  size="small" 
+                  danger
+                  icon={<XCircle size={13} />}
+                  onClick={() => setSelectedOrderForCancel(record)}
+                />
+              </Tooltip>
+            </>
+          ): record.status === 'CONFIRMED' ? (
+            <>
+              <Tooltip title={record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Đính kèm bản scan PDF hợp đồng 2 bên đã ký' : 'Kiểm duyệt & Xác nhận danh mục chứng từ'}>
+                <Button 
+                  size="small" 
+                  type="primary"
+                  className={`text-xs font-semibold ${record.web_workflow?.stage === 'DOCS_APPROVED' ? 'bg-cyan-600 hover:bg-cyan-700 border-cyan-600': 'bg-indigo-600 hover:bg-indigo-700'}`}
+                  onClick={() => setSelectedOrderForDetails({...record, targetTab: record.web_workflow?.stage === 'DOCS_APPROVED' ? '3': '2' })}
+                >
+                  {record.web_workflow?.stage === 'DOCS_APPROVED' ? 'Đính kèm HĐ PDF' : 'Xác nhận chứng từ'}
+                </Button>
+              </Tooltip>
+              <Tooltip title="Hủy đơn (Miễn phí)">
+                <Button 
+                  size="small" 
+                  danger
+                  icon={<XCircle size={13} />}
+                  onClick={() => setSelectedOrderForCancel(record)}
+                />
+              </Tooltip>
+            </>
+          ): record.status === 'READY_FOR_PLANNING' ? (
+            <>
+              <Tooltip title="Hồ sơ">
+                <Button 
+                  size="small" 
+                  icon={<Eye size={14} />} 
+                  className="text-gray-600 hover:text-[#7367f0]"
+                  onClick={() => setSelectedOrderForDetails(record)}
+                >
+                  Hồ sơ
+                </Button>
+              </Tooltip>
+              <Tooltip title="Xếp chuyến">
+                <Button 
+                  size="small" 
+                  type="primary" 
+                  icon={<ArrowUpRight size={14} />} 
+                  className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold text-xs"
+                  onClick={() => router.push('/dispatcher/trips')}
+                >
+                  Xếp chuyến
+                </Button>
+              </Tooltip>
+            </>
+          ): (record.status === 'CANCELLED' || record.status === 'DELIVERED' || record.status === 'DELIVERED_EXCEPTION' || record.status === 'CLOSED') ? (
+            <>
+              <Tooltip title="Xem chi tiết hồ sơ">
+                <Button 
+                  size="small" 
+                  icon={<Eye size={14} />} 
+                  className="text-gray-600 hover:text-[#7367f0]"
+                  onClick={() => setSelectedOrderForDetails(record)}
+                >
+                  Hồ sơ
+                </Button>
+              </Tooltip>
+            </>
+          ): record.status === 'ASSIGNED' ? (
+            <>
+              <Tooltip title="Hồ sơ">
+                <Button 
+                  size="small" 
+                  icon={<Eye size={14} />} 
+                  className="text-gray-600 hover:text-[#7367f0]"
+                  onClick={() => setSelectedOrderForDetails(record)}
+                >
+                  Hồ sơ
+                </Button>
+              </Tooltip>
+              <Tooltip title="Hủy đơn (Tính phí điều xe)">
+                <Button 
+                  size="small" 
+                  danger
+                  icon={<XCircle size={13} />}
+                  onClick={() => setSelectedOrderForCancel(record)}
+                />
+              </Tooltip>
+            </>
+          ): (
+            <Tooltip title="Hồ sơ">
+              <Button 
+                size="small" 
+                icon={<Eye size={14} />} 
+                className="text-gray-600 hover:text-[#7367f0]"
+                onClick={() => setSelectedOrderForDetails(record)}
+              >
+                Hồ sơ
               </Button>
             </Tooltip>
           )}
-        </div>
+        </Space>
       )
     }
-  ];
+  }
+  ], [router, readOnly]);
+
+  if (!allowed) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <AccessDenied moduleName="Quản lý Đơn hàng (ORDER_MANAGE)" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 md:p-8 custom-scrollbar">
+    <div className="p-4 sm:p-6 lg:p-8 custom-scrollbar">
       <div className="max-w-[1600px] mx-auto">
+        {readOnly && <ReadOnlyBanner moduleName="Quản lý Đơn hàng (Chế độ Xem chéo)" />}
         
         {/* Header Action */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-800">Quản lý Đơn hàng & Hồ sơ Vận tải</h1>
+              <h1 className="text-2xl font-bold text-gray-800">Quản lý Đơn hàng</h1>
               <Badge count={orders.filter(o => o.status === 'READY_FOR_PLANNING').length} overflowCount={99} title="Đơn sẵn sàng xếp chuyến">
-                <Tag color="cyan" className="font-semibold ml-1">Ready: {orders.filter(o => o.status === 'READY_FOR_PLANNING').length}</Tag>
+                <Tag color="cyan" className="font-semibold ml-1">Sẵn sàng: {orders.filter(o => o.status === 'READY_FOR_PLANNING').length}</Tag>
               </Badge>
             </div>
-            <p className="text-gray-500 text-sm">
-              Tiếp nhận đơn, chốt giá thỏa thuận, kiểm duyệt chứng từ hải quan và gán xe nội bộ/vendor
-            </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button 
-              icon={<Sparkles size={16} className="text-purple-600" />} 
-              className="h-10 px-3.5 border-purple-200 text-purple-700 bg-purple-50/50 hover:bg-purple-100"
-              onClick={() => setIsAIDrawerOpen(true)}
+              icon={<Sparkles size={15} className="text-purple-600 animate-pulse" />} 
+              className="h-10 px-3.5 border-purple-200 bg-purple-50/70 text-purple-700 hover:bg-purple-100 font-semibold"
+              onClick={() => setAssistantDrawerOpen(true)}
             >
-              Trợ lý AI Gemini
+              Trợ lý AI Logistics (Gemini)
             </Button>
 
             <Button 
-              type="primary" 
-              icon={<Plus size={16} />} 
-              className="bg-[#7367f0] hover:bg-[#5e50ee] h-10 px-4 font-semibold" 
-              onClick={() => setIsCreateModalOpen(true)}
+              icon={<RefreshCw size={15} className={loading ? "animate-spin text-indigo-600": "text-gray-600"} />} 
+              className="h-10 px-3 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium"
+              onClick={() => fetchOrders()}
+              loading={loading}
             >
-              Tạo Đơn Hàng Mới (Order Intake)
+              Làm mới
             </Button>
+
+            {!readOnly && (
+              <Button 
+                type="primary" 
+                icon={<Plus size={16} />} 
+                className="bg-[#7367f0] hover:bg-[#5e50ee] h-10 px-4 font-semibold" 
+                onClick={() => setIsCreateModalOpen(true)}
+              >
+                Tạo đơn vận chuyển
+              </Button>
+            )}
           </div>
         </div>
 
@@ -305,7 +577,7 @@ const OrderManagement = () => {
             <Col xs={24} md={8}>
               <p className="text-xs font-semibold text-gray-500 mb-1.5 uppercase">Tìm kiếm Đơn hàng</p>
               <Input 
-                placeholder="Mã đơn (NEX-...), Mã HAWB (HNAE...), Khách hàng..." 
+                placeholder="Mã đơn, Khách hàng..." 
                 prefix={<Search size={16} className="text-gray-400" />} 
                 value={filterText}
                 onChange={e => setFilterText(e.target.value)}
@@ -320,12 +592,18 @@ const OrderManagement = () => {
                 className="w-full" 
                 options={[
                   { value: 'all', label: 'Tất cả trạng thái' },
-                  { value: 'DRAFT', label: 'Đơn nháp (Draft)' },
-                  { value: 'CONFIRMED', label: 'Đã xác nhận (Confirmed)' },
-                  { value: 'READY_FOR_PLANNING', label: 'Sẵn sàng xếp xe (Ready for Planning)' },
-                  { value: 'ASSIGNED', label: 'Đã gán xe/tài xế (Assigned)' },
-                  { value: 'IN_TRANSIT', label: 'Đang vận chuyển (In Transit)' },
-                  { value: 'DELIVERED', label: 'Đã giao hàng (Delivered)' },
+                  { value: 'DRAFT', label: 'Đơn nháp (DRAFT)' },
+                  { value: 'CONFIRMED', label: 'Đã xác nhận (CONFIRMED)' },
+                  { value: 'READY_FOR_PLANNING', label: 'Sẵn sàng xếp xe (READY_FOR_PLANNING)' },
+                  { value: 'ASSIGNED', label: 'Đã gán xe (ASSIGNED)' },
+                  { value: 'ACCEPTED', label: 'Tài xế đã nhận (ACCEPTED)' },
+                  { value: 'PICKED_UP', label: 'Đã lấy hàng (PICKED_UP)' },
+                  { value: 'IN_TRANSIT', label: 'Đang vận chuyển (IN_TRANSIT)' },
+                  { value: 'HANDED_OVER_VENDOR', label: 'Giao nhà xe ngoài (HANDED_OVER_VENDOR)' },
+                  { value: 'DELIVERED', label: 'Đã giao (DELIVERED)' },
+                  { value: 'DELIVERED_EXCEPTION', label: 'Từ chối nhận hàng (DELIVERED_EXCEPTION)' },
+                  { value: 'CANCELLED', label: 'Đã hủy (CANCELLED)' },
+                  { value: 'CLOSED', label: 'Đã đóng (CLOSED)' }
                 ]} 
               />
             </Col>
@@ -344,8 +622,10 @@ const OrderManagement = () => {
         {/* Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <Table 
+            rowKey={record => record.id || record.order_id}
             columns={columns} 
             dataSource={filteredData} 
+            loading={loading}
             pagination={{ pageSize: 8 }} 
             className="custom-table"
           />
@@ -354,11 +634,13 @@ const OrderManagement = () => {
       </div>
 
       {/* Modal Tạo Đơn Hàng Mới */}
-      <OrderFormModal 
-        open={isCreateModalOpen} 
-        onCancel={() => setIsCreateModalOpen(false)} 
-        onSubmit={handleCreateOrder} 
-      />
+      {isCreateModalOpen && (
+        <OrderFormModal 
+          open={isCreateModalOpen} 
+          onCancel={() => setIsCreateModalOpen(false)} 
+          onSubmit={handleCreateOrder} 
+        />
+      )}
 
       {/* Modal Chi Tiết Hồ Sơ Đơn Hàng & Duyệt Chứng Từ */}
       <OrderDetailsModal
@@ -366,22 +648,25 @@ const OrderManagement = () => {
         order={selectedOrderForDetails}
         onCancel={() => setSelectedOrderForDetails(null)}
         onUpdateOrder={handleUpdateOrder}
+        readOnly={readOnly}
       />
 
-      {/* Modal Gán Xe & Tài Xế Nội Bộ / Vendor */}
-      <TripAssignmentModal
-        open={Boolean(selectedOrderForAssign)}
-        order={selectedOrderForAssign}
-        onCancel={() => setSelectedOrderForAssign(null)}
-        onAssignSuccess={handleAssignSuccess}
+      {/* Modal Hủy Đơn Hàng theo chuẩn */}
+      <CancelOrderModal
+        open={Boolean(selectedOrderForCancel)}
+        order={selectedOrderForCancel}
+        onCancel={() => setSelectedOrderForCancel(null)}
+        onConfirmCancel={handleConfirmCancel}
       />
 
-      {/* Drawer Trợ Lý AI Gemini Gợi Ý Chứng Từ */}
+      {/* Trợ lý AI Logistics (Gemini) mở trực tiếp ngoài màn hình Quản lý đơn hàng */}
       <DocumentAssistantDrawer
-        open={isAIDrawerOpen}
-        onClose={() => setIsAIDrawerOpen(false)}
+        open={assistantDrawerOpen}
+        onClose={() => setAssistantDrawerOpen(false)}
+        currentCargo="Lô hàng thiết bị điện tử, linh kiện máy tính nhập khẩu từ Hàn Quốc về Sân bay Nội Bài giao KCN Tiên Sơn Bắc Ninh"
         onApplyRecommendations={() => {
-          message.success('Danh mục chứng từ chuẩn đã được kích hoạt cho các đơn mới!');
+          setAssistantDrawerOpen(false);
+          setIsCreateModalOpen(true);
         }}
       />
     </div>
