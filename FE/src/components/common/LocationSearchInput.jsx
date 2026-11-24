@@ -159,7 +159,13 @@ const LocationSearchInput = ({
   const [verifyStatus, setVerifyStatus] = useState('idle'); // 'idle' | 'verified' | 'unverified' | 'invalid'
   const [verifyWarning, setVerifyWarning] = useState('');
   const selectedFromDropdownRef = useRef(false);
+  const lastGeocodedAddrRef = useRef('');
+  const onSelectLocationRef = useRef(onSelectLocation);
   const containerRef = useRef(null);
+
+  useEffect(() => {
+    onSelectLocationRef.current = onSelectLocation;
+  }, [onSelectLocation]);
 
   // Đồng bộ khi prop `value` thay đổi từ bên ngoài (ví dụ chọn Preset hoặc Reset form)
   if (value !== prevValue) {
@@ -255,9 +261,13 @@ const LocationSearchInput = ({
       return;
     }
 
-    // Nếu vừa chọn trực tiếp từ dropdown gợi ý VietMap thì không cần gọi tìm kiếm lại
+    // Nếu vừa chọn trực tiếp từ dropdown gợi ý VietMap hoặc đã geocode đúng địa chỉ này rồi thì bỏ qua
     if (selectedFromDropdownRef.current) {
       selectedFromDropdownRef.current = false;
+      lastGeocodedAddrRef.current = fullAddr;
+      return;
+    }
+    if (lastGeocodedAddrRef.current === fullAddr) {
       return;
     }
 
@@ -268,31 +278,34 @@ const LocationSearchInput = ({
       try {
         setResolvingCoords(true);
         const strippedDetail = stripAddressUnitPrefix(cleanDetail);
-        const searchTasks = [searchVietmap(fullAddr, { signal: controller.signal })];
-        if (strippedDetail && strippedDetail !== cleanDetail && strippedDetail.length >= 3) {
-          searchTasks.push(
-            searchVietmap(
-              buildFullAddress(strippedDetail, selectedWardName, selectedProvinceName),
-              { signal: controller.signal }
-            )
-          );
-        }
+        let candidates = await searchVietmap(fullAddr, { signal: controller.signal });
+        candidates = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
 
-        const searchArrays = await Promise.all(searchTasks);
-        const candidates = searchArrays.flat().filter(Boolean);
-        const matchedItem = candidates.find((item) =>
+        let matchedItem = candidates.find((item) =>
           doesVietmapItemMatchDetail(item, cleanDetail, selectedWardName, selectedProvinceName)
         );
+
+        if (!matchedItem && strippedDetail && strippedDetail !== cleanDetail && strippedDetail.length >= 3) {
+          const fallbackRes = await searchVietmap(
+            buildFullAddress(strippedDetail, selectedWardName, selectedProvinceName),
+            { signal: controller.signal }
+          );
+          const fallbackCandidates = Array.isArray(fallbackRes) ? fallbackRes.filter(Boolean) : [];
+          matchedItem = fallbackCandidates.find((item) =>
+            doesVietmapItemMatchDetail(item, cleanDetail, selectedWardName, selectedProvinceName)
+          );
+        }
 
         if (!isCancelled && matchedItem?.ref_id) {
           const placeData = await fetchVietmapPlace(matchedItem.ref_id, { signal: controller.signal });
           if (!isCancelled && typeof placeData?.lat === 'number' && typeof placeData?.lng === 'number') {
+            lastGeocodedAddrRef.current = fullAddr;
             setIsVerifiedCoords(true);
             setVerifyStatus('verified');
             setVerifyWarning('');
             markAddressVerified(fullAddr, placeData.lat, placeData.lng);
-            if (onSelectLocation) {
-              onSelectLocation({
+            if (onSelectLocationRef.current) {
+              onSelectLocationRef.current({
                 address: fullAddr,
                 mainName: cleanDetail,
                 ward: selectedWardName,
@@ -307,14 +320,15 @@ const LocationSearchInput = ({
         }
 
         if (!isCancelled) {
+          lastGeocodedAddrRef.current = fullAddr;
           const notFoundMsg =
             'Không tìm thấy địa chỉ cụ thể này trên bản đồ VietMap. Vui lòng chọn gợi ý từ VietMap hoặc kiểm tra lại số nhà, tên đường / KCN.';
           setIsVerifiedCoords(false);
           setVerifyStatus('unverified');
           setVerifyWarning(notFoundMsg);
           markAddressUnverified(fullAddr, notFoundMsg);
-          if (onSelectLocation) {
-            onSelectLocation(null);
+          if (onSelectLocationRef.current) {
+            onSelectLocationRef.current(null);
           }
         }
       } catch {
@@ -327,14 +341,14 @@ const LocationSearchInput = ({
           setResolvingCoords(false);
         }
       }
-    }, 350);
+    }, 500);
 
     return () => {
       isCancelled = true;
       clearTimeout(geocodeTimer);
       controller.abort();
     };
-  }, [detailText, selectedWardName, selectedProvinceName, onSelectLocation]);
+  }, [detailText, selectedWardName, selectedProvinceName]);
 
   // Gợi ý VietMap v4 Autocomplete khi người dùng đang gõ ở ô Địa chỉ cụ thể
   useEffect(() => {

@@ -304,45 +304,29 @@ export default function GuestTrackingPage() {
           />
         )}
 
-        {order.isVendor && (
-          <Alert
-            title="Chuyến đi được thực hiện bởi Đối tác (Vendor)"
-            description={
-              <div className="mt-1">
-                <p>Đối tác: <strong>{order.vendorName}</strong></p>
-                <p>Mã vận đơn đối tác: <strong>{order.vendorTracking}</strong></p>
-              </div>
-            }
-            type="info"
-            showIcon
-            className="mb-6 rounded-xl"
-          />
-        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card title={<span className="flex items-center gap-2"><ShieldCheck className="text-blue-600"/> Minh chứng Giao nhận (POD)</span>} className="shadow-sm rounded-xl">
-          {!order.isVendor && order.status >= 1 ? (
+          {order.status >= 1 ? (
             <div className="space-y-4">
-              <div>
-                <p className="font-semibold text-gray-700 mb-2">Ảnh Niêm chì (Lấy hàng):</p>
-                {order.sealImage ? (
+              {order.sealImage && (
+                <div>
+                  <p className="font-semibold text-gray-700 mb-2">Ảnh Niêm chì (Lấy hàng):</p>
                   <img src={order.sealImage} alt="Seal Evidence" className="w-full h-40 object-cover rounded-lg border border-gray-200" />
-                ) : (
-                  <p className="text-sm text-gray-500 italic">Chưa có ảnh niêm chì được cập nhật cho đơn hàng này.</p>
-                )}
-              </div>
+                </div>
+              )}
               {order.status === 3 && order.podImage ? (
                 <div>
                   <p className="font-semibold text-gray-700 mb-2">Biên bản Bàn giao (POD):</p>
                   <Button type="primary" ghost icon={<ImageIcon size={16} />} onClick={() => setIsPODOpen(true)} className="w-full">Xem &amp; Tải POD</Button>
                 </div>
               ) : (
-                <Alert title="POD sẽ hiển thị sau khi hoàn tất giao hàng." type="info" className="text-sm" />
+                <Alert title="Biên bản bàn giao (POD) sẽ được hiển thị sau khi hoàn tất giao hàng." type="info" className="text-sm" />
               )}
             </div>
           ) : (
-            <p className="text-gray-500 italic">Không có minh chứng cho đơn vị vận chuyển ngoài hoặc xe chưa lấy hàng.</p>
+            <p className="text-gray-500 italic">Minh chứng giao nhận sẽ được cập nhật khi xe bắt đầu lấy hàng và bàn giao.</p>
           )}
         </Card>
 

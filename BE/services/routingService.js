@@ -431,13 +431,48 @@ const requireVietmapKey = () => {
   return key;
 };
 
+// Cache in-memory (TTL 15 phút) + khử trùng lặp request đang chạy để tránh vượt rate-limit VietMap (HTTP 429)
+const VIETMAP_CACHE_TTL_MS = 15 * 60 * 1000;
+const VIETMAP_CACHE_MAX_SIZE = 500;
+const vietmapCache = new Map();
+const vietmapInFlight = new Map();
+
+const cachedVietmapFetch = async (cacheKey, fetcher) => {
+  const now = Date.now();
+  const cached = vietmapCache.get(cacheKey);
+  if (cached && now < cached.expiresAt) {
+    return cached.data;
+  }
+  if (vietmapInFlight.has(cacheKey)) {
+    return vietmapInFlight.get(cacheKey);
+  }
+  const promise = (async () => {
+    try {
+      const data = await fetcher();
+      if (vietmapCache.size >= VIETMAP_CACHE_MAX_SIZE) {
+        const firstKey = vietmapCache.keys().next().value;
+        if (firstKey !== undefined) vietmapCache.delete(firstKey);
+      }
+      vietmapCache.set(cacheKey, { data, expiresAt: Date.now() + VIETMAP_CACHE_TTL_MS });
+      return data;
+    } finally {
+      vietmapInFlight.delete(cacheKey);
+    }
+  })();
+  vietmapInFlight.set(cacheKey, promise);
+  return promise;
+};
+
 const autocompletePlaces = async ({ text, cityId = null, displayType = 5 }) => {
   const key = requireVietmapKey();
   const cleanText = String(text || '').trim();
   if (!cleanText) return [];
   const cityParam = cityId ? `&cityId=${encodeURIComponent(cityId)}` : '';
-  const url = `${VIETMAP_BASE_URL}/autocomplete/v4?apikey=${encodeURIComponent(key)}&text=${encodeURIComponent(cleanText)}&display_type=${encodeURIComponent(displayType)}${cityParam}`;
-  return fetchJson(url);
+  const cacheKey = `ac:${cleanText.toLowerCase()}|${cityId || ''}|${displayType}`;
+  return cachedVietmapFetch(cacheKey, () => {
+    const url = `${VIETMAP_BASE_URL}/autocomplete/v4?apikey=${encodeURIComponent(key)}&text=${encodeURIComponent(cleanText)}&display_type=${encodeURIComponent(displayType)}${cityParam}`;
+    return fetchJson(url);
+  });
 };
 
 const searchPlaces = async ({ text, cityId = null, displayType = 5 }) => {
@@ -445,8 +480,11 @@ const searchPlaces = async ({ text, cityId = null, displayType = 5 }) => {
   const cleanText = String(text || '').trim();
   if (!cleanText) return [];
   const cityParam = cityId ? `&cityId=${encodeURIComponent(cityId)}` : '';
-  const url = `${VIETMAP_BASE_URL}/search/v4?apikey=${encodeURIComponent(key)}&text=${encodeURIComponent(cleanText)}&display_type=${encodeURIComponent(displayType)}${cityParam}`;
-  return fetchJson(url);
+  const cacheKey = `search:${cleanText.toLowerCase()}|${cityId || ''}|${displayType}`;
+  return cachedVietmapFetch(cacheKey, () => {
+    const url = `${VIETMAP_BASE_URL}/search/v4?apikey=${encodeURIComponent(key)}&text=${encodeURIComponent(cleanText)}&display_type=${encodeURIComponent(displayType)}${cityParam}`;
+    return fetchJson(url);
+  });
 };
 
 const getPlaceDetails = async ({ refid }) => {
@@ -457,8 +495,11 @@ const getPlaceDetails = async ({ refid }) => {
     err.statusCode = 400;
     throw err;
   }
-  const url = `${VIETMAP_BASE_URL}/place/v4?apikey=${encodeURIComponent(key)}&refid=${encodeURIComponent(cleanRef)}`;
-  return fetchJson(url);
+  const cacheKey = `place:${cleanRef}`;
+  return cachedVietmapFetch(cacheKey, () => {
+    const url = `${VIETMAP_BASE_URL}/place/v4?apikey=${encodeURIComponent(key)}&refid=${encodeURIComponent(cleanRef)}`;
+    return fetchJson(url);
+  });
 };
 
 const fetchVietmapTile = async ({ z, x, y }) => {

@@ -175,7 +175,7 @@ const updateAgreedPrice = async (req, res) => {
     let emailResult = null;
     if (targetEmail) {
       const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
-      const frontendBaseUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://nexlog.vn';
+      const frontendBaseUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || req.headers.origin || 'http://localhost:3000').replace(/\/+$/, '');
       const confirmUrl = `${frontendBaseUrl}/customer/order-confirmation/${token}`;
 
       const orderType = currentOrder.order_type || meta.shipping_direction || 'Export';
@@ -417,7 +417,7 @@ const rejectOrderDocument = async (req, res) => {
       meta.accounting_email ||
       null;
     const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
-    const frontendBaseUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://nexlog.vn';
+    const frontendBaseUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || req.headers.origin || 'http://localhost:3000').replace(/\/+$/, '');
     const reuploadUrl = `${frontendBaseUrl}/customer/order-documents/${token}`;
 
     let emailResult = null;
