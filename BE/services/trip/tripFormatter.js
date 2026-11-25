@@ -308,23 +308,21 @@ const formatTrip = (trip) => {
   });
   const uniqueOrders = [...stopOrdersMap.values()];
   const orderCodes =
-    uniqueOrders.length > 0
-      ? uniqueOrders.map((o) => o.order_code)
-      : [`NEX-${trip.id}`];
+    uniqueOrders.length > 0 ? uniqueOrders.map((o) => o.order_code) : [];
 
   const primaryOrder = uniqueOrders[0] || null;
   const customerName =
     primaryOrder?.customer?.company_name ||
     primaryOrder?.receiver_name ||
-    "Khách hàng vận tải";
+    null;
 
-  // Kiểm tra sự cố đang chờ xử lý (Reported / Pending / Escalated)
+  // Kiểm tra sự cố đang chờ xử lý (Reported / Pending / Escalated) — BUG-TR-02: không gắn sự cố đã Resolved/Closed
   const pendingIncidents = (trip.incidents || []).filter((i) => {
     const st = String(i.status || "").toUpperCase();
-    return st !== "RESOLVED" && st !== "CLOSED";
+    return st !== "RESOLVED" && st !== "CLOSED" && st !== "CANCELLED";
   });
   const hasIncident = pendingIncidents.length > 0;
-  const latestIncident = pendingIncidents[0] || trip.incidents?.[0] || null;
+  const latestIncident = pendingIncidents[0] || null;
 
   const upperStatus = (trip.status || "").toUpperCase().replace(/\s+/g, "_");
   let feStatus = "IN_TRANSIT";
@@ -341,8 +339,8 @@ const formatTrip = (trip) => {
   const progress = driverState.progress;
 
   // Lấy thông tin seal & POD từ trip_events hoặc delivery_evidences
-  let sealNumber = `SEAL-VN-${trip.id * 1111}`;
-  let sealPhotoUrl = "/assets/hero.png";
+  let sealNumber = null;
+  let sealPhotoUrl = null;
   let podPhotoUrl = null;
 
   for (const ev of trip.events || []) {
@@ -370,45 +368,70 @@ const formatTrip = (trip) => {
   const plannedStartObj = trip.planned_start
     ? new Date(trip.planned_start)
     : new Date();
-  const durationMins = trip.planned_duration || 120;
-  const plannedFinishObj = new Date(
-    plannedStartObj.getTime() + durationMins * 60000,
-  );
+  const durationMins = trip.planned_duration ?? null;
+  const plannedFinishObj = durationMins !== null
+    ? new Date(plannedStartObj.getTime() + durationMins * 60000)
+    : null;
+
+  const getOrderCargoSummary = (o) => {
+    const list = Array.isArray(o?.order_cargos)
+      ? o.order_cargos
+      : o?.cargo
+        ? [o.cargo]
+        : [];
+    const weight = list.reduce((s, c) => s + (Number(c.actual_weight_kg) || 0), 0);
+    const qty = list.reduce((s, c) => s + (Number(c.quantity) || 0), 0);
+    const first = list[0] || {};
+    return {
+      weight: list.length > 0 ? weight : null,
+      quantity: list.length > 0 ? qty : null,
+      length_cm: first.length_cm !== undefined && first.length_cm !== null ? Number(first.length_cm) : null,
+      width_cm: first.width_cm !== undefined && first.width_cm !== null ? Number(first.width_cm) : null,
+      height_cm: first.height_cm !== undefined && first.height_cm !== null ? Number(first.height_cm) : null,
+    };
+  };
 
   const cargoWeight =
-    uniqueOrders.reduce(
-      (acc, o) => acc + (o.cargo?.actual_weight_kg || 0),
-      0,
-    ) || 1200;
+    uniqueOrders.length > 0
+      ? uniqueOrders.reduce((acc, o) => acc + (getOrderCargoSummary(o).weight || 0), 0)
+      : null;
   const cargoPackages =
-    uniqueOrders.reduce((acc, o) => acc + (o.cargo?.quantity || 1), 0) || 1;
+    uniqueOrders.length > 0
+      ? uniqueOrders.reduce((acc, o) => acc + (getOrderCargoSummary(o).quantity || 0), 0)
+      : null;
 
   // Tọa độ hiện tại để hiển thị bản đồ trực tuyến
-  const pickupLat = pickupStop.location?.latitude || 21.2187;
-  const pickupLng = pickupStop.location?.longitude || 105.8042;
-  const dropoffLat = dropoffStop.location?.latitude || 21.1215;
-  const dropoffLng = dropoffStop.location?.longitude || 105.9754;
+  const pickupLat = pickupStop.location?.latitude ?? null;
+  const pickupLng = pickupStop.location?.longitude ?? null;
+  const dropoffLat = dropoffStop.location?.latitude ?? null;
+  const dropoffLng = dropoffStop.location?.longitude ?? null;
   const ratio = Math.min(1, Math.max(0, progress / 100));
   const currentLat =
-    truckObj.last_lat ||
-    Number((pickupLat + (dropoffLat - pickupLat) * ratio).toFixed(6));
+    truckObj.last_lat ??
+    (pickupLat !== null && dropoffLat !== null
+      ? Number((pickupLat + (dropoffLat - pickupLat) * ratio).toFixed(6))
+      : null);
   const currentLng =
-    truckObj.last_lng ||
-    Number((pickupLng + (dropoffLng - pickupLng) * ratio).toFixed(6));
+    truckObj.last_lng ??
+    (pickupLng !== null && dropoffLng !== null
+      ? Number((pickupLng + (dropoffLng - pickupLng) * ratio).toFixed(6))
+      : null);
 
   return {
     id: trip.trip_code,
     raw_id: trip.id,
     trip_code: trip.trip_code,
-    plate: truckObj.plate_number || "29C-888.99",
+    plate: truckObj.plate_number || null,
     truck_model:
       truckObj.model ||
-      fleetService.getTruckModelName(truckObj.allowed_payload || 3500),
-    max_payload: truckObj.allowed_payload || 3500,
+      (truckObj.allowed_payload
+        ? fleetService.getTruckModelName(truckObj.allowed_payload)
+        : null),
+    max_payload: truckObj.allowed_payload ?? null,
     driver_name: needsDriverReassign
       ? "Chờ điều phối tài xế mới"
-      : driverObj.full_name || "Nguyễn Văn Lái",
-    driver_phone: needsDriverReassign ? "" : driverObj.phone || "0912345678",
+      : driverObj.full_name || null,
+    driver_phone: needsDriverReassign ? "" : driverObj.phone || null,
     needs_driver_reassign: needsDriverReassign,
     previous_driver_name: latestReleasedAssign?.driver?.user?.full_name || null,
     leave_reason: latestReleasedAssign?.replacement_reason || null,
@@ -420,6 +443,7 @@ const formatTrip = (trip) => {
           Number(st.order_id) === Number(o.id) &&
           String(st.stop_type || "").toUpperCase() === "RETURN",
       );
+      const summary = getOrderCargoSummary(o);
       return {
         id: o.id,
         order_id: o.order_code,
@@ -431,15 +455,15 @@ const formatTrip = (trip) => {
         warehouse_name: o.warehouse_name || null,
         has_return_stop: hasReturnStop,
         customer: o.customer?.company_name || customerName,
-        weight: o.cargo?.actual_weight_kg || 700,
-        package_count: o.cargo?.quantity || 4,
-        length_cm: o.cargo?.length_cm || 100,
-        width_cm: o.cargo?.width_cm || 80,
-        height_cm: o.cargo?.height_cm || 80,
+        weight: summary.weight,
+        package_count: summary.quantity,
+        length_cm: summary.length_cm,
+        width_cm: summary.width_cm,
+        height_cm: summary.height_cm,
         dropoff:
           dropoffStop.location?.address ||
           dropoffStop.location?.name ||
-          "Điểm giao hàng",
+          null,
       };
     }),
     has_refusal_exception: uniqueOrders.some(
@@ -474,27 +498,42 @@ const formatTrip = (trip) => {
     pickup:
       pickupStop.location?.address ||
       pickupStop.location?.name ||
-      "Nhà Ga Hàng Hóa ALS Nội Bài",
+      null,
     dropoff:
       dropoffStop.location?.address ||
       dropoffStop.location?.name ||
-      "KCN Quế Võ, Bắc Ninh",
-    pickup_coords: { lat: pickupLat, lng: pickupLng },
-    dropoff_coords: { lat: dropoffLat, lng: dropoffLng },
-    current_coords: { lat: currentLat, lng: currentLng },
-    planned_start: plannedStartObj.toLocaleTimeString("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-    planned_finish: plannedFinishObj.toLocaleTimeString("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-    actual_start: plannedStartObj.toLocaleTimeString("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-    planned_distance: trip.planned_distance || 50,
+      null,
+    pickup_coords:
+      pickupLat !== null && pickupLng !== null
+        ? { lat: pickupLat, lng: pickupLng }
+        : null,
+    dropoff_coords:
+      dropoffLat !== null && dropoffLng !== null
+        ? { lat: dropoffLat, lng: dropoffLng }
+        : null,
+    current_coords:
+      currentLat !== null && currentLng !== null
+        ? { lat: currentLat, lng: currentLng }
+        : null,
+    planned_start: trip.planned_start
+      ? plannedStartObj.toLocaleTimeString("vi-VN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null,
+    planned_finish: plannedFinishObj
+      ? plannedFinishObj.toLocaleTimeString("vi-VN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null,
+    actual_start: trip.planned_start
+      ? plannedStartObj.toLocaleTimeString("vi-VN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null,
+    planned_distance: trip.planned_distance ?? null,
     planned_duration: durationMins,
     status: feStatus,
     db_status: trip.status,
@@ -601,32 +640,13 @@ const formatTrip = (trip) => {
                     hour: "2-digit",
                     minute: "2-digit",
                   })
-                : "08:30",
+                : null,
               actual: actualText,
               event: eventText,
               note: noteText,
             };
           })
-        : [
-            {
-              id: 1,
-              name: "Nhà Ga Hàng Hóa ALS Nội Bài",
-              type: "PICKUP",
-              planned: "08:00",
-              actual: "08:10",
-              event: "Đã xuất phát",
-              note: "Niêm phong chì nguyên vẹn",
-            },
-            {
-              id: 2,
-              name: "Điểm giao nhận khách hàng",
-              type: "DROPOFF",
-              planned: "10:30",
-              actual: "Dự kiến 10:30",
-              event: "Đang vận chuyển",
-              note: "Chờ nhận hàng và đối soát POD",
-            },
-          ],
+        : [],
   };
 };
 

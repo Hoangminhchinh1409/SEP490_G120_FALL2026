@@ -31,11 +31,11 @@ const createTrip = async (req, res) => {
     });
   } catch (err) {
     console.error('createTrip error:', err);
-    const status = err.statusCode || (err.name === 'Error' && !err.statusCode && !err.message?.includes('validation') ? 500 : 400);
-    if (status === 500) {
+    const status = err.statusCode || 500;
+    if (status >= 500) {
       return res.status(500).json({ message: 'Internal Server Error' });
     }
-    return res.status(status).json({ message: err.message || 'Lỗi lập chuyến và phân bổ xe', error: err.message });
+    return res.status(status).json({ message: err.message || 'Lỗi lập chuyến và phân bổ xe' });
   }
 };
 
@@ -49,7 +49,11 @@ const updateTripStatus = async (req, res) => {
     return res.json({ message: 'Cập nhật trạng thái chuyến thành công', trip: updated });
   } catch (err) {
     console.error('updateTripStatus error:', err);
-    return res.status(500).json({ message: 'Lỗi cập nhật trạng thái chuyến', error: err.message });
+    const status = err.statusCode || 500;
+    if (status >= 500) {
+      return res.status(500).json({ message: 'Internal Server Error' });
+    }
+    return res.status(status).json({ message: err.message || 'Lỗi cập nhật trạng thái chuyến' });
   }
 };
 

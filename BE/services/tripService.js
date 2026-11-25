@@ -33,30 +33,31 @@ const createTrip = async (payload, userId = 1) => {
   } = payload;
 
   // Tìm đơn hàng thực tế trong DB & kiểm tra trạng thái hợp lệ (chỉ lập chuyến cho đơn READY_FOR_PLANNING)
+  if (!order_id && !order_code) {
+    const err = new Error("Vui lòng chọn đơn hàng hợp lệ để lập chuyến.");
+    err.statusCode = 400;
+    throw err;
+  }
   const matchedOrder = await tripModel.findOrderByCodeOrId(
     order_id || order_code,
   );
-  if ((order_id || order_code) && !matchedOrder) {
+  if (!matchedOrder) {
     const err = new Error(`Không tìm thấy đơn hàng ${order_id || order_code}.`);
     err.statusCode = 404;
     throw err;
   }
-  if (matchedOrder) {
-    const normalizedOrderStatus = String(matchedOrder.status || "")
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, "_");
-    if (normalizedOrderStatus !== "READY_FOR_PLANNING") {
-      const err = new Error(
-        `Chỉ có thể lập chuyến cho đơn hàng đang ở trạng thái READY_FOR_PLANNING (trạng thái hiện tại: ${matchedOrder.status}).`,
-      );
-      err.statusCode = 400;
-      throw err;
-    }
+  const normalizedOrderStatus = String(matchedOrder.status || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_");
+  if (normalizedOrderStatus !== "READY_FOR_PLANNING") {
+    const err = new Error(
+      `Chỉ có thể lập chuyến cho đơn hàng đang ở trạng thái READY_FOR_PLANNING (trạng thái hiện tại: ${matchedOrder.status}).`,
+    );
+    err.statusCode = 400;
+    throw err;
   }
-  const resolvedOrderId =
-    matchedOrder?.id ||
-    (Number.isInteger(Number(order_id)) ? Number(order_id) : null);
+  const resolvedOrderId = matchedOrder.id;
 
   // TRƯỜNG HỢP 1: BÀN GIAO NHÀ XE ĐỐI TÁC 3PL
   const mode = String(
@@ -100,6 +101,11 @@ const createTrip = async (payload, userId = 1) => {
   }
 
   // TRƯỜNG HỢP 2: PHÂN BỔ XE NỘI BỘ & TÀI XẾ
+  if (truck_id !== undefined && truck_id !== null && (isNaN(Number(truck_id)) || Number(truck_id) <= 0)) {
+    const err = new Error(`Mã xe tải không hợp lệ: ${truck_id}`);
+    err.statusCode = 400;
+    throw err;
+  }
   let truckId = truck_id ? Number(truck_id) : null;
   if (!truckId && truck_plate) {
     truckId = await tripModel.findTruckByPlate(truck_plate);
@@ -109,8 +115,10 @@ const createTrip = async (payload, userId = 1) => {
       throw err;
     }
   }
-  if (!truckId && !truck_plate) {
-    truckId = await tripModel.findFirstTruck();
+  if (!truckId) {
+    const err = new Error("Vui lòng chọn xe tải hợp lệ để phân bổ chuyến.");
+    err.statusCode = 400;
+    throw err;
   }
 
   // Kiểm tra trạng thái xe (không gán xe đang chạy chuyến khác hoặc đang bảo trì) và tải trọng xe
@@ -198,6 +206,11 @@ const createTrip = async (payload, userId = 1) => {
     }
   }
 
+  if (driver_id !== undefined && driver_id !== null && (isNaN(Number(driver_id)) || Number(driver_id) <= 0)) {
+    const err = new Error(`Mã tài xế không hợp lệ: ${driver_id}`);
+    err.statusCode = 400;
+    throw err;
+  }
   let driverId = driver_id ? Number(driver_id) : null;
   const targetDriverName = driver_name || driver1_name;
   if (!driverId && targetDriverName) {
@@ -209,7 +222,9 @@ const createTrip = async (payload, userId = 1) => {
     }
   }
   if (!driverId) {
-    driverId = await tripModel.findFirstDriver();
+    const err = new Error("Vui lòng chọn tài xế hợp lệ để phân bổ chuyến.");
+    err.statusCode = 400;
+    throw err;
   }
 
   let resolvedPlannedStart = new Date();
@@ -360,6 +375,50 @@ const createTrip = async (payload, userId = 1) => {
   const randomNum = Math.floor(1000 + Math.random() * 9000);
   const tripCode = `TRIP-${randomNum}`;
 
+  const parsedDistance = parseFloat(planned_distance);
+  const parsedDuration = parseInt(planned_duration, 10);
+  if (isNaN(parsedDistance) || parsedDistance <= 0) {
+    const err = new Error(
+      "Vui lòng cung cấp quãng đường dự kiến hợp lệ (planned_distance > 0).",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  if (isNaN(parsedDuration) || parsedDuration <= 0) {
+    const err = new Error(
+      "Vui lòng cung cấp thời gian dự kiến hợp lệ (planned_duration > 0).",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Hàm phân giải ETA của từng điểm dừng theo dữ liệu Dispatcher duyệt
+  const resolveStopPlannedArrival = (stopObj, idx, totalStops) => {
+    const rawExplicit =
+      stopObj.planned_arrival ||
+      stopObj.eta_iso ||
+      stopObj.plannedArrival ||
+      stopObj.eta;
+    if (rawExplicit) {
+      const d = new Date(rawExplicit);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    const etaMins = stopObj.etaMinutes ?? stopObj.eta_minutes;
+    if (etaMins !== undefined && etaMins !== null && !isNaN(Number(etaMins))) {
+      return new Date(resolvedPlannedStart.getTime() + Number(etaMins) * 60000);
+    }
+    if (stopObj.liveEtaTime && /^\d{1,2}:\d{2}$/.test(String(stopObj.liveEtaTime).trim())) {
+      const [hh, mm] = String(stopObj.liveEtaTime).trim().split(":").map(Number);
+      const vnDateStr = new Date(resolvedPlannedStart.getTime() + 7 * 3600 * 1000)
+        .toISOString()
+        .split("T")[0];
+      const combined = new Date(`${vnDateStr}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00+07:00`);
+      if (!Number.isNaN(combined.getTime())) return combined;
+    }
+    const ratio = totalStops > 0 ? (idx + 1) / totalStops : 1;
+    return new Date(resolvedPlannedStart.getTime() + Math.round(ratio * parsedDuration) * 60000);
+  };
+
   // Chuẩn bị danh sách điểm dừng thực tế (bỏ qua điểm 'START' bãi xe ảo)
   const rawStops = Array.isArray(stops)
     ? stops.filter(
@@ -368,7 +427,6 @@ const createTrip = async (payload, userId = 1) => {
     : [];
 
   const resolvedStopsData = [];
-  const nowMs = Date.now();
 
   if (rawStops.length > 0) {
     for (let i = 0; i < rawStops.length; i++) {
@@ -409,7 +467,7 @@ const createTrip = async (payload, userId = 1) => {
               : "Drop-off",
         location_id: locId || 1,
         order_id: resolvedOrderId,
-        planned_arrival: new Date(nowMs + (i + 1) * 45 * 60000),
+        planned_arrival: resolveStopPlannedArrival(s, i, rawStops.length),
         status: "Pending",
       });
     }
@@ -419,14 +477,14 @@ const createTrip = async (payload, userId = 1) => {
         type: "Pickup",
         location_id: matchedOrder?.pickup_location_id || 1,
         order_id: resolvedOrderId,
-        planned_arrival: new Date(nowMs + 30 * 60000),
+        planned_arrival: new Date(resolvedPlannedStart.getTime() + Math.round(parsedDuration * 0.25) * 60000),
         status: "Pending",
       },
       {
         type: "Drop-off",
         location_id: matchedOrder?.delivery_location_id || 24,
         order_id: resolvedOrderId,
-        planned_arrival: new Date(nowMs + 120 * 60000),
+        planned_arrival: new Date(resolvedPlannedStart.getTime() + parsedDuration * 60000),
         status: "Pending",
       },
     );
@@ -434,18 +492,19 @@ const createTrip = async (payload, userId = 1) => {
 
   const cleanPlate =
     truckRow?.plate_number ||
-    (truck_plate ? String(truck_plate).split(" ")[0].trim() : "29H-995.72");
-  const cleanDriverName = targetDriverName
-    ? String(targetDriverName).split("·")[0].trim()
-    : "Nguyễn Văn Lái";
+    (truck_plate ? String(truck_plate).split(" ")[0].trim() : null);
+  const cleanDriverName =
+    targetDriverName
+      ? String(targetDriverName).split("·")[0].trim()
+      : null;
 
   const tripRecord = await tripModel.createTripWithRelations({
     tripData: {
       trip_code: tripCode,
       status: "Assigned",
       planned_start: resolvedPlannedStart,
-      planned_distance: planned_distance || 65.6,
-      planned_duration: planned_duration || 97,
+      planned_distance: parsedDistance,
+      planned_duration: parsedDuration,
       created_by: userId,
     },
     truckId,
@@ -459,7 +518,7 @@ const createTrip = async (payload, userId = 1) => {
       truck_plate: cleanPlate,
       driver_name: cleanDriverName,
       driver2_name: driver2_name || null,
-      planned_distance: planned_distance || 65.6,
+      planned_distance: parsedDistance,
     },
   });
 
@@ -540,18 +599,34 @@ const createTrip = async (payload, userId = 1) => {
 };
 
 const updateTripStatus = async (id, status, userId = 1) => {
-  let dbStatus = "Assigned";
-  const upper = String(status || "").toUpperCase();
-  if (upper === "COMPLETED" || upper === "DELIVERED") dbStatus = "Completed";
-  else if (
-    upper === "IN_TRANSIT" ||
-    upper === "IN_PROGRESS" ||
-    status === "In Transit"
-  )
-    dbStatus = "In Progress";
-  else if (upper === "CANCELLED") dbStatus = "Cancelled";
+  const normalized = String(status || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_");
+
+  const STATUS_MAP = {
+    ASSIGNED: "Assigned",
+    ACCEPTED: "Accepted",
+    IN_TRANSIT: "In Progress",
+    IN_PROGRESS: "In Progress",
+    COMPLETED: "Completed",
+    DELIVERED: "Completed",
+    CANCELLED: "Cancelled",
+  };
+
+  const dbStatus = STATUS_MAP[normalized];
+  if (!dbStatus) {
+    const err = new Error(`Trạng thái chuyến xe không hợp lệ: "${status || ""}".`);
+    err.statusCode = 400;
+    throw err;
+  }
 
   const updatedTrip = await tripModel.updateTripStatus(id, dbStatus, userId);
+  if (!updatedTrip) {
+    const err = new Error("Không tìm thấy chuyến xe cần cập nhật.");
+    err.statusCode = 404;
+    throw err;
+  }
   return formatTrip(updatedTrip);
 };
 

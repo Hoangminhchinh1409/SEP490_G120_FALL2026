@@ -398,7 +398,7 @@ function TripAssignmentModalContent({
         driver_name: cleanDriver1,
         driver1_name: cleanDriver1,
         driver2_name: cleanDriver2,
-        stops: stops,
+        stops: stopsWithLiveEta,
         planned_start: order?.planned_start_iso || undefined,
         planned_distance: routeSummary.distanceKm,
         planned_duration: routeSummary.durationMins
@@ -419,7 +419,7 @@ function TripAssignmentModalContent({
         truck_model: selectedTruckSpec.label,
         driver1: cleanDriver1,
         driver2: cleanDriver2,
-        stops: stops,
+        stops: stopsWithLiveEta,
         distanceKm: routeSummary.distanceKm,
         durationMins: routeSummary.durationMins
       });
