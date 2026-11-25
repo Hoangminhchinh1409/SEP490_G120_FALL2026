@@ -314,7 +314,7 @@ const formatTrip = (trip) => {
   const orderCodes =
     uniqueOrders.length > 0
       ? uniqueOrders.map((o) => o.order_code)
-      : [`ORD-${trip.id}`];
+      : [`NEX-${trip.id}`];
 
   const primaryOrder = uniqueOrders[0] || null;
   const customerName =

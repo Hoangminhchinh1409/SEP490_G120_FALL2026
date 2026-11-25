@@ -2,7 +2,7 @@ const adminModel = require('../../models/adminModel');
 const { getClientIp } = require('../../utils/ipHelper');
 const prisma = require('../../config/prisma');
 const { serializePrisma, formatDateOnly } = require('../../utils/prismaHelper');
-const { saveOrderMeta } = require('../../services/orderHelperService');
+const { saveOrderMeta, ensureNexOrderCode } = require('../../services/orderHelperService');
 
 const buildOrderWhere = (idParam) => {
   const clean = String(idParam || '').trim();
@@ -422,7 +422,7 @@ const splitOrder = async (req, res) => {
     for (let index = 0; index < splits.length; index++) {
       const slice = splits[index];
       const childSuffix = index + 1;
-      const childOrderCode = `${parentOrder.order_code}-${childSuffix}`;
+      const childOrderCode = ensureNexOrderCode(`${parentOrder.order_code}-${childSuffix}`);
       const childTrackingToken = generateTrackingToken();
 
       const childWeight = parseFloat(slice.weight_kg) || Math.round((baseCargo.actual_weight_kg || parentOrder.weight || 2500) / splits.length);

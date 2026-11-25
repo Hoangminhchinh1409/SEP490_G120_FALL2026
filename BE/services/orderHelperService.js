@@ -540,7 +540,29 @@ const getNextDispatcherForWebOrder = async () => {
   }
 };
 
+const ORDER_CODE_PREFIX = 'NEX-';
+
+const generateNexOrderCode = () =>
+  `${ORDER_CODE_PREFIX}${Math.floor(100000 + Math.random() * 900000)}`;
+
+const ensureNexOrderCode = (code) => {
+  const clean = String(code ?? '').trim().toUpperCase();
+  if (!clean) return generateNexOrderCode();
+  let normalized;
+  if (clean.startsWith(ORDER_CODE_PREFIX)) {
+    normalized = clean;
+  } else if (clean.startsWith('ORD-')) {
+    normalized = `${ORDER_CODE_PREFIX}${clean.slice(4)}`;
+  } else {
+    normalized = `${ORDER_CODE_PREFIX}${clean}`;
+  }
+  return normalized.slice(0, 20);
+};
+
 module.exports = {
+  ORDER_CODE_PREFIX,
+  generateNexOrderCode,
+  ensureNexOrderCode,
   META_NOTE_PREFIX,
   META_CHUNK_PREFIX,
   mapDbStatusToFe,

@@ -334,7 +334,7 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
   let totalRequestedPackages = 0;
 
   rawOrders.forEach((ord, ordIdx) => {
-    const orderCode = ord.order_id || ord.id || `ORD-${ordIdx + 1}`;
+    const orderCode = ord.order_id || ord.id || `NEX-${ordIdx + 1}`;
     const customerName = ord.customer || ord.customer_name || "Khách hàng";
 
     // Lấy danh sách loại hàng trong đơn (nếu có mảng items), hoặc lấy trực tiếp từ order

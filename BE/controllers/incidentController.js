@@ -1173,7 +1173,7 @@ const decideIncidentCompensation = async (req, res) => {
           orderForEmail?.customer?.contact_person ||
           orderForEmail?.receiver_name ||
           '';
-        const orderCode = orderForEmail?.order_code || `ORD-${id}`;
+        const orderCode = orderForEmail?.order_code || `NEX-${id}`;
         const cargoDescription = firstCargo?.cargo_name
           ? `${firstCargo.cargo_name}${firstCargo.quantity ? ` - ${firstCargo.quantity} ${firstCargo.unit || 'kiện'}` : ''}${firstCargo.actual_weight_kg ? ` - ${firstCargo.actual_weight_kg} kg` : ''}`
           : 'Hàng hóa theo vận đơn';
@@ -1920,7 +1920,7 @@ const sendIncidentDecisionEmail = async (req, res) => {
       orderForEmail?.customer?.contact_person ||
       orderForEmail?.receiver_name ||
       '';
-    const orderCode = orderForEmail?.order_code || `ORD-${id}`;
+    const orderCode = orderForEmail?.order_code || `NEX-${id}`;
     const tripCode = incident.trip?.trip_code || `TRIP-${incident.trip_id}`;
     const cargoDescription = firstCargo?.cargo_name
       ? `${firstCargo.cargo_name}${firstCargo.quantity ? ` - ${firstCargo.quantity} ${firstCargo.unit || 'kiện'}` : ''}${firstCargo.actual_weight_kg ? ` - ${firstCargo.actual_weight_kg} kg` : ''}`

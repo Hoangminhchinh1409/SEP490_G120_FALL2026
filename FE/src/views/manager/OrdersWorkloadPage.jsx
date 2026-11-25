@@ -382,7 +382,7 @@ export default function OrdersWorkloadPage() {
                   >
                     {/* Cột 1: Đơn */}
                     <td className="py-3.5 px-4 font-mono font-bold text-primary">
-                      {o.order_code || o.code || `ORD-${o.id}`}
+                      {o.order_code || o.code || `NEX-${o.id}`}
                     </td>
 
                     {/* Cột 2: Điều phối */}

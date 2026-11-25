@@ -3,6 +3,8 @@ const { getClientIp } = require("../../utils/ipHelper");
 const prisma = require("../../config/prisma");
 const { serializePrisma, toBigInt } = require("../../utils/prismaHelper");
 const {
+  generateNexOrderCode,
+  ensureNexOrderCode,
   generateTrackingToken,
   resolveAlsLocationIdIfValid,
   getOrCreateLocation,
@@ -257,7 +259,7 @@ const createConsultationOrder = async (req, res) => {
       });
     }
 
-    const randomCode = `NEX-${Math.floor(100000 + Math.random() * 900000)}`;
+    const randomCode = ensureNexOrderCode(generateNexOrderCode());
     const token = generateTrackingToken();
 
     // Trích xuất thông tin lịch bay & logistics
@@ -733,7 +735,7 @@ const createDirectOrder = async (req, res) => {
         throw new Error("Không thể khởi tạo hoặc xác thực thông tin khách hàng");
       }
 
-      const orderCode = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
+      const orderCode = ensureNexOrderCode(generateNexOrderCode());
       const token = generateTrackingToken();
 
       // 4.2 Tạo đơn hàng (Status luôn bắt đầu từ CONFIRMED)

@@ -48,7 +48,7 @@ async function getZaloApi() {
  */
 function formatTripMessage(trip) {
   const tripCode = trip.tripCode || trip.trip_code || "TRIP-DEMO";
-  const orderCode = trip.orderCode || trip.order_code || "ORD-DEMO";
+  const orderCode = trip.orderCode || trip.order_code || "NEX-DEMO";
   const truck = trip.truckPlate || trip.truck_plate || "Xe tải 2.5T";
   const truckModel = trip.truckModel || "Xe tải thùng kín";
   const driver = trip.driverName || trip.driver_name || "Bác tài";

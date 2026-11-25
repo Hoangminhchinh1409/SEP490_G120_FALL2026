@@ -138,7 +138,7 @@ export default function PublicTripDetailPage() {
   // Bóc tách thông tin hiển thị
   const cleanPhone = String(trip.driver_phone || '0912345678').replace(/\D/g, '');
   const primaryOrder = trip.orders_data?.[0] || {};
-  const orderCode = primaryOrder.order_id || trip.orders?.[0] || 'ORD-NEXLOG';
+  const orderCode = primaryOrder.order_id || trip.orders?.[0] || 'NEX-LOG';
   const customerName = trip.customer || primaryOrder.customer || 'Khách hàng NEXLOG';
 
   const pickupAddress = trip.pickup || 'Kho ALS Cảng Hàng Không Quốc Tế Nội Bài';
