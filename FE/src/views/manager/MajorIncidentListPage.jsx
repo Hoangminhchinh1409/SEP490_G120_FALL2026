@@ -168,21 +168,15 @@ export default function MajorIncidentListPage({ readOnly = false }) {
           s === 'DONE' ||
           s === 'CLOSED' ||
           s === 'RESOLVED' ||
+          s === 'APPROVED' ||
+          Number(r.approved_compensation_amount) > 0 ||
           Boolean(r.closed_at) ||
           Boolean(r.payment_proof_url) ||
           isRejected;
-        const isApproved = !isDone && (s === 'APPROVED' || Number(r.approved_compensation_amount) > 0);
         if (isDone) {
           return (
             <Tag color={isRejected ? "red" : "green"} className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
               {isRejected ? "Đã từ chối" : "Đã hoàn tất (Đóng)"}
-            </Tag>
-          );
-        }
-        if (isApproved) {
-          return (
-            <Tag color="cyan" className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
-              Đã duyệt · Chờ chi trả
             </Tag>
           );
         }
@@ -208,13 +202,12 @@ export default function MajorIncidentListPage({ readOnly = false }) {
           s === 'DONE' ||
           s === 'CLOSED' ||
           s === 'RESOLVED' ||
+          s === 'APPROVED' ||
+          Number(r.approved_compensation_amount) > 0 ||
           Boolean(r.closed_at) ||
           Boolean(r.payment_proof_url) ||
           isRejected;
-        const isApproved = !isDone && (s === 'APPROVED' || Number(r.approved_compensation_amount) > 0);
-        let btnText = 'Xét duyệt';
-        if (isReadOnly || isDone) btnText = 'Xem lại';
-        else if (isApproved) btnText = 'Chi tiền';
+        const btnText = (isReadOnly || isDone) ? 'Xem lại' : 'Xét duyệt';
 
         return (
           <button
@@ -270,7 +263,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
       </div>
 
       {/* KPI Cards Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 bg-surface-container-lowest rounded-2xl border border-surface-container shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
             <span className="material-symbols-outlined text-[22px]">warning</span>
@@ -292,22 +285,12 @@ export default function MajorIncidentListPage({ readOnly = false }) {
         </div>
 
         <div className="p-4 bg-surface-container-lowest rounded-2xl border border-surface-container shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-700 flex items-center justify-center">
-            <span className="material-symbols-outlined text-[22px]">payments</span>
-          </div>
-          <div>
-            <div className="text-xs text-on-surface-variant font-medium">Đã duyệt · Chờ chi trả</div>
-            <div className="text-xl font-black text-cyan-700 font-mono">{summary.approved || 0}</div>
-          </div>
-        </div>
-
-        <div className="p-4 bg-surface-container-lowest rounded-2xl border border-surface-container shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
             <span className="material-symbols-outlined text-[22px]">check_circle</span>
           </div>
           <div>
             <div className="text-xs text-on-surface-variant font-medium">Đã hoàn tất (Đóng)</div>
-            <div className="text-xl font-black text-emerald-600 font-mono">{summary.resolved || 0}</div>
+            <div className="text-xl font-black text-emerald-600 font-mono">{(summary.resolved || 0) + (summary.approved || 0)}</div>
           </div>
         </div>
       </div>
@@ -325,7 +308,6 @@ export default function MajorIncidentListPage({ readOnly = false }) {
                 className="h-9 px-3 bg-surface-container-low border border-surface-container rounded-xl text-xs font-bold text-primary focus:outline-none cursor-pointer"
               >
                 <option value="ESCALATED">Chờ xét duyệt (Escalated)</option>
-                <option value="APPROVED">Đã duyệt (Chờ chi trả)</option>
                 <option value="RESOLVED">Đã hoàn tất (Đóng)</option>
                 <option value="ALL">Tất cả ({summary.total})</option>
               </select>

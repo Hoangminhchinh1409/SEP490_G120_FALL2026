@@ -315,12 +315,9 @@ const getIncidents = async (req, res) => {
 
       let normStatus = 'REPORTED';
       let statusDisplay = 'Đã báo';
-      if (isCaseRejected || rawStatus === 'RESOLVED' || rawStatus === 'CLOSED' || rawStatus === 'DONE' || hasPaymentProof || claimStatusUpper === 'PAID') {
+      if (isCaseRejected || rawStatus === 'RESOLVED' || rawStatus === 'CLOSED' || rawStatus === 'DONE' || rawStatus === 'APPROVED' || claimStatusUpper === 'APPROVED' || claimStatusUpper === 'PAID' || Boolean(approveLog) || hasPaymentProof) {
         normStatus = 'RESOLVED';
         statusDisplay = isCaseRejected ? 'Đã từ chối bồi thường' : 'Đã hoàn tất (Đóng)';
-      } else if (rawStatus === 'APPROVED' || claimStatusUpper === 'APPROVED' || Boolean(approveLog)) {
-        normStatus = 'APPROVED';
-        statusDisplay = 'Đã duyệt · Chờ chi trả';
       } else if (rawStatus === 'ESCALATED' || rawStatus === 'IN_PROGRESS') {
         normStatus = 'ESCALATED';
         statusDisplay = rawStatus === 'IN_PROGRESS' ? 'Chờ bổ sung hồ sơ' : 'Chờ Quản lý xử lý';
@@ -731,7 +728,7 @@ const getIncidentById = async (req, res) => {
       incident.proposed_compensation_amount ||
       claim?.amount ||
       (parsedNoteAmount >= 1000 ? parsedNoteAmount : 0) ||
-      15000000
+      0
     );
 
     const approvedAmount = Number(
@@ -806,9 +803,11 @@ const getIncidentById = async (req, res) => {
       route_deviation_km: incident.route_deviation_km ? Number(incident.route_deviation_km) : 0,
       gps_timestamp: incident.reported_time || incident.created_at,
       // Dữ liệu bồi thường & giao dịch chi trả chuẩn hóa
-      damage_percentage: incident.damage_percentage || approveLog?.changes?.damage_percentage || 30,
-      goods_handling_method: incident.goods_handling_method || approveLog?.changes?.goods_handling_method || 'CUSTOMER_RETAIN',
-      contract_clause_ref: incident.contract_clause_ref || approveLog?.changes?.contract_clause_ref || rejectLog?.changes?.contract_clause_ref || 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)',
+      damage_percentage: incident.damage_percentage !== undefined && incident.damage_percentage !== null
+        ? incident.damage_percentage
+        : (isDone ? (approveLog?.changes?.damage_percentage || null) : null),
+      goods_handling_method: incident.goods_handling_method || (isDone ? approveLog?.changes?.goods_handling_method : null),
+      contract_clause_ref: incident.contract_clause_ref || (isDone ? (approveLog?.changes?.contract_clause_ref || rejectLog?.changes?.contract_clause_ref) : null),
       proposed_compensation_amount: proposedAmount,
       approved_compensation_amount: approvedAmount,
       rejection_reason: rejectionReason,
@@ -967,10 +966,10 @@ const decideIncidentCompensation = async (req, res) => {
 
     const isRequestMoreInfo = action === 'REQUEST_MORE_INFO';
     const isApprove = action === 'APPROVE' || action === 'Approve';
+    // Sau khi Manager chốt giá bồi thường và gửi email cho khách -> kết thúc luồng (DONE)
     // Nếu từ chối: Đơn phương dứt điểm theo căn cứ hợp đồng -> đóng ngay (DONE)
     // Nếu yêu cầu bổ sung hồ sơ: Chuyển IN_PROGRESS để ĐPV/Tài xế/Khách hàng tải thêm ảnh/chứng từ
     let targetStatus = 'DONE';
-    if (isApprove) targetStatus = 'APPROVED';
     if (isRequestMoreInfo) targetStatus = 'IN_PROGRESS';
 
     if (!isApprove && !isRequestMoreInfo) {
@@ -1026,7 +1025,7 @@ const decideIncidentCompensation = async (req, res) => {
           where: { id: BigInt(id) },
           data: {
             ...corePayload,
-            status: isApprove ? 'ESCALATED' : isRequestMoreInfo ? 'ESCALATED' : 'RESOLVED'
+            status: isRequestMoreInfo ? 'ESCALATED' : 'RESOLVED'
           },
           select: INCIDENT_SAFE_SELECT
         });
@@ -1273,7 +1272,7 @@ const decideIncidentCompensation = async (req, res) => {
     try {
       const incidentCode = `INC-${String(id).padStart(3, '0')}`;
       const notifyMsg = isApprove
-        ? `[${incidentCode}] Quản lý đã phê duyệt bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ. Đang chờ hoàn tất chi trả.`
+        ? `[${incidentCode}] Quản lý đã chốt mức bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ và gửi email xác nhận cho khách hàng (Hoàn tất hồ sơ).`
         : isRequestMoreInfo
           ? `[${incidentCode}] Quản lý yêu cầu bổ sung hồ sơ/minh chứng: ${resolution_note || 'Kiểm tra chi tiết sự cố.'}`
           : `[${incidentCode}] Quản lý đã từ chối bồi thường theo ${contract_clause_ref || 'hợp đồng'} và đóng hồ sơ.`;
@@ -1312,7 +1311,7 @@ const decideIncidentCompensation = async (req, res) => {
     }
 
     const msg = isApprove
-      ? `Đã phê duyệt mức bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ${emailResult.sent ? ` và gửi email thông báo tới ${emailResult.customer_email}` : ''} (Trạng thái: Chờ hoàn tất chi trả).`
+      ? `Đã chốt mức bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ${emailResult.sent ? ` và gửi email xác nhận tới ${emailResult.customer_email}` : ''} — Hoàn tất đóng hồ sơ.`
       : isRequestMoreInfo
       ? 'Đã gửi yêu cầu bổ sung hồ sơ tới Điều phối viên & Khách hàng thành công.'
       : `Đã từ chối bồi thường${emailResult.sent ? ` và gửi email thông báo tới ${emailResult.customer_email}` : ''} — Hoàn tất đóng hồ sơ (DONE).`;

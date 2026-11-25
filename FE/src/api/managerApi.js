@@ -12,7 +12,7 @@ export const managerApi = {
       const data = await fetchWithAuth(`/manager/dashboard/overview?${params.toString()}`);
       return data;
     } catch (error) {
-      console.error('managerApi.getDashboardStats Error:', error);
+      console.warn('managerApi.getDashboardStats Notice:', error.message || error);
       throw error;
     }
   },
@@ -28,7 +28,7 @@ export const managerApi = {
       const data = await fetchWithAuth(url);
       return data;
     } catch (error) {
-      console.error('managerApi.getDriverPerformance Error:', error);
+      console.warn('managerApi.getDriverPerformance Notice:', error.message || error);
       throw error;
     }
   },

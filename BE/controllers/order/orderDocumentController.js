@@ -9,6 +9,38 @@ const { parseOrderMeta, saveOrderMeta } = require('../../services/orderHelperSer
 const { generateContractPdfBuffer } = require('../../services/pdfService');
 const cloudinaryService = require('../../services/cloudinaryService');
 
+const isExternalPlaceholderDomain = (url) => {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 'nexlog.vn' || parsed.hostname.endsWith('.nexlog.vn');
+  } catch {
+    return false;
+  }
+};
+
+const resolveFrontendBaseUrl = (req) => {
+  const candidates = [
+    req?.headers?.origin,
+    process.env.FRONTEND_URL,
+    process.env.CLIENT_URL,
+    'http://localhost:3000'
+  ];
+  for (const raw of candidates) {
+    if (typeof raw !== 'string') continue;
+    const trimmed = raw.trim().replace(/\/+$/, '');
+    if (!trimmed || isExternalPlaceholderDomain(trimmed)) continue;
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return `${parsed.protocol}//${parsed.host}`;
+      }
+    } catch {
+      // ignore invalid URL
+    }
+  }
+  return 'http://localhost:3000';
+};
+
 const serializeOrderWithAliases = (row) => {
   if (!row) return null;
   const serialized = serializePrisma(row);
@@ -173,10 +205,11 @@ const updateAgreedPrice = async (req, res) => {
     );
 
     let emailResult = null;
+    let confirmUrl = null;
     if (targetEmail) {
       const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
-      const frontendBaseUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || req.headers.origin || 'http://localhost:3000').replace(/\/+$/, '');
-      const confirmUrl = `${frontendBaseUrl}/customer/order-confirmation/${token}`;
+      const frontendBaseUrl = resolveFrontendBaseUrl(req);
+      confirmUrl = `${frontendBaseUrl}/customer/order-confirmation/${token}`;
 
       const orderType = currentOrder.order_type || meta.shipping_direction || 'Export';
       const isExport =
@@ -245,6 +278,7 @@ const updateAgreedPrice = async (req, res) => {
           : 'Cập nhật giá thỏa thuận thành công!',
       email_sent: emailResult?.success || false,
       email_preview_url: emailResult?.previewUrl || null,
+      confirm_url: confirmUrl,
       web_workflow: meta.web_workflow,
       order: updatedOrder
     });
@@ -417,7 +451,7 @@ const rejectOrderDocument = async (req, res) => {
       meta.accounting_email ||
       null;
     const token = (currentOrder.tracking_token || currentOrder.order_code || '').trim();
-    const frontendBaseUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || req.headers.origin || 'http://localhost:3000').replace(/\/+$/, '');
+    const frontendBaseUrl = resolveFrontendBaseUrl(req);
     const reuploadUrl = `${frontendBaseUrl}/customer/order-documents/${token}`;
 
     let emailResult = null;
@@ -437,7 +471,8 @@ const rejectOrderDocument = async (req, res) => {
       stage: 'DOCS_REJECTED',
       documents: updatedDocs,
       web_workflow: meta.web_workflow,
-      email_sent: emailResult?.success || false
+      email_sent: emailResult?.success || false,
+      reupload_url: reuploadUrl
     });
   } catch (err) {
     console.error('rejectOrderDocument Error:', err);
@@ -678,7 +713,7 @@ const sendContractToCustomer = async (req, res) => {
       currentOrder.customer?.email ||
       'khachhang@example.com';
 
-    const clientOrigin = process.env.CLIENT_URL || 'http://localhost:3000';
+    const clientOrigin = resolveFrontendBaseUrl(req);
     // Đường link tra cứu và nộp hợp đồng chuẩn của khách hàng: /customer/order-documents/[token]
     const trackingUrl = `${clientOrigin}/customer/order-documents/${(currentOrder.tracking_token || currentOrder.order_code || '').trim()}`;
 
@@ -745,6 +780,7 @@ const sendContractToCustomer = async (req, res) => {
       contract_sent_email_at: nowIso,
       custom_terms: termsArray,
       contract_details: meta.contract_details,
+      tracking_url: trackingUrl,
       email_result: emailRes
     });
   } catch (err) {

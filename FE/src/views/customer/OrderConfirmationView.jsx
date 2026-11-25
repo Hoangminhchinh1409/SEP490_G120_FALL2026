@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Card, Button, Result, Tag, Spin, message, Alert } from 'antd';
 import { 
   Package, 
@@ -18,8 +18,9 @@ import { getVehicleSpecByKey } from '../../../src/data/dispatcherPresets';
 
 export default function OrderConfirmationView() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const token = params?.token;
+  const token = params?.token || searchParams?.get('token') || searchParams?.get('order_code') || '';
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);

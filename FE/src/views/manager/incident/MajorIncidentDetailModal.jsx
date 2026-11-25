@@ -1,21 +1,18 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   Tag,
   Input,
   Select,
-  Radio,
   InputNumber,
   Space,
   message,
   Spin,
   Image,
-  Alert,
-  Tooltip
+  Alert
 } from 'antd';
 import { managerApi } from '../../../api/managerApi';
-import { uploadApi } from '../../../api/uploadApi';
 import TripReplayModal from '../../../components/common/TripReplayModal';
 import {
   calculateAutoCompensation as calcCompensation,
@@ -23,12 +20,10 @@ import {
   getEffectiveLiabilityCap,
   validateApprovalDecision,
   validateRejectionDecision,
-  validatePaymentRecording,
   validateRequestMoreInfo,
   determineIncidentStatus,
   buildApprovalPayload,
-  buildRejectionPayload,
-  buildPaymentClosingPayload
+  buildRejectionPayload
 } from '../../../utils/incidentCompensationHelper';
 
 export default function MajorIncidentDetailModal({
@@ -41,22 +36,15 @@ export default function MajorIncidentDetailModal({
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(null);
 
-  // Form decision state (Mục 10, 12, 13, 14)
-  const [fault, setFault] = useState('COMPANY'); // 'COMPANY' | 'CUSTOMER' | 'THIRD_PARTY'
+  // Form decision state (Mục 10, 12, 13, 14) - không tự chọn sẵn khi mở xét duyệt mới
+  const [fault, setFault] = useState(null);
   const [resolutionNote, setResolutionNote] = useState('');
-  const [damagePercentage, setDamagePercentage] = useState(30);
-  const [goodsHandlingMethod, setGoodsHandlingMethod] = useState('CUSTOMER_RETAIN'); // 'CUSTOMER_RETAIN' | 'COMPANY_RECOVERY'
-  const [surveyOrgReport, setSurveyOrgReport] = useState('Giám định ABC - BB-2026-118');
-  const [contractClauseRef, setContractClauseRef] = useState('Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)');
-  const [compensationAmount, setCompensationAmount] = useState(36000000);
+  const [damagePercentage, setDamagePercentage] = useState(null);
+  const [goodsHandlingMethod, setGoodsHandlingMethod] = useState(null);
+  const [surveyOrgReport, setSurveyOrgReport] = useState('');
+  const [contractClauseRef, setContractClauseRef] = useState('');
+  const [compensationAmount, setCompensationAmount] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-
-  // Khung 18 & 19: Chi tiền cho khách (Thanh toán sau khi duyệt)
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [transactionCode, setTransactionCode] = useState('FT26114123456');
-  const [paymentProofUrl, setPaymentProofUrl] = useState('');
-  const [recordingPayment, setRecordingPayment] = useState(false);
-  const paymentProofInputRef = useRef(null);
 
   // Sub-modals
   const [isLocationMapOpen, setIsLocationMapOpen] = useState(false);
@@ -70,7 +58,7 @@ export default function MajorIncidentDetailModal({
 
   // Rejection modal inputs (Mục 15)
   const [rejectionReason, setRejectionReason] = useState('');
-  const [rejectionClause, setRejectionClause] = useState('Điều 4.2 - Miễn trừ trách nhiệm đối với lỗi do khâu đóng gói của chủ hàng');
+  const [rejectionClause, setRejectionClause] = useState('');
   const [contactHotline, setContactHotline] = useState('1900 1234');
 
   // Request More Info modal inputs (Mục 16)
@@ -87,16 +75,37 @@ export default function MajorIncidentDetailModal({
       }
 
       const initStatus = determineIncidentStatus(incident);
-      setFault(incident.fault || 'COMPANY');
-      setResolutionNote(incident.resolution_note || '');
-      setDamagePercentage(Number(incident.damage_percentage || 30));
-      setGoodsHandlingMethod(incident.goods_handling_method || 'CUSTOMER_RETAIN');
-      setContractClauseRef(incident.contract_clause_ref || 'Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)');
-      setSurveyOrgReport(incident.survey_org_report || 'Giám định ABC - BB-2026-118');
-      setPaymentProofUrl(incident.payment_proof_url || '');
-      if (incident.payment_date) setPaymentDate(incident.payment_date);
-      if (incident.transaction_code) setTransactionCode(incident.transaction_code);
-      setCompensationAmount(Number(incident.approved_compensation_amount || incident.proposed_compensation_amount || incident.claim_amount || (initStatus.isDone ? 0 : 36000000)));
+      if (initStatus.isDone || initStatus.isRejected) {
+        setFault(incident.fault || null);
+        setResolutionNote(incident.resolution_note || '');
+        setDamagePercentage(
+          incident.damage_percentage !== undefined && incident.damage_percentage !== null
+            ? Number(incident.damage_percentage)
+            : null
+        );
+        setGoodsHandlingMethod(incident.goods_handling_method || null);
+        setContractClauseRef(incident.contract_clause_ref || '');
+        setSurveyOrgReport(incident.survey_org_report || '');
+        setRejectionReason(incident.rejection_reason || '');
+        setRejectionClause(initStatus.isRejected ? (incident.contract_clause_ref || '') : '');
+        const initAmt = incident.approved_compensation_amount ?? incident.proposed_compensation_amount;
+        setCompensationAmount(
+          initAmt !== undefined && initAmt !== null && Number(initAmt) > 0
+            ? Number(initAmt)
+            : null
+        );
+      } else {
+        // Trạng thái chờ xét duyệt: Mở ra hoàn toàn trắng, không tự chọn sẵn bất kỳ giá trị nào
+        setFault(null);
+        setResolutionNote('');
+        setDamagePercentage(null);
+        setGoodsHandlingMethod(null);
+        setContractClauseRef('');
+        setSurveyOrgReport('');
+        setRejectionReason('');
+        setRejectionClause('');
+        setCompensationAmount(null);
+      }
 
       // Tải chi tiết sự cố và hồ sơ liên quan
       setLoading(true);
@@ -107,24 +116,44 @@ export default function MajorIncidentDetailModal({
           const data = res || incident;
           const dataStatus = determineIncidentStatus(data);
           setDetail(data);
-          if (data.fault) setFault(data.fault);
-          if (data.resolution_note) setResolutionNote(data.resolution_note);
-          if (data.damage_percentage) setDamagePercentage(Number(data.damage_percentage));
-          if (data.goods_handling_method) setGoodsHandlingMethod(data.goods_handling_method);
-          if (data.contract_clause_ref) setContractClauseRef(data.contract_clause_ref);
-          if (data.survey_org_report) setSurveyOrgReport(data.survey_org_report);
-          if (data.rejection_reason) setRejectionReason(data.rejection_reason);
-          if (data.payment_date) setPaymentDate(data.payment_date);
-          if (data.transaction_code) setTransactionCode(data.transaction_code);
-          if (data.payment_proof_url) setPaymentProofUrl(data.payment_proof_url);
-          if (
-            data.approved_compensation_amount !== undefined &&
-            data.approved_compensation_amount !== null &&
-            (Number(data.approved_compensation_amount) > 0 || dataStatus.isDone)
-          ) {
-            setCompensationAmount(Number(data.approved_compensation_amount));
-          } else if (data.proposed_compensation_amount) {
-            setCompensationAmount(Number(data.proposed_compensation_amount));
+
+          if (dataStatus.isDone || dataStatus.isRejected) {
+            setFault(data.fault || null);
+            setResolutionNote(data.resolution_note || '');
+            setDamagePercentage(
+              data.damage_percentage !== undefined && data.damage_percentage !== null
+                ? Number(data.damage_percentage)
+                : null
+            );
+            setGoodsHandlingMethod(data.goods_handling_method || null);
+            setContractClauseRef(data.contract_clause_ref || '');
+            setSurveyOrgReport(data.survey_org_report || '');
+            setRejectionReason(data.rejection_reason || '');
+            if (data.rejection_reason && data.contract_clause_ref) {
+              setRejectionClause(data.contract_clause_ref);
+            }
+            if (
+              data.approved_compensation_amount !== undefined &&
+              data.approved_compensation_amount !== null &&
+              Number(data.approved_compensation_amount) > 0
+            ) {
+              setCompensationAmount(Number(data.approved_compensation_amount));
+            } else if (data.proposed_compensation_amount && Number(data.proposed_compensation_amount) > 0) {
+              setCompensationAmount(Number(data.proposed_compensation_amount));
+            } else {
+              setCompensationAmount(null);
+            }
+          } else {
+            // Khi đơn đang chờ duyệt: Đảm bảo xóa sạch 100% các ô nhập liệu
+            setFault(null);
+            setResolutionNote('');
+            setDamagePercentage(null);
+            setGoodsHandlingMethod(null);
+            setContractClauseRef('');
+            setSurveyOrgReport('');
+            setRejectionReason('');
+            setRejectionClause('');
+            setCompensationAmount(null);
           }
         })
         .catch((err) => {
@@ -145,7 +174,7 @@ export default function MajorIncidentDetailModal({
   if (!open || !incident) return null;
 
   const currentData = detail || incident;
-  const { isPending, isApproved, isRejected, isPaymentClosed, isDone } = determineIncidentStatus(currentData);
+  const { isPending, isRejected, isDone } = determineIncidentStatus(currentData);
 
   const claimCode = currentData.claim_code || currentData.compensation_claim?.claim_code || `CLM-${String(currentData.id || 1).padStart(4, '0')}`;
   const orderCode = currentData.order_code || currentData.order?.order_code || 'NEX-208337';
@@ -179,7 +208,6 @@ export default function MajorIncidentDetailModal({
   const driverPhone = currentData.driver_phone || '0987 654 321';
   const sealNumber = currentData.seal_number || currentData.order?.seal_number || 'Chưa ghi nhận';
   const contractNumber = currentData.contract?.contract_number || 'HĐ vận chuyển ký ngày 02/11/2026';
-  const contractPdfUrl = currentData.contract?.attachment_link || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
   const contractCap = Number(currentData.contract?.liability_cap || 200000000);
 
   // Nhận diện đơn hàng có Hợp đồng khung đối tác dài hạn hay là khách vãng lai
@@ -193,7 +221,7 @@ export default function MajorIncidentDetailModal({
   });
 
   // Số tiền yêu cầu bồi thường (Mục 3) & Thông tin chuyển cấp từ ĐPV
-  const requestedClaimAmount = Number(currentData.claim_amount || currentData.proposed_compensation_amount || 35000000);
+  const requestedClaimAmount = Number(currentData.claim_amount || currentData.proposed_compensation_amount || 0);
   const escalatedTimeDisplay = currentData.escalated_time
     ? new Date(currentData.escalated_time).toLocaleString('vi-VN')
     : 'Chờ điều phối cập nhật';
@@ -233,16 +261,22 @@ export default function MajorIncidentDetailModal({
   };
 
   const handlePercentageChange = (val) => {
-    const num = Number(val) || 0;
+    if (val === null || val === undefined || val === '') {
+      setDamagePercentage(null);
+      return;
+    }
+    const num = Number(val);
     setDamagePercentage(num);
     if (fault !== 'CUSTOMER') {
-      setCompensationAmount(calculateAutoCompensation(num, goodsHandlingMethod));
+      setCompensationAmount(
+        calculateAutoCompensation(num, goodsHandlingMethod || 'CUSTOMER_RETAIN')
+      );
     }
   };
 
   const handleHandlingMethodChange = (method) => {
     setGoodsHandlingMethod(method);
-    if (fault !== 'CUSTOMER') {
+    if (fault !== 'CUSTOMER' && damagePercentage !== null && damagePercentage !== undefined) {
       setCompensationAmount(calculateAutoCompensation(damagePercentage, method));
     }
   };
@@ -251,32 +285,26 @@ export default function MajorIncidentDetailModal({
     setFault(val);
     if (val === 'CUSTOMER') {
       setCompensationAmount(0);
-    } else if (val === 'COMPANY' && compensationAmount === 0 && damagePercentage > 0) {
-      setCompensationAmount(calculateAutoCompensation(damagePercentage, goodsHandlingMethod));
+    } else if (
+      val === 'COMPANY' &&
+      (!compensationAmount || compensationAmount === 0) &&
+      damagePercentage > 0
+    ) {
+      setCompensationAmount(
+        calculateAutoCompensation(damagePercentage, goodsHandlingMethod || 'CUSTOMER_RETAIN')
+      );
     }
   };
 
-  const handlePaymentProofFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      message.warning('Vui lòng chọn tệp hình ảnh (JPG, PNG, WEBP) cho biên lai chuyển khoản!');
-      return;
-    }
-    try {
-      const uploaded = await uploadApi.uploadToCloudinary(file, 'nexlog/claims');
-      setPaymentProofUrl(uploaded.url);
-      message.success(`Đã tải lên Cloudinary chứng từ: ${file.name}`);
-    } catch (err) {
-      message.error(err.message || 'Không thể tải ảnh chứng từ lên Cloudinary');
-    } finally {
-      e.target.value = '';
-    }
-  };
-
-  // Nút 17: Phê duyệt bồi thường
+  // Nút 17: Chốt bồi thường, gửi email khách xác nhận và kết thúc luồng
   const handleApproveCompensation = async () => {
-    const validation = validateApprovalDecision({ fault, resolutionNote, compensationAmount });
+    const validation = validateApprovalDecision({
+      fault,
+      damagePercentage,
+      goodsHandlingMethod,
+      resolutionNote,
+      compensationAmount
+    });
     if (!validation.isValid) {
       message.warning(validation.error);
       return;
@@ -296,7 +324,10 @@ export default function MajorIncidentDetailModal({
       });
 
       const res = await managerApi.decideIncidentCompensation(incId, payload);
-      message.success(res?.message || 'Đã phê duyệt phương án bồi thường thành công!');
+      message.success(
+        res?.message ||
+          'Đã chốt mức bồi thường, gửi email xác nhận tới khách hàng và hoàn tất hồ sơ!'
+      );
       onSuccess?.();
       onClose();
     } catch (error) {
@@ -366,36 +397,6 @@ export default function MajorIncidentDetailModal({
     }
   };
 
-  // Nút 19: Ghi nhận đã chi tiền cho khách
-  const handleRecordPayment = async () => {
-    const validation = validatePaymentRecording({ transactionCode, paymentProofUrl });
-    if (!validation.isValid) {
-      message.warning(validation.error);
-      return;
-    }
-
-    try {
-      setRecordingPayment(true);
-      const incId = currentData.id || currentData.raw_id;
-      const payload = buildPaymentClosingPayload({
-        paymentDate,
-        transactionCode,
-        paymentProofUrl,
-        approvedAmount: compensationAmount
-      });
-
-      const res = await managerApi.closeIncidentCase(incId, payload);
-      message.success(res?.message || 'Đã ghi nhận chi tiền thành công và đóng hồ sơ (DONE)!');
-      onSuccess?.();
-      onClose();
-    } catch (error) {
-      console.error('Lỗi ghi nhận chi tiền:', error);
-      message.error(error.message || 'Lỗi khi ghi nhận chi tiền bồi thường');
-    } finally {
-      setRecordingPayment(false);
-    }
-  };
-
   // Gửi trực tiếp hoặc gửi lại Email thông báo tới Khách hàng
   const handleSendEmailToCustomer = async () => {
     try {
@@ -450,14 +451,9 @@ export default function MajorIncidentDetailModal({
                       Chờ Quản lý xét duyệt
                     </Tag>
                   )}
-                  {isApproved && (
-                    <Tag color="cyan" className="font-bold text-xs uppercase px-2.5 py-0.5 rounded-full border-0 shadow-2xs">
-                      Đã duyệt · Chờ chi trả
-                    </Tag>
-                  )}
                   {isDone && (
                     <Tag color={isRejected ? "red" : "green"} className="font-bold text-xs uppercase px-2.5 py-0.5 rounded-full border-0 shadow-2xs">
-                      {isRejected ? "Đã từ chối bồi thường (Đóng)" : "Đã hoàn tất (Đóng)"}
+                      {isRejected ? "Đã từ chối bồi thường (Đóng)" : "Đã chốt bồi thường · Hoàn tất (Đóng)"}
                     </Tag>
                   )}
                   {currentData.is_major && (
@@ -577,7 +573,7 @@ export default function MajorIncidentDetailModal({
                     Số tiền yêu cầu bồi thường
                   </span>
                   <div className="font-mono font-black text-2xl text-error mt-0.5">
-                    {requestedClaimAmount.toLocaleString('vi-VN')} đ
+                    {requestedClaimAmount > 0 ? `${requestedClaimAmount.toLocaleString('vi-VN')} đ` : 'Chưa ghi nhận (Chờ giám định)'}
                   </div>
                 </div>
 
@@ -742,6 +738,7 @@ export default function MajorIncidentDetailModal({
                         value={damagePercentage}
                         onChange={handlePercentageChange}
                         disabled={isDone || isReadOnly || goodsHandlingMethod === 'COMPANY_RECOVERY'}
+                        placeholder="Nhập %"
                         style={{ width: '100%' }}
                         className="w-full font-mono font-bold text-center h-9 text-xs"
                       />
@@ -779,6 +776,7 @@ export default function MajorIncidentDetailModal({
                     value={fault}
                     onChange={handleFaultChange}
                     disabled={isDone || isReadOnly}
+                    placeholder="Chọn bên chịu trách nhiệm lỗi..."
                     className="w-full h-9"
                     options={[
                       { value: 'COMPANY', label: 'Công ty vận chuyển (ALS)' },
@@ -828,7 +826,13 @@ export default function MajorIncidentDetailModal({
                   Hạn mức bồi thường áp dụng ({hasFrameworkContract ? 'Hợp đồng khung đối tác' : 'Khách vãng lai - NĐ 163/2017/NĐ-CP'}): <b className="font-mono font-bold">{effectiveLiabilityCap.toLocaleString('vi-VN')} đ</b>
                 </div>
                 <div>
-                  Giá trị khai báo {declaredValue.toLocaleString('vi-VN')} đ × {damagePercentage}% hỏng = <b className="font-mono font-bold text-error">{(declaredValue * (damagePercentage / 100)).toLocaleString('vi-VN')} đ</b>, {compensationAmount <= effectiveLiabilityCap ? 'trong hạn mức.' : <span className="text-error font-bold">⚠ VƯỢT HẠN MỨC TRÁCH NHIỆM!</span>}
+                  {damagePercentage !== null && damagePercentage !== undefined ? (
+                    <>
+                      Giá trị khai báo {declaredValue.toLocaleString('vi-VN')} đ × {Number(damagePercentage)}% hỏng = <b className="font-mono font-bold text-error">{(declaredValue * (Number(damagePercentage) / 100)).toLocaleString('vi-VN')} đ</b>, {Number(compensationAmount || 0) <= effectiveLiabilityCap ? 'trong hạn mức.' : <span className="text-error font-bold">⚠ VƯỢT HẠN MỨC TRÁCH NHIỆM!</span>}
+                    </>
+                  ) : (
+                    <span>Giá trị khai báo hàng hóa: <b className="font-mono font-bold">{declaredValue.toLocaleString('vi-VN')} đ</b> (Vui lòng chọn tỷ lệ hàng hỏng bên dưới để hệ thống tính mức đề xuất).</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -851,6 +855,7 @@ export default function MajorIncidentDetailModal({
                     value={goodsHandlingMethod}
                     onChange={(val) => handleHandlingMethodChange(val)}
                     disabled={isDone || isReadOnly}
+                    placeholder="Chọn hướng xử lý bồi thường..."
                     className="w-full sm:w-[420px] h-9"
                     options={[
                       { value: 'CUSTOMER_RETAIN', label: 'Bồi thường' },
@@ -890,10 +895,11 @@ export default function MajorIncidentDetailModal({
                         step={500000}
                         controls={false}
                         value={compensationAmount}
-                        onChange={(val) => setCompensationAmount(val || 0)}
+                        onChange={(val) => setCompensationAmount(val === null || val === undefined ? null : Number(val))}
                         disabled={isDone || isReadOnly}
-                        formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
-                        parser={(val) => val.replace(/\./g, '')}
+                        placeholder="Nhập số tiền chốt bồi thường..."
+                        formatter={(val) => (val !== undefined && val !== null && val !== '') ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : ''}
+                        parser={(val) => String(val || '').replace(/\./g, '')}
                         style={{ width: '100%' }}
                         className="w-full font-mono font-bold text-sm text-error h-9 text-right pr-2 [&_input]:text-right"
                       />
@@ -968,7 +974,7 @@ export default function MajorIncidentDetailModal({
                       <span>Yêu cầu bổ sung hồ sơ</span>
                     </button>
 
-                    {/* Nút 17: Duyệt bồi thường */}
+                    {/* Nút 17: Chốt bồi thường, gửi email khách xác nhận & kết thúc luồng */}
                     <button
                       type="button"
                       onClick={handleApproveCompensation}
@@ -976,26 +982,24 @@ export default function MajorIncidentDetailModal({
                       className="w-full sm:w-auto h-10 px-6 rounded-xl bg-secondary hover:bg-blue-700 text-white font-bold cursor-pointer transition-all shadow-xs inline-flex items-center justify-center gap-1.5 text-xs hover:scale-102"
                     >
                       <span className="material-symbols-outlined text-[18px]">task_alt</span>
-                      <span>{submitting ? 'Đang lưu...' : 'Duyệt bồi thường'}</span>
+                      <span>{submitting ? 'Đang lưu & gửi email...' : 'Chốt bồi thường & Gửi email'}</span>
                     </button>
                   </div>
                 </div>
-              ) : (isDone || isApproved) && (
+              ) : isDone && (
                 <div className={`pt-2.5 mt-1 border-t border-surface-container/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold ${
-                  isRejected ? 'text-error' : isDone ? 'text-emerald-700' : 'text-cyan-800'
+                  isRejected ? 'text-error' : 'text-emerald-700'
                 }`}>
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-[18px]">
-                      {isRejected ? 'block' : isDone ? 'lock' : 'pending_actions'}
+                      {isRejected ? 'block' : 'lock'}
                     </span>
                     <span>
                       {isRejected
                         ? 'Đã ban hành quyết định Từ chối bồi thường · Hồ sơ đã khóa'
-                        : isDone
-                          ? (Number(currentData.approved_compensation_amount || compensationAmount) > 0
-                              ? '✔ Đã phê duyệt & hoàn tất chi trả bồi thường · Hồ sơ đã khóa'
-                              : '✔ Sự cố đã xử lý hoàn tất (không phát sinh chi trả) · Hồ sơ đã khóa')
-                          : '✔ Đã phê duyệt phương án bồi thường · Đang chờ chi tiền bên dưới'}
+                        : Number(currentData.approved_compensation_amount || compensationAmount) > 0
+                          ? '✔ Đã chốt mức bồi thường & gửi email xác nhận cho khách · Hồ sơ đã hoàn tất (Đóng)'
+                          : '✔ Sự cố đã xử lý hoàn tất (không phát sinh chi trả) · Hồ sơ đã khóa'}
                     </span>
                   </div>
 
@@ -1014,94 +1018,7 @@ export default function MajorIncidentDetailModal({
               )}
             </div>
 
-            {/* MỤC 18 & 19: CHI TIỀN CHO KHÁCH (HIỆN SAU KHI DUYỆT) */}
-            {isApproved && (
-              <div className="p-4 bg-cyan-500/10 rounded-2xl border border-cyan-400/40 space-y-3.5 shadow-2xs">
-                <div className="pb-1 border-b border-cyan-300/60">
-                  <span className="font-bold text-cyan-950 uppercase text-xs tracking-wider">
-                    Chi tiền cho khách (hiện sau khi Duyệt)
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Ngày thanh toán */}
-                  <div className="space-y-1">
-                    <label className="block font-bold text-cyan-950 text-xs">
-                      Ngày thanh toán * :
-                    </label>
-                    <Input
-                      type="date"
-                      value={paymentDate}
-                      onChange={(e) => setPaymentDate(e.target.value)}
-                      className="h-9 rounded-xl text-xs font-mono"
-                    />
-                  </div>
-
-                  {/* Mã giao dịch */}
-                  <div className="space-y-1">
-                    <label className="block font-bold text-cyan-950 text-xs">
-                      Mã giao dịch * :
-                    </label>
-                    <Input
-                      value={transactionCode}
-                      onChange={(e) => setTransactionCode(e.target.value)}
-                      placeholder="VD: FT26114123456"
-                      className="h-9 rounded-xl text-xs font-mono font-bold"
-                    />
-                  </div>
-
-                  {/* Link / Nút Tải chứng từ chi */}
-                  <div className="space-y-1">
-                    <label className="block font-bold text-cyan-950 text-xs">
-                      Chứng từ chi (Ủy nhiệm chi) * :
-                    </label>
-                    <input
-                      ref={paymentProofInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePaymentProofFileChange}
-                      className="hidden"
-                    />
-                    <div className="flex gap-2">
-                      <Input
-                        value={paymentProofUrl}
-                        onChange={(e) => setPaymentProofUrl(e.target.value)}
-                        placeholder="Link ảnh UNC hoặc chọn tệp..."
-                        className="h-9 rounded-xl text-xs font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => paymentProofInputRef.current?.click()}
-                        className="h-9 px-3 rounded-xl bg-white hover:bg-cyan-50 text-cyan-800 text-xs font-bold border border-cyan-300 shrink-0 cursor-pointer"
-                      >
-                        Chọn ảnh UNC
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
-                  <span className="text-[11px] text-cyan-900 italic">
-                    (Khách xác nhận đã nhận tiền trên trang theo dõi, hoặc hệ thống tự xác nhận sau 7 ngày, rồi yêu cầu được Đóng).
-                  </span>
-
-                  {/* Nút 19: Ghi nhận đã chi */}
-                  {!isReadOnly && (
-                    <button
-                      type="button"
-                      disabled={recordingPayment}
-                      onClick={handleRecordPayment}
-                      className="h-10 px-6 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white font-bold cursor-pointer transition-all shadow-xs inline-flex items-center gap-2 text-xs shrink-0"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-                      <span>{recordingPayment ? 'Đang lưu...' : 'Ghi nhận đã chi'}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* KHI ĐÃ ĐÓNG (DONE): READ-ONLY SUMMARY & KHOẢN CHI / GIAO DỊCH */}
+            {/* KHI ĐÃ ĐÓNG (DONE): READ-ONLY SUMMARY KẾT QUẢ CHỐT BỒI THƯỜNG */}
             {isDone && (
               <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-400/40 space-y-3 shadow-2xs">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-emerald-200/70">
@@ -1111,7 +1028,7 @@ export default function MajorIncidentDetailModal({
                     </span>
                     {isRejected
                       ? 'Hồ sơ bồi thường đã đóng (Từ chối)'
-                      : 'Khoản chi & Giao dịch Thanh toán Bồi thường (DONE)'}
+                      : 'Quyết định Chốt Bồi thường & Xác nhận Email (DONE)'}
                   </span>
                   <span className="text-[11px] text-outline font-mono">
                     Đã xử lý lúc: {currentData.closed_at ? new Date(currentData.closed_at).toLocaleString('vi-VN') : (currentData.resolved_time ? new Date(currentData.resolved_time).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN'))}
@@ -1132,72 +1049,38 @@ export default function MajorIncidentDetailModal({
                     }
                     className="rounded-xl p-3 border border-red-200"
                   />
-                ) : Number(currentData.approved_compensation_amount || compensationAmount) > 0 || currentData.payment_proof_url || currentData.transaction_code ? (
+                ) : Number(currentData.approved_compensation_amount || compensationAmount) > 0 ? (
                   <div className="space-y-3 text-xs">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
-                        <span className="text-[11px] text-on-surface-variant block">Số tiền đã chi trả:</span>
+                        <span className="text-[11px] text-on-surface-variant block">Mức bồi thường đã chốt:</span>
                         <strong className="text-error font-mono text-base font-black block">
                           {Number(currentData.approved_compensation_amount || compensationAmount).toLocaleString('vi-VN')} đ
                         </strong>
                       </div>
 
                       <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
-                        <span className="text-[11px] text-on-surface-variant block">Mã giao dịch ngân hàng (UNC):</span>
-                        <strong className="text-primary font-mono text-sm font-black block">
-                          {currentData.transaction_code || transactionCode || 'Chưa cập nhật'}
-                        </strong>
-                      </div>
-
-                      <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
-                        <span className="text-[11px] text-on-surface-variant block">Ngày thanh toán:</span>
-                        <strong className="text-primary font-mono text-sm font-bold block">
-                          {currentData.payment_date
-                            ? new Date(currentData.payment_date).toLocaleDateString('vi-VN')
-                            : (currentData.closed_at
-                                ? new Date(currentData.closed_at).toLocaleDateString('vi-VN')
-                                : new Date(paymentDate).toLocaleDateString('vi-VN'))}
-                        </strong>
-                      </div>
-
-                      <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
-                        <span className="text-[11px] text-on-surface-variant block">Phương thức thanh toán:</span>
+                        <span className="text-[11px] text-on-surface-variant block">Email thông báo khách hàng:</span>
                         <strong className="text-emerald-700 font-bold block">
-                          Chuyển khoản ngân hàng (UNC)
+                          {currentData.customer_email || customerEmailDisplay}
+                        </strong>
+                      </div>
+
+                      <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
+                        <span className="text-[11px] text-on-surface-variant block">Trạng thái luồng xử lý:</span>
+                        <strong className="text-emerald-700 font-bold block">
+                          Đã chốt &amp; Kết thúc luồng
                         </strong>
                       </div>
                     </div>
 
-                    <div className="p-3 bg-white rounded-xl border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="space-y-1 flex-1">
-                        <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider block">
-                          Nội dung / Ghi chú giao dịch chi trả:
-                        </span>
-                        <p className="text-xs text-primary font-medium leading-relaxed">
-                          {currentData.payment_note || currentData.resolution_note || 'Đã hoàn tất chi trả bồi thường cho khách hàng theo hợp đồng.'}
-                        </p>
-                      </div>
-
-                      {(currentData.payment_proof_url || paymentProofUrl) && (
-                        <div className="flex items-center gap-3 shrink-0">
-                          <div className="w-16 h-12 rounded-lg overflow-hidden border border-emerald-200 bg-black/5">
-                            <Image
-                              src={currentData.payment_proof_url || paymentProofUrl}
-                              alt="Biên lai chuyển khoản UNC"
-                              className="w-16 h-12 object-cover"
-                            />
-                          </div>
-                          <a
-                            href={currentData.payment_proof_url || paymentProofUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-2xs"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">receipt</span>
-                            <span>Xem biên lai (UNC)</span>
-                          </a>
-                        </div>
-                      )}
+                    <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-1">
+                      <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider block">
+                        Nội dung / Căn cứ chốt bồi thường:
+                      </span>
+                      <p className="text-xs text-primary font-medium leading-relaxed">
+                        {currentData.resolution_note || resolutionNote || 'Đã chốt mức bồi thường và gửi email thông báo cho khách hàng.'}
+                      </p>
                     </div>
                   </div>
                 ) : (

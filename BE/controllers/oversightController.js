@@ -196,26 +196,83 @@ const getCurrentPeriodGMT7 = () =>
   new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7);
 
 const getPerformanceOverview = async (req, res) => {
+  const periodStr = req.query.period || getCurrentPeriodGMT7();
   try {
-    const periodStr = req.query.period || getCurrentPeriodGMT7();
     const refresh = req.query?.refresh === '1' || req.query?.refresh === 'true';
     const result = await oversightService.getPerformanceOverview(periodStr, { refresh });
     return res.json(result);
   } catch (error) {
-    console.error('getPerformanceOverview Error:', error);
-    return res.status(500).json({ message: 'Lỗi tải dữ liệu tổng quan hiệu suất', error: error.message });
+    console.warn('[oversightController] getPerformanceOverview Warning (using fallback):', error.message);
+    // Trả về cấu trúc mặc định an toàn để frontend không bị lỗi 500 khi mạng database chập chờn
+    return res.json({
+      period: periodStr,
+      kpiCards: {
+        revenueVnd: 0,
+        revenueFormatted: '0 đ',
+        revenuePerKmVnd: 0,
+        revenuePerKmFormatted: '0 đ',
+        avgDispatcherSlaMinutes: 0,
+        avgSlaDispatchText: '0 phút',
+        successfulDeliveries: 0,
+        avgOrderCycleDays: 0,
+        orderCycleTime: 'Chưa có đơn hoàn thành',
+        perfectOrderRatePercent: 0
+      },
+      fleetGauges: {
+        truckUsePercent: 0,
+        vehicleFillPercent: 0,
+        emptyRunningPercent: 0
+      },
+      dwellTimeByLocationChart: [],
+      lateStopsByCauseChart: [],
+      incidentsByTypeChart: [],
+      revenueTrendChart: [],
+      stats: {
+        period: periodStr,
+        revenue: 0,
+        revenueFormatted: '0 đ',
+        truckUtilization: '0',
+        avgSlaDispatch: '0 phút',
+        completedOrders: 0,
+        totalOrders: 0,
+        incidentData: [],
+        incidentSummaryText: 'Không có dữ liệu',
+        vehicleFillRate: '0',
+        emptyRunningRate: '0',
+        revenuePerKm: '0 đ',
+        orderCycleTime: 'Chưa có đơn hoàn thành',
+        perfectOrdersRate: '0',
+        dwellLocations: [],
+        dwellSummaryText: '',
+        delayReasons: [],
+        delaySummaryText: ''
+      },
+      is_fallback: true
+    });
   }
 };
 
 const getDriverPerformance = async (req, res) => {
+  const periodStr = req.query.period || 'ALL';
   try {
-    const periodStr = req.query.period || 'ALL';
     const refresh = req.query?.refresh === '1' || req.query?.refresh === 'true';
     const result = await oversightService.getDriverPerformance(periodStr, { refresh });
     return res.json(result);
   } catch (error) {
-    console.error('getDriverPerformance Error:', error);
-    return res.status(500).json({ message: 'Lỗi tải báo cáo hiệu suất tài xế', error: error.message });
+    console.warn('[oversightController] getDriverPerformance Warning (using fallback):', error.message);
+    return res.json({
+      period: periodStr,
+      drivers: [],
+      summary: {
+        totalDrivers: 0,
+        activeDrivers: 0,
+        totalTrips: 0,
+        totalDrivingHours: '0h',
+        avgSpeeding: 0,
+        avgViolations: 0
+      },
+      is_fallback: true
+    });
   }
 };
 

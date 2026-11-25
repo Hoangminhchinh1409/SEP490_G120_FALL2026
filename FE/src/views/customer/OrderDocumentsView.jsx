@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Button, Tag, Spin, message, Alert, Table, Tooltip, Progress, Modal } from 'antd';
 import { 
   FileText, 
@@ -26,8 +26,9 @@ import { CheckCircle2 } from 'lucide-react';
 
 export default function OrderDocumentsView() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const token = params?.token;
+  const token = params?.token || searchParams?.get('token') || searchParams?.get('order_code') || '';
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);

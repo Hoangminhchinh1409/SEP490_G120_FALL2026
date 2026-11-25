@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 import { Modal, Tabs, Tag, Button, message } from 'antd';
 import { 
   MessageCircle, 
-  ArrowUpRight
+  ArrowUpRight,
+  ExternalLink
 } from 'lucide-react';
 import CancelOrderModal from './CancelOrderModal';
 import DocumentAssistantDrawer from './DocumentAssistantDrawer';
@@ -989,6 +990,24 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
                  isDocsApprovedStage ? 'ĐÃ DUYỆT CHỨNG TỪ - CHỜ ĐÍNH KÈM HỢP ĐỒNG PDF' :
                  order.status === 'CONFIRMED' ? 'CẦN XÁC NHẬN CHỨNG TỪ' : order.status}
               </Tag>
+              {(order.tracking_token || order.order_id || order.order_code) && (
+                <Button
+                  size="small"
+                  icon={<ExternalLink size={12} />}
+                  onClick={() => {
+                    const token = order.tracking_token || order.order_id || order.order_code;
+                    const url = `${window.location.origin}/customer/order-confirmation/${token}`;
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(url);
+                      message.success('Đã sao chép link xác nhận đơn của khách hàng!');
+                    }
+                    window.open(url, '_blank');
+                  }}
+                  className="text-xs font-medium border-indigo-200 text-indigo-600 hover:text-indigo-700 hover:border-indigo-400"
+                >
+                  Mở trang khách
+                </Button>
+              )}
             </div>
           </div>
         }
