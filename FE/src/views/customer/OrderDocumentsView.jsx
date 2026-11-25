@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Button, Tag, Spin, message, Alert, Table, Tooltip, Progress, Modal } from 'antd';
+import { Button, Tag, Spin, message, Alert, Table, Tooltip, Progress } from 'antd';
 import { 
   FileText, 
   Upload, 
@@ -11,18 +11,15 @@ import {
   AlertCircle,
   FileCheck,
   Send,
-  ArrowRight,
   RefreshCw,
   PhoneCall,
-  MessageSquare,
-  Printer,
-  Download,
-  Eye
+  MessageSquare
 } from 'lucide-react';
 import { orderApi } from '../../../src/api/orderApi';
 import { uploadApi } from '../../../src/api/uploadApi';
 import { getRecommendedDocsByCargo } from '../../../src/data/dispatcherPresets';
-import { CheckCircle2 } from 'lucide-react';
+import ContractSigningSection from './components/ContractSigningSection';
+import ContractPreviewModal from './components/ContractPreviewModal';
 
 export default function OrderDocumentsView() {
   const params = useParams();
@@ -575,353 +572,22 @@ export default function OrderDocumentsView() {
 
         {/* Khối Hợp đồng Vận chuyển: In, Ký, Scan nộp và Hướng dẫn gửi bản cứng */}
         {isDocsApproved && (
-          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-150 pb-3">
-              <div>
-                <span className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <FileText className="text-indigo-600" size={18} />
-                  Ký kết Hợp đồng Vận chuyển Hàng hóa Nội địa (ALS)
-                </span>
-                <span className="text-xs text-slate-500 block mt-0.5">
-                  Quý khách vui lòng tải tệp hợp đồng đã được hệ thống tạo sẵn, in ra giấy, ký tên đóng dấu, sau đó scan/chụp ảnh tải lên hệ thống.
-                </span>
-              </div>
-              <Tag color={order?.contract_file || order?.contract_uploaded ? 'success' : 'processing'} className="text-xs font-bold px-3 py-1 rounded-full self-start sm:self-auto">
-                {order?.contract_file || order?.contract_uploaded ? '✓ ĐÃ TẢI LÊN BẢN SCAN' : 'CHỜ TẢI BẢN SCAN ĐÃ KÝ'}
-              </Tag>
-            </div>
-
-            {/* Điều khoản bổ sung riêng */}
-            {Array.isArray(order?.contract_custom_terms) && order.contract_custom_terms.length > 0 && (
-              <div className="p-3 bg-indigo-50/70 rounded-2xl border border-indigo-100 space-y-1.5">
-                <span className="text-xs font-bold text-indigo-950 block">
-                  📋 Các điều khoản bổ sung đã thống nhất với Điều phối viên:
-                </span>
-                <div className="space-y-1 text-xs text-indigo-900">
-                  {order.contract_custom_terms.map((term, i) => (
-                    <div key={i} className="flex items-start gap-1.5">
-                      <span className="font-bold">•</span>
-                      <span>{term}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 2 Bước thực hiện: Online Scan & Offline Bưu điện */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-              {/* Bước 1: Scan và upload online */}
-              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3 flex flex-col justify-between">
-                <div>
-                  <div className="font-bold text-xs text-slate-800 uppercase tracking-wide flex items-center gap-1.5 mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]">1</span>
-                    Ký &amp; Tải lên bản Scan (PDF / Ảnh)
-                  </div>
-                  {!(order?.contract_file || order?.contract_uploaded) ? (
-                    <>
-                      <p className="text-xs text-slate-600 leading-relaxed m-0">
-                        Bấm <b>&ldquo;Xem &amp; In hợp đồng mẫu&rdquo;</b> bên dưới hoặc tải tệp gửi kèm trong Email, in ra giấy, ký tên đóng dấu tròn công ty và scan tải lại tại đây để Điều phối viên xác nhận xếp xe ngay.
-                      </p>
-                      
-                      {/* Nút xem & in hợp đồng mẫu chuẩn NĐ 158/2024/NĐ-CP (chỉ hiển thị khi chưa đính kèm tệp hợp đồng) */}
-                      <div className="pt-2.5">
-                        <Button
-                          type="default"
-                          icon={<Eye size={13} className="text-indigo-600" />}
-                          onClick={() => setContractModalOpen(true)}
-                          className="w-full text-xs font-bold border-indigo-200 text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 flex items-center justify-center gap-1.5 h-9 rounded-xl"
-                        >
-                          📄 Xem, Tải Về &amp; In Hợp Đồng Mẫu Đã Lập
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-xs text-emerald-800 leading-relaxed m-0">
-                      Hợp đồng vận chuyển bản scan PDF đã được tải lên và lưu vào hồ sơ đơn hàng. Quý khách có thể đổi sang tệp khác nếu cần chỉnh sửa trước khi xe lăn bánh.
-                    </p>
-                  )}
-                </div>
-
-                <div className="pt-2">
-                  {order?.contract_file || order?.contract_uploaded ? (
-                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <FileCheck size={18} className="text-emerald-600 shrink-0" />
-                        <div>
-                          <div className="font-bold text-emerald-950 truncate max-w-[180px]">
-                            {order.contract_file || 'hop-dong-da-ky.pdf'}
-                          </div>
-                          <div className="text-[10px] text-emerald-700">Đã tiếp nhận vào hồ sơ</div>
-                        </div>
-                      </div>
-                      <label className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer">
-                        Đổi tệp khác
-                        <input
-                          type="file"
-                          accept=".pdf,image/*"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            try {
-                              setUploadingContractScan(true);
-                              const orderId = order.id || order.order_id;
-                              const uploaded = await uploadApi.uploadToCloudinary(
-                                file,
-                                `nexlog/orders/${orderId}/contract`,
-                                { requireAuthCookie: false }
-                              );
-                              await orderApi.uploadContractFile(orderId, {
-                                file_name: file.name,
-                                file_data: uploaded.url,
-                                file_url: uploaded.url,
-                                file_size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
-                              });
-                              message.success('Đã tải lên bản scan hợp đồng đã ký!');
-                              const latest = await orderApi.getOrderByToken(token);
-                              if (latest) setOrder(latest);
-                            } catch (err) {
-                              message.error(err.message || 'Lỗi khi tải tệp');
-                            } finally {
-                              setUploadingContractScan(false);
-                            }
-                          }}
-                        />
-                      </label>
-                    </div>
-                  ) : (
-                    <label className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer shadow-sm transition-all">
-                      <Upload size={14} />
-                      <span>{uploadingContractScan ? 'Đang tải lên...' : 'Tải lên Bản Scan Hợp đồng đã ký (PDF)'}</span>
-                      <input
-                        type="file"
-                        accept=".pdf,image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          try {
-                            setUploadingContractScan(true);
-                            const orderId = order.id || order.order_id;
-                            const uploaded = await uploadApi.uploadToCloudinary(
-                              file,
-                              `nexlog/orders/${orderId}/contract`,
-                              { requireAuthCookie: false }
-                            );
-                            await orderApi.uploadContractFile(orderId, {
-                              file_name: file.name,
-                              file_data: uploaded.url,
-                              file_url: uploaded.url,
-                              file_size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
-                            });
-                            message.success('Đã tải lên bản scan hợp đồng đã ký thành công!');
-                            const latest = await orderApi.getOrderByToken(token);
-                            if (latest) setOrder(latest);
-                          } catch (err) {
-                            message.error(err.message || 'Lỗi khi tải tệp');
-                          } finally {
-                            setUploadingContractScan(false);
-                          }
-                        }}
-                      />
-                    </label>
-                  )}
-                </div>
-              </div>
-
-              {/* Bước 2: Gửi bản cứng bưu điện (Bắt buộc) */}
-              <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/60 space-y-3 flex flex-col justify-between">
-                <div>
-                  <div className="font-bold text-xs text-amber-950 uppercase tracking-wide flex items-center gap-1.5 mb-1.5">
-                    <span className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px]">2</span>
-                    Gửi bản cứng gốc qua bưu điện (Bắt buộc)
-                  </div>
-                  <p className="text-xs text-amber-900 leading-relaxed m-0">
-                    Theo quy chuẩn vận hành của ALS, <b>Quý khách có nghĩa vụ gửi bản cứng hợp đồng gốc có dấu đỏ</b> qua đường bưu điện/chuyển phát nhanh về cho Ban Điều phối ALS trong vòng 03 ngày làm việc để lưu trữ hồ sơ pháp lý đối soát.
-                  </p>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-white border border-amber-200 text-[11px] text-amber-950 space-y-1">
-                  <div>📍 <b>Địa chỉ nhận hợp đồng:</b> Cảng Hàng không Quốc tế Nội Bài, Phú Minh, Sóc Sơn, Hà Nội</div>
-                  <div>👤 <b>Người nhận:</b> Ban Điều phối Vận tải Hàng không ALS (NEXLOG)</div>
-                  <div>📞 <b>Hotline tiếp nhận:</b> 1900 3133 / {order?.dispatcher_phone || '0988 123 456'}</div>
-                  {order?.contract_hardcopy_received && (
-                    <div className="pt-1 text-emerald-700 font-bold flex items-center gap-1">
-                      <CheckCircle2 size={13} /> Điều phối viên đã xác nhận nhận đủ bản cứng gốc có dấu đỏ!
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+          <ContractSigningSection
+            order={order}
+            token={token}
+            uploadingContractScan={uploadingContractScan}
+            setUploadingContractScan={setUploadingContractScan}
+            setContractModalOpen={setContractModalOpen}
+            setOrder={setOrder}
+          />
         )}
 
         {/* Modal Xem & In Hợp Đồng Chuẩn Nghị định 158/2024/NĐ-CP dành cho Khách hàng */}
-        <Modal
-          title={
-            <div className="flex items-center justify-between w-full pr-8">
-              <div className="flex items-center gap-2 text-indigo-900 text-sm font-bold">
-                <FileText size={16} className="text-indigo-600" />
-                <span>Hợp Đồng Vận Tải Đường Bộ (NĐ 158/2024/NĐ-CP) — Mã đơn: #{order?.order_code || order?.id}</span>
-              </div>
-            </div>
-          }
+        <ContractPreviewModal
           open={contractModalOpen}
-          onCancel={() => setContractModalOpen(false)}
-          width={860}
-          footer={[
-            <Button key="close" onClick={() => setContractModalOpen(false)}>
-              Đóng
-            </Button>,
-            <Button
-              key="print"
-              type="primary"
-              icon={<Printer size={14} />}
-              onClick={() => {
-                const printContents = document.getElementById('customer-contract-printable-area')?.innerHTML;
-                if (!printContents) {
-                  window.print();
-                  return;
-                }
-                const originalContents = document.body.innerHTML;
-                const win = window.open('', '_blank');
-                win.document.write(`
-                  <html>
-                    <head>
-                      <title>Hop_Dong_Van_Tai_${order?.order_code || 'ALS'}</title>
-                      <style>
-                        body { font-family: 'Times New Roman', Times, serif; padding: 25px; line-height: 1.6; font-size: 13px; color: #000; }
-                        h2, h3, h4 { text-align: center; margin-bottom: 5px; }
-                        .text-center { text-align: center; }
-                        .italic { font-style: italic; }
-                        .bold { font-weight: bold; }
-                        .section { margin-top: 15px; }
-                        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-                        .signature-box { display: flex; justify-content: space-between; margin-top: 40px; text-align: center; }
-                        .signature-col { width: 45%; }
-                        @media print {
-                          body { margin: 0; padding: 15mm; }
-                        }
-                      </style>
-                    </head>
-                    <body>
-                      ${printContents}
-                    </body>
-                  </html>
-                `);
-                win.document.close();
-                win.focus();
-                setTimeout(() => {
-                  win.print();
-                  win.close();
-                }, 300);
-              }}
-              className="bg-indigo-600 text-white font-bold"
-            >
-              In Bản Hợp Đồng Này
-            </Button>
-          ]}
-        >
-          <div 
-            id="customer-contract-printable-area" 
-            className="max-h-[72vh] overflow-y-auto p-6 bg-white rounded-xl border border-slate-200 text-xs text-slate-800 space-y-4 font-sans leading-relaxed"
-          >
-            {/* Quốc hiệu & Tiêu ngữ */}
-            <div className="text-center space-y-1">
-              <div className="font-bold text-xs uppercase tracking-wider text-slate-800">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-              <div className="font-semibold text-xs text-slate-800">Độc lập - Tự do - Hạnh phúc</div>
-              <div className="text-slate-400 text-xs">---o0o---</div>
-              <div className="font-bold text-base text-indigo-950 uppercase mt-2">HỢP ĐỒNG VẬN TẢI HÀNG HÓA ĐƯỜNG BỘ</div>
-              <div className="text-slate-500 italic text-[11px]">
-                Số: {order?.order_code || order?.id}/HĐVT-{new Date().getFullYear()}
-              </div>
-              <div className="text-[10px] text-slate-400 italic space-y-0.5 pt-1">
-                <div>- Căn cứ Bộ luật Dân sự số 91/2015/QH13;</div>
-                <div>- Căn cứ Luật Đường bộ số 35/2024/QH15;</div>
-                <div>- Căn cứ Nghị định số 158/2024/NĐ-CP quy định về kinh doanh và điều kiện kinh doanh vận tải đường bộ;</div>
-                <div>- Hôm nay, ngày {new Date().getDate()} tháng {new Date().getMonth() + 1} năm {new Date().getFullYear()}, chúng tôi gồm có:</div>
-              </div>
-            </div>
-
-            <div className="border-t border-slate-200 my-2" />
-
-            {/* BÊN A */}
-            <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-1 text-[11px]">
-              <div className="font-bold text-xs text-indigo-950 uppercase">
-                BÊN VẬN TẢI (BÊN A): CÔNG TY CỔ PHẦN LOGISTICS HÀNG KHÔNG (ALS) — NEXLOG
-              </div>
-              <div>• Tên đơn vị vận tải: <b>{order?.contract_details?.carrier_name || 'Công ty Cổ phần Logistics Hàng không (ALS) — Hệ thống NEXLOG'}</b></div>
-              <div>• Mã số thuế: <b>{order?.contract_details?.carrier_tax_code || '0102376888'}</b></div>
-              <div>• Địa chỉ trụ sở: {order?.contract_details?.carrier_address || 'Tầng 4, Ga Hàng hóa Kéo dài ALS, Cảng Hàng không Quốc tế Nội Bài, Phú Minh, Sóc Sơn, Hà Nội'}</div>
-              <div>• Hotline hỗ trợ 24/7: <b>{order?.contract_details?.carrier_phone || '1900 3133 / 0988 123 456'}</b></div>
-              <div>• Đại diện theo pháp luật: <b>{order?.contract_details?.carrier_rep || 'Ban Giám đốc Khối Vận tải Đường bộ ALS'}</b> (Số CCCD: {order?.contract_details?.carrier_cid || '001089012345'})</div>
-            </div>
-
-            {/* BÊN B */}
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1 text-[11px]">
-              <div className="font-bold text-xs text-slate-900 uppercase">
-                BÊN THUÊ VẬN TẢI (BÊN B): {order?.contract_details?.customer_name || order?.customer?.company_name || order?.receiver_name || 'Quý Khách Hàng'}
-              </div>
-              <div>• Tên tổ chức / cá nhân: <b>{order?.contract_details?.customer_name || order?.customer?.company_name || order?.receiver_name}</b></div>
-              <div>• Mã số thuế / CCCD: <b>{order?.contract_details?.customer_tax_code || order?.customer?.tax_code || 'Chưa cung cấp'}</b></div>
-              <div>• Địa chỉ liên hệ: {order?.contract_details?.customer_address || order?.delivery_location?.address || order?.delivery_address}</div>
-              <div>• Số điện thoại: <b>{order?.contract_details?.customer_phone || order?.receiver_phone || order?.customer_phone || 'Chưa cung cấp'}</b></div>
-            </div>
-
-            {/* ĐIỀU 1 */}
-            <div className="space-y-1 text-[11px]">
-              <div className="font-bold text-indigo-900 uppercase">ĐIỀU 1: HÀNG HÓA VẬN CHUYỂN &amp; PHƯƠNG TIỆN</div>
-              <div>1. Tên loại hàng hóa: <b>{order?.contract_details?.cargo_name || order?.cargo_description || 'Hàng bách hóa / Linh kiện điện tử'}</b></div>
-              <div>2. Quy cách &amp; Khối lượng tính cước: <b>{order?.contract_details?.package_count_text || `${order?.package_count || 1} kiện`}</b> | Trọng lượng tính cước: <b>{(order?.contract_details?.chargeable_weight_kg || order?.chargeable_weight_kg || 0).toLocaleString()} kg</b></div>
-              <div>3. Phương tiện vận chuyển chuyên dụng: <b>{order?.contract_details?.truck_model || order?.proposed_vehicle_type || 'Xe tải thùng kín chuyên dụng ALS'}</b></div>
-            </div>
-
-            {/* ĐIỀU 2 */}
-            <div className="space-y-1 text-[11px]">
-              <div className="font-bold text-indigo-900 uppercase">ĐIỀU 2: ĐỊA ĐIỂM, THỜI GIAN GIAO NHẬN VÀ LỘ TRÌNH</div>
-              <div>1. Địa điểm lấy hàng (Xếp hàng): <b>{order?.contract_details?.pickup_address || order?.pickup_location?.address || order?.pickup_address}</b></div>
-              <div>2. Địa điểm giao hàng (Trả hàng): <b>{order?.contract_details?.delivery_address || order?.delivery_location?.address || order?.delivery_address}</b></div>
-              <div>3. Cự ly vận chuyển ước tính: <b>{order?.contract_details?.distance_km || order?.distance_km || 30} km</b></div>
-            </div>
-
-            {/* ĐIỀU 3 */}
-            <div className="space-y-1 text-[11px]">
-              <div className="font-bold text-indigo-900 uppercase">ĐIỀU 3: CƯỚC PHÍ VẬN CHUYỂN VÀ PHƯƠNG THỨC THANH TOÁN</div>
-              <div>1. Tổng giá cước vận tải thỏa thuận: <b className="text-emerald-700 text-xs">{(order?.contract_details?.price_amount || order?.agreed_price || 0).toLocaleString()} VNĐ</b> (Bằng chữ: {order?.contract_details?.price_in_words || 'Theo thỏa thuận chốt trên đơn'})</div>
-              <div>2. Hình thức thanh toán: <b>{order?.contract_details?.payment_method || 'Chuyển khoản ngân hàng hoặc thanh toán khi giao nhận'}</b></div>
-              <div>3. Thời hạn thanh toán: <b>{order?.contract_details?.payment_terms || 'Trong vòng 07 ngày làm việc kể từ ngày nhận đủ biên bản giao nhận có chữ ký (POD)'}</b></div>
-            </div>
-
-            {/* ĐIỀU 4 & 5 */}
-            <div className="space-y-1 text-[11px]">
-              <div className="font-bold text-indigo-900 uppercase">ĐIỀU 4: THỜI GIAN CHỜ VÀ PHÍ PHẠT LƯU XE BỐC DỠ</div>
-              <div>• Định mức giờ chờ miễn phí: <b>{order?.contract_details?.free_waiting_time || '60 phút'}</b> kể từ thời điểm lái xe Bên A có mặt tại kho.</div>
-              <div>• Phí lưu ca/chờ phát sinh vượt định mức: <b>{order?.contract_details?.waiting_fee_per_block || '100.000 VNĐ / mỗi block 30 phút'}</b>.</div>
-            </div>
-
-            {/* ĐIỀU 6: ĐIỀU KHOẢN BỔ SUNG */}
-            {Array.isArray(order?.contract_custom_terms) && order.contract_custom_terms.length > 0 && (
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-1 text-[11px]">
-                <div className="font-bold text-amber-950 uppercase">ĐIỀU 5: CÁC ĐIỀU KHOẢN BỔ SUNG RIÊNG THỐNG NHẤT CHO ĐƠN NÀY</div>
-                {order.contract_custom_terms.map((term, i) => (
-                  <div key={i} className="text-amber-900">• {term}</div>
-                ))}
-              </div>
-            )}
-
-            {/* Chữ ký 2 bên */}
-            <div className="pt-6 grid grid-cols-2 text-center text-xs">
-              <div className="space-y-12">
-                <div className="font-bold uppercase text-slate-800">ĐẠI DIỆN BÊN B (KHÁCH HÀNG)<br/><span className="text-[10px] font-normal italic">(Ký, ghi rõ họ tên và đóng dấu)</span></div>
-                <div className="text-slate-400 italic text-[10px]">[Khách hàng ký và đóng dấu tròn công ty]</div>
-              </div>
-              <div className="space-y-12">
-                <div className="font-bold uppercase text-indigo-950">ĐẠI DIỆN BÊN A (ALS / NEXLOG)<br/><span className="text-[10px] font-normal italic">(Đã ký số điện tử và đóng dấu đỏ)</span></div>
-                <div className="text-emerald-700 font-bold text-xs">✓ ĐÃ KÝ ĐIỆN TỬ BỞI ALS LOGISTICS</div>
-              </div>
-            </div>
-          </div>
-        </Modal>
+          onClose={() => setContractModalOpen(false)}
+          order={order}
+        />
 
       </div>
     </div>
