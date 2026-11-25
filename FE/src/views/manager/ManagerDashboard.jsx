@@ -93,6 +93,7 @@ export default function ManagerDashboard() {
   );
   const [driverSearch, setDriverSearch] = useState('');
   const [selectedDriverModal, setSelectedDriverModal] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
   // Hàm load dữ liệu API (stale-while-revalidate theo kỳ)
   const loadData = React.useCallback(async (queryPeriod = period, { refresh = false } = {}) => {
@@ -110,11 +111,12 @@ export default function ManagerDashboard() {
       setLoading(true);
     }
     if (refresh) setRefreshing(true);
+    setLoadError(null);
 
     try {
       const [statsRes, driversRes] = await Promise.all([
-        managerApi.getDashboardStats(queryPeriod, { refresh }).catch(() => null),
-        managerApi.getDriverPerformance(queryPeriod, { refresh }).catch(() => ({ drivers: [], summary: {} }))
+        managerApi.getDashboardStats(queryPeriod, { refresh }),
+        managerApi.getDriverPerformance(queryPeriod, { refresh })
       ]);
 
       let nextDashboardData = cached?.dashboardData || null;
@@ -171,7 +173,9 @@ export default function ManagerDashboard() {
       }
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu dashboard:', error);
-      message.error('Không thể tải số liệu hiệu suất từ máy chủ.');
+      const errMsg = error?.message || 'Không thể tải số liệu hiệu suất từ máy chủ.';
+      setLoadError(errMsg);
+      message.error(errMsg);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -199,7 +203,52 @@ export default function ManagerDashboard() {
   }, [period, loadData]);
 
   const handleExportReport = () => {
-    message.success(`Đang kết xuất báo cáo hiệu suất vận tải (${displayPeriod})... Tải xuống thành công!`);
+    const csvEscape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    let rows = [];
+    let filename = `bao-cao-nexlog-${period}.csv`;
+
+    if (activeTab === 'DRIVERS') {
+      filename = `hieu-suat-tai-xe-${period}.csv`;
+      rows.push(['Tài xế', 'SĐT', 'Số GPLX', 'Hạng', 'Số chuyến hoàn thành', 'Tỷ lệ đúng giờ (%)', 'Giờ lái (GPS)', 'Chạm giới hạn 4h', 'Quá tốc độ', 'Ngoài bán kính', 'Ở điểm (TB)', 'Sự cố · Khiếu nại']);
+      driversPerformance.forEach((d) => {
+        rows.push([
+          d.name,
+          d.phone,
+          d.license_number,
+          d.license_class,
+          d.completed_trips,
+          d.on_time_rate != null ? `${d.on_time_rate}%` : 'Chưa có dữ liệu',
+          d.gps_driving_hours,
+          d.limit_driving_count,
+          d.speeding_count,
+          d.outside_radius_count ?? 0,
+          d.avg_dwell_time,
+          d.incident_claim_text
+        ]);
+      });
+    } else {
+      rows.push(['Chỉ số', 'Giá trị']);
+      rows.push(['Kỳ báo cáo', displayPeriod]);
+      rows.push(['Doanh thu (VNĐ)', dashboardData.kpiCards.revenueVnd]);
+      rows.push(['Doanh thu / km (VNĐ)', dashboardData.kpiCards.revenuePerKmVnd]);
+      rows.push(['Đơn giao thành công', dashboardData.kpiCards.successfulDeliveries]);
+      rows.push(['Tỷ lệ đơn hoàn hảo (%)', dashboardData.kpiCards.perfectOrderRatePercent]);
+      rows.push(['Sử dụng xe (%)', dashboardData.fleetGauges.truckUsePercent]);
+      rows.push(['Độ đầy xe (%)', dashboardData.fleetGauges.vehicleFillPercent]);
+      rows.push(['Km chạy rỗng (%)', dashboardData.fleetGauges.emptyRunningPercent]);
+    }
+
+    const csvContent = '\uFEFF' + rows.map((r) => r.map(csvEscape).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    message.success(`Đã xuất báo cáo (${filename}) thành công.`);
   };
 
   // Helper tạo Option cho Radial Gauge (Đồng hồ bán nguyệt có hiệu ứng chạy)
@@ -556,6 +605,18 @@ export default function ManagerDashboard() {
 
   return (
     <div className="flex flex-col w-full space-y-5">
+      {loadError && activeTab === 'OVERVIEW' && (
+        <div className="p-4 rounded-2xl bg-error-container/20 border border-error/30 flex items-center justify-between gap-4">
+          <div className="text-xs font-semibold text-error">{loadError}</div>
+          <button
+            type="button"
+            onClick={() => loadData(period, { refresh: true })}
+            className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold cursor-pointer shrink-0"
+          >
+            Thử tải lại
+          </button>
+        </div>
+      )}
       {/* 1. Global Header & Filter Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface-container-lowest p-5 rounded-2xl shadow-sm border border-outline-variant/30">
         <div className="flex flex-col space-y-1">
@@ -1082,6 +1143,17 @@ export default function ManagerDashboard() {
 
           {loading ? (
             <div className="py-16 flex justify-center"><Spin size="large" /></div>
+          ) : loadError ? (
+            <div className="py-10 px-6 rounded-xl bg-error-container/20 border border-error/30 text-center space-y-2">
+              <div className="font-bold text-error text-sm">{loadError}</div>
+              <button
+                type="button"
+                onClick={() => loadData(period, { refresh: true })}
+                className="px-4 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold cursor-pointer"
+              >
+                Thử tải lại
+              </button>
+            </div>
           ) : filteredDrivers.length === 0 ? (
             <div className="py-12 text-center text-on-surface-variant text-sm">
               Không tìm thấy hồ sơ tài xế nào trong cơ sở dữ liệu.
@@ -1093,9 +1165,10 @@ export default function ManagerDashboard() {
                   <tr className="bg-surface-container-low text-on-surface-variant uppercase text-[11px] font-extrabold tracking-wider border-b border-surface-container">
                     <th className="py-3 px-4">Tài xế</th>
                     <th className="py-3 px-4 text-center">Số chuyến</th>
+                    <th className="py-3 px-4 text-center">Đúng giờ</th>
                     <th className="py-3 px-4 text-center">Giờ lái (GPS)</th>
                     <th className="py-3 px-4 text-center">Chạm giới hạn lái</th>
-                    <th className="py-3 px-4 text-center">Quá tốc độ</th>
+                    <th className="py-3 px-4 text-center">Ngoài bán kính</th>
                     <th className="py-3 px-4 text-center">Ở điểm (TB)</th>
                     <th className="py-3 px-4 text-center">Sự cố · khiếu nại</th>
                   </tr>
@@ -1131,6 +1204,10 @@ export default function ManagerDashboard() {
                         {d.completed_trips}
                       </td>
 
+                      <td className="py-3.5 px-4 text-center font-mono font-bold text-secondary">
+                        {d.on_time_rate != null ? `${d.on_time_rate}%` : '—'}
+                      </td>
+
                       <td className="py-3.5 px-4 text-center font-mono font-semibold text-primary">
                         {d.gps_driving_hours}
                       </td>
@@ -1148,9 +1225,9 @@ export default function ManagerDashboard() {
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
-                        {d.speeding_count > 0 ? (
+                        {(d.outside_radius_count || 0) > 0 ? (
                           <span className="inline-block px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 font-extrabold">
-                            {d.speeding_count}
+                            {d.outside_radius_count}
                           </span>
                         ) : (
                           <span className="text-on-surface-variant">0</span>

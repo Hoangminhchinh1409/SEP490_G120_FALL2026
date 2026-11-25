@@ -51,10 +51,21 @@ const getDriverShifts = async (driverProfileId, { from = null, to = null } = {})
   return rows.map(formatShiftRow);
 };
 
+const addDaysToDateStr = (dateStr, deltaDays) => {
+  const clean = String(dateStr).split("T")[0].trim();
+  const dt = new Date(`${clean}T00:00:00.000Z`);
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return dt.toISOString().split("T")[0];
+};
+
 const checkShiftOverlap = async (driverProfileId, date, startTime, endTime, excludeShiftId = null) => {
+  const cleanDate = String(date).split("T")[0].trim();
+  const prevDate = addDaysToDateStr(cleanDate, -1);
+  const nextDate = addDaysToDateStr(cleanDate, 1);
+
   const where = {
     driver_id: toBigInt(driverProfileId),
-    date: toDateObj(date),
+    date: { gte: toDateObj(prevDate), lte: toDateObj(nextDate) },
     status: { in: ["Requested", "Approved"] },
   };
   if (excludeShiftId) {
@@ -73,7 +84,10 @@ const checkShiftOverlap = async (driverProfileId, date, startTime, endTime, excl
 
   for (const s of rows) {
     const existingStart = new Date(s.start_time).getTime();
-    const existingEnd = new Date(s.end_time).getTime();
+    let existingEnd = new Date(s.end_time).getTime();
+    if (existingEnd <= existingStart) {
+      existingEnd += 24 * 60 * 60 * 1000;
+    }
     if (Math.max(newStart, existingStart) < Math.min(newEnd, existingEnd)) {
       return true;
     }
@@ -462,6 +476,74 @@ const getSystemSettingValue = async (key) => {
   }
 };
 
+const calculateDriverWeeklyHours = async (driverProfileId, dateStr) => {
+  try {
+    const cleanDate = formatDateOnly(dateStr);
+    const { weekStart, weekEnd } = getWeekMondaySundayFromDateStr(cleanDate);
+    const rows = await prisma.driver_shifts.findMany({
+      where: {
+        driver_id: toBigInt(driverProfileId),
+        date: { gte: toDateObj(weekStart), lte: toDateObj(weekEnd) },
+        status: "Approved",
+      },
+      select: { start_time: true, end_time: true },
+    });
+
+    let totalHours = 0;
+    (rows || []).forEach((sh) => {
+      const s = new Date(sh.start_time).getTime();
+      const e = new Date(sh.end_time).getTime();
+      const diff = (e - s) / (1000 * 60 * 60);
+      if (diff > 0) totalHours += diff;
+    });
+    return Number(totalHours.toFixed(1));
+  } catch (error) {
+    console.error("calculateDriverWeeklyHours error:", error);
+    return 0;
+  }
+};
+
+const hasActiveTripDuringShift = async (driverProfileId, startTime, endTime) => {
+  const sMs = new Date(startTime).getTime();
+  const eMs = new Date(endTime).getTime();
+  const activeTripDrivers = await prisma.trip_drivers.findMany({
+    where: {
+      driver_id: toBigInt(driverProfileId),
+      released_time: null,
+      trips: {
+        status: {
+          in: [
+            "Assigned",
+            "Accepted",
+            "In Progress",
+            "In Transit",
+            "Dispatched",
+            "Loading Started",
+            "Loading Done",
+          ],
+        },
+      },
+    },
+    select: {
+      trip_id: true,
+      trips: {
+        select: { id: true, trip_code: true, planned_start: true, planned_duration: true, status: true },
+      },
+    },
+  });
+
+  for (const td of activeTripDrivers || []) {
+    const trip = td.trips;
+    if (!trip?.planned_start) return true;
+    const tStart = new Date(trip.planned_start).getTime();
+    const tEnd = tStart + (Number(trip.planned_duration) || 120) * 60000;
+    if (Math.max(sMs, tStart) <= Math.min(eMs, tEnd)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 module.exports = {
   getDriverShifts,
   checkShiftOverlap,
@@ -479,5 +561,7 @@ module.exports = {
   updateDriverShift,
   deleteDriverShift,
   calculateDriverDailyHours,
+  calculateDriverWeeklyHours,
+  hasActiveTripDuringShift,
   cancelDriverShiftRequest,
 };

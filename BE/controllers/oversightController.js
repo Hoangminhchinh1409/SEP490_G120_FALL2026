@@ -7,51 +7,7 @@ const { serializePrisma, toBigInt, toNum } = require('../utils/prismaHelper');
  * Oversight Controller — Nhóm chức năng Giám sát Vận hành, Khối lượng Đơn & Báo cáo Hiệu suất
  */
 
-function parsePeriodRange(periodStr) {
-  if (!periodStr || periodStr === 'ALL') return null;
-
-  if (/^\d{4}-\d{2}$/.test(periodStr)) {
-    const [y, m] = periodStr.split('-').map(Number);
-    return {
-      start: new Date(Date.UTC(y, m - 1, 1, 0, 0, 0)).toISOString(),
-      end: new Date(Date.UTC(y, m, 1, 0, 0, 0)).toISOString()
-    };
-  }
-
-  const monthMatch = periodStr.match(/(\d{1,2})[\/\-](\d{4})/);
-  if (monthMatch) {
-    const m = Number(monthMatch[1]);
-    const y = Number(monthMatch[2]);
-    if (m >= 1 && m <= 12 && y >= 2000) {
-      return {
-        start: new Date(Date.UTC(y, m - 1, 1, 0, 0, 0)).toISOString(),
-        end: new Date(Date.UTC(y, m, 1, 0, 0, 0)).toISOString()
-      };
-    }
-  }
-
-  const qMatch = periodStr.match(/Quý\s*(\d)[\/\-](\d{4})/i);
-  if (qMatch) {
-    const q = Number(qMatch[1]);
-    const y = Number(qMatch[2]);
-    const startMonth = (q - 1) * 3;
-    return {
-      start: new Date(Date.UTC(y, startMonth, 1, 0, 0, 0)).toISOString(),
-      end: new Date(Date.UTC(y, startMonth + 3, 1, 0, 0, 0)).toISOString()
-    };
-  }
-
-  const yMatch = periodStr.match(/(?:Năm\s*)?(\d{4})/i);
-  if (yMatch) {
-    const y = Number(yMatch[1]);
-    return {
-      start: new Date(Date.UTC(y, 0, 1, 0, 0, 0)).toISOString(),
-      end: new Date(Date.UTC(y + 1, 0, 1, 0, 0, 0)).toISOString()
-    };
-  }
-
-  return null;
-}
+const parsePeriodRange = oversightService.parsePeriodRange;
 
 // ==========================================
 // A. DISPATCHER DASHBOARD STATS
@@ -184,7 +140,7 @@ const getDispatcherDashboardStats = async (req, res) => {
     return res.json(payload);
   } catch (err) {
     console.error('getDispatcherDashboardStats error:', err);
-    return res.status(500).json({ message: 'Lỗi tải thống kê tổng quan', error: err.message });
+    return res.status(500).json({ message: 'Lỗi tải thống kê tổng quan' });
   }
 };
 
@@ -202,53 +158,11 @@ const getPerformanceOverview = async (req, res) => {
     const result = await oversightService.getPerformanceOverview(periodStr, { refresh });
     return res.json(result);
   } catch (error) {
-    console.warn('[oversightController] getPerformanceOverview Warning (using fallback):', error.message);
-    // Trả về cấu trúc mặc định an toàn để frontend không bị lỗi 500 khi mạng database chập chờn
-    return res.json({
-      period: periodStr,
-      kpiCards: {
-        revenueVnd: 0,
-        revenueFormatted: '0 đ',
-        revenuePerKmVnd: 0,
-        revenuePerKmFormatted: '0 đ',
-        avgDispatcherSlaMinutes: 0,
-        avgSlaDispatchText: '0 phút',
-        successfulDeliveries: 0,
-        avgOrderCycleDays: 0,
-        orderCycleTime: 'Chưa có đơn hoàn thành',
-        perfectOrderRatePercent: 0
-      },
-      fleetGauges: {
-        truckUsePercent: 0,
-        vehicleFillPercent: 0,
-        emptyRunningPercent: 0
-      },
-      dwellTimeByLocationChart: [],
-      lateStopsByCauseChart: [],
-      incidentsByTypeChart: [],
-      revenueTrendChart: [],
-      stats: {
-        period: periodStr,
-        revenue: 0,
-        revenueFormatted: '0 đ',
-        truckUtilization: '0',
-        avgSlaDispatch: '0 phút',
-        completedOrders: 0,
-        totalOrders: 0,
-        incidentData: [],
-        incidentSummaryText: 'Không có dữ liệu',
-        vehicleFillRate: '0',
-        emptyRunningRate: '0',
-        revenuePerKm: '0 đ',
-        orderCycleTime: 'Chưa có đơn hoàn thành',
-        perfectOrdersRate: '0',
-        dwellLocations: [],
-        dwellSummaryText: '',
-        delayReasons: [],
-        delaySummaryText: ''
-      },
-      is_fallback: true
-    });
+    if (error?.statusCode >= 400 && error.statusCode < 500) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('[oversightController] getPerformanceOverview Error:', error);
+    return res.status(500).json({ message: 'Lỗi máy chủ khi tải báo cáo tổng quan.' });
   }
 };
 
@@ -259,20 +173,11 @@ const getDriverPerformance = async (req, res) => {
     const result = await oversightService.getDriverPerformance(periodStr, { refresh });
     return res.json(result);
   } catch (error) {
-    console.warn('[oversightController] getDriverPerformance Warning (using fallback):', error.message);
-    return res.json({
-      period: periodStr,
-      drivers: [],
-      summary: {
-        totalDrivers: 0,
-        activeDrivers: 0,
-        totalTrips: 0,
-        totalDrivingHours: '0h',
-        avgSpeeding: 0,
-        avgViolations: 0
-      },
-      is_fallback: true
-    });
+    if (error?.statusCode >= 400 && error.statusCode < 500) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error('[oversightController] getDriverPerformance Error:', error);
+    return res.status(500).json({ message: 'Lỗi máy chủ khi tải báo cáo hiệu suất tài xế.' });
   }
 };
 
@@ -465,7 +370,7 @@ const getOrderWorkload = async (req, res) => {
     });
   } catch (error) {
     console.error('getOrderWorkload Error:', error);
-    return res.status(500).json({ message: 'Lỗi tải khối lượng công việc đơn hàng', error: error.message });
+    return res.status(500).json({ message: 'Lỗi tải khối lượng công việc đơn hàng' });
   }
 };
 
@@ -536,7 +441,7 @@ const reassignOrder = async (req, res) => {
     });
   } catch (error) {
     console.error('reassignOrder Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi điều chuyển đơn hàng', error: error.message });
+    return res.status(500).json({ message: 'Lỗi khi điều chuyển đơn hàng' });
   }
 };
 
@@ -592,7 +497,7 @@ const getOrderDetailReadOnly = async (req, res) => {
     });
   } catch (error) {
     console.error('getOrderDetailReadOnly Error:', error);
-    return res.status(500).json({ message: 'Lỗi tải chi tiết đơn hàng', error: error.message });
+    return res.status(500).json({ message: 'Lỗi tải chi tiết đơn hàng' });
   }
 };
 

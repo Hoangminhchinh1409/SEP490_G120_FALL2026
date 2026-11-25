@@ -97,17 +97,25 @@ export default function FleetTrucksTab({
                           </div>
                           <div>
                             <div className="font-mono font-bold text-slate-900">{truck.plate_number}</div>
-                            <div className="text-xs text-slate-500">{truck.model || 'Tiêu chuẩn'}</div>
+                            <div className="text-xs text-slate-500">{truck.model || 'Chưa có dữ liệu'}</div>
                           </div>
                         </div>
                       </td>
 
                       <td className="py-3.5 px-4 font-mono font-semibold text-slate-800">
-                        <div>
-                          {((truck.payload_kg || truck.allowed_payload || 0) / 1000).toFixed(1)} tấn ({Number(truck.payload_kg || truck.allowed_payload || 0).toLocaleString('vi-VN')} kg)
-                        </div>
+                        {truck.payload_kg != null || truck.allowed_payload != null ? (
+                          <div>
+                            {(Number(truck.payload_kg ?? truck.allowed_payload) / 1000).toFixed(1)} tấn ({Number(truck.payload_kg ?? truck.allowed_payload).toLocaleString('vi-VN')} kg)
+                          </div>
+                        ) : (
+                          <div className="text-slate-400 text-xs font-normal">Chưa có dữ liệu tải trọng</div>
+                        )}
                         <div className="text-[11px] text-slate-400 font-normal">
-                          Thùng: {truck.box_length || truck.box_length_cm || 0}×{truck.box_width || truck.box_width_cm || 0}×{truck.box_height || truck.box_height_cm || 0} cm · Hạng {truck.required_license_class || 'C'}
+                          {(truck.box_length ?? truck.box_length_cm) != null && (truck.box_width ?? truck.box_width_cm) != null && (truck.box_height ?? truck.box_height_cm) != null
+                            ? `Thùng: ${truck.box_length ?? truck.box_length_cm}×${truck.box_width ?? truck.box_width_cm}×${truck.box_height ?? truck.box_height_cm} cm`
+                            : 'Thùng: Chưa có dữ liệu'}
+                          {' · '}
+                          {truck.required_license_class ? `Hạng ${truck.required_license_class}` : 'Chưa có hạng bằng'}
                         </div>
                       </td>
 
@@ -146,7 +154,9 @@ export default function FleetTrucksTab({
                       <td className="py-3.5 px-4">
                         <div className="space-y-1 min-w-[150px]">
                           <div className="flex items-center justify-between text-xs font-mono">
-                            <span className="text-slate-600 font-semibold">{truck.current_odometer_km?.toLocaleString('vi-VN') || 25000} km</span>
+                            <span className="text-slate-600 font-semibold">
+                              {truck.current_odometer_km != null ? `${truck.current_odometer_km.toLocaleString('vi-VN')} km` : 'Chưa có ODO'}
+                            </span>
                             {truck.maintenance_status === 'OVERDUE' ? (
                               <span className="text-[10px] text-red-600 font-bold">Quá hạn BD</span>
                             ): truck.maintenance_status === 'DUE_SOON' ? (

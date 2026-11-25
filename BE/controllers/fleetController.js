@@ -35,6 +35,35 @@ const createControllerError = (message, statusCode = 400) => {
   return err;
 };
 
+const sendSafeError = (res, error, fallbackMessage, logLabel = 'Fleet Controller Error') => {
+  const statusCode = Number(error?.statusCode);
+  if (statusCode >= 400 && statusCode < 500) {
+    return res.status(statusCode).json({ message: error.message || fallbackMessage });
+  }
+  console.error(`${logLabel}:`, error);
+  return res.status(500).json({ message: fallbackMessage });
+};
+
+const isTruckOnActiveTrip = async (truckBigId, currentStatus = '') => {
+  const stUpper = String(currentStatus || '').trim().toUpperCase().replace(/\s+/g, '_');
+  if (['ON_TRIP', 'IN_TRANSIT', 'IN_PROGRESS'].includes(stUpper)) {
+    return true;
+  }
+  const activeTripTruck = await prisma.trip_trucks.findFirst({
+    where: {
+      truck_id: truckBigId,
+      released_time: null,
+      trips: {
+        status: {
+          in: ['Assigned', 'Accepted', 'In Progress', 'In Transit', 'Loading Started', 'Loading Done']
+        }
+      }
+    },
+    select: { id: true }
+  });
+  return Boolean(activeTripTruck);
+};
+
 const getTodayGMT7Str = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().split('T')[0];
 
 const parsePositiveNumber = (val, fieldLabel) => {
@@ -117,8 +146,7 @@ const getFleetTrucks = async (req, res) => {
     const formattedTrucks = await fleetService.getAllTrucks();
     return res.json({ trucks: formattedTrucks });
   } catch (err) {
-    console.error('getFleetTrucks error:', err);
-    return res.status(500).json({ message: 'Lỗi tải danh sách xe', error: err.message });
+    return sendSafeError(res, err, 'Lỗi tải danh sách xe', 'getFleetTrucks');
   }
 };
 
@@ -127,9 +155,10 @@ const createFleetTruck = async (req, res) => {
     const newTruck = await fleetService.createTruck(req.body);
     return res.status(201).json({ message: 'Thêm xe thành công', truck: newTruck });
   } catch (err) {
-    console.error('createFleetTruck error:', err);
-    const statusCode = err.message === 'Biển số xe là bắt buộc' ? 400: 500;
-    return res.status(statusCode).json({ message: err.message || 'Không thể thêm phương tiện' });
+    if (err.message === 'Biển số xe là bắt buộc') {
+      err.statusCode = 400;
+    }
+    return sendSafeError(res, err, 'Không thể thêm phương tiện', 'createFleetTruck');
   }
 };
 
@@ -139,8 +168,7 @@ const updateFleetTruck = async (req, res) => {
     const updated = await fleetService.updateTruck(id, req.body);
     return res.json({ message: 'Cập nhật thành công', truck: updated });
   } catch (err) {
-    console.error('updateFleetTruck error:', err);
-    return res.status(500).json({ message: 'Lỗi cập nhật phương tiện', error: err.message });
+    return sendSafeError(res, err, 'Lỗi cập nhật phương tiện', 'updateFleetTruck');
   }
 };
 
@@ -149,8 +177,7 @@ const getFleetDrivers = async (req, res) => {
     const formattedDrivers = await fleetService.getAllDrivers();
     return res.json({ drivers: formattedDrivers });
   } catch (err) {
-    console.error('getFleetDrivers error:', err);
-    return res.status(500).json({ message: 'Lỗi tải danh sách tài xế', error: err.message });
+    return sendSafeError(res, err, 'Lỗi tải danh sách tài xế', 'getFleetDrivers');
   }
 };
 
@@ -160,8 +187,7 @@ const updateFleetDriver = async (req, res) => {
     const updated = await fleetService.updateDriver(id, req.body);
     return res.json({ message: 'Cập nhật thành công', driver: updated });
   } catch (err) {
-    console.error('updateFleetDriver error:', err);
-    return res.status(500).json({ message: 'Lỗi cập nhật tài xế', error: err.message });
+    return sendSafeError(res, err, 'Lỗi cập nhật tài xế', 'updateFleetDriver');
   }
 };
 
@@ -170,8 +196,7 @@ const getFleetVendors = async (req, res) => {
     const formattedVendors = await fleetService.getAllVendors();
     return res.json({ vendors: formattedVendors });
   } catch (err) {
-    console.error('getFleetVendors error:', err);
-    return res.status(500).json({ message: 'Lỗi tải danh sách đối tác', error: err.message });
+    return sendSafeError(res, err, 'Lỗi tải danh sách đối tác', 'getFleetVendors');
   }
 };
 
@@ -189,11 +214,7 @@ const getStaffAccounts = async (req, res) => {
       accounts
     });
   } catch (error) {
-    console.error('getStaffAccounts Error:', error);
-    return res.status(error.statusCode || 500).json({
-      message: error.message || 'Lỗi khi lấy danh sách tài khoản nhân viên',
-      error: error.message
-    });
+    return sendSafeError(res, error, 'Lỗi khi lấy danh sách tài khoản nhân viên', 'getStaffAccounts');
   }
 };
 
@@ -206,11 +227,7 @@ const getStaffAccountDetail = async (req, res) => {
       account
     });
   } catch (error) {
-    console.error('getStaffAccountDetail Error:', error);
-    return res.status(error.statusCode || 500).json({
-      message: error.message || 'Lỗi khi lấy thông tin tài khoản',
-      error: error.message
-    });
+    return sendSafeError(res, error, 'Lỗi khi lấy thông tin tài khoản', 'getStaffAccountDetail');
   }
 };
 
@@ -222,11 +239,7 @@ const createStaffAccount = async (req, res) => {
       account: result
     });
   } catch (error) {
-    console.error('createStaffAccount Error:', error);
-    return res.status(error.statusCode || 500).json({
-      message: error.message || 'Lỗi khi tạo tài khoản nhân viên',
-      error: error.message
-    });
+    return sendSafeError(res, error, 'Lỗi khi tạo tài khoản nhân viên', 'createStaffAccount');
   }
 };
 
@@ -239,11 +252,7 @@ const updateStaffAccount = async (req, res) => {
       account: result
     });
   } catch (error) {
-    console.error('updateStaffAccount Error:', error);
-    return res.status(error.statusCode || 500).json({
-      message: error.message || 'Lỗi khi cập nhật tài khoản nhân viên',
-      error: error.message
-    });
+    return sendSafeError(res, error, 'Lỗi khi cập nhật tài khoản nhân viên', 'updateStaffAccount');
   }
 };
 
@@ -254,11 +263,7 @@ const updateAccountStatus = async (req, res) => {
     const result = await staffAccountService.toggleStaffAccountStatus(id, status);
     return res.status(200).json(result);
   } catch (error) {
-    console.error('updateAccountStatus Error:', error);
-    return res.status(error.statusCode || 500).json({
-      message: error.message || 'Lỗi khi thay đổi trạng thái tài khoản',
-      error: error.message
-    });
+    return sendSafeError(res, error, 'Lỗi khi thay đổi trạng thái tài khoản', 'updateAccountStatus');
   }
 };
 
@@ -315,19 +320,23 @@ const getVehicles = async (req, res) => {
     const formattedTrucks = serializePrisma(trucksResult || []).map((t, idx) => {
       const rawT = trucksResult[idx];
       const isInspectionExpired = rawT.inspection_expiry ? new Date(rawT.inspection_expiry) < new Date() : false;
+      const payloadVal = t.allowed_payload !== null && t.allowed_payload !== undefined ? toNum(t.allowed_payload) : null;
+      const boxLen = t.box_length !== null && t.box_length !== undefined ? toNum(t.box_length) : null;
+      const boxWid = t.box_width !== null && t.box_width !== undefined ? toNum(t.box_width) : null;
+      const boxHei = t.box_height !== null && t.box_height !== undefined ? toNum(t.box_height) : null;
       return {
         id: toNum(t.id),
         plate_number: t.plate_number,
-        model: t.model || 'Xe tải thùng kín',
-        payload_kg: toNum(t.allowed_payload) || 5000,
-        allowed_payload: toNum(t.allowed_payload) || 5000,
-        box_length_cm: toNum(t.box_length) || 620,
-        box_width_cm: toNum(t.box_width) || 210,
-        box_height_cm: toNum(t.box_height) || 220,
-        box_length: toNum(t.box_length) || 620,
-        box_width: toNum(t.box_width) || 210,
-        box_height: toNum(t.box_height) || 220,
-        required_license_class: t.required_license_class || 'C',
+        model: t.model || null,
+        payload_kg: payloadVal,
+        allowed_payload: payloadVal,
+        box_length_cm: boxLen,
+        box_width_cm: boxWid,
+        box_height_cm: boxHei,
+        box_length: boxLen,
+        box_width: boxWid,
+        box_height: boxHei,
+        required_license_class: t.required_license_class || null,
         inspection_expiry: formatDateOnly(rawT.inspection_expiry),
         insurance_expiry: formatDateOnly(rawT.insurance_expiry),
         gps_device_id: t.gps_device_id,
@@ -364,8 +373,7 @@ const getVehicles = async (req, res) => {
       drivers: formattedDrivers
     });
   } catch (error) {
-    console.error('Get Vehicles Error:', error);
-    return res.status(500).json({ message: 'Lỗi máy chủ khi lấy danh sách đội xe', error: error.message });
+    return sendSafeError(res, error, 'Lỗi máy chủ khi lấy danh sách đội xe', 'getVehicles');
   }
 };
 
@@ -449,8 +457,7 @@ const createTruck = async (req, res) => {
       truck: serialized
     });
   } catch (error) {
-    console.error('Create Truck Error:', error);
-    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi thêm mới xe tải', error: error.message });
+    return sendSafeError(res, error, 'Lỗi khi thêm mới xe tải', 'createTruck');
   }
 };
 
@@ -477,8 +484,8 @@ const updateTruck = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
     }
 
-    const currentTruck = await prisma.trucks.findUnique({
-      where: { id: bigId },
+    const currentTruck = await prisma.trucks.findFirst({
+      where: { id: bigId, deleted_at: null },
       select: { id: true, status: true, inspection_expiry: true }
     });
     if (!currentTruck) {
@@ -536,7 +543,14 @@ const updateTruck = async (req, res) => {
     }
 
     if (status !== undefined) {
-      updateData.status = validateTruckStatusValue(status);
+      const targetStatus = validateTruckStatusValue(status);
+      const curUpper = String(currentTruck.status || '').trim().toUpperCase();
+      if (targetStatus !== curUpper && await isTruckOnActiveTrip(bigId, currentTruck.status)) {
+        return res.status(409).json({
+          message: 'Xe đang trong chuyến vận chuyển, không thể đổi trạng thái.'
+        });
+      }
+      updateData.status = targetStatus;
     }
 
     const effectiveStatus = updateData.status || String(currentTruck.status || '').toUpperCase();
@@ -566,15 +580,18 @@ const updateTruck = async (req, res) => {
       truck: serialized
     });
   } catch (error) {
-    console.error('Update Truck Error:', error);
-    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi cập nhật xe tải', error: error.message });
+    return sendSafeError(res, error, 'Lỗi khi cập nhật xe tải', 'updateTruck');
   }
 };
 
 const updateTruckStatus = async (req, res) => {
   try {
     const bigId = toBigInt(req.params.id);
-    const { status } = req.body;
+    if (bigId === null) {
+      return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
+    }
+
+    const { status } = req.body || {};
 
     if (status && status.toUpperCase() === 'ON_TRIP') {
       return res.status(400).json({ message: 'Không thể chuyển xe sang trạng thái Đang chạy thủ công. Trạng thái này do hệ thống tự động gán khi điều phối chuyến xe.' });
@@ -584,18 +601,23 @@ const updateTruckStatus = async (req, res) => {
       return res.status(400).json({ message: 'Trạng thái không hợp lệ. Chỉ chấp nhận: AVAILABLE, MAINTENANCE, INACTIVE.' });
     }
 
+    const truck = await prisma.trucks.findFirst({
+      where: { id: bigId, deleted_at: null },
+      select: { id: true, status: true, inspection_expiry: true, plate_number: true }
+    });
+    if (!truck) {
+      return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
+    }
+
+    if (await isTruckOnActiveTrip(bigId, truck.status)) {
+      return res.status(409).json({
+        message: `Xe ${truck.plate_number} đang trong chuyến vận chuyển, không thể đổi trạng thái.`
+      });
+    }
+
     const targetStatus = status.toUpperCase();
 
     if (targetStatus === 'AVAILABLE') {
-      const truck = await prisma.trucks.findUnique({
-        where: { id: bigId },
-        select: { inspection_expiry: true, plate_number: true }
-      });
-
-      if (!truck) {
-        return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
-      }
-
       if (truck.inspection_expiry && new Date(truck.inspection_expiry) < new Date()) {
         return res.status(400).json({
           message: `Lỗi: Không thể bật xe ${truck.plate_number} sang Sẵn sàng (Available) do xe đã hết hạn đăng kiểm.`
@@ -616,14 +638,31 @@ const updateTruckStatus = async (req, res) => {
       truck: serializePrisma(updated)
     });
   } catch (error) {
-    console.error('Update Truck Status Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi đổi trạng thái xe', error: error.message });
+    return sendSafeError(res, error, 'Lỗi khi đổi trạng thái xe', 'updateTruckStatus');
   }
 };
 
 const deleteTruck = async (req, res) => {
   try {
     const bigId = toBigInt(req.params.id);
+    if (bigId === null) {
+      return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
+    }
+
+    const truck = await prisma.trucks.findFirst({
+      where: { id: bigId, deleted_at: null },
+      select: { id: true, status: true, plate_number: true }
+    });
+    if (!truck) {
+      return res.status(404).json({ message: 'Không tìm thấy xe tải.' });
+    }
+
+    if (await isTruckOnActiveTrip(bigId, truck.status)) {
+      return res.status(409).json({
+        message: `Xe ${truck.plate_number} đang trong chuyến vận chuyển, không thể ngưng hoạt động hoặc xóa.`
+      });
+    }
+
     await prisma.trucks.update({
       where: { id: bigId },
       data: { status: 'INACTIVE', updated_at: new Date() }
@@ -631,8 +670,7 @@ const deleteTruck = async (req, res) => {
 
     return res.json({ message: 'Đã chuyển xe sang trạng thái Ngưng hoạt động (Inactive).' });
   } catch (error) {
-    console.error('Delete Truck Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi ngưng hoạt động xe', error: error.message });
+    return sendSafeError(res, error, 'Lỗi khi ngưng hoạt động xe', 'deleteTruck');
   }
 };
 
@@ -853,7 +891,7 @@ const createDriver = async (req, res) => {
     if (error && error.code === 'P2000') {
       return res.status(400).json({ message: 'Dữ liệu nhập vào vượt quá độ dài cho phép.' });
     }
-    return res.status(error.statusCode || 500).json({ message: error.message || 'Không thể thêm tài xế', error: error.message });
+    return sendSafeError(res, error, 'Không thể thêm tài xế', 'createDriver');
   }
 };
 
@@ -937,7 +975,7 @@ const updateDriverProfile = async (req, res) => {
     if (error && error.code === 'P2000') {
       return res.status(400).json({ message: 'Dữ liệu nhập vào vượt quá độ dài cho phép.' });
     }
-    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi cập nhật hồ sơ tài xế', error: error.message });
+    return sendSafeError(res, error, 'Lỗi khi cập nhật hồ sơ tài xế', 'updateDriverProfile');
   }
 };
 
@@ -954,8 +992,7 @@ const getShifts = async (req, res) => {
       shifts
     });
   } catch (error) {
-    console.error('getShifts Error:', error);
-    return res.status(500).json({ message: 'Lỗi khi lấy danh sách ca làm việc', error: error.message });
+    return sendSafeError(res, error, 'Lỗi khi lấy danh sách ca làm việc', 'getShifts');
   }
 };
 
@@ -978,8 +1015,8 @@ const createShift = async (req, res) => {
       shift
     });
   } catch (error) {
-    console.error('createShift Error:', error);
-    return res.status(400).json({ message: error.message || 'Lỗi khi tạo ca làm việc' });
+    if (!error.statusCode) error.statusCode = 400;
+    return sendSafeError(res, error, 'Lỗi khi tạo ca làm việc', 'createShift');
   }
 };
 
@@ -998,8 +1035,7 @@ const updateShift = async (req, res) => {
       shift
     });
   } catch (error) {
-    console.error('updateShift Error:', error);
-    return res.status(400).json({ message: error.message || 'Lỗi khi cập nhật ca làm việc' });
+    return sendSafeError(res, error, 'Lỗi khi cập nhật ca làm việc', 'updateShift');
   }
 };
 
@@ -1015,8 +1051,7 @@ const approveShift = async (req, res) => {
       shift
     });
   } catch (error) {
-    console.error('approveShift Error:', error);
-    return res.status(500).json({ message: error.message || 'Lỗi khi duyệt ca làm việc' });
+    return sendSafeError(res, error, 'Lỗi khi duyệt ca làm việc', 'approveShift');
   }
 };
 
@@ -1032,8 +1067,7 @@ const rejectShift = async (req, res) => {
       shift
     });
   } catch (error) {
-    console.error('rejectShift Error:', error);
-    return res.status(500).json({ message: error.message || 'Lỗi khi từ chối ca làm việc' });
+    return sendSafeError(res, error, 'Lỗi khi từ chối ca làm việc', 'rejectShift');
   }
 };
 
@@ -1043,8 +1077,7 @@ const deleteShift = async (req, res) => {
     await fleetService.deleteShift(id);
     return res.json({ message: 'Đã xóa ca làm việc thành công.' });
   } catch (error) {
-    console.error('deleteShift Error:', error);
-    return res.status(500).json({ message: error.message || 'Lỗi khi xóa ca làm việc' });
+    return sendSafeError(res, error, 'Lỗi khi xóa ca làm việc', 'deleteShift');
   }
 };
 

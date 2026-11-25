@@ -54,8 +54,10 @@ const serializeStaffRow = (row) => {
 const staffAccountModel = {
   // 1. Lấy danh sách tài khoản nhân viên (hỗ trợ tìm kiếm, lọc theo role và status)
   findStaffAccounts: async ({ search, roleId, status }) => {
+    const numericRoleId = roleId !== undefined && roleId !== null ? Number(roleId) : null;
+    const safeRoleFilter = [3, 4].includes(numericRoleId) ? toBigInt(numericRoleId) : { in: [3n, 4n] };
     const where = {
-      role_id: roleId ? toBigInt(roleId) : { in: [3n, 4n] },
+      role_id: safeRoleFilter,
     };
 
     if (status) {

@@ -25,16 +25,16 @@ const getAllTrucks = async () => {
   const now = new Date();
 
   return (trucks || []).map((t) => {
-    const payload = t.allowed_payload || t.payload_kg || 1250;
-    const length = t.box_length_cm || t.box_length;
-    const width = t.box_width_cm || t.box_width;
-    const height = t.box_height_cm || t.box_height;
-    let volM3;
+    const rawPayload = t.allowed_payload !== undefined && t.allowed_payload !== null
+      ? Number(t.allowed_payload)
+      : (t.payload_kg !== undefined && t.payload_kg !== null ? Number(t.payload_kg) : null);
+    const length = t.box_length_cm ?? t.box_length ?? null;
+    const width = t.box_width_cm ?? t.box_width ?? null;
+    const height = t.box_height_cm ?? t.box_height ?? null;
+    let volM3 = null;
     if (length && width && height) {
-      const rawVol = length * width * height;
-      volM3 = rawVol > 1000 ? parseFloat((rawVol / 1000000).toFixed(1)): parseFloat(rawVol.toFixed(1));
-    } else {
-      volM3 = parseFloat(((payload * 0.0068) || 9.5).toFixed(1));
+      const rawVol = Number(length) * Number(width) * Number(height);
+      volM3 = rawVol > 1000 ? parseFloat((rawVol / 1000000).toFixed(1)) : parseFloat(rawVol.toFixed(1));
     }
 
     // 1. Phân loại hạn đăng kiểm đa tầng theo Thông tư 02/2023/TT-BGTVT
@@ -82,24 +82,24 @@ const getAllTrucks = async () => {
     // 3. Quản lý thời gian sửa chữa & Downtime gián đoạn hoạt động
     const rawStatus = String(t.status || 'AVAILABLE').toUpperCase();
     const isMaintenance = rawStatus === 'MAINTENANCE';
-    const downtimeHours = isMaintenance ? (t.downtime_hours !== undefined ? Number(t.downtime_hours) : 0) : 0;
-    const garageName = isMaintenance ? (t.service_garage || 'Xưởng Dịch vụ Ô tô Tải Thaco Long Biên') : null;
+    const downtimeHours = isMaintenance ? (t.downtime_hours !== undefined && t.downtime_hours !== null ? Number(t.downtime_hours) : null) : 0;
+    const garageName = isMaintenance ? (t.service_garage || null) : null;
 
     return {
       key: t.id.toString(),
       id: t.id,
       plate: t.plate_number,
       plate_number: t.plate_number,
-      model: t.model || getTruckModelName(payload),
-      category: getTruckCategory(payload),
-      payload_kg: payload,
-      allowed_payload: payload,
+      model: t.model || null,
+      category: rawPayload !== null ? getTruckCategory(rawPayload) : null,
+      payload_kg: rawPayload,
+      allowed_payload: rawPayload,
       volume_m3: volM3,
-      box_length_cm: t.box_length_cm,
-      box_width_cm: t.box_width_cm,
-      box_height_cm: t.box_height_cm,
-      cargo_type: payload > 10000 ? 'Moóc xương Container': 'Thùng kín inox',
-      equipment: 'Kẹp chì niêm phong, GPS, Cảm biến hành trình',
+      box_length_cm: t.box_length_cm ?? t.box_length ?? null,
+      box_width_cm: t.box_width_cm ?? t.box_width ?? null,
+      box_height_cm: t.box_height_cm ?? t.box_height ?? null,
+      cargo_type: rawPayload !== null ? (rawPayload > 10000 ? 'Moóc xương Container' : 'Thùng kín inox') : null,
+      equipment: t.gps_device_id ? 'GPS' : null,
       assigned_driver: t.assigned_driver || null,
       driver_phone: t.driver_phone || null,
       location: t.location || null,
@@ -108,8 +108,8 @@ const getAllTrucks = async () => {
       insurance_exp: t.insurance_expiry || null,
       insurance_expiry: t.insurance_expiry || null,
       status: rawStatus,
-      license_class_required: t.license_class_required || 'B2',
-      required_license_class: t.license_class_required || 'B2',
+      license_class_required: t.license_class_required || t.required_license_class || null,
+      required_license_class: t.license_class_required || t.required_license_class || null,
       // Chỉ số Đăng kiểm & Pháp lý
       days_until_inspection: daysUntilInspection,
       inspection_alert_level: inspectionAlertLevel,
@@ -181,15 +181,16 @@ const getAllDrivers = async () => {
       user_id: d.user_account_id,
       name: u.full_name || (u.username ? `Tài xế ${u.username}` : `Tài xế ${d.id}`),
       phone: u.phone || null,
-      email: u.email || '',
-      id_card: u.username?.includes('driver_') ? `0385722${d.id}9`: (u.username || '0385722949'),
-      license_type: `Hạng ${d.license_class || 'C'}`,
-      license_class: d.license_class || 'C',
-      license_number: d.license_number,
-      license_expiry: d.license_expiry,
+      email: u.email || null,
+      id_card: null,
+      license_type: d.license_class ? `Hạng ${d.license_class}` : null,
+      license_class: d.license_class || null,
+      license_number: d.license_number || null,
+      expiry: d.license_expiry || null,
+      license_expiry: d.license_expiry || null,
       experience_years: expYears,
-      shift_hours_today: d.shift_hours_today || 0,
-      max_shift_hours: 8.0,
+      shift_hours_today: d.shift_hours_today ?? null,
+      max_shift_hours: null,
       assigned_truck: d.assigned_truck || null,
       current_trip: null,
       status: status,
@@ -272,28 +273,115 @@ const getShifts = async ({ from, to, status, driver_id }) => {
   });
 };
 
+const createServiceError = (message, statusCode = 400) => {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+};
+
+const STRICT_HHMM_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const STRICT_YMD_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+const parseStrictDateStr = (dateStr) => {
+  const clean = String(dateStr || '').split('T')[0].trim();
+  const match = STRICT_YMD_REGEX.exec(clean);
+  if (!match) {
+    throw createServiceError('Ngày làm việc phải đúng định dạng YYYY-MM-DD.', 400);
+  }
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() + 1 !== m || dt.getUTCDate() !== d) {
+    throw createServiceError('Ngày làm việc không hợp lệ.', 400);
+  }
+  return clean;
+};
+
+const parseShiftDateTimeRange = (dateStr, startStr, endStr) => {
+  const cleanDate = parseStrictDateStr(dateStr);
+  const rawStart = String(startStr || '').trim();
+  const rawEnd = String(endStr || '').trim();
+
+  let isoStart;
+  let isoEnd;
+
+  if (!rawStart.includes('T') && !rawEnd.includes('T')) {
+    const mStart = STRICT_HHMM_REGEX.exec(rawStart);
+    const mEnd = STRICT_HHMM_REGEX.exec(rawEnd);
+    if (!mStart || !mEnd) {
+      throw createServiceError('Giờ bắt đầu và giờ kết thúc phải đúng định dạng HH:mm (00:00 - 23:59).', 400);
+    }
+    const startMins = Number(mStart[1]) * 60 + Number(mStart[2]);
+    const endMins = Number(mEnd[1]) * 60 + Number(mEnd[2]);
+    if (startMins === endMins) {
+      throw createServiceError('Giờ kết thúc phải khác giờ bắt đầu.', 400);
+    }
+    isoStart = `${cleanDate}T${rawStart}:00+07:00`;
+    const endDate = endMins < startMins ? addDaysStrGMT7(cleanDate, 1) : cleanDate;
+    isoEnd = `${endDate}T${rawEnd}:00+07:00`;
+  } else {
+    const startMs = Date.parse(rawStart);
+    const endMs = Date.parse(rawEnd);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+      throw createServiceError('Thời gian bắt đầu hoặc kết thúc ca làm việc không hợp lệ.', 400);
+    }
+    if (endMs <= startMs) {
+      throw createServiceError('Giờ kết thúc phải sau giờ bắt đầu.', 400);
+    }
+    isoStart = new Date(startMs).toISOString();
+    isoEnd = new Date(endMs).toISOString();
+  }
+
+  const durationHours = (new Date(isoEnd).getTime() - new Date(isoStart).getTime()) / (1000 * 60 * 60);
+  if (durationHours <= 0 || durationHours > 24) {
+    throw createServiceError('Thời lượng ca làm việc phải lớn hơn 0 giờ và không vượt quá 24 giờ.', 400);
+  }
+
+  return { cleanDate, isoStart, isoEnd, durationHours: Number(durationHours.toFixed(1)) };
+};
+
+const safeNotifyShift = async (payload) => {
+  try {
+    await driverModel.createSystemNotification(payload);
+  } catch (notifErr) {
+    console.warn('Shift notification warning:', notifErr.message);
+  }
+};
+
+const buildBr34Warnings = async (driverId, dateStr, shiftDurationHours) => {
+  const warnings = [];
+  if (shiftDurationHours > 4) {
+    warnings.push(`Ca làm việc kéo dài ${shiftDurationHours}h liên tục (> 4 giờ cần bố trí nghỉ giữa ca theo BR-34)`);
+  }
+  const [totalDailyHours, totalWeeklyHours] = await Promise.all([
+    driverModel.calculateDriverDailyHours(driverId, dateStr),
+    driverModel.calculateDriverWeeklyHours(driverId, dateStr)
+  ]);
+  if (totalDailyHours > 10) {
+    warnings.push(`tổng giờ trong ngày đạt ${totalDailyHours}h (> 10 giờ/ngày)`);
+  }
+  if (totalWeeklyHours > 48) {
+    warnings.push(`tổng giờ trong tuần đạt ${totalWeeklyHours}h (> 48 giờ/tuần)`);
+  }
+  return warnings.length > 0 ? `Cảnh báo BR-34: ${warnings.join('; ')}.` : null;
+};
+
 const createShift = async ({ driver_id, date, start_time, end_time, note, creatorId }) => {
   if (!driver_id || !date || !start_time || !end_time) {
-    throw new Error('Tài xế, ngày và khoảng thời gian bắt đầu - kết thúc là bắt buộc');
+    throw createServiceError('Tài xế, ngày và khoảng thời gian bắt đầu - kết thúc là bắt buộc', 400);
   }
 
-  let isoStart = start_time;
-  let isoEnd = end_time;
-  if (!start_time.includes('T')) {
-    isoStart = `${date}T${start_time}:00+07:00`;
-  }
-  if (!end_time.includes('T')) {
-    isoEnd = `${date}T${end_time}:00+07:00`;
-  }
+  const { cleanDate, isoStart, isoEnd, durationHours } = parseShiftDateTimeRange(date, start_time, end_time);
 
-  const hasOverlap = await driverModel.checkShiftOverlap(driver_id, date, isoStart, isoEnd);
+  const hasOverlap = await driverModel.checkShiftOverlap(driver_id, cleanDate, isoStart, isoEnd);
   if (hasOverlap) {
-    throw new Error('Lỗi: Tài xế này đã có ca làm việc khác chồng lấn thời gian trong ngày này.');
+    throw createServiceError('Lỗi: Tài xế này đã có ca làm việc khác chồng lấn thời gian (kể cả ca qua đêm).', 409);
   }
 
   const newShift = await driverModel.insertShiftRecord({
     driver_id,
-    date,
+    date: cleanDate,
     start_time: isoStart,
     end_time: isoEnd,
     note: note || 'Ca trực do Quản lý tạo',
@@ -304,19 +392,15 @@ const createShift = async ({ driver_id, date, start_time, end_time, note, creato
     reviewed_at: new Date().toISOString()
   });
 
-  let warningMessage = null;
-  const totalDailyHours = await driverModel.calculateDriverDailyHours(driver_id, date);
-  if (totalDailyHours > 10) {
-    warningMessage = `Cảnh báo: Ca làm việc đã lưu nhưng tổng giờ làm việc trong ngày của tài xế đạt ${totalDailyHours}h, vượt quá 10 giờ/ngày.`;
-  }
+  const warningMessage = await buildBr34Warnings(driver_id, cleanDate, durationHours);
 
   const driverProfile = newShift?.driver_profiles;
   if (driverProfile?.user_account_id) {
-    await driverModel.createSystemNotification({
+    await safeNotifyShift({
       userAccountId: driverProfile.user_account_id,
       targetType: 'SHIFT',
       targetId: newShift.id,
-      message: `Quản lý đã xếp ca làm việc cho bạn vào ngày ${date}.`
+      message: `Quản lý đã xếp ca làm việc cho bạn vào ngày ${cleanDate}.`
     });
   }
 
@@ -326,37 +410,37 @@ const createShift = async ({ driver_id, date, start_time, end_time, note, creato
 const updateShift = async (id, { date, start_time, end_time, note, reviewerId }) => {
   const existing = await driverModel.getShiftById(id);
   if (!existing) {
-    throw new Error('Không tìm thấy ca làm việc');
+    throw createServiceError('Không tìm thấy ca làm việc.', 404);
+  }
+
+  const isTripLocked = await driverModel.hasActiveTripDuringShift(
+    existing.driver_id,
+    existing.start_time,
+    existing.end_time
+  );
+  if (isTripLocked) {
+    throw createServiceError('Không thể chỉnh sửa ca làm việc đang được gắn cho chuyến xe đang hoạt động.', 409);
   }
 
   const targetDate = date || existing.date;
-  let isoStart = start_time || existing.start_time;
-  let isoEnd = end_time || existing.end_time;
-  if (!isoStart.includes('T')) {
-    isoStart = `${targetDate}T${isoStart}:00+07:00`;
-  }
-  if (!isoEnd.includes('T')) {
-    isoEnd = `${targetDate}T${isoEnd}:00+07:00`;
-  }
+  const rawStart = start_time || existing.start_time;
+  const rawEnd = end_time || existing.end_time;
+  const { cleanDate, isoStart, isoEnd, durationHours } = parseShiftDateTimeRange(targetDate, rawStart, rawEnd);
 
-  const hasOverlap = await driverModel.checkShiftOverlap(existing.driver_id, targetDate, isoStart, isoEnd, id);
+  const hasOverlap = await driverModel.checkShiftOverlap(existing.driver_id, cleanDate, isoStart, isoEnd, id);
   if (hasOverlap) {
-    throw new Error('Lỗi: Thời gian mới bị chồng lấn với ca làm việc khác của tài xế.');
+    throw createServiceError('Lỗi: Thời gian mới bị chồng lấn với ca làm việc khác của tài xế.', 409);
   }
 
   const updated = await driverModel.updateDriverShift(id, {
-    date: targetDate,
+    date: cleanDate,
     start_time: isoStart,
     end_time: isoEnd,
-    note: note !== undefined ? note: existing.note,
+    note: note !== undefined ? note : existing.note,
     reviewed_by: reviewerId || existing.reviewed_by
   });
 
-  let warningMessage = null;
-  const totalDailyHours = await driverModel.calculateDriverDailyHours(existing.driver_id, targetDate);
-  if (totalDailyHours > 10) {
-    warningMessage = `Cảnh báo: Tổng giờ làm việc trong ngày của tài xế đạt ${totalDailyHours}h, vượt quá 10 giờ/ngày.`;
-  }
+  const warningMessage = await buildBr34Warnings(existing.driver_id, cleanDate, durationHours);
 
   return { shift: updated, warning: warningMessage };
 };
@@ -364,7 +448,12 @@ const updateShift = async (id, { date, start_time, end_time, note, reviewerId })
 const approveShift = async (id, reviewerId) => {
   const existing = await driverModel.getShiftById(id);
   if (!existing) {
-    throw new Error('Không tìm thấy ca làm việc');
+    throw createServiceError('Không tìm thấy ca làm việc.', 404);
+  }
+
+  const curStatus = String(existing.status || '').toUpperCase();
+  if (!['REQUESTED', 'PENDING'].includes(curStatus)) {
+    throw createServiceError('Chỉ có thể phê duyệt ca làm việc đang ở trạng thái Chờ duyệt.', 409);
   }
 
   const updated = await driverModel.updateDriverShift(id, {
@@ -373,15 +462,14 @@ const approveShift = async (id, reviewerId) => {
     reviewed_at: new Date().toISOString()
   });
 
-  let warningMessage = null;
-  const totalDailyHours = await driverModel.calculateDriverDailyHours(existing.driver_id, existing.date);
-  if (totalDailyHours > 10) {
-    warningMessage = `Cảnh báo: Tổng giờ làm việc trong ngày ${existing.date} của tài xế đạt ${totalDailyHours}h, vượt quá giới hạn an toàn 10 giờ/ngày.`;
-  }
+  const durationHours = Number(
+    ((new Date(existing.end_time).getTime() - new Date(existing.start_time).getTime()) / (1000 * 60 * 60)).toFixed(1)
+  );
+  const warningMessage = await buildBr34Warnings(existing.driver_id, existing.date, durationHours);
 
   const driverProfile = existing.driver_profiles;
   if (driverProfile?.user_account_id) {
-    await driverModel.createSystemNotification({
+    await safeNotifyShift({
       userAccountId: driverProfile.user_account_id,
       targetType: 'SHIFT',
       targetId: existing.id,
@@ -395,7 +483,21 @@ const approveShift = async (id, reviewerId) => {
 const rejectShift = async (id, reason, reviewerId) => {
   const existing = await driverModel.getShiftById(id);
   if (!existing) {
-    throw new Error('Không tìm thấy ca làm việc');
+    throw createServiceError('Không tìm thấy ca làm việc.', 404);
+  }
+
+  const curStatus = String(existing.status || '').toUpperCase();
+  if (!['REQUESTED', 'PENDING'].includes(curStatus)) {
+    throw createServiceError('Chỉ có thể từ chối ca làm việc đang ở trạng thái Chờ duyệt.', 409);
+  }
+
+  const isTripLocked = await driverModel.hasActiveTripDuringShift(
+    existing.driver_id,
+    existing.start_time,
+    existing.end_time
+  );
+  if (isTripLocked) {
+    throw createServiceError('Không thể từ chối ca làm việc đang được gắn cho chuyến xe.', 409);
   }
 
   const rejectionReason = reason || 'Quản lý không phê duyệt ca này';
@@ -408,7 +510,7 @@ const rejectShift = async (id, reason, reviewerId) => {
 
   const driverProfile = existing.driver_profiles;
   if (driverProfile?.user_account_id) {
-    await driverModel.createSystemNotification({
+    await safeNotifyShift({
       userAccountId: driverProfile.user_account_id,
       targetType: 'SHIFT',
       targetId: existing.id,
@@ -420,7 +522,32 @@ const rejectShift = async (id, reason, reviewerId) => {
 };
 
 const deleteShift = async (id) => {
-  return await driverModel.deleteDriverShift(id);
+  const existing = await driverModel.getShiftById(id);
+  if (!existing) {
+    throw createServiceError('Không tìm thấy ca làm việc.', 404);
+  }
+
+  const isTripLocked = await driverModel.hasActiveTripDuringShift(
+    existing.driver_id,
+    existing.start_time,
+    existing.end_time
+  );
+  if (isTripLocked) {
+    throw createServiceError('Không thể xóa ca làm việc đang được gắn cho chuyến xe đang hoạt động.', 409);
+  }
+
+  await driverModel.deleteDriverShift(id);
+
+  const driverProfile = existing.driver_profiles;
+  if (driverProfile?.user_account_id) {
+    await safeNotifyShift({
+      userAccountId: driverProfile.user_account_id,
+      targetType: 'SHIFT',
+      targetId: existing.id,
+      message: `Ca làm việc ngày ${existing.date} của bạn đã bị Quản lý hủy/xóa.`
+    });
+  }
+  return true;
 };
 
 const addDaysStrGMT7 = (dateStr, days) => {

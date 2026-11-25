@@ -1167,7 +1167,6 @@ const lookupPublicInvoice = async (req, res) => {
         id: true,
         order_code: true,
         agreed_price: true,
-        ai_input_text: true,
         updated_at: true,
         order_notes: {
           select: { id: true, content: true, created_at: true },
@@ -1269,7 +1268,6 @@ const downloadPublicInvoiceFile = async (req, res) => {
         id: true,
         order_code: true,
         agreed_price: true,
-        ai_input_text: true,
         updated_at: true,
         customers: {
           select: {
