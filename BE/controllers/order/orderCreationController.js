@@ -318,7 +318,9 @@ const createConsultationOrder = async (req, res) => {
     });
   } catch (err) {
     console.error("createConsultationOrder Exception:", err);
-    return res.status(500).json({ message: "Internal Server Error" });
+    return res
+      .status(err.statusCode || 500)
+      .json({ message: err.statusCode ? err.message : "Internal Server Error" });
   }
 };
 

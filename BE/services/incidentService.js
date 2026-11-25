@@ -128,9 +128,19 @@ const createIncident = async (payload = {}, userId = 1) => {
     }
   }
 
-  if (!realTripId) {
+  if (!realTripId || realTripId <= 0) {
     const error = new Error('Chuyến xe không hợp lệ');
     error.statusCode = 400;
+    throw error;
+  }
+
+  const tripExists = await prisma.trips.findUnique({
+    where: { id: BigInt(realTripId) },
+    select: { id: true }
+  });
+  if (!tripExists) {
+    const error = new Error(`Không tìm thấy chuyến xe với mã ${payload.trip_id}`);
+    error.statusCode = 404;
     throw error;
   }
 
@@ -187,7 +197,7 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
     rawAction === 'REPLACE' ||
     Boolean(payload.new_truck || payload.relief_truck_plate || payload.replacement_reason)
   ) {
-    const newTruck = payload.new_truck || payload.relief_truck_plate;
+    const newTruck = String(payload.new_truck || payload.relief_truck_plate || '').trim();
     if (!newTruck) {
       const error = new Error('Thiếu thông tin biển số xe thay thế');
       error.statusCode = 400;
@@ -272,6 +282,15 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
 
   // 3. Đánh dấu đã giải quyết tại chỗ (UC-14)
   if (rawAction === 'RESOLVED' || rawAction === 'RESOLVE' || payload.resolution_note) {
+    const existingIncident = await prisma.incidents.findUnique({
+      where: { id: BigInt(realId) },
+      select: { id: true }
+    });
+    if (!existingIncident) {
+      const error = new Error('Không tìm thấy sự cố.');
+      error.statusCode = 404;
+      throw error;
+    }
     const updated = await incidentModel.update(realId, {
       status: 'RESOLVED',
       resolution_note: payload.resolution_note || 'Điều phối viên đã hướng dẫn xử lý xong tại hiện trường',

@@ -466,32 +466,35 @@ const getNextDispatcherForWebOrder = async () => {
   try {
     const prisma = require('../config/prisma');
     const activeDispatchers = await prisma.users.findMany({
-      where: { role_id: 3n, status: 'ACTIVE' },
+      where: { role_id: 3n, status: { in: ['ACTIVE', 'Active'] } },
       select: { id: true, full_name: true, username: true }
     });
 
     if (!activeDispatchers || activeDispatchers.length === 0) {
-      return 1; // Fallback dispatcher ID mặc định nếu chưa có tài khoản nào
+      const noDispErr = new Error('Hiện không có Điều phối viên khả dụng để tiếp nhận đơn hàng. Vui lòng thử lại sau.');
+      noDispErr.statusCode = 503;
+      throw noDispErr;
     }
 
     const dispIds = activeDispatchers.map((d) => d.id);
-    const activeStatuses = [
-      'DRAFT',
-      'Draft',
-      'CONFIRMED',
-      'Confirmed',
-      'READY_FOR_PLANNING',
-      'Ready for Planning',
-      'ASSIGNED',
-      'Assigned',
-      'IN_TRANSIT',
-      'In Transit'
+    const closedOrFinalStatuses = [
+      'CANCELLED',
+      'Cancelled',
+      'CLOSED',
+      'Closed',
+      'DELIVERED',
+      'Delivered',
+      'DELIVERED_EXCEPTION',
+      'Delivered Exception',
+      'COMPLETED',
+      'Completed'
     ];
 
     const activeOrders = await prisma.orders.findMany({
       where: {
         responsible_dispatcher_id: { in: dispIds },
-        status: { in: activeStatuses }
+        is_closed: false,
+        status: { notIn: closedOrFinalStatuses }
       },
       select: { id: true, responsible_dispatcher_id: true }
     });
@@ -535,8 +538,8 @@ const getNextDispatcherForWebOrder = async () => {
     const nextIndex = (lastIndex + 1) % candidateDispatchers.length;
     return Number(candidateDispatchers[nextIndex].id);
   } catch (err) {
-    console.error('Error in getNextDispatcherForWebOrder (fallback to 1):', err.message);
-    return 1;
+    console.error('Error in getNextDispatcherForWebOrder:', err.message);
+    throw err;
   }
 };
 
