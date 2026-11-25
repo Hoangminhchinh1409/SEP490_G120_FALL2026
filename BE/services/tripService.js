@@ -227,15 +227,44 @@ const createTrip = async (payload, userId = 1) => {
     throw err;
   }
 
-  let resolvedPlannedStart = new Date();
-  if (planned_start) {
-    const parsedStart = new Date(planned_start);
-    if (!Number.isNaN(parsedStart.getTime())) {
-      resolvedPlannedStart = parsedStart;
+  const parseFlexiblePlannedStart = (rawVal) => {
+    if (!rawVal) return null;
+    const str = String(rawVal).trim();
+    // 1. Chỉ có giờ HH:mm hoặc HH:mm:ss -> ghép với ngày hôm nay theo múi giờ VN (+07:00)
+    const hmOnly = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (hmOnly) {
+      const vnToday = new Date(Date.now() + 7 * 3600 * 1000).toISOString().split("T")[0];
+      const hh = hmOnly[1].padStart(2, "0");
+      const mm = hmOnly[2].padStart(2, "0");
+      const ss = (hmOnly[3] || "00").padStart(2, "0");
+      const dt = new Date(`${vnToday}T${hh}:${mm}:${ss}+07:00`);
+      return Number.isNaN(dt.getTime()) ? null : dt;
     }
+    // 2. Định dạng VN DD/MM/YYYY HH:mm
+    const vnDateHm = str.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (vnDateHm) {
+      const [, dd, mo, yyyy, h, m, s] = vnDateHm;
+      const dt = new Date(`${yyyy}-${mo}-${dd}T${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(s || "00").padStart(2, "0")}+07:00`);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    // 3. Định dạng YYYY-MM-DD HH:mm (không có timezone)
+    const isoSpace = str.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (isoSpace) {
+      const [, ymd, h, m, s] = isoSpace;
+      const dt = new Date(`${ymd}T${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(s || "00").padStart(2, "0")}+07:00`);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    const direct = new Date(str);
+    return Number.isNaN(direct.getTime()) ? null : direct;
+  };
+
+  let resolvedPlannedStart = new Date();
+  const parsedExplicitStart = parseFlexiblePlannedStart(planned_start);
+  if (parsedExplicitStart) {
+    resolvedPlannedStart = parsedExplicitStart;
   } else if (matchedOrder?.requested_pickup_date) {
-    const parsedReq = new Date(matchedOrder.requested_pickup_date);
-    if (!Number.isNaN(parsedReq.getTime())) {
+    const parsedReq = parseFlexiblePlannedStart(matchedOrder.requested_pickup_date);
+    if (parsedReq) {
       resolvedPlannedStart = parsedReq;
     }
   }

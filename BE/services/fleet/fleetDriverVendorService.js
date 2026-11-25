@@ -6,14 +6,14 @@ const getAllDrivers = async () => {
   const profiles = await fleetModel.findAllDrivers();
   return (profiles || []).map((d) => {
     const u = d.user || {};
-    const rawSt = String(d.status || '').toUpperCase();
-    let status = 'AVAILABLE';
-    if (rawSt === 'ACTIVE') status = 'AVAILABLE';
-    else if (rawSt === 'ON_TRIP' || rawSt === 'ON TRIP') status = 'ON_DUTY';
+    const rawSt = String(d.status || '').trim().toUpperCase().replace(/\s+/g, '_');
+    let status = 'UNKNOWN';
+    if (rawSt === 'AVAILABLE' || rawSt === 'ACTIVE') status = 'AVAILABLE';
+    else if (rawSt === 'ON_TRIP' || rawSt === 'ON_DUTY') status = 'ON_DUTY';
     else if (rawSt === 'RESTING' || rawSt === 'INACTIVE') status = 'RESTING';
     else if (rawSt === 'SUSPENDED') status = 'SUSPENDED';
     else if (rawSt === 'LEAVE') status = 'LEAVE';
-    else status = rawSt || 'AVAILABLE';
+    else status = rawSt || 'UNKNOWN';
 
     const expYears = d.experience_years !== undefined && d.experience_years !== null
       ? `${d.experience_years} năm kinh nghiệm`

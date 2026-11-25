@@ -127,7 +127,9 @@ export default function FleetManagement() {
       render: (_, r) => (
         <div className="text-xs space-y-0.5">
           <div>Tải trọng: <b className="text-indigo-600 font-mono">{(r.payload_kg || 0).toLocaleString()} kg</b></div>
-          <div className="text-gray-500">Thể tích thùng: <b className="text-gray-700 font-mono">{r.volume_m3 || 9.5} m³</b></div>
+          <div className="text-gray-500">
+            Thể tích thùng: <b className="text-gray-700 font-mono">{r.volume_m3 != null ? `${r.volume_m3} m³` : 'Chưa có dữ liệu'}</b>
+          </div>
         </div>
       )
     },
@@ -136,7 +138,7 @@ export default function FleetManagement() {
       dataIndex: 'equipment',
       key: 'equipment',
       width: '20%',
-      render: text => <span className="text-xs text-gray-600 leading-snug block">{text || 'GPS, Giám sát hành trình'}</span>
+      render: text => <span className="text-xs text-gray-600 leading-snug block">{text || 'Chưa có dữ liệu'}</span>
     },
     {
       title: 'Vị trí hiện tại',
@@ -146,7 +148,7 @@ export default function FleetManagement() {
       render: text => (
         <div className="text-xs text-gray-700 flex items-start gap-1">
           <MapPin size={13} className="text-blue-500 shrink-0 mt-0.5" />
-          <span className="leading-snug">{text || 'Depot Cảng HKQT Nội Bài'}</span>
+          <span className="leading-snug">{text || 'Chưa có dữ liệu'}</span>
         </div>
       )
     },
@@ -156,8 +158,8 @@ export default function FleetManagement() {
       width: '12%',
       render: (_, r) => (
         <div className="text-[11px] font-mono space-y-0.5">
-          <div className="text-gray-600">Đăng kiểm: <b>{r.registration_exp}</b></div>
-          <div className="text-gray-500">Bảo hiểm: <b>{r.insurance_exp}</b></div>
+          <div className="text-gray-600">Đăng kiểm: <b>{r.registration_exp || 'Chưa có dữ liệu'}</b></div>
+          <div className="text-gray-500">Bảo hiểm: <b>{r.insurance_exp || 'Chưa có dữ liệu'}</b></div>
         </div>
       )
     },
@@ -189,8 +191,8 @@ export default function FleetManagement() {
             <User size={13} className="text-[#7367f0]" />
             <span>{r.name}</span>
           </div>
-          <div className="text-xs text-gray-500 font-mono mt-0.5">{r.phone}</div>
-          <div className="text-[11px] text-gray-400 font-mono">CCCD / Mã: {r.id_card}</div>
+          <div className="text-xs text-gray-500 font-mono mt-0.5">{r.phone || 'Chưa có dữ liệu'}</div>
+          {r.id_card && <div className="text-[11px] text-gray-400 font-mono">CCCD / Mã: {r.id_card}</div>}
         </div>
       )
     },
@@ -200,8 +202,8 @@ export default function FleetManagement() {
       width: '18%',
       render: (_, r) => (
         <div className="text-xs space-y-0.5">
-          <Tag color="cyan" className="font-bold text-[11px]">{r.license_type}</Tag>
-          <div className="text-gray-500 text-[11px] mt-1">{r.experience_years}</div>
+          {r.license_type ? <Tag color="cyan" className="font-bold text-[11px]">{r.license_type}</Tag> : <span className="text-gray-400">Chưa có GPLX</span>}
+          {r.experience_years && <div className="text-gray-500 text-[11px] mt-1">{r.experience_years}</div>}
         </div>
       )
     },
@@ -210,8 +212,11 @@ export default function FleetManagement() {
       key: 'shift_hours',
       width: '24%',
       render: (_, r) => {
-        const shiftToday = Number(r.shift_hours_today) || 2.0;
-        const maxShift = Number(r.max_shift_hours) || 8.0;
+        if (r.shift_hours_today == null || r.max_shift_hours == null) {
+          return <span className="text-xs text-gray-400 italic">Chưa có dữ liệu ca trực</span>;
+        }
+        const shiftToday = Number(r.shift_hours_today);
+        const maxShift = Number(r.max_shift_hours);
         const percent = Math.min(100, Math.round((shiftToday / maxShift) * 100));
         const isNearLimit = percent >= 85;
         return (

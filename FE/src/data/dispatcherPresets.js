@@ -578,9 +578,8 @@ export const getVehicleSpecByKey = (vehicleKey) => {
   if (normalized.startsWith('CONTAINER_20')) return VEHICLE_SPECS[4];
   if (normalized.startsWith('CONTAINER_40')) return VEHICLE_SPECS[5];
 
-  // Hỗ trợ tìm kiếm theo số tấn trong chuỗi
-  const numericMatch = VEHICLE_SPECS.find(v => v.key === normalized || v.shortLabel.includes(normalized));
-  return numericMatch || null;
+  // Không match chuỗi con gần đúng để tránh sai loại xe (BUG-VH-01)
+  return null;
 };
 
 /**

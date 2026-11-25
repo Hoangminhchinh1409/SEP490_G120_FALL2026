@@ -106,7 +106,7 @@ function TripAssignmentModalContent({
   const customerName = order?.customer || order?.customer_name || 'Khách hàng';
   const actualWeight = Number(order?.weight || order?.weight_kg || 2000);
   const chargeableWeight = Number(order?.chargeable || order?.chargeable_weight || actualWeight);
-  const plannedStart = useMemo(() => {
+  const defaultPlannedStart = useMemo(() => {
     const pad2 = (n) => String(n).padStart(2, '0');
     const formatYmdToVn = (ymd) => {
       const m = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -146,6 +146,23 @@ function TripAssignmentModalContent({
     const validDt = Number.isNaN(fallbackDate.getTime()) ? new Date() : fallbackDate;
     return `${pad2(validDt.getDate())}/${pad2(validDt.getMonth() + 1)}/${validDt.getFullYear()} ${pad2(validDt.getHours())}:${pad2(validDt.getMinutes())}`;
   }, [order]);
+
+  const [customStartTime, setCustomStartTime] = useState('');
+
+  const plannedStart = useMemo(() => {
+    if (!customStartTime || !/^\d{2}:\d{2}$/.test(customStartTime)) return defaultPlannedStart;
+    const datePartMatch = String(defaultPlannedStart || '').match(/^(\d{2}\/\d{2}\/\d{4})/);
+    const datePart = datePartMatch
+      ? datePartMatch[1]
+      : `${String(new Date().getDate()).padStart(2, '0')}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`;
+    return `${datePart} ${customStartTime}`;
+  }, [defaultPlannedStart, customStartTime]);
+
+  const currentStartTimeValue = useMemo(() => {
+    if (customStartTime) return customStartTime;
+    const m = String(defaultPlannedStart || '').match(/(\d{2}:\d{2})/);
+    return m ? m[1] : '08:00';
+  }, [customStartTime, defaultPlannedStart]);
 
   const [transportMode, setTransportMode] = useState('INTERNAL');
 
@@ -399,7 +416,7 @@ function TripAssignmentModalContent({
         driver1_name: cleanDriver1,
         driver2_name: cleanDriver2,
         stops: stopsWithLiveEta,
-        planned_start: order?.planned_start_iso || undefined,
+        planned_start: plannedStart || order?.planned_start_iso || undefined,
         planned_distance: routeSummary.distanceKm,
         planned_duration: routeSummary.durationMins
       });
@@ -549,8 +566,15 @@ function TripAssignmentModalContent({
                 <b>{actualWeight.toLocaleString()} kg</b> · KL tính cước{' '}
                 <b>{chargeableWeight.toLocaleString()} kg</b> · Thể tích <b>{cargoVolume} m³</b>
                 <br />
-                Trạng thái: <b>Sẵn sàng điều xe</b> · Xuất phát dự kiến: <b>{plannedStart}</b> ·
-                Quãng đường ngắn nhất <b>{routeSummary.distanceKm} km</b> · Thời gian chuyến{' '}
+                Trạng thái: <b>Sẵn sàng điều xe</b> · Xuất phát dự kiến: <b>{plannedStart}</b>{' '}
+                <input
+                  type="time"
+                  value={currentStartTimeValue}
+                  onChange={(e) => setCustomStartTime(e.target.value)}
+                  className="inline-block ml-1 px-1.5 py-0.5 text-[11px] font-mono border border-indigo-200 rounded bg-white text-indigo-700"
+                  title="Chỉnh giờ khởi hành dự kiến"
+                />{' '}
+                · Quãng đường ngắn nhất <b>{routeSummary.distanceKm} km</b> · Thời gian chuyến{' '}
                 <b>
                   {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph
                 </b>
