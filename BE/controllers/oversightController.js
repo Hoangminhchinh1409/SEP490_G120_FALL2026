@@ -66,7 +66,12 @@ const getDispatcherDashboardStats = async (req, res) => {
       const meta = parseOrderMeta(o);
       const cargos = Array.isArray(o.order_cargos) ? o.order_cargos : o.order_cargos ? [o.order_cargos] : [];
       const weight = cargos.reduce(
-        (s, c) => s + (Number(c.chargeable_weight) || Number(c.weight_kg) || Number(c.chargeable_weight_kg) || Number(c.actual_weight_kg) || 0),
+        (s, c) =>
+          s +
+          Math.max(
+            Number(c.chargeable_weight) || Number(c.chargeable_weight_kg) || 0,
+            Number(c.weight_kg) || Number(c.actual_weight_kg) || 0
+          ),
         0
       );
       return {
@@ -90,13 +95,22 @@ const getDispatcherDashboardStats = async (req, res) => {
     const confirmedOrders = nonCancelledOrders.filter((o) => o.status === 'CONFIRMED').length;
     const cancelledOrders = orderList.filter((o) => isCancelled(o)).length;
 
-    const availableTrucks = (trucks || []).filter((t) => ['AVAILABLE', 'Available', 'Active'].includes(t.status)).length;
-    const activeTripsCount = (trips || []).filter((t) => ['IN_PROGRESS', 'ASSIGNED', 'IN_TRANSIT', 'ACCEPTED', 'In Progress', 'Assigned', 'Accepted'].includes(t.status)).length;
+    const availableTrucks = (trucks || []).filter((t) =>
+      ['AVAILABLE', 'ACTIVE'].includes(String(t.status || '').trim().toUpperCase())
+    ).length;
+    const activeTripsCount = (trips || []).filter((t) =>
+      ['IN_PROGRESS', 'ASSIGNED', 'IN_TRANSIT', 'ACCEPTED', 'LOADING_STARTED', 'LOADING_DONE'].includes(
+        String(t.status || '').trim().toUpperCase().replace(/\s+/g, '_')
+      )
+    ).length;
     const openIncidents = (incidents || []).filter((i) => !['RESOLVED', 'DONE', 'CLOSED'].includes(String(i.status || '').toUpperCase())).length;
 
     const totalRevenue = orderList.reduce((sum, o) => {
       if (isCancelled(o)) {
         return sum + (Number(o.cancel_fee) || 0);
+      }
+      if (String(o.status || '').toUpperCase() === 'DRAFT') {
+        return sum;
       }
       return sum + (Number(o.agreed_price) || 0);
     }, 0);

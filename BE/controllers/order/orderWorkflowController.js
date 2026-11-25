@@ -34,22 +34,24 @@ const confirmOrder = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
     }
 
-    const upperSt = (currentOrder.status || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+    const upperSt = (currentOrder.status || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_");
     const forbiddenConfirmStatuses = [
-      'CANCELLED',
-      'CLOSED',
-      'ASSIGNED',
-      'ACCEPTED',
-      'PICKED_UP',
-      'IN_TRANSIT',
-      'DELIVERED',
-      'DELIVERED_EXCEPTION',
-      'HANDED_OVER_VENDOR',
-      'HANDED_OVER_TO_VENDOR'
+      "CANCELLED",
+      "CLOSED",
+      "ASSIGNED",
+      "ACCEPTED",
+      "PICKED_UP",
+      "IN_TRANSIT",
+      "DELIVERED",
+      "DELIVERED_EXCEPTION",
+      "HANDED_OVER_VENDOR",
+      "HANDED_OVER_TO_VENDOR",
     ];
     if (forbiddenConfirmStatuses.includes(upperSt)) {
       return res.status(400).json({
-        message: `Không thể xác nhận đơn hàng đang ở trạng thái ${currentOrder.status}`
+        message: `Không thể xác nhận đơn hàng đang ở trạng thái ${currentOrder.status}`,
       });
     }
 
@@ -110,22 +112,33 @@ const confirmOrder = async (req, res) => {
 const assignTrip = async (req, res) => {
   try {
     const { id } = req.params;
-    const found = await prisma.orders.findFirst({
-      where: { ...buildOrderWhere(id), status: "READY_FOR_PLANNING" },
-      select: { id: true },
+    const existing = await prisma.orders.findFirst({
+      where: buildOrderWhere(id),
+      select: { id: true, status: true },
     });
 
-    let updatedOrder;
-    if (found) {
-      const updatedRow = await prisma.orders.update({
-        where: { id: found.id },
-        data: {
-          status: "ASSIGNED",
-          updated_at: new Date(),
-        },
-      });
-      updatedOrder = serializeOrderRow(updatedRow);
+    if (!existing) {
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng." });
     }
+
+    const normalizedStatus = String(existing.status || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "_");
+    if (normalizedStatus !== "READY_FOR_PLANNING") {
+      return res.status(400).json({
+        message: `Chỉ có thể gán xe cho đơn hàng đang ở trạng thái READY_FOR_PLANNING (trạng thái hiện tại: ${existing.status}).`,
+      });
+    }
+
+    const updatedRow = await prisma.orders.update({
+      where: { id: existing.id },
+      data: {
+        status: "ASSIGNED",
+        updated_at: new Date(),
+      },
+    });
+    const updatedOrder = serializeOrderRow(updatedRow);
 
     return res.json({ message: "Đã gán xe thành công!", order: updatedOrder });
   } catch (err) {
@@ -374,7 +387,9 @@ const closeOrder = async (req, res) => {
       data: updData,
     });
     if (!updRes || updRes.count === 0) {
-      return res.status(500).json({ message: 'Không thể cập nhật trạng thái đóng đơn hàng' });
+      return res
+        .status(500)
+        .json({ message: "Không thể cập nhật trạng thái đóng đơn hàng" });
     }
 
     // Giải phóng chuyến xe, xe tải và tài xế nếu tất cả các điểm dừng của đơn này cần hoàn tất

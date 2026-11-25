@@ -89,8 +89,8 @@ export default function DispatcherDashboard() {
 
   const fetchAllData = useCallback(async ({ refresh = false } = {}) => {
     const [ordersRes, statsRes] = await Promise.all([
-      orderApi.getAllOrders().catch(() => []),
-      dispatcherApi.getDashboardStats({ refresh }).catch(() => null),
+      orderApi.getAllOrders(),
+      dispatcherApi.getDashboardStats({ refresh }),
     ]);
 
     const currentUserId = user?.id ? Number(user.id) : null;
@@ -248,6 +248,7 @@ export default function DispatcherDashboard() {
       if (isOrderCancelled(o)) {
         return sum + (Number(o.cancel_fee) || Number(o.cancellation_fee) || 0);
       }
+      if (o.status === 'DRAFT') return sum;
       return sum + (Number(o.agreed_price) || 0);
     }, 0);
 
@@ -361,11 +362,13 @@ export default function DispatcherDashboard() {
         const ts = resolveOrderTimestamp(o);
         if (!ts) return;
         const mIdx = ts.month();
-        if (ts.year() === nowYear || monthsMap[mIdx]) {
+        if (ts.year() === nowYear && monthsMap[mIdx]) {
           monthsMap[mIdx].orders += 1;
           monthsMap[mIdx].revenue += isOrderCancelled(o)
             ? Number(o.cancel_fee) || Number(o.cancellation_fee) || 0
-            : Number(o.agreed_price) || 0;
+            : o.status === 'DRAFT'
+              ? 0
+              : Number(o.agreed_price) || 0;
         }
       });
       const nonEmpty = monthsMap.filter((b) => b.orders > 0 || b.revenue > 0);
@@ -391,7 +394,9 @@ export default function DispatcherDashboard() {
             cnt += 1;
             rev += isOrderCancelled(o)
               ? Number(o.cancel_fee) || Number(o.cancellation_fee) || 0
-              : Number(o.agreed_price) || 0;
+              : o.status === 'DRAFT'
+                ? 0
+                : Number(o.agreed_price) || 0;
           }
         });
         return { label: r.label, revenue: rev, orders: cnt };

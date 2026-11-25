@@ -397,8 +397,18 @@ const createTrip = async (payload, userId = 1) => {
   }
 
   let secondaryDriverId = null;
-  if (driver2_name) {
+  if (driver2_name && String(driver2_name).trim()) {
     secondaryDriverId = await tripModel.findDriverByName(driver2_name);
+    if (!secondaryDriverId) {
+      const err = new Error(`Không tìm thấy tài xế phụ ${driver2_name}`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (Number(secondaryDriverId) === Number(driverId)) {
+      const err = new Error("Tài xế 2 phải khác tài xế 1.");
+      err.statusCode = 400;
+      throw err;
+    }
   }
 
   const randomNum = Math.floor(1000 + Math.random() * 9000);
