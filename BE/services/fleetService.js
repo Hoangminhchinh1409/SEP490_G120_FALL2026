@@ -1,6 +1,19 @@
 const driverModel = require('../models/driverModel');
 const fleetModel = require('../models/fleetModel');
-const leaveModel = require('../models/leaveModel');
+const {
+  getAllDrivers,
+  updateDriver,
+  getAllVendors,
+  getLeaveRequests,
+  decideLeaveRequest
+} = require('./fleet/fleetDriverVendorService');
+const {
+  addDaysStrGMT7,
+  sendShiftDeadlineReminders,
+  autoAssignNextWeekShifts,
+  approveDriverWeekShifts,
+  switchDriverWeekShiftType
+} = require('./fleet/fleetShiftScheduleService');
 
 const getTruckModelName = (payloadKg) => {
   const p = Number(payloadKg) || 1250;
@@ -44,13 +57,13 @@ const getAllTrucks = async () => {
       const inspectionDate = new Date(t.inspection_expiry);
       daysUntilInspection = Math.ceil((inspectionDate - now) / (1000 * 60 * 60 * 24));
       if (daysUntilInspection <= 0) {
-        inspectionAlertLevel = 'EXPIRED'; // Đã hết hạn (Khóa xe)
+        inspectionAlertLevel = 'EXPIRED';
       } else if (daysUntilInspection <= 14) {
-        inspectionAlertLevel = 'URGENT'; // Dưới 14 ngày (Nguy cấp)
+        inspectionAlertLevel = 'URGENT';
       } else if (daysUntilInspection <= 30) {
-        inspectionAlertLevel = 'WARNING'; // 15 - 30 ngày (Sắp đến hạn)
+        inspectionAlertLevel = 'WARNING';
       } else {
-        inspectionAlertLevel = 'SAFE'; // > 30 ngày (An toàn)
+        inspectionAlertLevel = 'SAFE';
       }
     }
 
@@ -69,7 +82,6 @@ const getAllTrucks = async () => {
       kmUntilMaintenance = nextMaintenanceKm - currentOdo;
       maintenanceProgressPct = Math.min(Math.round(((currentOdo - lastMaintenanceKm) / 5000) * 100), 100);
 
-      // Nếu odo đạt đúng mốc bảo dưỡng (ví dụ 15,000 km) hoặc vượt quá
       if (currentOdo % 5000 === 0 || kmUntilMaintenance <= 0) {
         maintenanceStatus = 'OVERDUE';
       } else if (kmUntilMaintenance <= 500) {
@@ -110,18 +122,15 @@ const getAllTrucks = async () => {
       status: rawStatus,
       license_class_required: t.license_class_required || t.required_license_class || null,
       required_license_class: t.license_class_required || t.required_license_class || null,
-      // Chỉ số Đăng kiểm & Pháp lý
       days_until_inspection: daysUntilInspection,
       inspection_alert_level: inspectionAlertLevel,
       is_inspection_expired: daysUntilInspection !== null ? daysUntilInspection <= 0 : false,
-      // Chỉ số Bảo dưỡng định kỳ
       current_odometer_km: currentOdo,
       last_maintenance_km: lastMaintenanceKm,
       next_maintenance_km: nextMaintenanceKm,
       km_until_maintenance: kmUntilMaintenance,
       maintenance_progress_pct: maintenanceProgressPct,
       maintenance_status: maintenanceStatus,
-      // Chỉ số Sửa chữa & Downtime
       downtime_hours: downtimeHours,
       service_garage: garageName
     };
@@ -157,79 +166,6 @@ const updateTruck = async (id, payload) => {
 
   return await fleetModel.updateTruck(id, updateData);
 };
-
-const getAllDrivers = async () => {
-  const profiles = await fleetModel.findAllDrivers();
-  return (profiles || []).map((d) => {
-    const u = d.user || {};
-    const rawSt = String(d.status || '').toUpperCase();
-    let status = 'AVAILABLE';
-    if (rawSt === 'ACTIVE') status = 'AVAILABLE';
-    else if (rawSt === 'ON_TRIP' || rawSt === 'ON TRIP') status = 'ON_DUTY';
-    else if (rawSt === 'RESTING' || rawSt === 'INACTIVE') status = 'RESTING';
-    else if (rawSt === 'SUSPENDED') status = 'SUSPENDED';
-    else if (rawSt === 'LEAVE') status = 'LEAVE';
-    else status = rawSt || 'AVAILABLE';
-
-    const expYears = d.experience_years !== undefined && d.experience_years !== null
-      ? `${d.experience_years} năm kinh nghiệm`
-      : null;
-
-    return {
-      key: `D${d.id}`,
-      id: d.id,
-      user_id: d.user_account_id,
-      name: u.full_name || (u.username ? `Tài xế ${u.username}` : `Tài xế ${d.id}`),
-      phone: u.phone || null,
-      email: u.email || null,
-      id_card: null,
-      license_type: d.license_class ? `Hạng ${d.license_class}` : null,
-      license_class: d.license_class || null,
-      license_number: d.license_number || null,
-      expiry: d.license_expiry || null,
-      license_expiry: d.license_expiry || null,
-      experience_years: expYears,
-      shift_hours_today: d.shift_hours_today ?? null,
-      max_shift_hours: null,
-      assigned_truck: d.assigned_truck || null,
-      current_trip: null,
-      status: status,
-      raw_status: d.status
-    };
-  });
-};
-
-const updateDriver = async (id, payload) => {
-  const updateData = {};
-  if (payload.status) updateData.status = payload.status;
-  if (payload.license_class) updateData.license_class = payload.license_class;
-  if (payload.license_expiry) updateData.license_expiry = payload.license_expiry;
-
-  return await fleetModel.updateDriver(id, updateData);
-};
-
-const getAllVendors = async () => {
-  const vendors = await fleetModel.findAllVendors();
-  return (vendors || []).map(v => {
-    const rawStatus = String(v.approval_status || '').toUpperCase();
-    let status = 'PENDING';
-    if (rawStatus === 'APPROVED') status = 'APPROVED';
-    else if (rawStatus === 'REJECTED') status = 'REJECTED';
-    else status = 'PENDING';
-
-    return {
-      id: v.id.toString(),
-      key: v.id.toString(),
-      name: v.company_name,
-      contact_person: v.contact_person,
-      phone: v.phone,
-      truck_types: v.truck_types,
-      status: status,
-      rating: v.rating !== undefined && v.rating !== null ? Number(v.rating) : null
-    };
-  });
-};
-
 
 // ==========================================
 // DRIVER SHIFTS
@@ -550,456 +486,6 @@ const deleteShift = async (id) => {
   return true;
 };
 
-const addDaysStrGMT7 = (dateStr, days) => {
-  const dt = new Date(`${dateStr}T00:00:00Z`);
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().split('T')[0];
-};
-
-const getGMT7WeekScheduleContext = () => {
-  const gmt7 = new Date(Date.now() + 7 * 3600 * 1000);
-  const todayStr = gmt7.toISOString().split('T')[0];
-  const dayOfWeek = gmt7.getUTCDay(); // 0 = Chu Nhat
-  const hour = gmt7.getUTCHours();
-  const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const currentMonday = addDaysStrGMT7(todayStr, diffToMon);
-  const nextMonday = addDaysStrGMT7(currentMonday, 7);
-  const nextSunday = addDaysStrGMT7(nextMonday, 6);
-  return { todayStr, dayOfWeek, hour, currentMonday, nextMonday, nextSunday };
-};
-
-const sendShiftDeadlineReminders = async ({ force = false } = {}) => {
-  const { dayOfWeek, hour, nextMonday, nextSunday } = getGMT7WeekScheduleContext();
-
-  if (!force) {
-    const dailyFlag = await driverModel.getSystemSettingValue('shift_auto_assign_daily_22h');
-    const isDailyMode = String(dailyFlag || '').toLowerCase() === 'true';
-    // Gửi nhắc nhở đúng khung 21:00 - 21:59 ngày Chủ Nhật (hoặc 21h hàng ngày nếu bật cờ test)
-    const inReminderWindow = (isDailyMode || dayOfWeek === 0) && hour >= 21 && hour < 22;
-    if (!inReminderWindow) {
-      return { sentCount: 0, skipped: true, nextMonday, nextSunday };
-    }
-  }
-
-  const [activeDrivers, nextWeekShifts] = await Promise.all([
-    driverModel.getAllActiveDriverProfiles(),
-    driverModel.getAllShiftsBetweenDates(nextMonday, nextSunday),
-  ]);
-
-  const scheduledDriverIds = new Set((nextWeekShifts || []).map((sh) => Number(sh.driver_id)));
-  const reminderTag = `[NHẮC ĐĂNG KÝ CA - Tuần ${nextMonday}]`;
-  let sentCount = 0;
-
-  for (const drv of activeDrivers || []) {
-    if (scheduledDriverIds.has(Number(drv.id)) || !drv.user_account_id) continue;
-    const alreadySent = await driverModel.hasNotificationWithText(drv.user_account_id, reminderTag);
-    if (alreadySent) continue;
-
-    await driverModel.createSystemNotification({
-      userAccountId: drv.user_account_id,
-      targetType: 'SHIFT',
-      targetId: null,
-      message: `${reminderTag} Hiện đã 21:00 Chủ Nhật, bạn chưa đăng ký lịch làm tuần tới (${nextMonday} đến ${nextSunday}). Vui lòng đăng ký trước 22:00 hôm nay; sau 22:00 hệ thống sẽ tự động xếp lịch cố định (Ca Sáng hoặc Ca Đêm) và không thể tự sửa đổi.`,
-    });
-    sentCount++;
-  }
-
-  return {
-    sentCount,
-    nextMonday,
-    nextSunday,
-    message: sentCount > 0
-      ? `Đã gửi thông báo nhắc đăng ký ca 21h cho ${sentCount} tài xế chưa có lịch tuần tới.`
-      : 'Không có tài xế nào cần nhắc nhở thêm cho tuần tới.',
-  };
-};
-
-const autoAssignNextWeekShifts = async ({ force = false, triggeredBy = null } = {}) => {
-  const { dayOfWeek, hour, nextMonday, nextSunday } = getGMT7WeekScheduleContext();
-
-  if (!force) {
-    const dailyFlag = await driverModel.getSystemSettingValue('shift_auto_assign_daily_22h');
-    const isDailyMode = String(dailyFlag || '').toLowerCase() === 'true';
-    const isPastDeadline = (isDailyMode && hour >= 22) || (dayOfWeek === 0 && hour >= 22);
-    if (!isPastDeadline) {
-      return { executed: false, skippedReason: 'NOT_DUE', nextMonday, nextSunday };
-    }
-  }
-
-  const [activeDrivers, nextWeekShifts] = await Promise.all([
-    driverModel.getAllActiveDriverProfiles(),
-    driverModel.getAllShiftsBetweenDates(nextMonday, nextSunday),
-  ]);
-
-  const driverShiftMap = new Map();
-  let morningDriverCount = 0;
-  let nightDriverCount = 0;
-
-  for (const sh of nextWeekShifts || []) {
-    const dId = Number(sh.driver_id);
-    if (!driverShiftMap.has(dId)) {
-      driverShiftMap.set(dId, true);
-      const startH = sh.start_time ? new Date(new Date(sh.start_time).getTime() + 7 * 3600 * 1000).getUTCHours() : 8;
-      if (startH >= 15) nightDriverCount++;
-      else morningDriverCount++;
-    }
-  }
-
-  const unscheduledDrivers = (activeDrivers || []).filter((drv) => !driverShiftMap.has(Number(drv.id)));
-  if (unscheduledDrivers.length === 0) {
-    return {
-      executed: true,
-      nextMonday,
-      nextSunday,
-      assignedDriversCount: 0,
-      assignedMorning: 0,
-      assignedNight: 0,
-      totalShiftsCreated: 0,
-      message: 'Tất cả tài xế đang hoạt động đều đã có lịch cho tuần tới.',
-    };
-  }
-
-  let assignedMorning = 0;
-  let assignedNight = 0;
-  let totalShiftsCreated = 0;
-  const details = [];
-
-  for (const drv of unscheduledDrivers) {
-    const shiftType = morningDriverCount <= nightDriverCount ? 'MORNING' : 'NIGHT';
-    if (shiftType === 'MORNING') {
-      morningDriverCount++;
-      assignedMorning++;
-    } else {
-      nightDriverCount++;
-      assignedNight++;
-    }
-
-    const shiftLabel = shiftType === 'MORNING' ? 'Ca Sáng (08:00 - 17:00)' : 'Ca Đêm (17:00 - 08:00 hôm sau)';
-    const rows = [];
-    let cur = nextMonday;
-    while (cur <= nextSunday) {
-      const startIso = shiftType === 'MORNING' ? `${cur}T08:00:00+07:00` : `${cur}T17:00:00+07:00`;
-      const endDate = shiftType === 'MORNING' ? cur : addDaysStrGMT7(cur, 1);
-      const endIso = shiftType === 'MORNING' ? `${endDate}T17:00:00+07:00` : `${endDate}T08:00:00+07:00`;
-      rows.push({
-        driver_id: drv.id,
-        date: cur,
-        start_time: startIso,
-        end_time: endIso,
-        // Đưa vào hàng chờ Quản lý duyệt & cân đối lại nếu bị lệch (tài xế vẫn bị khóa nhờ marker [Hệ thống tự động xếp lịch])
-        status: 'Requested',
-        registered_by: null,
-        created_by: triggeredBy || null,
-        reviewed_by: null,
-        reviewed_at: null,
-        note: `[Hệ thống tự động xếp lịch] ${shiftLabel} (${nextMonday} đến ${nextSunday}) - Chờ Quản lý duyệt`,
-      });
-      cur = addDaysStrGMT7(cur, 1);
-    }
-
-    const inserted = await driverModel.bulkInsertDriverShifts(rows);
-    totalShiftsCreated += inserted.length;
-
-    if (drv.user_account_id) {
-      await driverModel.createSystemNotification({
-        userAccountId: drv.user_account_id,
-        targetType: 'SHIFT',
-        targetId: inserted[0]?.id || null,
-        message: `Hệ thống đã tự động xếp lịch tuần tới (${nextMonday} đến ${nextSunday}) cho bạn: ${shiftLabel} (đang chờ Quản lý phê duyệt/cân đối). Bạn không thể tự sửa đổi lịch này.`,
-      });
-    }
-
-    details.push({
-      driver_id: drv.id,
-      driver_name: drv.users?.full_name || `Driver #${drv.id}`,
-      shift_type: shiftType,
-      days_count: inserted.length,
-    });
-  }
-
-  return {
-    executed: true,
-    nextMonday,
-    nextSunday,
-    assignedDriversCount: details.length,
-    assignedMorning,
-    assignedNight,
-    totalShiftsCreated,
-    details,
-    message: `Đã tự động xếp lịch tuần tới (${nextMonday} - ${nextSunday}) cho ${details.length} tài xế chưa đăng ký (đang chờ Quản lý duyệt/cân đối).`,
-  };
-};
-
-const approveDriverWeekShifts = async ({ driverId, weekStart, reviewerId }) => {
-  if (!driverId || !weekStart) {
-    const err = new Error('Thiếu driverId hoặc ngày đầu tuần (weekStart).');
-    err.statusCode = 400;
-    throw err;
-  }
-  const { weekStart: mon, weekEnd: sun } = driverModel.getWeekMondaySundayFromDateStr(String(weekStart).split('T')[0]);
-  const updated = await driverModel.bulkApproveDriverShiftsInRange(Number(driverId), mon, sun, reviewerId);
-  if (!updated || updated.length === 0) {
-    const err = new Error('Không có ca làm việc nào đang chờ duyệt trong tuần này cho tài xế.');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const profile = await driverModel.getDriverProfileById(Number(driverId));
-  if (profile?.user_account_id) {
-    await driverModel.createSystemNotification({
-      userAccountId: profile.user_account_id,
-      targetType: 'SHIFT',
-      targetId: updated[0]?.id || null,
-      message: `Lịch làm việc cả tuần (${mon} đến ${sun}) của bạn đã được Quản lý phê duyệt cố định.`,
-    });
-  }
-
-  return {
-    approvedCount: updated.length,
-    weekStart: mon,
-    weekEnd: sun,
-    shifts: updated,
-    message: `Đã phê duyệt trọn tuần (${mon} - ${sun}, ${updated.length} ngày).`,
-  };
-};
-
-const switchDriverWeekShiftType = async ({ driverId, weekStart, shiftType, reviewerId, autoApprove = false }) => {
-  const normalizedType = String(shiftType || '').trim().toUpperCase();
-  if (!driverId || !weekStart || !['MORNING', 'NIGHT'].includes(normalizedType)) {
-    const err = new Error('Thiếu thông tin hợp lệ (driverId, weekStart, shiftType: MORNING | NIGHT).');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const { weekStart: mon, weekEnd: sun } = driverModel.getWeekMondaySundayFromDateStr(String(weekStart).split('T')[0]);
-  const shiftLabel = normalizedType === 'MORNING' ? 'Ca Sáng (08:00 - 17:00)' : 'Ca Đêm (17:00 - 08:00 hôm sau)';
-  const existingShifts = await driverModel.getShiftsInRange(Number(driverId), mon, sun);
-
-  let updatedList = [];
-  if (!existingShifts || existingShifts.length === 0) {
-    const rows = [];
-    let cur = mon;
-    const nowIso = new Date().toISOString();
-    while (cur <= sun) {
-      const startIso = normalizedType === 'MORNING' ? `${cur}T08:00:00+07:00` : `${cur}T17:00:00+07:00`;
-      const endDate = normalizedType === 'MORNING' ? cur : addDaysStrGMT7(cur, 1);
-      const endIso = normalizedType === 'MORNING' ? `${endDate}T17:00:00+07:00` : `${endDate}T08:00:00+07:00`;
-      rows.push({
-        driver_id: Number(driverId),
-        date: cur,
-        start_time: startIso,
-        end_time: endIso,
-        status: 'Approved',
-        registered_by: reviewerId,
-        created_by: reviewerId,
-        reviewed_by: reviewerId,
-        reviewed_at: nowIso,
-        note: `[Quản lý sắp xếp] ${shiftLabel} (${mon} đến ${sun})`,
-      });
-      cur = addDaysStrGMT7(cur, 1);
-    }
-    updatedList = await driverModel.bulkInsertDriverShifts(rows);
-  } else {
-    const nowIso = new Date().toISOString();
-    for (const sh of existingShifts) {
-      const dStr = sh.date;
-      const startIso = normalizedType === 'MORNING' ? `${dStr}T08:00:00+07:00` : `${dStr}T17:00:00+07:00`;
-      const endDate = normalizedType === 'MORNING' ? dStr : addDaysStrGMT7(dStr, 1);
-      const endIso = normalizedType === 'MORNING' ? `${endDate}T17:00:00+07:00` : `${endDate}T08:00:00+07:00`;
-      const wasAuto = (sh.note && sh.note.includes('[Hệ thống tự động xếp lịch]')) || sh.registered_by === null;
-      const prefix = wasAuto ? '[Hệ thống tự động xếp lịch] ' : '';
-      const newNote = `${prefix}[Quản lý điều chỉnh sang ${shiftLabel}] (${mon} đến ${sun})`;
-      const fields = {
-        start_time: startIso,
-        end_time: endIso,
-        note: newNote,
-        reviewed_by: reviewerId,
-      };
-      if (autoApprove && sh.status === 'Requested') {
-        fields.status = 'Approved';
-        fields.reviewed_at = nowIso;
-      }
-      const upd = await driverModel.updateDriverShift(sh.id, fields);
-      if (upd) updatedList.push(upd);
-    }
-  }
-
-  const profile = await driverModel.getDriverProfileById(Number(driverId));
-  if (profile?.user_account_id) {
-    await driverModel.createSystemNotification({
-      userAccountId: profile.user_account_id,
-      targetType: 'SHIFT',
-      targetId: updatedList[0]?.id || null,
-      message: `Quản lý đã điều chỉnh lịch làm việc tuần (${mon} đến ${sun}) của bạn sang ${shiftLabel}.`,
-    });
-  }
-
-  return {
-    updatedCount: updatedList.length,
-    weekStart: mon,
-    weekEnd: sun,
-    shiftType: normalizedType,
-    shiftLabel,
-    shifts: updatedList,
-    message: `Đã chuyển cả tuần (${mon} - ${sun}) sang ${shiftLabel} (${updatedList.length} ngày).`,
-  };
-};
-
-const getLeaveRequests = async ({ status = null } = {}) => {
-  return await leaveModel.getLeaveRequests({ status });
-};
-
-const decideLeaveRequest = async ({ id, decision, comment = '', reviewerId = null }) => {
-  const normDecision = String(decision || '').trim().toUpperCase();
-  if (!['APPROVED', 'REJECTED'].includes(normDecision)) {
-    const err = new Error('Quyết định không hợp lệ (chỉ chấp nhận APPROVED hoặc REJECTED).');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const found = await leaveModel.getLeaveRequestById(id);
-  if (!found || !found.raw) {
-    const err = new Error('Không tìm thấy đơn báo nghỉ đột xuất này.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  const current = found.formatted;
-  if (current.status !== 'PENDING') {
-    const err = new Error(`Đơn xin nghỉ này đã được xử lý trước đó (${current.status}).`);
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const cleanComment = String(comment || '').trim();
-  if (normDecision === 'REJECTED' && !cleanComment) {
-    const err = new Error('Vui lòng nhập lý do từ chối đơn xin nghỉ.');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const nowIso = new Date().toISOString();
-  const reviewerName = (await leaveModel.getUserDisplayName(reviewerId)) || 'Quản lý';
-  const rawChanges =
-    typeof found.raw.changes === 'object' && found.raw.changes
-      ? { ...found.raw.changes }
-      : JSON.parse(found.raw.changes || '{}');
-
-  const dateDisplay = (current.leave_dates || []).map((d) => d.split('-').reverse().join('/')).join(', ');
-
-  if (normDecision === 'REJECTED') {
-    const nextChanges = {
-      ...rawChanges,
-      status: 'REJECTED',
-      manager_comment: cleanComment,
-      reviewed_by: reviewerId ? Number(reviewerId) : null,
-      reviewed_by_name: reviewerName,
-      reviewed_at: nowIso,
-    };
-    await leaveModel.updateLeaveRequestChanges(current.id, nextChanges);
-
-    if (current.driver_user_id) {
-      await driverModel.createSystemNotification({
-        userAccountId: current.driver_user_id,
-        targetType: 'SHIFT',
-        targetId: current.id,
-        message: `Đơn báo nghỉ đột xuất các ngày ${dateDisplay} của bạn đã bị Quản lý từ chối. Lý do: ${cleanComment}`,
-      });
-    }
-
-    const updated = await leaveModel.getLeaveRequestById(current.id);
-    return {
-      leaveRequest: updated?.formatted || { ...current, status: 'REJECTED', manager_comment: cleanComment },
-      cancelledShiftsCount: 0,
-      releasedTripIds: [],
-      message: 'Đã từ chối đơn báo nghỉ đột xuất và thông báo cho tài xế.',
-    };
-  }
-
-  // Trường hợp APPROVED:
-  // 1. Lấy mới nhất các chuyến xe active của tài xế trong các ngày xin nghỉ
-  const liveAffectedTrips = await leaveModel.getDriverAffectedTripsByDates(current.driver_id, current.leave_dates);
-  const storedMap = new Map((current.affected_trips || []).map((t) => [Number(t.trip_id), t]));
-  liveAffectedTrips.forEach((t) => {
-    if (!storedMap.has(Number(t.trip_id))) {
-      storedMap.set(Number(t.trip_id), t);
-    }
-  });
-  const mergedAffectedTrips = [...storedMap.values()];
-  const affectedTripIds = mergedAffectedTrips.map((t) => Number(t.trip_id)).filter(Boolean);
-
-  // 2. Giải phóng phân công tài xế khỏi các chuyến bị ảnh hưởng -> chờ Dispatcher đổi tài xế
-  const releasedTripIds = await leaveModel.releaseDriverFromTripsOnApproval(
-    current.driver_id,
-    affectedTripIds,
-    current.reason
-  );
-
-  // 3. Đánh dấu Rejected (nghỉ đột xuất) các ca trực trong các ngày được duyệt
-  const cancelledShiftsCount = await leaveModel.markDriverShiftsOnDatesAsLeaveApproved(
-    current.driver_id,
-    current.leave_dates,
-    current.reason,
-    reviewerId
-  );
-
-  // 4. Lưu trạng thái APPROVED
-  const nextChanges = {
-    ...rawChanges,
-    status: 'APPROVED',
-    affected_trips: mergedAffectedTrips,
-    manager_comment: cleanComment || 'Đã duyệt cho nghỉ đột xuất',
-    reviewed_by: reviewerId ? Number(reviewerId) : null,
-    reviewed_by_name: reviewerName,
-    reviewed_at: nowIso,
-  };
-  await leaveModel.updateLeaveRequestChanges(current.id, nextChanges);
-
-  // 5. Thông báo cho Tài xế
-  if (current.driver_user_id) {
-    await driverModel.createSystemNotification({
-      userAccountId: current.driver_user_id,
-      targetType: 'SHIFT',
-      targetId: current.id,
-      message: `Đơn báo nghỉ đột xuất các ngày ${dateDisplay} đã được Quản lý duyệt.${
-        releasedTripIds.length > 0
-          ? ` ${releasedTripIds.length} chuyến xe bị ảnh hưởng sẽ được Điều phối viên bàn giao cho tài xế khác.`
-          : ''
-      }`,
-    });
-  }
-
-  // 6. Thông báo cho tất cả Điều phối viên (role_id = 3) để Re-assign tài xế mới
-  try {
-    const dispatchers = await leaveModel.getActiveUsersByRoles([3]);
-    const tripCodesText = mergedAffectedTrips.map((t) => t.trip_code).join(', ');
-    for (const disp of dispatchers) {
-      await driverModel.createSystemNotification({
-        userAccountId: disp.id,
-        targetType: 'TRIP',
-        targetId: releasedTripIds[0] || current.id,
-        message:
-          releasedTripIds.length > 0
-            ? `[Cần đổi tài xế] Tài xế ${current.driver_name} được Quản lý duyệt nghỉ đột xuất ngày ${dateDisplay}. Cần Re-assign ${releasedTripIds.length} chuyến: ${tripCodesText}.`
-            : `[Thông báo nghỉ đột xuất] Tài xế ${current.driver_name} được duyệt nghỉ ngày ${dateDisplay}. Lưu ý không điều phối chuyến vào ngày này.`,
-      });
-    }
-  } catch (dispNotifErr) {
-    console.warn('Notify dispatchers on approved leave warning:', dispNotifErr.message);
-  }
-
-  const updated = await leaveModel.getLeaveRequestById(current.id);
-  return {
-    leaveRequest: updated?.formatted || { ...current, status: 'APPROVED', affected_trips: mergedAffectedTrips },
-    cancelledShiftsCount,
-    releasedTripIds,
-    message:
-      releasedTripIds.length > 0
-        ? `Đã duyệt nghỉ đột xuất cho ${current.driver_name}. Đã chuyển ${releasedTripIds.length} chuyến xe sang Điều phối viên để Re-assign tài xế mới.`
-        : `Đã duyệt đơn nghỉ đột xuất cho ${current.driver_name} và cập nhật ${cancelledShiftsCount} ngày ca trực.`,
-  };
-};
-
 module.exports = {
   getTruckModelName,
   getTruckCategory,
@@ -1022,4 +508,3 @@ module.exports = {
   getLeaveRequests,
   decideLeaveRequest,
 };
-

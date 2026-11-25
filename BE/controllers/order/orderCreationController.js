@@ -1,50 +1,21 @@
-const adminModel = require("../../models/adminModel");
-const { getClientIp } = require("../../utils/ipHelper");
 const prisma = require("../../config/prisma");
-const { serializePrisma, toBigInt } = require("../../utils/prismaHelper");
+const { serializePrisma } = require("../../utils/prismaHelper");
 const {
   generateNexOrderCode,
   ensureNexOrderCode,
   generateTrackingToken,
-  resolveAlsLocationIdIfValid,
-  getOrCreateLocation,
   saveOrderMeta,
-  getNextDispatcherForWebOrder,
 } = require("../../services/orderHelperService");
 const { validateVietnamAddressText } = require("../../utils/addressValidator");
-
-const toDateObj = (val) => {
-  if (!val) return null;
-  if (val instanceof Date) return val;
-  const s = String(val).split("T")[0].trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-  return new Date(`${s}T00:00:00.000Z`);
-};
-
-// Bảng thông số tải trọng xe chuẩn ALS
-const VEHICLE_MAX_PAYLOAD = {
-  "TRUCK_1.25T": 1250,
-  "TRUCK_2.5T": 2500,
-  "TRUCK_3.5T": 3500,
-  TRUCK_5T: 5000,
-  CONTAINER_20: 12000,
-  CONTAINER_40: 25000,
-};
-
-const getVehicleMaxPayload = (vKey) => {
-  if (!vKey) return 2500;
-  const normalized = String(vKey).toUpperCase().trim();
-  if (VEHICLE_MAX_PAYLOAD[normalized]) return VEHICLE_MAX_PAYLOAD[normalized];
-  if (VEHICLE_MAX_PAYLOAD[`TRUCK_${normalized}`])
-    return VEHICLE_MAX_PAYLOAD[`TRUCK_${normalized}`];
-  if (normalized.includes("1.25")) return 1250;
-  if (normalized.includes("2.5")) return 2500;
-  if (normalized.includes("3.5")) return 3500;
-  if (normalized.includes("5")) return 5000;
-  if (normalized.includes("20")) return 12000;
-  if (normalized.includes("40")) return 25000;
-  return 2500;
-};
+const {
+  toDateObj,
+  getVehicleMaxPayload,
+  getNextDispatcherForWebOrder,
+  resolveOrderPickupAndDeliveryLocations,
+  calculateConsultationCargoMetrics,
+  validateDirectOrderInput,
+  buildDirectOrderCargoRows,
+} = require("./orderCreationHelper");
 
 // 2. KHÁCH HÀNG GỬI YÊU CẦU TƯ VẤN TỪ HOMEPAGE
 const createConsultationOrder = async (req, res) => {
@@ -60,7 +31,6 @@ const createConsultationOrder = async (req, res) => {
       delivery_coords,
       cargo_name,
       cargo_type,
-      other_cargo_type,
       package_count,
       package_unit,
       length_cm,
@@ -69,21 +39,18 @@ const createConsultationOrder = async (req, res) => {
       weight,
       items,
       notes,
-      // --- Trường mới: Người nhận & Thời gian ---
       receiver_name,
       receiver_phone,
       required_pickup_date,
       vehicle_type_required,
       loading_unloading_required,
-      // --- Trường mới: Hải quan & Thương mại ---
       declared_value_usd,
-      incoterms,
-      hs_code,
-      // --- Trường mới: Hóa đơn & Ngân hàng trung gian ---
       authorized_bank,
       accounting_email,
-      payment_method,
-      vat_required,
+      flight_arrival_date,
+      flight_arrival_time,
+      flight_datetime,
+      export_pickup_suggestion,
     } = req.body;
 
     // Validate chống nhập địa chỉ gõ bừa/vô nghĩa cho các điểm giao nhận không phải kho ALS
@@ -160,92 +127,40 @@ const createConsultationOrder = async (req, res) => {
       (delivery_address || "").trim() || "KCN Tiên Sơn, Bắc Ninh";
 
     // 2. Lấy hoặc tạo Location cho điểm lấy và điểm giao
-    const validatedPickupAlsId = await resolveAlsLocationIdIfValid(
-      req.body.pickup_location_id,
-    );
-    const pickupLocationId =
-      validatedPickupAlsId ||
-      (await getOrCreateLocation({
-        name: finalPickupAddress,
-        address: finalPickupAddress,
-        customerId: pickup_address ? customerId : null,
-        type: "CUSTOMER_SITE",
-        lat: pickup_coords?.lat,
-        lng: pickup_coords?.lng,
+    const { pickupLocationId, deliveryLocationId } =
+      await resolveOrderPickupAndDeliveryLocations({
+        pickupLocationIdInput: req.body.pickup_location_id,
+        deliveryLocationIdInput: req.body.delivery_location_id,
+        finalPickupAddress,
+        finalDeliveryAddress,
+        pickupCustomerId: pickup_address ? customerId : null,
+        deliveryCustomerId: delivery_address ? customerId : null,
+        pickupCoords: pickup_coords,
+        deliveryCoords: delivery_coords,
         contactName: customer_name,
         contactPhone: cleanPhone,
         isNewCustomer,
-      }));
-
-    const validatedDeliveryAlsId = await resolveAlsLocationIdIfValid(
-      req.body.delivery_location_id,
-    );
-    const deliveryLocationId =
-      validatedDeliveryAlsId ||
-      (await getOrCreateLocation({
-        name: finalDeliveryAddress,
-        address: finalDeliveryAddress,
-        customerId: delivery_address ? customerId : null,
-        type: "CUSTOMER_SITE",
-        lat: delivery_coords?.lat,
-        lng: delivery_coords?.lng,
-        contactName: customer_name,
-        contactPhone: cleanPhone,
-        isNewCustomer,
-      }));
+      });
 
     // 3. Tính toán trọng lượng (hỗ trợ nhiều loại hàng hóa)
-    let actualWeight = parseFloat(weight) || 0;
-    let chargeableWeight = 0;
-    let finalCargoDesc = cargo_name || "Hàng bách hóa / Linh kiện";
-    let totalPackages = parseInt(package_count, 10) || 1;
-    let l = parseFloat(length_cm) || 0;
-    let w = parseFloat(width_cm) || 0;
-    let h = parseFloat(height_cm) || 0;
-
-    if (items && Array.isArray(items) && items.length > 0) {
-      totalPackages = items.reduce(
-        (sum, it) => sum + (parseInt(it.package_count, 10) || 1),
-        0,
-      );
-      actualWeight = items.reduce((sum, it) => {
-        const unitW = parseFloat(it.weight) || 0;
-        const cnt = parseInt(it.package_count, 10) || 1;
-        return sum + unitW * cnt;
-      }, 0);
-      chargeableWeight = items.reduce((sum, it) => {
-        const unitW = parseFloat(it.weight) || 0;
-        const cnt = parseInt(it.package_count, 10) || 1;
-        const totalItemW = unitW * cnt;
-        if (it.cargo_type === "BULK") return sum + totalItemW;
-        const unitVol =
-          ((parseFloat(it.length_cm) || 0) *
-            (parseFloat(it.width_cm) || 0) *
-            (parseFloat(it.height_cm) || 0)) /
-          5000;
-        const totalItemVol = unitVol * cnt;
-        return sum + Math.max(totalItemW, totalItemVol);
-      }, 0);
-      finalCargoDesc = items
-        .map(
-          (it) =>
-            `${it.cargo_name || "Hàng"} (${it.package_count || 1} ${it.package_unit || "kiện"})`,
-        )
-        .join(", ");
-      l = Math.max(1, parseFloat(items[0]?.length_cm) || 100);
-      w = Math.max(1, parseFloat(items[0]?.width_cm) || 80);
-      h = Math.max(1, parseFloat(items[0]?.height_cm) || 100);
-    } else {
-      const isBulk = cargo_type === "BULK";
-      l = isBulk ? 1 : Math.max(1, parseFloat(length_cm) || 120);
-      w = isBulk ? 1 : Math.max(1, parseFloat(width_cm) || 100);
-      h = isBulk ? 1 : Math.max(1, parseFloat(height_cm) || 150);
-      actualWeight = actualWeight || 0;
-      const volWeight = isBulk ? 0 : (l * w * h) / 5000;
-      chargeableWeight = isBulk
-        ? actualWeight
-        : Math.max(actualWeight, volWeight);
-    }
+    const {
+      actualWeight,
+      chargeableWeight,
+      finalCargoDesc,
+      totalPackages,
+      l,
+      w,
+      h,
+    } = calculateConsultationCargoMetrics({
+      weight,
+      cargo_name,
+      cargo_type,
+      package_count,
+      length_cm,
+      width_cm,
+      height_cm,
+      items,
+    });
 
     // Validate quá tải trọng Backend cho đơn tư vấn
     const effectiveWeightConsultation = Math.max(
@@ -261,14 +176,6 @@ const createConsultationOrder = async (req, res) => {
 
     const randomCode = ensureNexOrderCode(generateNexOrderCode());
     const token = generateTrackingToken();
-
-    // Trích xuất thông tin lịch bay & logistics
-    const {
-      flight_arrival_date,
-      flight_arrival_time,
-      flight_datetime,
-      export_pickup_suggestion,
-    } = req.body;
 
     const metadata = {
       shipping_direction: req.body.shipping_direction || "IMPORT",
@@ -426,207 +333,37 @@ const createDirectOrder = async (req, res) => {
 
     const {
       customer_name,
-      customer_phone,
-      customer_email,
       customer_address,
       is_new_customer,
       pickup_address,
       delivery_address,
-      length_cm,
-      width_cm,
-      height_cm,
-      weight_kg,
-      chargeable_weight,
-      agreed_price,
       order_notes,
-      cargo_name,
       cargo_type,
       package_count,
       package_unit,
       pickup_coords,
       delivery_coords,
       receiver_name,
-      receiver_phone,
       required_pickup_date,
       vehicle_type_required,
       loading_unloading_required,
-      declared_value_usd,
       authorized_bank,
       accounting_email,
     } = req.body;
 
-    // 1. Validate bắt buộc các trường thông tin cốt lõi (BUG-DO-04)
-    if (!customer_name || !String(customer_name).trim()) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng nhập tên khách hàng / tên công ty" });
+    // 1 & 2. Validate bắt buộc, định dạng & địa chỉ (BUG-DO-04, BUG-DO-05)
+    const validation = validateDirectOrderInput(req.body);
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
     }
-    if (!customer_phone || !String(customer_phone).trim()) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng nhập số điện thoại khách hàng" });
-    }
-    if (!customer_email || !String(customer_email).trim()) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng nhập email khách hàng" });
-    }
-    if (
-      !req.body.pickup_location_id &&
-      (!pickup_address || !String(pickup_address).trim())
-    ) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng chọn hoặc nhập điểm lấy hàng" });
-    }
-    if (
-      !req.body.delivery_location_id &&
-      ((!delivery_address && !customer_address) ||
-        !String(delivery_address || customer_address).trim())
-    ) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng chọn hoặc nhập điểm giao hàng" });
-    }
-    if (!receiver_name || !String(receiver_name).trim()) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng nhập tên người nhận hàng / liên hệ" });
-    }
-    if (!receiver_phone || !String(receiver_phone).trim()) {
-      return res.status(400).json({
-        message: "Vui lòng nhập số điện thoại người nhận hàng / liên hệ",
-      });
-    }
-
-    const hasItemsArr =
-      Array.isArray(req.body.items) && req.body.items.length > 0;
-    const primaryCargoName = hasItemsArr
-      ? req.body.items[0]?.cargo_name
-      : cargo_name;
-    if (!primaryCargoName || !String(primaryCargoName).trim()) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng nhập tên mặt hàng vận chuyển" });
-    }
-
-    const parsedWeight = parseFloat(
-      weight_kg ||
-        (hasItemsArr
-          ? req.body.items.reduce(
-              (sum, it) =>
-                sum +
-                (parseFloat(it.weight_kg || it.actual_weight || it.weight) ||
-                  0),
-              0,
-            )
-          : null),
-    );
-    if (isNaN(parsedWeight) || parsedWeight <= 0) {
-      return res.status(400).json({
-        message: "Trọng lượng hàng hóa không hợp lệ (phải lớn hơn 0 kg)",
-      });
-    }
-
-    const parsedPrice = parseInt(agreed_price, 10);
-    if (isNaN(parsedPrice) || parsedPrice <= 0) {
-      return res.status(400).json({
-        message: "Giá cước thỏa thuận không hợp lệ (phải lớn hơn 0 VNĐ)",
-      });
-    }
-
-    // 2. Validate định dạng & độ dài dữ liệu (BUG-DO-05)
-    if (String(customer_name).trim().length > 255) {
-      return res
-        .status(400)
-        .json({ message: "Tên khách hàng quá dài (tối đa 255 ký tự)" });
-    }
-    if (String(receiver_name).trim().length > 255) {
-      return res
-        .status(400)
-        .json({ message: "Tên người nhận quá dài (tối đa 255 ký tự)" });
-    }
-
-    // Validate SĐT Việt Nam (10 chữ số)
-    const phoneRegex = /^(0[3|5|7|8|9])[0-9]{8}$/;
-    const cleanCustomerPhone = String(customer_phone)
-      .trim()
-      .replace(/[\s.-]/g, "");
-    if (!phoneRegex.test(cleanCustomerPhone)) {
-      return res.status(400).json({
-        message:
-          "Số điện thoại khách hàng không đúng định dạng (yêu cầu 10 chữ số hợp lệ, bắt đầu bằng 03, 05, 07, 08 hoặc 09)",
-      });
-    }
-
-    const cleanReceiverPhone = String(receiver_phone)
-      .trim()
-      .replace(/[\s.-]/g, "");
-    if (!phoneRegex.test(cleanReceiverPhone)) {
-      return res.status(400).json({
-        message:
-          "Số điện thoại người nhận không đúng định dạng (yêu cầu 10 chữ số hợp lệ)",
-      });
-    }
-
-    // Validate Email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const cleanCustomerEmail = String(customer_email).trim().toLowerCase();
-    if (!emailRegex.test(cleanCustomerEmail)) {
-      return res
-        .status(400)
-        .json({ message: "Email khách hàng không đúng định dạng" });
-    }
-
-    // Validate Mã số thuế (nếu có nhập)
-    let cleanTaxCode = null;
-    if (
-      req.body.customer_tax_code &&
-      String(req.body.customer_tax_code).trim()
-    ) {
-      cleanTaxCode = String(req.body.customer_tax_code).trim();
-      const taxCodeRegex = /^[0-9]{10}(-[0-9]{3})?$|^[0-9]{13}$/;
-      if (!taxCodeRegex.test(cleanTaxCode)) {
-        return res.status(400).json({
-          message:
-            "Mã số thuế không đúng định dạng (yêu cầu 10 chữ số hoặc 13 chữ số, ví dụ 0101234567 hoặc 0101234567-001)",
-        });
-      }
-    }
-
-    // Validate chống nhập địa chỉ gõ bừa/vô nghĩa (trụ sở khách & điểm lấy/giao ngoài hệ thống ALS)
-    if (customer_address && String(customer_address).trim()) {
-      const cCheck = validateVietnamAddressText(customer_address);
-      if (!cCheck.valid) {
-        return res.status(400).json({
-          message: `Địa chỉ trụ sở / kho khách hàng không hợp lệ: ${cCheck.reason}`,
-        });
-      }
-    }
-    if (
-      !req.body.pickup_location_id &&
-      pickup_address &&
-      String(pickup_address).trim()
-    ) {
-      const pCheck = validateVietnamAddressText(pickup_address);
-      if (!pCheck.valid) {
-        return res
-          .status(400)
-          .json({ message: `Điểm lấy hàng không hợp lệ: ${pCheck.reason}` });
-      }
-    }
-    if (
-      !req.body.delivery_location_id &&
-      delivery_address &&
-      String(delivery_address).trim()
-    ) {
-      const dCheck = validateVietnamAddressText(delivery_address);
-      if (!dCheck.valid) {
-        return res
-          .status(400)
-          .json({ message: `Điểm giao hàng không hợp lệ: ${dCheck.reason}` });
-      }
-    }
+    const {
+      parsedWeight,
+      parsedPrice,
+      cleanCustomerPhone,
+      cleanReceiverPhone,
+      cleanCustomerEmail,
+      cleanTaxCode,
+    } = validation;
 
     // 3. Chuẩn bị địa chỉ và tọa độ điểm lấy / điểm giao
     const finalPickupAddress =
@@ -636,39 +373,20 @@ const createDirectOrder = async (req, res) => {
       (delivery_address || customer_address || "").trim() ||
       "KCN Tiên Sơn, Bắc Ninh";
 
-    const validatedPickupAlsId = await resolveAlsLocationIdIfValid(
-      req.body.pickup_location_id,
-    );
-    const pickupLocationId =
-      validatedPickupAlsId ||
-      (await getOrCreateLocation({
-        name: finalPickupAddress,
-        address: finalPickupAddress,
-        customerId: null,
-        type: "CUSTOMER_SITE",
-        lat: pickup_coords?.lat,
-        lng: pickup_coords?.lng,
+    const { pickupLocationId, deliveryLocationId } =
+      await resolveOrderPickupAndDeliveryLocations({
+        pickupLocationIdInput: req.body.pickup_location_id,
+        deliveryLocationIdInput: req.body.delivery_location_id,
+        finalPickupAddress,
+        finalDeliveryAddress,
+        pickupCustomerId: null,
+        deliveryCustomerId: null,
+        pickupCoords: pickup_coords,
+        deliveryCoords: delivery_coords,
         contactName: customer_name,
         contactPhone: cleanCustomerPhone,
         isNewCustomer: Boolean(is_new_customer),
-      }));
-
-    const validatedDeliveryAlsId = await resolveAlsLocationIdIfValid(
-      req.body.delivery_location_id,
-    );
-    const deliveryLocationId =
-      validatedDeliveryAlsId ||
-      (await getOrCreateLocation({
-        name: finalDeliveryAddress,
-        address: finalDeliveryAddress,
-        customerId: null,
-        type: "CUSTOMER_SITE",
-        lat: delivery_coords?.lat,
-        lng: delivery_coords?.lng,
-        contactName: customer_name,
-        contactPhone: cleanCustomerPhone,
-        isNewCustomer: Boolean(is_new_customer),
-      }));
+      });
 
     const hasUploadedDocs =
       Array.isArray(req.body.documents) &&
@@ -676,7 +394,6 @@ const createDirectOrder = async (req, res) => {
 
     // 4. Thực thi toàn bộ quá trình tạo Khách hàng, Đơn hàng, Hàng hóa, Phụ phí và Chứng từ trong Transaction (BUG-DO-09)
     const createdOrderRaw = await prisma.$transaction(async (tx) => {
-      // 4.1. Tìm hoặc tạo Customer (BUG-DO-03 & BUG-DO-09)
       let customerId = null;
 
       if (!is_new_customer) {
@@ -694,19 +411,17 @@ const createDirectOrder = async (req, res) => {
             customerId = Number(existingCust.id);
           }
         }
-      } else {
-        if (cleanTaxCode) {
-          const duplicateCust = await tx.customers.findFirst({
-            where: { tax_code: cleanTaxCode },
-            select: { id: true, company_name: true },
-          });
-          if (duplicateCust) {
-            const err = new Error(
-              `Mã số thuế ${cleanTaxCode} đã tồn tại trong hệ thống (Công ty: ${duplicateCust.company_name}). Vui lòng bỏ chọn 'Khách hàng mới' để tiếp tục!`,
-            );
-            err.statusCode = 400;
-            throw err;
-          }
+      } else if (cleanTaxCode) {
+        const duplicateCust = await tx.customers.findFirst({
+          where: { tax_code: cleanTaxCode },
+          select: { id: true, company_name: true },
+        });
+        if (duplicateCust) {
+          const err = new Error(
+            `Mã số thuế ${cleanTaxCode} đã tồn tại trong hệ thống (Công ty: ${duplicateCust.company_name}). Vui lòng bỏ chọn 'Khách hàng mới' để tiếp tục!`,
+          );
+          err.statusCode = 400;
+          throw err;
         }
       }
 
@@ -749,9 +464,9 @@ const createDirectOrder = async (req, res) => {
           receiver_name: String(receiver_name).trim(),
           receiver_phone: cleanReceiverPhone,
           agreed_price: BigInt(parsedPrice),
-          status: "CONFIRMED", // BUG-DO-01
-          source: req.body.source || "Direct", // BUG-DO-06: Lưu đúng nguồn tiếp nhận (Zalo, Hotline, Direct...)
-          responsible_dispatcher_id: BigInt(directDispatcherId), // BUG-DO-02
+          status: "CONFIRMED",
+          source: req.body.source || "Direct",
+          responsible_dispatcher_id: BigInt(directDispatcherId),
           created_by: BigInt(directDispatcherId),
           requested_pickup_date: toDateObj(
             required_pickup_date || req.body.flight_arrival_date,
@@ -766,138 +481,20 @@ const createDirectOrder = async (req, res) => {
           customer_agrees_to_grouping: false,
           document_status: hasUploadedDocs
             ? "Pending Review"
-            : "Pending Documents", // BUG-DO-01
+            : "Pending Documents",
           is_closed: false,
           waiting_too_long: false,
           late_risk: false,
-          ready_for_planning_at: null, // BUG-DO-01
+          ready_for_planning_at: null,
         },
       });
 
       // 4.3 Tạo các dòng hàng hóa order_cargos (BUG-DO-07)
-      const cargoRows = [];
-      if (Array.isArray(req.body.items) && req.body.items.length > 0) {
-        for (const it of req.body.items) {
-          const itBulk = it.cargo_type === "BULK" || it.cargo_type === "Bulk";
-          const itActualWeight =
-            parseFloat(it.weight_kg || it.actual_weight || it.weight) || 0;
-          let itLength = null;
-          let itWidth = null;
-          let itHeight = null;
-          let itStackable = true;
-          let itChargeable = itActualWeight;
-
-          if (itBulk) {
-            itStackable = false;
-            itLength = null;
-            itWidth = null;
-            itHeight = null;
-            itChargeable = itActualWeight;
-          } else {
-            const hasDimensions =
-              (it.length_cm && parseFloat(it.length_cm) > 0) ||
-              (it.width_cm && parseFloat(it.width_cm) > 0) ||
-              (it.height_cm && parseFloat(it.height_cm) > 0);
-            if (hasDimensions) {
-              itLength = parseFloat(it.length_cm) || 0;
-              itWidth = parseFloat(it.width_cm) || 0;
-              itHeight = parseFloat(it.height_cm) || 0;
-              const volWeight = (itLength * itWidth * itHeight) / 5000;
-              itChargeable = Math.max(itActualWeight, volWeight);
-              itStackable = it.stackable !== false;
-            } else {
-              itLength = null;
-              itWidth = null;
-              itHeight = null;
-              itChargeable = itActualWeight;
-              itStackable = it.stackable !== false;
-            }
-          }
-
-          cargoRows.push({
-            order_id: orderRecord.id,
-            cargo_type: itBulk
-              ? "Bulk"
-              : it.cargo_type === "PALLET" || it.cargo_type === "Pallet"
-                ? "Pallet"
-                : "General",
-            cargo_name: it.cargo_name || "Hàng hóa",
-            quantity: parseInt(it.package_count || it.quantity, 10) || 1,
-            unit: it.package_unit || (itBulk ? "Chuyến" : "Kiện"),
-            actual_weight_kg: itActualWeight,
-            length_cm: itLength,
-            width_cm: itWidth,
-            height_cm: itHeight,
-            stackable: itStackable,
-            chargeable_weight_kg: parseFloat(itChargeable.toFixed(2)),
-            declared_value: it.declared_value_usd
-              ? BigInt(Math.round(parseFloat(it.declared_value_usd) * 25000))
-              : 0n,
-            special_request_note: it.note || order_notes || null,
-          });
-        }
-      } else {
-        const isBulk = cargo_type === "BULK" || cargo_type === "Bulk";
-        let l = null;
-        let w = null;
-        let h = null;
-        let stackable = true;
-        let chargeable = parsedWeight;
-
-        if (isBulk) {
-          stackable = false;
-          l = null;
-          w = null;
-          h = null;
-          chargeable = parsedWeight;
-        } else {
-          const hasDims =
-            (length_cm && parseFloat(length_cm) > 0) ||
-            (width_cm && parseFloat(width_cm) > 0) ||
-            (height_cm && parseFloat(height_cm) > 0);
-          if (hasDims) {
-            l = parseFloat(length_cm) || 0;
-            w = parseFloat(width_cm) || 0;
-            h = parseFloat(height_cm) || 0;
-            const volWeight = (l * w * h) / 5000;
-            chargeable = Math.max(parsedWeight, volWeight);
-            stackable = true;
-          } else {
-            l = null;
-            w = null;
-            h = null;
-            chargeable = parsedWeight;
-            stackable = true;
-          }
-        }
-
-        cargoRows.push({
-          order_id: orderRecord.id,
-          cargo_type: isBulk
-            ? "Bulk"
-            : cargo_type === "PALLET" || cargo_type === "Pallet"
-              ? "Pallet"
-              : "General",
-          cargo_name:
-            cargo_name ||
-            (isBulk
-              ? "Hàng rời tính theo trọng tải"
-              : "Hàng bách hóa / Linh kiện"),
-          quantity: parseInt(package_count, 10) || 1,
-          unit: package_unit || (isBulk ? "Chuyến" : "Kiện"),
-          actual_weight_kg: parsedWeight,
-          length_cm: l,
-          width_cm: w,
-          height_cm: h,
-          stackable: stackable,
-          chargeable_weight_kg: parseFloat(chargeable.toFixed(2)),
-          declared_value: declared_value_usd
-            ? BigInt(Math.round(parseFloat(declared_value_usd) * 25000))
-            : 0n,
-          special_request_note: order_notes || null,
-        });
-      }
-
+      const cargoRows = buildDirectOrderCargoRows(
+        orderRecord.id,
+        req.body,
+        parsedWeight,
+      );
       for (const cRow of cargoRows) {
         await tx.order_cargos.create({ data: cRow });
       }
@@ -1004,7 +601,7 @@ const createDirectOrder = async (req, res) => {
           data: {
             order_id: orderRecord.id,
             content: noteParts.join(" | ").slice(0, 500),
-            created_by: BigInt(directDispatcherId), // BUG-DO-08
+            created_by: BigInt(directDispatcherId),
           },
         });
       }

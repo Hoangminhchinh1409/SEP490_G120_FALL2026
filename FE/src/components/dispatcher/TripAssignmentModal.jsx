@@ -1,34 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal, Button, Tag, Input, message } from 'antd';
 import { Box, ExternalLink } from 'lucide-react';
-import dynamic from 'next/dynamic';
 import { dispatcherApi } from '../../api/dispatcherApi';
 import {
-  getCoordsFromAddress,
   getVehicleSpecByKey,
   analyzeVehicleRecommendation,
   VEHICLE_SPECS
 } from '../../data/dispatcherPresets';
-import { fetchShortestRoadRoute, optimizeDropoffsByRoadDistance, computeStopsLiveEta } from '../../utils/roadRouting';
 import LoadPlan3DModal from './LoadPlan3DModal';
 
 // Các subcomponents tách module
 import TripAssignmentFleetConfig from './tripAssignment/TripAssignmentFleetConfig';
 import TripAssignmentStopsList from './tripAssignment/TripAssignmentStopsList';
 import TripAssignmentVendorConfig from './tripAssignment/TripAssignmentVendorConfig';
-
-// Dynamic import bản đồ tương tác Leaflet
-const TripAssignmentMap = dynamic(
-  () => import('./TripAssignmentMap'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="w-full h-full min-h-[340px] flex items-center justify-center text-xs text-gray-500 bg-slate-50">
-        Đang tải bản đồ số tuyến đường...
-      </div>
-    )
-  }
-);
+import TripAssignmentMapPanel from './tripAssignment/TripAssignmentMapPanel';
+import { useTripRouteStops } from './tripAssignment/useTripRouteStops';
 
 // Danh mục đội xe nội bộ chuẩn gắn với thông số thùng xe
 const BASE_INTERNAL_FLEET_OPTIONS = [
@@ -131,7 +117,10 @@ function TripAssignmentModalContent({
       const raw = String(order.requested_pickup_date).trim();
       const onlyYmd = formatYmdToVn(raw);
       if (onlyYmd) {
-        const slotTime = order?.operating_time_slot === 'AFTERNOON' ? '12:00' : (order?.flight_arrival_time || '08:00');
+        const slotTime =
+          order?.operating_time_slot === 'AFTERNOON'
+            ? '12:00'
+            : order?.flight_arrival_time || '08:00';
         return `${onlyYmd} ${String(slotTime).slice(0, 5)}`;
       }
       return raw;
@@ -159,10 +148,6 @@ function TripAssignmentModalContent({
   }, [order]);
 
   const [transportMode, setTransportMode] = useState('INTERNAL');
-  const [multiDropMode, setMultiDropMode] = useState('STANDALONE');
-  const [showAddDropoffInput, setShowAddDropoffInput] = useState(false);
-  const [newDropoffAddress, setNewDropoffAddress] = useState('');
-  const [optimizingRoute, setOptimizingRoute] = useState(false);
 
   const vehicleAnalysis = useMemo(() => {
     if (!order) return null;
@@ -174,11 +159,15 @@ function TripAssignmentModalContent({
       heightCm: order.height_cm,
       cargoType: order.cargo_type,
       items: order.items || [],
-      customerRequestedVehicle: order.agreed_vehicle_type || order.proposed_vehicle_type || order.vehicle_type_required || 'TRUCK_2.5T'
+      customerRequestedVehicle:
+        order.agreed_vehicle_type ||
+        order.proposed_vehicle_type ||
+        order.vehicle_type_required ||
+        'TRUCK_2.5T'
     });
   }, [chargeableWeight, actualWeight, order]);
 
-  // Xe đã chốt của đơn (ưu tiên web_workflow?.agreed_vehicle_type -> agreed_vehicle_type -> proposed_vehicle_type -> vehicle_type_required)
+  // Xe đã chốt của đơn
   const agreedVehicleSpecKey = useMemo(() => {
     const rawKey =
       order?.web_workflow?.agreed_vehicle_type ||
@@ -201,13 +190,14 @@ function TripAssignmentModalContent({
 
   // Đồng bộ trạng thái thực tế từ database vào danh sách xe nội bộ (BR-23)
   const internalFleetOptions = useMemo(() => {
-    return BASE_INTERNAL_FLEET_OPTIONS.map(opt => {
-      const liveTruck = trucks.find(t => (t.plate_number || t.plate) === opt.plate);
+    return BASE_INTERNAL_FLEET_OPTIONS.map((opt) => {
+      const liveTruck = trucks.find((t) => (t.plate_number || t.plate) === opt.plate);
       if (!liveTruck) return opt;
       const rawStatus = String(liveTruck.status || '').toUpperCase();
       const isAvailable = rawStatus === 'AVAILABLE' || rawStatus === 'ACTIVE';
       const isMaintenance = rawStatus === 'MAINTENANCE';
-      const isOnTrip = rawStatus === 'ON TRIP' || rawStatus === 'ON_TRIP' || rawStatus === 'IN_TRANSIT';
+      const isOnTrip =
+        rawStatus === 'ON TRIP' || rawStatus === 'ON_TRIP' || rawStatus === 'IN_TRANSIT';
 
       let statusLabel = 'Sẵn sàng';
       if (isOnTrip) statusLabel = 'Đang chạy chuyến (On Trip)';
@@ -215,7 +205,8 @@ function TripAssignmentModalContent({
       else if (!isAvailable) statusLabel = liveTruck.status || 'Không khả dụng';
 
       const parts = opt.label.split('·');
-      const middlePart = parts.length > 2 ? parts.slice(1, -1).join('·').trim() : (parts[1]?.trim() || '');
+      const middlePart =
+        parts.length > 2 ? parts.slice(1, -1).join('·').trim() : parts[1]?.trim() || '';
 
       return {
         ...opt,
@@ -230,171 +221,34 @@ function TripAssignmentModalContent({
   const filteredFleetOptions = useMemo(() => {
     const safeKey = String(agreedVehicleSpecKey || 'TRUCK_3.5T');
     const specKeyNorm = safeKey.replace('TRUCK_', '');
-    const matchedOptions = internalFleetOptions.filter(o => 
-      o.specKey === safeKey ||
-      String(o.specKey || '').replace('TRUCK_', '') === specKeyNorm
+    const matchedOptions = internalFleetOptions.filter(
+      (o) =>
+        o.specKey === safeKey || String(o.specKey || '').replace('TRUCK_', '') === specKeyNorm
     );
     return matchedOptions.length > 0 ? matchedOptions : internalFleetOptions;
   }, [agreedVehicleSpecKey, internalFleetOptions]);
 
   const defaultOption = useMemo(() => {
-    const available = filteredFleetOptions.find(o => !o.disabled);
-    return available?.value || filteredFleetOptions[0]?.value || internalFleetOptions[0]?.value;
+    const available = filteredFleetOptions.find((o) => !o.disabled);
+    return (
+      available?.value || filteredFleetOptions[0]?.value || internalFleetOptions[0]?.value
+    );
   }, [filteredFleetOptions, internalFleetOptions]);
 
   const [selectedTruckPlateState, setSelectedTruckPlate] = useState(defaultOption);
 
   const selectedTruckPlate = useMemo(() => {
-    const currentOpt = filteredFleetOptions.find(o => o.value === selectedTruckPlateState);
+    const currentOpt = filteredFleetOptions.find((o) => o.value === selectedTruckPlateState);
     if (currentOpt && !currentOpt.disabled) return selectedTruckPlateState;
     return defaultOption || selectedTruckPlateState;
   }, [filteredFleetOptions, selectedTruckPlateState, defaultOption]);
 
-  const [driverCount, setDriverCount] = useState(1);
-  const [selectedDriver1, setSelectedDriver1] = useState('Nguyễn Văn Lái');
-  const [selectedDriver2, setSelectedDriver2] = useState(undefined);
-  const [selectedVendor, setSelectedVendor] = useState('Công ty TNHH Vận tải & Tiếp vận Hà Nội (Hanoitrans)');
-  const [vendorVehicleCount, setVendorVehicleCount] = useState(1);
-  const [vendorCost, setVendorCost] = useState('3.500.000');
-  const [vendorTrackingCode, setVendorTrackingCode] = useState(
-    () => `3PL-${order?.order_id || order?.id || '8829'}`
-  );
-  const [changeReason, setChangeReason] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [is3DOpen, setIs3DOpen] = useState(false);
-
-  const [draggedIndex, setDraggedIndex] = useState(null);
-  const [dragOverIndex, setDragOverIndex] = useState(null);
-
-  useEffect(() => {
-    let active = true;
-    const loadFleetData = async () => {
-      try {
-        const [truckData, driverData, vendorData] = await Promise.all([
-          dispatcherApi.getTrucks().catch(() => []),
-          dispatcherApi.getDrivers().catch(() => []),
-          dispatcherApi.getVendors().catch(() => [])
-        ]);
-        if (active) {
-          if (Array.isArray(truckData) && truckData.length > 0) setTrucks(truckData);
-          if (Array.isArray(driverData) && driverData.length > 0) {
-            setDrivers(driverData);
-            const availDriver = driverData.find(d => {
-              const rawSt = String(d.status || '').toUpperCase();
-              return rawSt === 'AVAILABLE' || rawSt === 'ACTIVE';
-            });
-            if (availDriver?.name) {
-              setSelectedDriver1(availDriver.name);
-            } else if (driverData[0]?.name) {
-              setSelectedDriver1(driverData[0].name);
-            }
-          }
-          if (Array.isArray(vendorData) && vendorData.length > 0) {
-            setVendors(vendorData);
-            if (vendorData[0]?.name) {
-              setSelectedVendor(vendorData[0].name);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Không tải được dữ liệu đội xe / tài xế:', err.message || err);
-      }
-    };
-    loadFleetData();
-    return () => { active = false; };
-  }, []);
-
-  const [stops, setStops] = useState(() => {
-    const pickupAddr = order?.pickup_address || order?.pickup || 'Kho ALS Sân Bay Nội Bài';
-    const dropoffAddr = order?.delivery_address || order?.dropoff || 'KCN Quế Võ, Bắc Ninh';
-    const pickupCoords = order?.pickup_coords || getCoordsFromAddress(pickupAddr, 'A') || { lat: 21.2187, lng: 105.8042 };
-    const dropoffCoords = order?.dropoff_coords || order?.delivery_coords || getCoordsFromAddress(dropoffAddr, 'B') || { lat: 21.1458, lng: 106.1265 };
-
-    return [
-      {
-        id: 'start',
-        badge: 'S',
-        name: 'Bãi xe ALS – Long Biên',
-        action: 'Xuất phát',
-        eta: 'dự kiến 07:00',
-        type: 'START',
-        coords: { lat: 21.0375, lng: 105.8942 }
-      },
-      {
-        id: 'pickup',
-        badge: '1',
-        name: `Lấy hàng: ${pickupAddr}`,
-        action: 'Đã đóng chì xuất phát',
-        eta: 'dự kiến 07:45',
-        type: 'PICKUP',
-        coords: pickupCoords
-      },
-      {
-        id: 'dropoff-1',
-        badge: '2',
-        name: `Điểm trả 1: ${dropoffAddr}`,
-        action: 'Giao hàng',
-        eta: 'dự kiến 09:15',
-        type: 'DROPOFF',
-        coords: dropoffCoords
-      }
-    ];
-  });
-
-  const [routePolyline, setRoutePolyline] = useState([]);
-  const [trafficSegments, setTrafficSegments] = useState([]);
-  const [trafficSummary, setTrafficSummary] = useState(null);
-  const [loadingRoute, setLoadingRoute] = useState(false);
-  const [routeSummary, setRouteSummary] = useState({
-    distanceKm: 68,
-    durationMins: 160,
-    delayMins: 0,
-    etaText: null,
-    legs: [],
-    provider: 'vietmap_live'
-  });
-
-  useEffect(() => {
-    let isCancelled = false;
-    const fetchRoute = async () => {
-      setLoadingRoute(true);
-      try {
-        const waypoints = stops.map(s => s.coords).filter(c => c && c.lat && c.lng);
-        if (waypoints.length >= 2) {
-          const res = await fetchShortestRoadRoute(waypoints);
-          if (!isCancelled && res) {
-            setRoutePolyline(res.polyline || res.coordinates || []);
-            setTrafficSegments(Array.isArray(res.trafficSegments) ? res.trafficSegments : []);
-            setTrafficSummary(res.trafficSummary || null);
-            setRouteSummary({
-              distanceKm: res.distanceKm || 68,
-              durationMins: res.durationMins || 160,
-              delayMins: res.delayMins || 0,
-              etaText: res.etaText || null,
-              legs: Array.isArray(res.legs) ? res.legs : [],
-              provider: res.provider || 'vietmap_live'
-            });
-          }
-        }
-      } catch (err) {
-        console.error('Không tính được lộ trình đường bộ:', err);
-      } finally {
-        if (!isCancelled) setLoadingRoute(false);
-      }
-    };
-    fetchRoute();
-    return () => { isCancelled = true; };
-  }, [stops]);
-
-  const stopsWithLiveEta = useMemo(() => {
-    if (typeof computeStopsLiveEta === 'function') {
-      return computeStopsLiveEta(stops, routeSummary, plannedStart);
-    }
-    return stops;
-  }, [stops, routeSummary, plannedStart]);
-
   const currentFleetItem = useMemo(() => {
-    return internalFleetOptions.find(o => o.value === selectedTruckPlate) || internalFleetOptions[2] || BASE_INTERNAL_FLEET_OPTIONS[2];
+    return (
+      internalFleetOptions.find((o) => o.value === selectedTruckPlate) ||
+      internalFleetOptions[2] ||
+      BASE_INTERNAL_FLEET_OPTIONS[2]
+    );
   }, [selectedTruckPlate, internalFleetOptions]);
 
   const selectedTruckSpec = useMemo(() => {
@@ -416,6 +270,94 @@ function TripAssignmentModalContent({
     return VEHICLE_SPECS[2];
   }, [currentFleetItem]);
 
+  const [driverCount, setDriverCount] = useState(1);
+  const [selectedDriver1, setSelectedDriver1] = useState('Nguyễn Văn Lái');
+  const [selectedDriver2, setSelectedDriver2] = useState(undefined);
+  const [selectedVendor, setSelectedVendor] = useState(
+    'Công ty TNHH Vận tải & Tiếp vận Hà Nội (Hanoitrans)'
+  );
+  const [vendorVehicleCount, setVendorVehicleCount] = useState(1);
+  const [vendorCost, setVendorCost] = useState('3.500.000');
+  const [vendorTrackingCode, setVendorTrackingCode] = useState(
+    () => `3PL-${order?.order_id || order?.id || '8829'}`
+  );
+  const [changeReason, setChangeReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [is3DOpen, setIs3DOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const loadFleetData = async () => {
+      try {
+        const [truckData, driverData, vendorData] = await Promise.all([
+          dispatcherApi.getTrucks().catch(() => []),
+          dispatcherApi.getDrivers().catch(() => []),
+          dispatcherApi.getVendors().catch(() => [])
+        ]);
+        if (active) {
+          if (Array.isArray(truckData) && truckData.length > 0) setTrucks(truckData);
+          if (Array.isArray(driverData) && driverData.length > 0) {
+            setDrivers(driverData);
+            const availDriver = driverData.find((d) => {
+              const rawSt = String(d.status || '').toUpperCase();
+              return rawSt === 'AVAILABLE' || rawSt === 'ACTIVE';
+            });
+            if (availDriver?.name) {
+              setSelectedDriver1(availDriver.name);
+            } else if (driverData[0]?.name) {
+              setSelectedDriver1(driverData[0].name);
+            }
+          }
+          if (Array.isArray(vendorData) && vendorData.length > 0) {
+            setVendors(vendorData);
+            if (vendorData[0]?.name) {
+              setSelectedVendor(vendorData[0].name);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Không tải được dữ liệu đội xe / tài xế:', err.message || err);
+      }
+    };
+    loadFleetData();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const {
+    multiDropMode,
+    showAddDropoffInput,
+    setShowAddDropoffInput,
+    newDropoffAddress,
+    setNewDropoffAddress,
+    optimizingRoute,
+    draggedIndex,
+    setDraggedIndex,
+    dragOverIndex,
+    setDragOverIndex,
+    stops,
+    routePolyline,
+    trafficSegments,
+    trafficSummary,
+    loadingRoute,
+    routeSummary,
+    stopsWithLiveEta,
+    moveStop,
+    handleDragDrop,
+    handleChangeMultiDropMode,
+    handleConfirmAddDropoff,
+    handleOptimizeShortestRoute,
+    handleAddBreak,
+    handleRemoveStop
+  } = useTripRouteStops({
+    order,
+    plannedStart,
+    selectedTruckSpec,
+    selectedTruckPlate,
+    currentFleetItem
+  });
+
   const cargoVolume = useMemo(() => {
     if (!order) return '0.0';
     if (order.cargo_type === 'BULK') return (actualWeight / 1000).toFixed(1);
@@ -430,223 +372,6 @@ function TripAssignmentModalContent({
 
   const totalTripHours = routeSummary.durationMins / 60;
 
-  const moveStop = (fromIndex, toIndex) => {
-    if (fromIndex <= 0 || toIndex <= 0 || fromIndex >= stops.length || toIndex >= stops.length) return;
-    setStops(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next.map((s, idx) => ({
-        ...s,
-        badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
-      }));
-    });
-  };
-
-  const handleDragDrop = (targetIndex) => {
-    if (draggedIndex === null || draggedIndex === targetIndex) return;
-    moveStop(draggedIndex, targetIndex);
-    setDraggedIndex(null);
-    setDragOverIndex(null);
-  };
-
-  const handleChangeMultiDropMode = (mode) => {
-    setMultiDropMode(mode);
-    if (mode === 'STANDALONE') {
-      const pickupAddr = order.pickup_address || order.pickup || 'Kho ALS Sân Bay Nội Bài';
-      const dropoffAddr = order.delivery_address || order.dropoff || 'KCN Quế Võ, Bắc Ninh';
-      const pickupCoords = order.pickup_coords || getCoordsFromAddress(pickupAddr, 'A') || { lat: 21.2187, lng: 105.8042 };
-      const dropoffCoords = order.dropoff_coords || order.delivery_coords || getCoordsFromAddress(dropoffAddr, 'B') || { lat: 21.1458, lng: 106.1265 };
-
-      setStops([
-        {
-          id: 'start',
-          badge: 'S',
-          name: 'Bãi xe ALS – Long Biên',
-          action: 'Xuất phát',
-          eta: 'dự kiến 07:00',
-          type: 'START',
-          coords: { lat: 21.0375, lng: 105.8942 }
-        },
-        {
-          id: 'pickup',
-          badge: '1',
-          name: `Lấy hàng: ${pickupAddr}`,
-          action: 'Đã đóng chì xuất phát',
-          eta: 'dự kiến 07:45',
-          type: 'PICKUP',
-          coords: pickupCoords
-        },
-        {
-          id: 'dropoff-1',
-          badge: '2',
-          name: `Điểm trả 1: ${dropoffAddr}`,
-          action: 'Giao hàng',
-          eta: 'dự kiến 09:15',
-          type: 'DROPOFF',
-          coords: dropoffCoords
-        }
-      ]);
-      setShowAddDropoffInput(false);
-      message.info('Đã chuyển về Chuyến thẳng 1 điểm trả duy nhất');
-    } else {
-      setShowAddDropoffInput(true);
-      message.success('Đã bật chế độ Ghép chuyến nhiều điểm trả theo yêu cầu');
-    }
-  };
-
-  const handleConfirmAddDropoff = (addrToAdd = null) => {
-    const targetAddr = (addrToAdd || newDropoffAddress || '').trim();
-    if (!targetAddr) {
-      message.warning('Vui lòng nhập địa chỉ điểm trả hàng cần bổ sung!');
-      return;
-    }
-
-    const newCoords = getCoordsFromAddress(targetAddr, 'B') || { lat: 21.1158, lng: 106.0125 };
-    const currentDropoffs = stops.filter(s => s.type === 'DROPOFF');
-    const newDropoffIndex = currentDropoffs.length + 1;
-
-    const newStop = {
-      id: `dropoff-${Date.now()}`,
-      badge: String(stops.length),
-      name: `Điểm trả ${newDropoffIndex}: ${targetAddr}`,
-      action: 'Giao hàng',
-      eta: 'dự kiến +30p',
-      type: 'DROPOFF',
-      coords: newCoords
-    };
-
-    setStops(prev => {
-      const next = [...prev, newStop];
-      return next.map((s, idx) => ({
-        ...s,
-        badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
-      }));
-    });
-    setNewDropoffAddress('');
-    message.success(`Đã thêm Điểm trả ${newDropoffIndex} vào lộ trình!`);
-  };
-
-  const handleOptimizeShortestRoute = async () => {
-    const pickupStop = stops.find(s => s.type === 'PICKUP');
-    const dropoffStops = stops.filter(s => s.type === 'DROPOFF');
-    if (!pickupStop || dropoffStops.length <= 1) {
-      message.info('Cần tối thiểu 2 điểm trả hàng để tối ưu thứ tự lộ trình.');
-      return;
-    }
-
-    setOptimizingRoute(true);
-    try {
-      // Xác định tải trọng xe để kiểm tra quy chuẩn giờ cấm tải Hà Nội (QĐ 06/2013 & 24/2020)
-      let truckPayloadKg = selectedTruckSpec?.maxPayloadKg || 2500;
-      if (selectedTruckPlate) {
-        const spec = getVehicleSpecByKey(currentFleetItem?.specKey || selectedTruckPlate);
-        if (spec?.maxPayloadKg) {
-          truckPayloadKg = spec.maxPayloadKg;
-        } else if (selectedTruckPlate.includes('1.250 kg') || selectedTruckPlate.includes('1.25T')) {
-          truckPayloadKg = 1250;
-        } else if (selectedTruckPlate.includes('3.500 kg') || selectedTruckPlate.includes('3.5T')) {
-          truckPayloadKg = 3500;
-        } else if (selectedTruckPlate.includes('5.000 kg') || selectedTruckPlate.includes('5T')) {
-          truckPayloadKg = 5000;
-        } else if (selectedTruckPlate.includes('8.000 kg') || selectedTruckPlate.includes('8T')) {
-          truckPayloadKg = 8000;
-        }
-      }
-
-      // Gọi Engine VRPTW Backend: Tối ưu đa điểm dừng, giờ cấm tải Hà Nội, khung giờ nhận và giờ lái tài xế (BR-03)
-      const res = await dispatcherApi.optimizeMultiStopRoute({
-        stops,
-        startTime: plannedStart || new Date().toISOString(),
-        truckPayloadKg,
-        avoidTruckBan: true
-      });
-
-      const vrptwData = res?.data || res;
-      if (res?.success && Array.isArray(vrptwData?.optimizedStops)) {
-        const optimizedStops = vrptwData.optimizedStops.map((s, idx) => ({
-          ...s,
-          badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
-        }));
-
-        setStops(optimizedStops);
-
-        if (vrptwData.warnings && vrptwData.warnings.length > 0) {
-          message.warning({
-            content: `VRPTW hoàn tất: Có ${vrptwData.warnings.length} lưu ý về khung giờ cấm tải hoặc thời gian giao nhận.`,
-            duration: 5
-          });
-        } else if (vrptwData.restStopsAdded > 0) {
-          message.info({
-            content: `Hệ thống đã tự động chèn điểm nghỉ 15 phút tuân thủ quy định lái xe liên tục (<= 4h).`,
-            duration: 4
-          });
-        } else {
-          message.success('Đã tối ưu lộ trình VRPTW (khung giờ cấm tải Hà Nội & cửa sổ thời gian)!');
-        }
-        return;
-      }
-
-      // Fallback nếu API VRPTW không trả về: dùng heuristic đường bộ cũ
-      const optimizedDropoffs = await optimizeDropoffsByRoadDistance(pickupStop.coords, dropoffStops);
-      const startStop = stops.find(s => s.type === 'START');
-      const restStops = stops.filter(s => s.type === 'REST');
-
-      const reorderedStops = [
-        startStop,
-        pickupStop,
-        ...restStops,
-        ...optimizedDropoffs
-      ].filter(Boolean).map((s, idx) => ({
-        ...s,
-        badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
-      }));
-
-      setStops(reorderedStops);
-      message.success('Đã tối ưu thứ tự điểm trả theo tuyến đường bộ ngắn nhất!');
-    } catch (err) {
-      console.error('VRPTW optimization error, falling back:', err);
-      try {
-        const optimizedDropoffs = await optimizeDropoffsByRoadDistance(pickupStop.coords, dropoffStops);
-        const startStop = stops.find(s => s.type === 'START');
-        const restStops = stops.filter(s => s.type === 'REST');
-
-        const reorderedStops = [
-          startStop,
-          pickupStop,
-          ...restStops,
-          ...optimizedDropoffs
-        ].filter(Boolean).map((s, idx) => ({
-          ...s,
-          badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
-        }));
-
-        setStops(reorderedStops);
-        message.success('Đã tối ưu thứ tự điểm trả theo tuyến đường bộ!');
-      } catch (fallbackErr) {
-        console.error(fallbackErr);
-        message.error('Không thể tối ưu lộ trình lúc này.');
-      }
-    } finally {
-      setOptimizingRoute(false);
-    }
-  };
-
-  const handleAddBreak = () => {
-    // Đã bỏ tính năng thêm điểm nghỉ - hệ thống chỉ quản lý thời gian xe lăn bánh trên đường
-  };
-
-  const handleRemoveStop = (id) => {
-    setStops(prev => {
-      const next = prev.filter(s => s.id !== id);
-      return next.map((s, idx) => ({
-        ...s,
-        badge: s.type === 'START' ? 'S' : s.type === 'REST' ? 'Nghỉ' : String(idx)
-      }));
-    });
-    message.info('Đã xóa điểm dừng khỏi hành trình');
-  };
-
   const handleAssignInternal = async () => {
     if (!selectedDriver1) {
       message.error('Vui lòng chọn Tài xế 1!');
@@ -657,9 +382,11 @@ function TripAssignmentModalContent({
       return;
     }
 
-    const cleanPlate = currentFleetItem?.plate || String(selectedTruckPlate || '').split(' ')[0].trim();
+    const cleanPlate =
+      currentFleetItem?.plate || String(selectedTruckPlate || '').split(' ')[0].trim();
     const cleanDriver1 = String(selectedDriver1).split('·')[0].trim();
-    const cleanDriver2 = driverCount === 2 && selectedDriver2 ? String(selectedDriver2).split('·')[0].trim() : null;
+    const cleanDriver2 =
+      driverCount === 2 && selectedDriver2 ? String(selectedDriver2).split('·')[0].trim() : null;
 
     setSubmitting(true);
     try {
@@ -677,7 +404,9 @@ function TripAssignmentModalContent({
         planned_duration: routeSummary.durationMins
       });
 
-      message.success(`Đã phân bổ chuyến xe ${createdTrip?.trip_code || ''} thành công! (Đã tự động gửi thông báo đến Đội Ops Sân bay qua Zalo)`);
+      message.success(
+        `Đã phân bổ chuyến xe ${createdTrip?.trip_code || ''} thành công! (Đã tự động gửi thông báo đến Đội Ops Sân bay qua Zalo)`
+      );
       onAssignSuccess?.({
         ...order,
         ...createdTrip,
@@ -745,7 +474,8 @@ function TripAssignmentModalContent({
       message.error('Vui lòng nhập lý do thay đổi xe / tài xế!');
       return;
     }
-    const cleanPlate = currentFleetItem?.plate || String(selectedTruckPlate || '').split(' ')[0].trim();
+    const cleanPlate =
+      currentFleetItem?.plate || String(selectedTruckPlate || '').split(' ')[0].trim();
     const cleanDriver1 = String(selectedDriver1).split('·')[0].trim();
 
     setSubmitting(true);
@@ -787,7 +517,6 @@ function TripAssignmentModalContent({
         className="trip-assignment-modal"
       >
         <div className="bg-white rounded-lg overflow-hidden border border-gray-300 font-sans text-gray-800">
-          
           {/* Header Title theo thiết kế Prototype */}
           <div className="p-4 sm:p-5 border-b border-gray-200 flex items-center justify-between bg-white">
             <div>
@@ -795,10 +524,12 @@ function TripAssignmentModalContent({
                 Chọn xe &amp; tài xế – Đơn {orderCode}
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Lộ trình chuẩn theo đơn: <b>{order.pickup_address || order.pickup}</b> → <b>{order.delivery_address || order.dropoff}</b>
+                Lộ trình chuẩn theo đơn:{' '}
+                <b>{order.pickup_address || order.pickup}</b> →{' '}
+                <b>{order.delivery_address || order.dropoff}</b>
               </p>
             </div>
-            <Button 
+            <Button
               onClick={onCancel}
               className="px-5 h-8 font-medium text-gray-600 border-gray-300 hover:border-gray-500 rounded text-xs"
             >
@@ -810,12 +541,29 @@ function TripAssignmentModalContent({
             {/* Thông tin chuyến */}
             <div className="p-3 bg-white border border-gray-300 rounded text-xs text-gray-800 leading-relaxed flex flex-wrap items-center justify-between gap-2">
               <div>
-                Đơn: <b>{orderCode}</b> · {customerName} · <b>{order.package_count || 1} {order.package_unit || 'kiện'}</b> ({order.length_cm || 0}×{order.width_cm || 0}×{order.height_cm || 0} cm) · KL thực <b>{actualWeight.toLocaleString()} kg</b> · KL tính cước <b>{chargeableWeight.toLocaleString()} kg</b> · Thể tích <b>{cargoVolume} m³</b><br />
-                Trạng thái: <b>Sẵn sàng điều xe</b> · Xuất phát dự kiến: <b>{plannedStart}</b> · Quãng đường ngắn nhất <b>{routeSummary.distanceKm} km</b> · Thời gian chuyến <b>{Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph</b>
+                Đơn: <b>{orderCode}</b> · {customerName} ·{' '}
+                <b>
+                  {order.package_count || 1} {order.package_unit || 'kiện'}
+                </b>{' '}
+                ({order.length_cm || 0}×{order.width_cm || 0}×{order.height_cm || 0} cm) · KL thực{' '}
+                <b>{actualWeight.toLocaleString()} kg</b> · KL tính cước{' '}
+                <b>{chargeableWeight.toLocaleString()} kg</b> · Thể tích <b>{cargoVolume} m³</b>
+                <br />
+                Trạng thái: <b>Sẵn sàng điều xe</b> · Xuất phát dự kiến: <b>{plannedStart}</b> ·
+                Quãng đường ngắn nhất <b>{routeSummary.distanceKm} km</b> · Thời gian chuyến{' '}
+                <b>
+                  {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph
+                </b>
               </div>
               <div className="flex items-center gap-1.5">
                 <Tag color="indigo" className="m-0 font-bold text-[11px]">
-                  Xe đã chốt/đề xuất: {getVehicleSpecByKey(order.agreed_vehicle_type || order.proposed_vehicle_type || vehicleAnalysis?.recommendedVehicleKey || '3.5T')?.label || 'Xe tải 3.5 tấn'}
+                  Xe đã chốt/đề xuất:{' '}
+                  {getVehicleSpecByKey(
+                    order.agreed_vehicle_type ||
+                      order.proposed_vehicle_type ||
+                      vehicleAnalysis?.recommendedVehicleKey ||
+                      '3.5T'
+                  )?.label || 'Xe tải 3.5 tấn'}
                 </Tag>
               </div>
             </div>
@@ -872,9 +620,12 @@ function TripAssignmentModalContent({
                     setSelectedTruckPlate={setSelectedTruckPlate}
                     selectedTruckSpec={selectedTruckSpec}
                     INTERNAL_FLEET_OPTIONS={filteredFleetOptions}
-                    trucks={trucks.filter(t => {
+                    trucks={trucks.filter((t) => {
                       const spec = getVehicleSpecByKey(agreedVehicleSpecKey) || VEHICLE_SPECS[2];
-                      return Math.abs((t.payload_kg || t.allowed_payload || 0) - spec.maxPayloadKg) < 100;
+                      return (
+                        Math.abs((t.payload_kg || t.allowed_payload || 0) - spec.maxPayloadKg) <
+                        100
+                      );
                     })}
                     driverCount={driverCount}
                     setDriverCount={setDriverCount}
@@ -910,72 +661,16 @@ function TripAssignmentModalContent({
                 </div>
 
                 {/* Cột phải: Bản đồ tuyến */}
-                <div className="lg:col-span-5 flex flex-col justify-between">
-                  <div className="border border-gray-300 rounded overflow-hidden h-full flex flex-col bg-white">
-                    <div className="p-2 border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-700 flex items-center justify-between">
-                      <span>Bản đồ Giao thông &amp; ETA Thời gian thực</span>
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono font-bold">
-                        VietMap Live Traffic &amp; Tilemap
-                      </span>
-                    </div>
-
-                    {/* Thanh cảnh báo mật độ giao thông & ETA trực tiếp */}
-                    {trafficSummary && (
-                      <div
-                        className={`px-2.5 py-1.5 border-b text-[11px] flex flex-wrap items-center justify-between gap-1.5 ${
-                          trafficSummary.status === 'CONGESTED'
-                            ? 'bg-red-50 border-red-200 text-red-800'
-                            : trafficSummary.status === 'SLOW'
-                              ? 'bg-amber-50 border-amber-200 text-amber-900'
-                              : 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
-                        }`}
-                      >
-                        <div className="font-semibold">
-                          {trafficSummary.status === 'CONGESTED' ? (
-                            <span>
-                              🔴 Đang ùn tắc trên: <b>{trafficSummary.congestedRoads.join(', ')}</b>
-                              {trafficSummary.slowRoads?.length > 0 && (
-                                <span> · Đông xe: {trafficSummary.slowRoads.join(', ')}</span>
-                              )}
-                            </span>
-                          ) : trafficSummary.status === 'SLOW' ? (
-                            <span>
-                              🟠 Đông xe di chuyển chậm trên: <b>{trafficSummary.slowRoads.join(', ')}</b>
-                            </span>
-                          ) : (
-                            <span>🟢 Toàn tuyến thông thoáng, không có điểm ùn tắc</span>
-                          )}
-                        </div>
-                        <div className="font-mono font-bold shrink-0">
-                          TB {trafficSummary.avgSpeedKmh} km/h
-                          {trafficSummary.delayMins > 0 ? ` · Trễ +${trafficSummary.delayMins}p` : ''}
-                          {routeSummary.etaText ? ` · Dự kiến đến ${routeSummary.etaText}` : ''}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex-1 min-h-[340px] relative">
-                      <TripAssignmentMap
-                        stops={stopsWithLiveEta}
-                        routePolyline={routePolyline}
-                        trafficSegments={trafficSegments}
-                        trafficSummary={trafficSummary}
-                        loadingRoute={loadingRoute}
-                      />
-                    </div>
-
-                    <div className="p-2 bg-white border-t border-gray-200 text-[11px] text-gray-700 font-mono flex items-center justify-between">
-                      <span>{stopsWithLiveEta.map(s => s.badge).join(' → ')}</span>
-                      <span>
-                        {routeSummary.distanceKm} km · {Math.floor(routeSummary.durationMins / 60)}h{routeSummary.durationMins % 60}ph
-                        {stopsWithLiveEta.length > 0 && stopsWithLiveEta[stopsWithLiveEta.length - 1]?.liveEtaTime
-                          ? ` · Hoàn tất ${stopsWithLiveEta[stopsWithLiveEta.length - 1].liveEtaTime}`
-                          : ''}
-                      </span>
-                      <span>{currentFleetItem.plate} ({selectedTruckSpec.shortLabel})</span>
-                    </div>
-                  </div>
-                </div>
+                <TripAssignmentMapPanel
+                  stopsWithLiveEta={stopsWithLiveEta}
+                  routePolyline={routePolyline}
+                  trafficSegments={trafficSegments}
+                  trafficSummary={trafficSummary}
+                  loadingRoute={loadingRoute}
+                  routeSummary={routeSummary}
+                  currentFleetItem={currentFleetItem}
+                  selectedTruckSpec={selectedTruckSpec}
+                />
               </div>
             )}
 
@@ -998,15 +693,20 @@ function TripAssignmentModalContent({
             {incidentContext && (
               <div className="p-3.5 bg-gray-50 border border-gray-300 rounded space-y-2">
                 <div className="font-semibold text-xs text-gray-700">
-                  Khi mở từ sự cố (Điều xe thay thế): <span className="text-gray-400 font-normal">đổi xe hoặc tài xế của chuyến đã tạo</span>
+                  Khi mở từ sự cố (Điều xe thay thế):{' '}
+                  <span className="text-gray-400 font-normal">
+                    đổi xe hoặc tài xế của chuyến đã tạo
+                  </span>
                 </div>
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   <div className="flex-1 space-y-1">
-                    <label className="text-[11px] text-gray-500 block">Lý do thay đổi * (tối đa 255 ký tự)</label>
+                    <label className="text-[11px] text-gray-500 block">
+                      Lý do thay đổi * (tối đa 255 ký tự)
+                    </label>
                     <Input
                       className="text-xs"
                       value={changeReason}
-                      onChange={e => setChangeReason(e.target.value)}
+                      onChange={(e) => setChangeReason(e.target.value)}
                       placeholder="Tài xế Hồ Chí Học báo ốm, đổi sang Tài xế Sức Hải"
                     />
                   </div>
@@ -1035,11 +735,13 @@ function TripAssignmentModalContent({
                   Xem xếp hàng 3D ({order.package_count || 1} {order.package_unit || 'kiện'})
                 </Button>
 
-                <a 
-                  href="#waybill" 
+                <a
+                  href="#waybill"
                   onClick={(e) => {
                     e.preventDefault();
-                    message.info('Chứng từ chuyến (Giấy vận tải & Hồ sơ khách) sẽ sẵn sàng sau khi chuyến được khởi tạo!');
+                    message.info(
+                      'Chứng từ chuyến (Giấy vận tải & Hồ sơ khách) sẽ sẵn sàng sau khi chuyến được khởi tạo!'
+                    );
                   }}
                   className="text-xs text-blue-700 hover:underline flex items-center gap-1"
                 >
@@ -1058,7 +760,9 @@ function TripAssignmentModalContent({
                   >
                     Giao xe &amp; tạo chuyến
                   </Button>
-                  <span className="text-[10px] text-gray-400 mt-0.5">Tạo chuyến, lưu vận tải và gửi chuyến cho tài xế</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5">
+                    Tạo chuyến, lưu vận tải và gửi chuyến cho tài xế
+                  </span>
                 </div>
               ) : (
                 <Button
@@ -1071,9 +775,7 @@ function TripAssignmentModalContent({
                 </Button>
               )}
             </div>
-
           </div>
-
         </div>
       </Modal>
 

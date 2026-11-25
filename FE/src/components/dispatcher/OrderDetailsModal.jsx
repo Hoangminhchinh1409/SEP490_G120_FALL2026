@@ -1,19 +1,13 @@
 'use client';
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Modal, Tabs, Tag, Button, message } from 'antd';
-import { 
-  MessageCircle, 
-  ArrowUpRight,
-  ExternalLink
-} from 'lucide-react';
+import { Modal, Tabs, Tag, message } from 'antd';
+import { MessageCircle } from 'lucide-react';
 import CancelOrderModal from './CancelOrderModal';
 import DocumentAssistantDrawer from './DocumentAssistantDrawer';
 import LoadPlan3DModal from './LoadPlan3DModal';
 import SplitOrderModal from './SplitOrderModal';
-import { 
-  SPECIALIZED_CARGO_CATEGORIES, 
-  getRecommendedDocsByCargo,
+import {
   getCoordsFromAddress,
   calculateAlsPricing,
   analyzeVehicleRecommendation,
@@ -21,7 +15,6 @@ import {
   VEHICLE_SPECS
 } from '../../data/dispatcherPresets';
 import { orderApi } from '../../api/orderApi';
-import { uploadApi } from '../../api/uploadApi';
 
 // Subcomponents đã được tách module
 import OrderOverviewTab from './orderDetails/OrderOverviewTab';
@@ -30,6 +23,11 @@ import OrderContractTab from './orderDetails/OrderContractTab';
 import OrderFinancialTab from './orderDetails/OrderFinancialTab';
 import OrderDriverChatTab from './orderDetails/OrderDriverChatTab';
 import { RejectDocModal } from './orderDetails/RejectDocModal';
+import { useOrderDocumentActions } from './orderDetails/useOrderDocumentActions';
+import {
+  OrderDetailsModalTitle,
+  getOrderDetailsModalFooter
+} from './orderDetails/OrderDetailsHeaderAndFooter';
 
 // Danh mục phụ phí gợi ý phổ biến
 const EXTRA_FEE_TYPES = [
@@ -60,45 +58,41 @@ export default function OrderDetailsModal({ open, order, onCancel, onUpdateOrder
 function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOnly = false }) {
   const router = useRouter();
   const isClosed = order.status === 'CANCELLED' || order.status === 'CLOSED';
-  const isLocked = isClosed || ['READY_FOR_PLANNING', 'ASSIGNED', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'HANDED_OVER_VENDOR', 'DELIVERED', 'DELIVERED_EXCEPTION'].includes(order.status);
+  const isLocked =
+    isClosed ||
+    [
+      'READY_FOR_PLANNING',
+      'ASSIGNED',
+      'ACCEPTED',
+      'PICKED_UP',
+      'IN_TRANSIT',
+      'HANDED_OVER_VENDOR',
+      'DELIVERED',
+      'DELIVERED_EXCEPTION'
+    ].includes(order.status);
 
   // Xác định tab mặc định dựa trên trạng thái đơn hàng
-  const defaultTab = order.targetTab || (
-    order.status === 'DRAFT' ? '1' :
-    order.status === 'CONFIRMED' ? '2' : '1'
-  );
+  const defaultTab =
+    order.targetTab ||
+    (order.status === 'DRAFT' ? '1' : order.status === 'CONFIRMED' ? '2' : '1');
 
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [savingPrice, setSavingPrice] = useState(false);
-  const [confirmingDocs, setConfirmingDocs] = useState(false);
 
-  // State Modal Từ chối 1 chứng từ
-  const [rejectDocModalOpen, setRejectDocModalOpen] = useState(false);
-  const [rejectingDocKey, setRejectingDocKey] = useState(null);
-  const [rejectDocReason, setRejectDocReason] = useState('Chứng từ chưa hợp lệ hoặc bị mờ, vui lòng tải lại tệp đúng quy định.');
-  const [submittingRejectDoc, setSubmittingRejectDoc] = useState(false);
-
-  // State Giá thỏa thuận, Phương án xe đề xuất, Lý do điều chỉnh lại giá & Hợp đồng
+  // State Giá thỏa thuận, Phương án xe đề xuất, Lý do điều chỉnh lại giá
   const [currentAgreedPrice, setCurrentAgreedPrice] = useState(order.agreed_price || 0);
   const [adjustmentReason, setAdjustmentReason] = useState('');
   const [proposedVehicleType, setProposedVehicleType] = useState(
     order.proposed_vehicle_type ||
-    order.web_workflow?.proposed_vehicle_type ||
-    order.vehicle_type_required ||
-    'TRUCK_2.5T'
+      order.web_workflow?.proposed_vehicle_type ||
+      order.vehicle_type_required ||
+      'TRUCK_2.5T'
   );
   const [vehicleAnalysisNote, setVehicleAnalysisNote] = useState(
-    order.vehicle_analysis_note ||
-    order.web_workflow?.vehicle_analysis_note ||
-    ''
+    order.vehicle_analysis_note || order.web_workflow?.vehicle_analysis_note || ''
   );
-  const [contractUploaded, setContractUploaded] = useState(order.contract_uploaded || false);
-  const [contractFile, setContractFile] = useState(order.contract_file || null);
-  const [contractFileData, setContractFileData] = useState(order.contract_file_data || null);
-  const [contractUploadedAt, setContractUploadedAt] = useState(order.contract_uploaded_at || null);
-  const [uploadingContract, setUploadingContract] = useState(false);
 
   // State Modal mô phỏng xếp xe 3D
   const [is3DModalOpen, setIs3DModalOpen] = useState(false);
@@ -110,31 +104,45 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
     durationMins: order.estimated_duration_mins || 45
   });
 
-  // State Chứng từ vận tải
-  const [documents, setDocuments] = useState(() => {
-    if (Array.isArray(order.documents) && order.documents.length > 0) {
-      return order.documents;
-    }
-    return getRecommendedDocsByCargo(
-      order.cargo_name || order.cargo_type || '',
-      order.cargo_type || '',
-      order.order_notes || ''
-    );
-  });
-
-  // Đồng bộ danh sách chứng từ khi khách hàng tải lại tệp từ trang Web
-  useEffect(() => {
-    if (Array.isArray(order.documents) && order.documents.length > 0) {
-      setDocuments(order.documents);
-    }
-  }, [order.documents, order.web_workflow?.docs_uploaded_at]);
-
-  const [newDocName, setNewDocName] = useState('');
-  const [selectedSpecializedDoc, setSelectedSpecializedDoc] = useState('');
   const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
-  const [uploadingDocKey, setUploadingDocKey] = useState(null);
-  const fileInputRef = useRef(null);
-  const contractInputRef = useRef(null);
+
+  // Custom hook quản lý chứng từ & đính kèm hợp đồng
+  const {
+    documents,
+    setDocuments,
+    hasRejectedDocs,
+    isDocsApprovedStage,
+    confirmingDocs,
+    rejectDocModalOpen,
+    setRejectDocModalOpen,
+    rejectingDocKey,
+    setRejectingDocKey,
+    rejectDocReason,
+    setRejectDocReason,
+    submittingRejectDoc,
+    contractUploaded,
+    uploadingContract,
+    newDocName,
+    setNewDocName,
+    selectedSpecializedDoc,
+    setSelectedSpecializedDoc,
+    fileInputRef,
+    contractInputRef,
+    triggerUploadDoc,
+    handleFileChange,
+    handleContractFileChange,
+    handleApproveDoc,
+    handleRejectDoc,
+    handleConfirmRejectDoc,
+    handleAddCustomDoc,
+    handleApplyAssistantRecommendations,
+    handleDeleteCustomDoc,
+    handleConfirmAllDocuments
+  } = useOrderDocumentActions({
+    order,
+    onUpdateOrder,
+    currentAgreedPrice
+  });
 
   // State Phụ phí phát sinh
   const [extraFees, setExtraFees] = useState(order.extra_fees_list || []);
@@ -152,18 +160,22 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
         id: n.id || i,
         sender: 'Hệ thống / Ghi chú',
         role: 'SYSTEM',
-        time: n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Vừa xong',
+        time: n.created_at
+          ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : 'Vừa xong',
         content: n.content
       }));
     }
     if (order.order_notes) {
-      return [{
-        id: 1,
-        sender: 'Thông tin tiếp nhận',
-        role: 'SYSTEM',
-        time: 'Vừa xong',
-        content: order.order_notes
-      }];
+      return [
+        {
+          id: 1,
+          sender: 'Thông tin tiếp nhận',
+          role: 'SYSTEM',
+          time: 'Vừa xong',
+          content: order.order_notes
+        }
+      ];
     }
     return [];
   });
@@ -173,24 +185,27 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
   const vehicleRecommendation = useMemo(() => {
     return analyzeVehicleRecommendation({
       actualWeightKg: parseFloat(order.weight || order.weight_kg || 0),
-      chargeableWeightKg: parseFloat(order.chargeable || order.chargeable_weight || order.weight || 0),
+      chargeableWeightKg: parseFloat(
+        order.chargeable || order.chargeable_weight || order.weight || 0
+      ),
       length_cm: parseFloat(order.length_cm || 0),
       width_cm: parseFloat(order.width_cm || 0),
       height_cm: parseFloat(order.height_cm || 0),
       package_count: parseInt(order.package_count, 10) || 1,
       items: order.items || [],
       customerRequestedVehicle:
-        order.customer_requested_vehicle ||
-        order.vehicle_type_required ||
-        'TRUCK_2.5T'
+        order.customer_requested_vehicle || order.vehicle_type_required || 'TRUCK_2.5T'
     });
   }, [order]);
 
   // Tính giá cước sàn gợi ý
   const pricingBreakdown = useMemo(() => {
     const dist = parseFloat(routeInfo.distanceKm) || 35.5;
-    const weight = parseFloat(order.chargeable || order.chargeable_weight || order.weight || 1000);
-    const vehicleType = proposedVehicleType || order.vehicle_type_required || order.vehicle_type || 'TRUCK_2.5T';
+    const weight = parseFloat(
+      order.chargeable || order.chargeable_weight || order.weight || 1000
+    );
+    const vehicleType =
+      proposedVehicleType || order.vehicle_type_required || order.vehicle_type || 'TRUCK_2.5T';
     const timeSlot = order.operating_time_slot || 'FULL_DAY';
     const isUnloading = order.loading_unloading_required === true;
     const isCustoms = order.customs_service_required === true;
@@ -226,24 +241,39 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
   // Tổng các khoản phụ phí phát sinh (chỉ cộng các khoản đã xác nhận, không cộng Proposed / Rejected)
   const totalExtraFees = useMemo(() => {
     return extraFees
-      .filter((item) => !['PROPOSED', 'REJECTED'].includes(String(item.status || '').toUpperCase()))
+      .filter(
+        (item) => !['PROPOSED', 'REJECTED'].includes(String(item.status || '').toUpperCase())
+      )
       .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   }, [extraFees]);
 
   // Chuẩn hóa địa chỉ điểm lấy và điểm giao
   const pickupAddress = useMemo(() => {
-    return order.pickup || order.pickup_address || order.pickup_location?.address || 'Kho ALS Cảng HKQT Nội Bài';
+    return (
+      order.pickup ||
+      order.pickup_address ||
+      order.pickup_location?.address ||
+      'Kho ALS Cảng HKQT Nội Bài'
+    );
   }, [order]);
 
   const deliveryAddress = useMemo(() => {
-    return order.dropoff || order.delivery_address || order.delivery_location?.address || 'KCN Tiên Sơn, Bắc Ninh';
+    return (
+      order.dropoff ||
+      order.delivery_address ||
+      order.delivery_location?.address ||
+      'KCN Tiên Sơn, Bắc Ninh'
+    );
   }, [order]);
 
   // Tọa độ
   const pickupCoords = useMemo(() => {
     if (order.pickup_coords?.lat && order.pickup_coords?.lng) return order.pickup_coords;
     if (order.pickup_location?.lat && order.pickup_location?.lng) {
-      return { lat: parseFloat(order.pickup_location.lat), lng: parseFloat(order.pickup_location.lng) };
+      return {
+        lat: parseFloat(order.pickup_location.lat),
+        lng: parseFloat(order.pickup_location.lng)
+      };
     }
     return getCoordsFromAddress(pickupAddress, 'A');
   }, [order, pickupAddress]);
@@ -252,7 +282,10 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
     if (order.dropoff_coords?.lat && order.dropoff_coords?.lng) return order.dropoff_coords;
     if (order.delivery_coords?.lat && order.delivery_coords?.lng) return order.delivery_coords;
     if (order.delivery_location?.lat && order.delivery_location?.lng) {
-      return { lat: parseFloat(order.delivery_location.lat), lng: parseFloat(order.delivery_location.lng) };
+      return {
+        lat: parseFloat(order.delivery_location.lat),
+        lng: parseFloat(order.delivery_location.lng)
+      };
     }
     return getCoordsFromAddress(deliveryAddress, 'B');
   }, [order, deliveryAddress]);
@@ -266,7 +299,9 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
 
     try {
       setSavingPrice(true);
-      await orderApi.uploadOrderDocuments(order.id || order.order_id, documents).catch(console.error);
+      await orderApi
+        .uploadOrderDocuments(order.id || order.order_id, documents)
+        .catch(console.error);
 
       const res = await orderApi.updateAgreedPrice(
         order.id || order.order_id,
@@ -277,7 +312,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
           vehicle_analysis_note: vehicleAnalysisNote.trim()
         }
       );
-      
+
       const isWebOrder = order.source === 'HOMEPAGE' || Boolean(order.customer_email);
       const selectedSpec = getVehicleSpecByKey(proposedVehicleType) || VEHICLE_SPECS[1];
       const updatedOrder = {
@@ -300,9 +335,13 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
 
       onUpdateOrder?.(updatedOrder);
       if (isWebOrder) {
-        message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ, đồng thời gửi email báo giá và yêu cầu chứng từ cho khách hàng!`);
+        message.success(
+          `Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ, đồng thời gửi email báo giá và yêu cầu chứng từ cho khách hàng!`
+        );
       } else {
-        message.success(`Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ! Đơn đã chuyển sang trạng thái Cần xác nhận chứng từ.`);
+        message.success(
+          `Đã chốt phương án ${selectedSpec.label} & giá ${currentAgreedPrice.toLocaleString('vi-VN')} đ! Đơn đã chuyển sang trạng thái Cần xác nhận chứng từ.`
+        );
         setActiveTab('2');
       }
     } catch (err) {
@@ -310,370 +349,6 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       message.error(err.message || 'Lỗi khi cập nhật giá cước lên máy chủ');
     } finally {
       setSavingPrice(false);
-    }
-  };
-
-  // 2. Xử lý Tải lên chứng từ
-  const triggerUploadDoc = (docKey) => {
-    setUploadingDocKey(docKey);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !uploadingDocKey) return;
-
-    const sizeFormatted = file.size > 1024 * 1024 
-      ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
-      : `${Math.round(file.size / 1024)} KB`;
-
-    const nowFormatted = new Date().toLocaleDateString('vi-VN');
-    const orderId = order.id || order.order_id;
-    const currentDocKey = uploadingDocKey;
-
-    try {
-      const uploaded = await uploadApi.uploadToCloudinary(file, `nexlog/orders/${orderId}/docs`);
-      const updatedDocs = documents.map(d => {
-        if (d.key === currentDocKey) {
-          return {
-            ...d,
-            file: file.name,
-            file_url: uploaded.url,
-            file_data: uploaded.url,
-            size: sizeFormatted,
-            uploadDate: nowFormatted,
-            status: 'PENDING_REVIEW',
-            reject_reason: null
-          };
-        }
-        return d;
-      });
-
-      setDocuments(updatedDocs);
-      setUploadingDocKey(null);
-
-      await orderApi.uploadOrderDocuments(orderId, updatedDocs);
-      onUpdateOrder?.({
-        ...order,
-        documents: updatedDocs,
-        web_workflow: {
-          ...(order.web_workflow || {}),
-          documents: updatedDocs
-        }
-      });
-      message.success(`Đã tải lên Cloudinary và lưu tệp chứng từ: ${file.name}`);
-    } catch (err) {
-      console.error('Lỗi tải/lưu chứng từ:', err);
-      message.error(err.message || `Không thể tải tệp ${file.name} lên Cloudinary.`);
-      setUploadingDocKey(null);
-    }
-  };
-
-  // 2b. Xử lý Tải lên tệp hợp đồng
-  const handleContractFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      message.error('Tệp hợp đồng tải lên bắt buộc phải là định dạng PDF (.pdf)!');
-      if (contractInputRef.current) contractInputRef.current.value = '';
-      return;
-    }
-
-    const sizeFormatted = file.size > 1024 * 1024 
-      ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
-      : `${Math.round(file.size / 1024)} KB`;
-
-    try {
-      setUploadingContract(true);
-      const orderId = order.id || order.order_id;
-      const uploaded = await uploadApi.uploadToCloudinary(file, `nexlog/orders/${orderId}/contract`);
-      const contractUrl = uploaded.url;
-
-      const res = await orderApi.uploadContractFile(orderId, {
-        file_name: file.name,
-        file_data: contractUrl,
-        file_url: contractUrl,
-        file_size: sizeFormatted
-      });
-
-      setContractUploaded(true);
-      setContractFile(file.name);
-      setContractFileData(contractUrl);
-      setContractUploadedAt(res.contract_uploaded_at || new Date().toISOString());
-
-      const nextStatus = res?.order?.status || (isDocsApprovedStage ? 'READY_FOR_PLANNING' : order.status);
-      const updatedOrder = {
-        ...order,
-        status: nextStatus,
-        contract_uploaded: true,
-        contract_file: file.name,
-        contract_file_data: contractUrl,
-        contract_uploaded_at: res.contract_uploaded_at || new Date().toISOString(),
-        web_workflow: res?.web_workflow || {
-          ...(order.web_workflow || {}),
-          stage: 'CONTRACT_SIGNED',
-          signed_contract: {
-            signed_at: res.contract_uploaded_at || new Date().toISOString(),
-            signer_name: 'Hai bên ký trực tiếp (Bản Scan PDF)',
-            contract_file: file.name
-          }
-        }
-      };
-
-      onUpdateOrder?.(updatedOrder);
-      message.success(
-        res?.message ||
-          `Đã đính kèm bản scan hợp đồng [${file.name}] vào hồ sơ đơn hàng thành công!`
-      );
-    } catch (err) {
-      console.error('Upload contract api error:', err);
-      message.error(err.message || 'Lỗi khi tải tệp hợp đồng lên Cloudinary');
-    } finally {
-      setUploadingContract(false);
-    }
-  };
-
-  // 3. Duyệt và Từ chối từng chứng từ
-  const handleApproveDoc = async (docKey) => {
-    const updated = documents.map(d => d.key === docKey ? { ...d, status: 'APPROVED', reject_reason: null } : d);
-    setDocuments(updated);
-
-    const nonCustomsDocs = updated.filter(
-      d => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan'))
-    );
-    const stillHasRejected = updated.some(d => d.status === 'REJECTED');
-    const allApproved = nonCustomsDocs.length > 0 && nonCustomsDocs.every(d => d.status === 'APPROVED');
-    const nextStage = stillHasRejected ? 'DOCS_REJECTED' : allApproved ? 'DOCS_APPROVED' : 'DOCS_UPLOADED';
-
-    try {
-      const res = await orderApi.uploadOrderDocuments(order.id || order.order_id, updated, nextStage);
-      onUpdateOrder?.({
-        ...order,
-        status: allApproved && (order.contract_uploaded || res?.order?.status === 'READY_FOR_PLANNING') ? 'READY_FOR_PLANNING' : 'CONFIRMED',
-        documents: updated,
-        web_workflow: res?.web_workflow || {
-          ...(order.web_workflow || {}),
-          stage: nextStage,
-          documents: updated,
-          approved_documents: allApproved ? updated.filter(d => d.status === 'APPROVED') : (order.web_workflow?.approved_documents || null)
-        }
-      });
-      message.success(allApproved ? 'Đã duyệt toàn bộ chứng từ thành công!' : 'Đã duyệt tính hợp lệ của chứng từ!');
-    } catch (e) {
-      console.error('handleApproveDoc error:', e);
-      onUpdateOrder?.({
-        ...order,
-        status: 'CONFIRMED',
-        documents: updated,
-        web_workflow: {
-          ...(order.web_workflow || {}),
-          stage: nextStage,
-          documents: updated
-        }
-      });
-      message.success('Đã duyệt tính hợp lệ của chứng từ!');
-    }
-  };
-
-  const handleRejectDoc = (docKey) => {
-    setRejectingDocKey(docKey);
-    setRejectDocReason('Chứng từ bị mờ hoặc thông tin chưa khớp, vui lòng tải lại tệp đúng quy định.');
-    setRejectDocModalOpen(true);
-  };
-
-  const handleConfirmRejectDoc = async () => {
-    if (!rejectingDocKey) return;
-    if (!rejectDocReason.trim()) {
-      message.error('Vui lòng nhập lý do từ chối chứng từ để thông báo cho khách hàng!');
-      return;
-    }
-
-    try {
-      setSubmittingRejectDoc(true);
-      const updated = documents.map(d =>
-        d.key === rejectingDocKey
-          ? { ...d, status: 'REJECTED', reject_reason: rejectDocReason.trim() }
-          : d
-      );
-      setDocuments(updated);
-
-      const res = await orderApi.rejectOrderDocument(order.id || order.order_id, {
-        doc_key: rejectingDocKey,
-        reject_reason: rejectDocReason.trim(),
-        documents: updated
-      });
-
-      onUpdateOrder?.({
-        ...order,
-        documents: res?.documents || updated,
-        web_workflow: res?.web_workflow || {
-          ...(order.web_workflow || {}),
-          stage: 'DOCS_REJECTED',
-          documents: updated
-        }
-      });
-
-      setRejectDocModalOpen(false);
-      setRejectingDocKey(null);
-      message.warning(res?.message || 'Đã từ chối chứng từ và gửi email yêu cầu khách hàng tải lại tệp mới!');
-    } catch (err) {
-      console.error('rejectOrderDocument error:', err);
-      message.error(err.message || 'Lỗi khi từ chối chứng từ');
-    } finally {
-      setSubmittingRejectDoc(false);
-    }
-  };
-
-  // 4. Bổ sung chứng từ tùy biến
-  const handleAddCustomDoc = (docTitle) => {
-    const title = (typeof docTitle === 'string' && docTitle.trim()) 
-      ? docTitle.trim() 
-      : (selectedSpecializedDoc || newDocName).trim();
-
-    if (!title) {
-      message.error('Vui lòng chọn hoặc nhập tên loại chứng từ cần bổ sung!');
-      return;
-    }
-
-    if (documents.some(d => d.name.toLowerCase() === title.toLowerCase())) {
-      message.warning(`Chứng từ "${title}" đã có trong danh mục!`);
-      return;
-    }
-
-    let docDesc = 'Chứng từ hồ sơ đối chiếu bổ sung theo yêu cầu';
-    let catName = 'Chứng từ bổ sung';
-    for (const cat of SPECIALIZED_CARGO_CATEGORIES) {
-      const match = cat.specializedDocs.find(d => d.name === title);
-      if (match) {
-        docDesc = match.description;
-        catName = cat.categoryName;
-        break;
-      }
-    }
-
-    const slug = title
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')
-      .slice(0, 24) || 'doc';
-    let suffix = documents.length + 1;
-    let newKey = `custom-doc-${suffix}-${slug}`;
-    while (documents.some(d => d.key === newKey)) {
-      suffix += 1;
-      newKey = `custom-doc-${suffix}-${slug}`;
-    }
-    const newDoc = {
-      key: newKey,
-      name: title,
-      description: docDesc,
-      file: 'Chờ tải lên',
-      status: 'WAITING_UPLOAD',
-      size: '-',
-      uploadDate: '-',
-      isBasic: false,
-      isCustom: true,
-      categoryName: catName
-    };
-
-    const updated = [...documents, newDoc];
-    setDocuments(updated);
-    setNewDocName('');
-    setSelectedSpecializedDoc('');
-    orderApi.uploadOrderDocuments(order.id || order.order_id, updated).catch(() => {});
-    message.success(`Đã thêm mục chứng từ mới: "${newDoc.name}"`);
-  };
-
-  const handleApplyAssistantRecommendations = (recommendedList) => {
-    const updated = recommendedList.map(rec => {
-      const exist = documents.find(p => p.name === rec.name);
-      if (exist && exist.file !== 'Chờ tải lên') {
-        return { 
-          ...rec, 
-          file: exist.file, 
-          size: exist.size, 
-          uploadDate: exist.uploadDate, 
-          status: exist.status 
-        };
-      }
-      return rec;
-    });
-    setDocuments(updated);
-    orderApi.uploadOrderDocuments(order.id || order.order_id, updated).catch(() => {});
-    message.success('Đã cập nhật danh mục chứng từ từ Trợ lý AI!');
-  };
-
-  const handleDeleteCustomDoc = (docKey) => {
-    const updated = documents.filter(d => d.key !== docKey);
-    setDocuments(updated);
-    orderApi.uploadOrderDocuments(order.id || order.order_id, updated).catch(() => {});
-    message.info('Đã xóa mục chứng từ.');
-  };
-
-  // 5. Xác nhận toàn bộ chứng từ
-  const handleConfirmAllDocuments = async () => {
-    const rejectedList = documents.filter(d => d.status === 'REJECTED');
-    if (rejectedList.length > 0) {
-      message.error(`Không thể duyệt toàn bộ hồ sơ vì đang có ${rejectedList.length} chứng từ bị TỪ CHỐI (${rejectedList.map(d => d.name).join(', ')}). Vui lòng chờ khách hàng tải lại tệp hợp lệ!`);
-      return;
-    }
-
-    const unuploaded = documents.filter(d => d.file === 'Chờ tải lên' || d.status === 'WAITING_UPLOAD');
-    if (unuploaded.length > 0) {
-      // Bỏ bắt buộc Tờ khai hải quan phải nộp trước (vì tờ khai sẽ được tự sinh bằng AI sau khi khách ký hợp đồng)
-      const nonCustomsUnuploaded = unuploaded.filter(d => !(d.preparedBy === 'DISPATCHER' || d.key === 'doc-basic-1' || d.name?.toLowerCase().includes('tờ khai hải quan')));
-      if (nonCustomsUnuploaded.length > 0) {
-        message.warning(`Còn ${nonCustomsUnuploaded.length} chứng từ của khách chưa được tải tệp lên! Hãy tải đầy đủ trước khi xác nhận.`);
-        return;
-      }
-    }
-
-    const isWebOrder = order.source === 'HOMEPAGE';
-
-    try {
-      setConfirmingDocs(true);
-      const approvedDocs = documents.map(d => ({ ...d, status: 'APPROVED', reject_reason: null }));
-      setDocuments(approvedDocs);
-
-      if (isWebOrder) {
-        const res = await orderApi.approveWebOrderDocuments(order.id || order.order_id, approvedDocs);
-        
-        const updatedOrder = {
-          ...order,
-          status: 'READY_FOR_PLANNING',
-          documents: approvedDocs,
-          web_workflow: res?.web_workflow || {
-            ...(order.web_workflow || {}),
-            stage: 'DOCS_APPROVED',
-            documents: approvedDocs,
-            approved_documents: approvedDocs
-          }
-        };
-
-        onUpdateOrder?.(updatedOrder);
-        message.success(
-          res?.message || 'Đã duyệt toàn bộ hồ sơ chứng từ! Đơn hàng đã sẵn sàng để xếp xe.'
-        );
-      } else {
-        await orderApi.confirmOrder(order.id || order.order_id, currentAgreedPrice);
-        const updatedOrder = {
-          ...order,
-          status: 'READY_FOR_PLANNING',
-          documents: approvedDocs
-        };
-        onUpdateOrder?.(updatedOrder);
-        message.success('Đã xác nhận toàn bộ chứng từ! Đơn hàng đã sẵn sàng để xếp xe.');
-      }
-    } catch (err) {
-      console.error(err);
-      message.error(err.message || 'Lỗi khi xác nhận chứng từ trên máy chủ');
-    } finally {
-      setConfirmingDocs(false);
     }
   };
 
@@ -689,7 +364,13 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
       type: newFeeType,
       amount: newFeeAmount,
       reason: newFeeReason || 'Phát sinh trong quá trình vận hành',
-      time: new Date().toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      time: new Date().toLocaleString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
     };
 
     const updatedList = [...extraFees, newFee];
@@ -725,22 +406,21 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
   // 8. Gửi tin nhắn trao đổi nội bộ
   const handleSendMessage = () => {
     if (!newMessageText.trim()) return;
-    setOrderMessages(prev => [...prev, {
-      id: Date.now(),
-      sender: 'Điều phối viên (Bạn)',
-      role: 'DISPATCHER',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      content: newMessageText.trim()
-    }]);
+    setOrderMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        sender: 'Điều phối viên (Bạn)',
+        role: 'DISPATCHER',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        content: newMessageText.trim()
+      }
+    ]);
     setNewMessageText('');
     message.success('Đã gửi tin nhắn cho tài xế!');
   };
 
   const isWebOrder = order.source === 'HOMEPAGE';
-  const hasRejectedDocs = documents.some(d => d.status === 'REJECTED');
-  const isDocsApprovedStage =
-    !hasRejectedDocs &&
-    (order.web_workflow?.stage === 'DOCS_APPROVED' || order.web_workflow?.stage === 'CONTRACT_SIGNED');
 
   // Cấu hình Tabs
   const tabItems = [
@@ -777,7 +457,11 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
             setSelected3DVehicleType(vType || proposedVehicleType);
             setIs3DModalOpen(true);
           }}
-          onOpenSplitModal={(!isLocked && !isClosed && order.status === 'DRAFT') ? () => setSplitModalOpen(true) : null}
+          onOpenSplitModal={
+            !isLocked && !isClosed && order.status === 'DRAFT'
+              ? () => setSplitModalOpen(true)
+              : null
+          }
         />
       )
     }
@@ -811,10 +495,16 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
 
     tabItems.push({
       key: '3',
-      label: <span className="font-semibold text-xs flex items-center gap-1">
-        <span>Hợp đồng vận tải</span>
-        {order.contract_hardcopy_received && <Tag color="green" className="m-0 text-[9px] px-1 py-0">Bản cứng</Tag>}
-      </span>,
+      label: (
+        <span className="font-semibold text-xs flex items-center gap-1">
+          <span>Hợp đồng vận tải</span>
+          {order.contract_hardcopy_received && (
+            <Tag color="green" className="m-0 text-[9px] px-1 py-0">
+              Bản cứng
+            </Tag>
+          )}
+        </span>
+      ),
       children: (
         <OrderContractTab
           order={order}
@@ -868,181 +558,66 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
     }
   }
 
-  const rejectingDocObj = documents.find(d => d.key === rejectingDocKey);
+  const rejectingDocObj = documents.find((d) => d.key === rejectingDocKey);
 
   return (
     <>
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileChange} 
-        className="hidden" 
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
         accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
       />
 
-      <input 
-        type="file" 
-        ref={contractInputRef} 
-        onChange={handleContractFileChange} 
-        className="hidden" 
+      <input
+        type="file"
+        ref={contractInputRef}
+        onChange={handleContractFileChange}
+        className="hidden"
         accept=".pdf"
       />
 
       <Modal
         title={
-          <div className="flex items-center justify-between pb-3 border-b border-gray-100 pr-8">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-50 text-[#7367f0] rounded-xl font-bold font-mono">
-                {order.order_id}
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-gray-800">Hồ sơ Chi tiết Đơn hàng</h3>
-                <p className="text-[11px] text-gray-400 m-0">Khách hàng: <b>{order.customer}</b></p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {order.source === 'HOMEPAGE' ? (
-                <Tag color="orange" className="font-semibold text-xs rounded-full px-3 py-0.5">
-                  Nguồn: Website
-                </Tag>
-              ) : (
-                <Tag color="blue" className="font-semibold text-xs rounded-full px-3 py-0.5">
-                  Nguồn: Hotline / Trực tiếp
-                </Tag>
-              )}
-              <Tag color={
-                order.status === 'DELIVERED' ? 'green' : 
-                order.status === 'DELIVERED_EXCEPTION' ? 'error' :
-                order.status === 'HANDED_OVER_VENDOR' ? 'volcano' :
-                order.status === 'IN_TRANSIT' ? 'purple' :
-                order.status === 'PICKED_UP' ? 'gold' :
-                order.status === 'ACCEPTED' ? 'geekblue' :
-                order.status === 'ASSIGNED' ? 'orange' :
-                order.status === 'CANCELLED' ? 'red' : 
-                order.status === 'READY_FOR_PLANNING' ? 'cyan' : 
-                hasRejectedDocs || order.web_workflow?.stage === 'DOCS_REJECTED' ? 'error' :
-                isDocsApprovedStage ? 'success' :
-                order.status === 'CONFIRMED' ? 'blue' : 'default'
-              } className="px-3 py-1 font-semibold text-xs rounded-full">
-                {order.status === 'DRAFT' ? 'ĐƠN NHÁP' : 
-                 order.status === 'READY_FOR_PLANNING' ? 'SẴN SÀNG XẾP XE' :
-                 order.status === 'ASSIGNED' ? 'ĐÃ GÁN XE' :
-                 order.status === 'ACCEPTED' ? 'TÀI XẾ ĐÃ NHẬN' :
-                 order.status === 'PICKED_UP' ? 'ĐÃ LẤY HÀNG' :
-                 order.status === 'IN_TRANSIT' ? 'ĐANG VẬN CHUYỂN' :
-                 order.status === 'HANDED_OVER_VENDOR' ? 'GIAO NHÀ XE NGOÀI' :
-                 order.status === 'DELIVERED' ? 'ĐÃ GIAO HÀNG' :
-                 order.status === 'DELIVERED_EXCEPTION' ? 'TỪ CHỐI NHẬN HÀNG' :
-                 order.status === 'CANCELLED' ? 'ĐÃ HỦY' :
-                 order.status === 'CLOSED' ? 'ĐÃ ĐÓNG' :
-                 hasRejectedDocs || order.web_workflow?.stage === 'DOCS_REJECTED' ? 'CHỜ KHÁCH UPLOAD LẠI CHỨNG TỪ' :
-                 isDocsApprovedStage ? 'ĐÃ DUYỆT CHỨNG TỪ - CHỜ ĐÍNH KÈM HỢP ĐỒNG PDF' :
-                 order.status === 'CONFIRMED' ? 'CẦN XÁC NHẬN CHỨNG TỪ' : order.status}
-              </Tag>
-              {(order.tracking_token || order.order_id || order.order_code) && (
-                <Button
-                  size="small"
-                  icon={<ExternalLink size={12} />}
-                  onClick={() => {
-                    const token = order.tracking_token || order.order_id || order.order_code;
-                    const url = `${window.location.origin}/customer/order-confirmation/${token}`;
-                    if (navigator.clipboard) {
-                      navigator.clipboard.writeText(url);
-                      message.success('Đã sao chép link xác nhận đơn của khách hàng!');
-                    }
-                    window.open(url, '_blank');
-                  }}
-                  className="text-xs font-medium border-indigo-200 text-indigo-600 hover:text-indigo-700 hover:border-indigo-400"
-                >
-                  Mở trang khách
-                </Button>
-              )}
-            </div>
-          </div>
+          <OrderDetailsModalTitle
+            order={order}
+            hasRejectedDocs={hasRejectedDocs}
+            isDocsApprovedStage={isDocsApprovedStage}
+          />
         }
         open={open}
         onCancel={onCancel}
         width={980}
-        footer={
-          (isClosed || readOnly) ? [
-            <Button key="close" type="primary" onClick={onCancel}>Đóng</Button>
-          ] : [
-          <Button key="close" onClick={onCancel}>Đóng</Button>,
-          order.status === 'DRAFT' && (
-            <Button 
-              key="confirmPrice" 
-              type="primary" 
-              loading={savingPrice}
-              className="bg-indigo-600 hover:bg-indigo-700 font-semibold"
-              onClick={handleConfirmPriceAndOrder}
-            >
-              Chốt giá &amp; Xác nhận đơn
-            </Button>
-          ),
-          order.status === 'CONFIRMED' && !isDocsApprovedStage && (
-            <Button 
-              key="confirmDocs" 
-              type="primary" 
-              loading={confirmingDocs}
-              disabled={hasRejectedDocs}
-              className={
-                hasRejectedDocs
-                  ? 'font-semibold'
-                  : 'bg-emerald-600 hover:bg-emerald-700 font-semibold'
-              }
-              onClick={handleConfirmAllDocuments}
-            >
-              {hasRejectedDocs
-                ? 'Chờ khách tải lại chứng từ bị từ chối'
-                : order.source === 'HOMEPAGE' 
-                  ? 'Duyệt chứng từ & Chuyển sang đính kèm Hợp đồng PDF' 
-                  : 'Xác nhận chứng từ & Chuyển sang Hợp đồng PDF'}
-            </Button>
-          ),
-          order.status === 'CONFIRMED' && isDocsApprovedStage && !contractUploaded && (
-            <Button
-              key="uploadScannedContract"
-              type="primary"
-              loading={uploadingContract}
-              className="bg-indigo-600 hover:bg-indigo-700 font-semibold"
-              onClick={() => {
-                setActiveTab('3');
-                if (contractInputRef.current) {
-                  contractInputRef.current.value = '';
-                  contractInputRef.current.click();
-                }
-              }}
-            >
-              Đính kèm hợp đồng đã scan (PDF)
-            </Button>
-          ),
-          order.status === 'READY_FOR_PLANNING' && (
-            <Button 
-              key="planTrip" 
-              type="primary" 
-              icon={<ArrowUpRight size={14} />} 
-              className="bg-[#7367f0] hover:bg-[#5e50ee] font-semibold"
-              onClick={() => {
-                onCancel();
-                router.push('/dispatcher/trips');
-              }}
-            >
-              Chuyển sang Xếp chuyến &amp; Điều xe
-            </Button>
-          ),
-          ['DRAFT', 'CONFIRMED', 'READY_FOR_PLANNING', 'ASSIGNED', 'ACCEPTED'].includes(order.status) && (
-            <Button key="cancel" danger onClick={() => setCancelModalOpen(true)}>
-              Hủy đơn
-            </Button>
-          )
-        ]}
+        footer={getOrderDetailsModalFooter({
+          order,
+          isClosed,
+          readOnly,
+          onCancel,
+          savingPrice,
+          handleConfirmPriceAndOrder,
+          isDocsApprovedStage,
+          confirmingDocs,
+          hasRejectedDocs,
+          handleConfirmAllDocuments,
+          contractUploaded,
+          uploadingContract,
+          onClickUploadScannedContract: () => {
+            setActiveTab('3');
+            if (contractInputRef.current) {
+              contractInputRef.current.value = '';
+              contractInputRef.current.click();
+            }
+          },
+          onClickPlanTrip: () => {
+            onCancel();
+            router.push('/dispatcher/trips');
+          },
+          onClickCancelOrder: () => setCancelModalOpen(true)
+        })}
       >
         <div className="py-1">
-          <Tabs 
-            activeKey={activeTab} 
-            onChange={setActiveTab}
-            items={tabItems}
-          />
+          <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
         </div>
       </Modal>
 
@@ -1072,7 +647,7 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
         open={splitModalOpen}
         order={order}
         onCancel={() => setSplitModalOpen(false)}
-        onSuccess={(result) => {
+        onSuccess={() => {
           onCancel?.();
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('nexlog_orders_updated'));
@@ -1096,12 +671,19 @@ function OrderDetailsModalContent({ open, order, onCancel, onUpdateOrder, readOn
           trip={{
             id: `PREVIEW-${order.id || order.order_id}`,
             trip_code: `XEM-XE-${selected3DVehicleType || proposedVehicleType}`,
-            truck_model: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.label || 'Xe tải ALS',
+            truck_model:
+              getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.label ||
+              'Xe tải ALS',
             plate: 'XE-DU-KIEN',
-            truck_length_cm: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.length_cm || 420,
-            truck_width_cm: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.width_cm || 190,
-            truck_height_cm: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.height_cm || 190,
-            max_payload: getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.maxPayloadKg || 2500,
+            truck_length_cm:
+              getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.length_cm || 420,
+            truck_width_cm:
+              getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.width_cm || 190,
+            truck_height_cm:
+              getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.height_cm || 190,
+            max_payload:
+              getVehicleSpecByKey(selected3DVehicleType || proposedVehicleType)?.maxPayloadKg ||
+              2500,
             order: order
           }}
         />
