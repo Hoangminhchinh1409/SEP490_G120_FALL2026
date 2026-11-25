@@ -661,10 +661,28 @@ const createTrip = async (payload, userId = 1) => {
     vendor_vehicles_count,
   } = payload;
 
-  // Tìm đơn hàng thực tế trong DB
+  // Tìm đơn hàng thực tế trong DB & kiểm tra trạng thái hợp lệ (chỉ lập chuyến cho đơn READY_FOR_PLANNING)
   const matchedOrder = await tripModel.findOrderByCodeOrId(
     order_id || order_code,
   );
+  if ((order_id || order_code) && !matchedOrder) {
+    const err = new Error(`Không tìm thấy đơn hàng ${order_id || order_code}.`);
+    err.statusCode = 404;
+    throw err;
+  }
+  if (matchedOrder) {
+    const normalizedOrderStatus = String(matchedOrder.status || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "_");
+    if (normalizedOrderStatus !== "READY_FOR_PLANNING") {
+      const err = new Error(
+        `Chỉ có thể lập chuyến cho đơn hàng đang ở trạng thái READY_FOR_PLANNING (trạng thái hiện tại: ${matchedOrder.status}).`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+  }
   const resolvedOrderId =
     matchedOrder?.id ||
     (Number.isInteger(Number(order_id)) ? Number(order_id) : null);
@@ -728,7 +746,7 @@ const createTrip = async (payload, userId = 1) => {
     truckRow = await prisma.trucks.findUnique({
       where: { id: BigInt(Number(truckId)) },
     });
-    if (!truckRow) {
+    if (!truckRow || truckRow.deleted_at) {
       const err = new Error(`Không tìm thấy xe tải với ID ${truckId}`);
       err.statusCode = 400;
       throw err;
@@ -738,7 +756,7 @@ const createTrip = async (payload, userId = 1) => {
       .toUpperCase()
       .replace(/\s+/g, "_");
     if (
-      ["ON_TRIP", "IN_TRANSIT", "IN_PROGRESS", "MAINTENANCE"].includes(
+      ["ON_TRIP", "IN_TRANSIT", "IN_PROGRESS", "MAINTENANCE", "INACTIVE"].includes(
         truckStatusUpper,
       )
     ) {
@@ -815,13 +833,64 @@ const createTrip = async (payload, userId = 1) => {
     const tripStart = payload.planned_start ? new Date(payload.planned_start) : new Date();
     const durationMins = Number(planned_duration) > 0 ? Number(planned_duration) : 60;
     const tripEnd = new Date(tripStart.getTime() + durationMins * 60000);
+    const bigDriverId = BigInt(Number(driverId));
+
+    // Kiểm tra trạng thái hồ sơ, hạn GPLX và hạng bằng lái phù hợp với xe
+    const driverProfile = await prisma.driver_profiles.findUnique({
+      where: { id: bigDriverId },
+      select: {
+        id: true,
+        status: true,
+        license_class: true,
+        license_expiry: true,
+        users: { select: { status: true, full_name: true } },
+      },
+    });
+    if (!driverProfile) {
+      const err = new Error(`Không tìm thấy hồ sơ tài xế ID ${driverId}.`);
+      err.statusCode = 400;
+      throw err;
+    }
+    const drvStatusUpper = String(driverProfile.status || "").trim().toUpperCase();
+    const userStatusUpper = String(driverProfile.users?.status || "ACTIVE").trim().toUpperCase();
+    if (!["ACTIVE", "AVAILABLE"].includes(drvStatusUpper) || userStatusUpper !== "ACTIVE") {
+      const err = new Error(
+        `Tài xế ${driverProfile.users?.full_name || `#${driverId}`} hiện không ở trạng thái sẵn sàng (status: ${driverProfile.status}).`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+    if (driverProfile.license_expiry) {
+      const tripDayStr = new Date(tripStart.getTime() + 7 * 3600 * 1000).toISOString().split("T")[0];
+      const expDayStr = new Date(driverProfile.license_expiry).toISOString().split("T")[0];
+      if (expDayStr < tripDayStr) {
+        const err = new Error(
+          `Giấy phép lái xe của tài xế đã hết hạn (${expDayStr}), không thể điều phối chuyến.`,
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+    if (truckRow?.required_license_class) {
+      const LICENSE_RANK = { B2: 1, C: 2, D: 3, E: 4, FC: 5 };
+      const drvClass = String(driverProfile.license_class || "").trim().toUpperCase();
+      const reqClass = String(truckRow.required_license_class || "").trim().toUpperCase();
+      const drvRank = LICENSE_RANK[drvClass] || 0;
+      const reqRank = LICENSE_RANK[reqClass] || 0;
+      if (reqRank > 0 && drvRank < reqRank) {
+        const err = new Error(
+          `Tài xế có bằng lái hạng ${drvClass || "N/A"} không đủ điều kiện lái xe ${truckRow.plate_number} (yêu cầu hạng ${reqClass}).`,
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+    }
 
     const startVn = new Date(tripStart.getTime() + 7 * 3600 * 1000);
     const tripVnStr = startVn.toISOString().split("T")[0];
     const tripUtcStr = tripStart.toISOString().split("T")[0];
     const targetDates = [...new Set([tripVnStr, tripUtcStr])];
     const targetDateObjs = targetDates.map((d) => new Date(`${d}T00:00:00.000Z`));
-    const bigDriverId = BigInt(Number(driverId));
 
     const shifts = await prisma.driver_shifts.findMany({
       where: {
