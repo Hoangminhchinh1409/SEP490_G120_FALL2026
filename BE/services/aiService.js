@@ -5,15 +5,24 @@ const CANDIDATE_MODELS = [
   "gemini-3.5-flash",
 ];
 
+const isGeminiEnabled = () => {
+  if (String(process.env.GEMINI_ENABLED || "").toLowerCase() === "false") {
+    return false;
+  }
+  return Boolean(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim());
+};
+
 /**
  * Gọi Google Gemini Generative Language API với cơ chế tự động fallback model
  * Hỗ trợ cả text prompt và multimodal inline data (file base64 / mimeType)
  */
 const callGeminiGenerateContent = async (promptInput, responseJson = true) => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY chưa được cấu hình trong biến môi trường");
+  if (!isGeminiEnabled()) {
+    const err = new Error("Tính năng kết nối Gemini AI đang tạm dừng (GEMINI_ENABLED=false hoặc chưa cấu hình GEMINI_API_KEY).");
+    err.statusCode = 400;
+    throw err;
   }
+  const apiKey = process.env.GEMINI_API_KEY;
   let lastError = null;
 
   let parts = [];
@@ -113,6 +122,66 @@ const callGeminiGenerateContent = async (promptInput, responseJson = true) => {
 const analyzeCustomsDocuments = async (payload = {}) => {
   const { cargoDesc = "", order = {} } = payload;
 
+  if (!isGeminiEnabled()) {
+    const text = `${cargoDesc} ${order.cargo_name || ""} ${order.cargo_type || ""}`.toLowerCase();
+    let categoryKey = "GENERAL";
+    let categoryName = "1. Hàng thông thường (Tiêu dùng, linh kiện điện tử mới, thời trang...)";
+    let hsCodeSuggestion = "Chương 84 / 85 - Máy móc, thiết bị điện tử & hàng tiêu dùng thông thường";
+    let docs = [
+      {
+        name: "Giấy chứng nhận xuất xứ (C/O)",
+        shortCode: "C/O",
+        description: "Xác nhận xuất xứ hàng hóa để hưởng ưu đãi thuế quan theo hiệp định thương mại.",
+      },
+    ];
+
+    if (/(nông sản|thực phẩm|trái cây|rau|thịt|thủy sản|động vật|thực vật|perishable)/.test(text)) {
+      categoryKey = "AGRI_FOOD";
+      categoryName = "2. Hàng nông sản, thực phẩm, động thực vật sống";
+      hsCodeSuggestion = "Chương 02 - 21 - Nông sản, thực phẩm & chế phẩm ăn được";
+      docs = [
+        { name: "Giấy chứng nhận kiểm dịch thực vật / động vật (Phytosanitary / Veterinary)", shortCode: "PHYTO", description: "Xác nhận lô hàng không mang mầm bệnh, sinh vật gây hại." },
+        { name: "Giấy đăng ký kiểm tra An toàn thực phẩm", shortCode: "ATTP", description: "Phục vụ kiểm tra chuyên ngành trước khi thông quan." },
+      ];
+    } else if (/(hóa chất|mỹ phẩm|dược phẩm|thuốc|pin|dung dịch)/.test(text)) {
+      categoryKey = "CHEMICAL_PHARMA";
+      categoryName = "3. Hàng hóa chất, mỹ phẩm, dược phẩm";
+      hsCodeSuggestion = "Chương 28 - 38 - Sản phẩm công nghiệp hóa chất, dược phẩm, mỹ phẩm";
+      docs = [
+        { name: "Bảng chỉ dẫn an toàn hóa chất (MSDS)", shortCode: "MSDS", description: "Khai báo thành phần hóa học và quy chuẩn an toàn vận chuyển." },
+        { name: "Phiếu công bố sản phẩm / Giấy phép nhập khẩu", shortCode: "LICENSE", description: "Chứng từ quản lý chuyên ngành của Bộ Y tế / Bộ Công Thương." },
+      ];
+    } else if (/(gỗ|nội thất gỗ|ván ép|pallet gỗ)/.test(text)) {
+      categoryKey = "WOOD_PRODUCTS";
+      categoryName = "4. Hàng gỗ và sản phẩm từ gỗ";
+      hsCodeSuggestion = "Chương 44 - Gỗ và các mặt hàng bằng gỗ";
+      docs = [
+        { name: "Giấy chứng nhận hun trùng (Fumigation Certificate)", shortCode: "FUMI", description: "Xác nhận gỗ/pallet gỗ đã được xử lý khử trùng đạt chuẩn ISPM 15." },
+        { name: "Bảng kê lâm sản hợp pháp", shortCode: "TIMBER", description: "Xác nhận nguồn gốc gỗ hợp pháp khi làm thủ tục hải quan." },
+      ];
+    } else if (/(máy cũ|thiết bị cũ|đã qua sử dụng)/.test(text)) {
+      categoryKey = "USED_MACHINERY";
+      categoryName = "5. Hàng máy móc thiết bị cũ / Đã qua sử dụng";
+      hsCodeSuggestion = "Chương 84 / 85 - Máy móc thiết bị đã qua sử dụng (QĐ 18/2019/QĐ-TTg)";
+      docs = [
+        { name: "Chứng thư giám định tuổi thiết bị & chất lượng còn lại", shortCode: "INSPECT", description: "Bắt buộc theo Quyết định 18/2019/QĐ-TTg đối với máy móc đã qua sử dụng." },
+      ];
+    }
+
+    return {
+      model: "rule-based-offline",
+      categoryKey,
+      categoryName,
+      hsCodeSuggestion,
+      aiSummary: "Phân tích tự động theo bộ quy tắc nghiệp vụ hải quan nội bộ (chế độ tiết kiệm không dùng API key ngoài). Vui lòng đối chiếu mã HS thực tế trên Invoice & Packing List.",
+      riskNotes: [
+        "Kiểm tra khớp số kiện và trọng lượng Gross Weight giữa Vận đơn và Packing List.",
+        "Đảm bảo nhãn phụ hàng hóa đầy đủ thông tin xuất xứ trước khi thông quan.",
+      ],
+      recommendedSpecializedDocs: docs,
+    };
+  }
+
   const prompt = `Bạn là Chuyên gia Thủ tục Hải quan & Logistics Xuất Nhập Khẩu tại Việt Nam (Hệ thống NEXLOG).
 Hãy phân tích thông tin lô hàng dưới đây và trả về kết quả JSON chuẩn xác để tư vấn bộ chứng từ cần nộp:
 
@@ -157,6 +226,16 @@ const analyzeVehicleAndQuote = async (payload = {}) => {
     distanceKm = 30,
     estimatedPriceVnd = 2500000,
   } = payload;
+
+  if (!isGeminiEnabled()) {
+    return {
+      model: "rule-based-offline",
+      recommendedVehicleKey: systemRecommendedVehicle,
+      technicalAssessment: `Đối chiếu tổng trọng lượng (${order.weight || order.actual_weight_kg || 0} kg) và tải trọng tính cước (${order.chargeable || order.chargeable_weight_kg || 0} kg) trên quãng đường ${distanceKm} km, phương án xe ${systemRecommendedVehicle} đảm bảo an toàn tải trọng và tối ưu không gian thùng xe.`,
+      customerAdvisoryNote: `Kính gửi Quý khách, dựa trên quy cách và tổng khối lượng lô hàng, ALS đề xuất phương án vận chuyển bằng xe ${systemRecommendedVehicle} với mức cước dự kiến ${Number(estimatedPriceVnd).toLocaleString("vi-VN")} VNĐ cho lộ trình ${distanceKm} km nhằm đảm bảo an toàn hàng hóa và đúng tiến độ giao nhận.`,
+      loadingTips: `Xếp các kiện nặng xuống mặt sàn sát thành trước thùng xe, chằng buộc cố định trước khi niêm chì.`,
+    };
+  }
 
   const prompt = `Bạn là Kỹ sư Điều phối Vận tải & Định giá Cước Logistics của NEXLOG.
 Hãy phân tích lô hàng dưới đây để tư vấn loại xe tải tối ưu và soạn lời giải thích thuyết phục gửi khách hàng:
@@ -206,6 +285,21 @@ const analyzeLoadPlan3D = async (payload = {}) => {
     stops = [],
   } = payload;
 
+  if (!isGeminiEnabled()) {
+    const isOver = (summary.overflowPackagesCount || 0) > 0 || Number(summary.weightPercent || 0) > 100;
+    return {
+      model: "rule-based-offline",
+      safetyStatus: isOver ? "OVERLOADED" : Number(summary.weightPercent || 0) > 85 ? "WARNING" : "SAFE",
+      headline: `Sơ đồ xếp ${summary.packedPackagesCount || 0}/${summary.totalPackagesCount || 0} kiện đạt ${summary.weightPercent || 0}% tải trọng và ${summary.volumePercent || 0}% thể tích thùng xe.`,
+      stepByStepInstructions: [
+        "Bước 1: Xếp các kiện hàng nặng và đế phẳng ở lớp sàn sát vách cabin để ổn định trọng tâm xe.",
+        "Bước 2: Xếp các kiện nhẹ/dễ vỡ lên tầng trên, dùng dây tăng đơ và màng quấn PE cố định chống xê dịch.",
+        "Bước 3: Xếp hàng theo nguyên tắc LIFO (điểm giao sau xếp vào trong, điểm giao trước xếp gần cửa thùng).",
+      ],
+      driverChecklist: "Kiểm tra niêm phong chì (Seal), khóa chốt cửa thùng và áp suất lốp trước khi xuất bến.",
+    };
+  }
+
   const prompt = `Bạn là Chuyên gia Kỹ thuật Xếp dỡ Hàng hóa 3D (Load Planning Engineer) của NEXLOG.
 Hãy phân tích sơ đồ xếp hàng 3D hiện tại trên xe tải và đưa ra hướng dẫn bốc xếp thực tế cho đội kho & tài xế:
 
@@ -246,6 +340,26 @@ const autoScanCustomsDeclaration = async (payload = {}) => {
     file: d.file,
     categoryName: d.categoryName,
   }));
+
+  if (!isGeminiEnabled()) {
+    const code = order.order_id || order.order_code || "NEX";
+    return {
+      model: "rule-based-offline",
+      declarationNumber: `106${Math.floor(100000000 + Math.random() * 900000000)}`,
+      declarationType: "A11",
+      declarationTypeName: "Nhập kinh doanh tiêu dùng",
+      customsOffice: "Chi cục Hải quan Cửa khẩu Sân bay Quốc tế Nội Bài (Mã: 01B1)",
+      customsWarehouse: "01B1A02 - Kho Hàng Hóa ALS Nội Bài",
+      channel: "GREEN",
+      channelName: "Luồng Xanh (Thông quan tự động)",
+      hsCode: "8544.42.99",
+      taxableValueUsd: 10000,
+      taxableValueVnd: 255000000,
+      fileName: `To_khai_hai_quan_${code}_VNACCS.pdf`,
+      fileSize: "240 KB",
+      summaryNote: "Khởi tạo thông tin tờ khai theo bộ quy tắc mặc định nội bộ (đang tạm dừng kết nối Gemini API).",
+    };
+  }
 
   const prompt = `Bạn là Trợ lý AI Hải quan cao cấp của Hệ thống thông quan hàng hóa ALS / VNACCS.
 Khách hàng vừa ký hợp đồng vận chuyển cho đơn hàng:

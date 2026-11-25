@@ -529,7 +529,8 @@ const formatTrip = (trip) => {
                 ? "PICKUP"
                 : upperStopType === "REST"
                   ? "REST"
-                  : upperStopType === "RETURN" || upperStopType === "RETURN_TO_WAREHOUSE"
+                  : upperStopType === "RETURN" ||
+                      upperStopType === "RETURN_TO_WAREHOUSE"
                     ? "RETURN"
                     : "DROPOFF";
 
@@ -650,6 +651,7 @@ const createTrip = async (payload, userId = 1) => {
     driver1_name,
     driver2_name,
     stops,
+    planned_start,
     planned_distance,
     planned_duration,
     allocation_type,
@@ -693,7 +695,9 @@ const createTrip = async (payload, userId = 1) => {
   ).toUpperCase();
   if (mode === "VENDOR" || Boolean(vendor_tracking_code)) {
     if (!vendor_tracking_code || !String(vendor_tracking_code).trim()) {
-      const err = new Error("Vui lòng nhập mã vận đơn đối tác (vendor_tracking_code)");
+      const err = new Error(
+        "Vui lòng nhập mã vận đơn đối tác (vendor_tracking_code)",
+      );
       err.statusCode = 400;
       throw err;
     }
@@ -756,9 +760,13 @@ const createTrip = async (payload, userId = 1) => {
       .toUpperCase()
       .replace(/\s+/g, "_");
     if (
-      ["ON_TRIP", "IN_TRANSIT", "IN_PROGRESS", "MAINTENANCE", "INACTIVE"].includes(
-        truckStatusUpper,
-      )
+      [
+        "ON_TRIP",
+        "IN_TRANSIT",
+        "IN_PROGRESS",
+        "MAINTENANCE",
+        "INACTIVE",
+      ].includes(truckStatusUpper)
     ) {
       const err = new Error(
         `Xe tải ${truckRow.plate_number} hiện đang ở trạng thái ${truckRow.status}, không thể phân bổ chuyến mới!`,
@@ -773,18 +781,25 @@ const createTrip = async (payload, userId = 1) => {
         truck_id: BigInt(Number(truckId)),
         trips: {
           status: {
-            in: ["Assigned", "Accepted", "In Progress", "In Transit", "Loading Started", "Loading Done"]
-          }
-        }
+            in: [
+              "Assigned",
+              "Accepted",
+              "In Progress",
+              "In Transit",
+              "Loading Started",
+              "Loading Done",
+            ],
+          },
+        },
       },
       include: {
-        trips: { select: { trip_code: true, status: true } }
-      }
+        trips: { select: { trip_code: true, status: true } },
+      },
     });
 
     if (activeTripTruck) {
       const err = new Error(
-        `Xe tải ${truckRow.plate_number} hiện đang tham gia chuyến ${activeTripTruck.trips?.trip_code || ''} (trạng thái: ${activeTripTruck.trips?.status}), không thể phân bổ chuyến mới!`,
+        `Xe tải ${truckRow.plate_number} hiện đang tham gia chuyến ${activeTripTruck.trips?.trip_code || ""} (trạng thái: ${activeTripTruck.trips?.status}), không thể phân bổ chuyến mới!`,
       );
       err.statusCode = 400;
       throw err;
@@ -828,9 +843,22 @@ const createTrip = async (payload, userId = 1) => {
     driverId = await tripModel.findFirstDriver();
   }
 
+  let resolvedPlannedStart = new Date();
+  if (planned_start) {
+    const parsedStart = new Date(planned_start);
+    if (!Number.isNaN(parsedStart.getTime())) {
+      resolvedPlannedStart = parsedStart;
+    }
+  } else if (matchedOrder?.requested_pickup_date) {
+    const parsedReq = new Date(matchedOrder.requested_pickup_date);
+    if (!Number.isNaN(parsedReq.getTime())) {
+      resolvedPlannedStart = parsedReq;
+    }
+  }
+
   // --- KIỂM TRA RÀNG BUỘC TÀI XẾ ---
   if (driverId) {
-    const tripStart = payload.planned_start ? new Date(payload.planned_start) : new Date();
+    const tripStart = resolvedPlannedStart;
     const durationMins = Number(planned_duration) > 0 ? Number(planned_duration) : 60;
     const tripEnd = new Date(tripStart.getTime() + durationMins * 60000);
     const bigDriverId = BigInt(Number(driverId));
@@ -851,9 +879,16 @@ const createTrip = async (payload, userId = 1) => {
       err.statusCode = 400;
       throw err;
     }
-    const drvStatusUpper = String(driverProfile.status || "").trim().toUpperCase();
-    const userStatusUpper = String(driverProfile.users?.status || "ACTIVE").trim().toUpperCase();
-    if (!["ACTIVE", "AVAILABLE"].includes(drvStatusUpper) || userStatusUpper !== "ACTIVE") {
+    const drvStatusUpper = String(driverProfile.status || "")
+      .trim()
+      .toUpperCase();
+    const userStatusUpper = String(driverProfile.users?.status || "ACTIVE")
+      .trim()
+      .toUpperCase();
+    if (
+      !["ACTIVE", "AVAILABLE"].includes(drvStatusUpper) ||
+      userStatusUpper !== "ACTIVE"
+    ) {
       const err = new Error(
         `Tài xế ${driverProfile.users?.full_name || `#${driverId}`} hiện không ở trạng thái sẵn sàng (status: ${driverProfile.status}).`,
       );
@@ -861,8 +896,12 @@ const createTrip = async (payload, userId = 1) => {
       throw err;
     }
     if (driverProfile.license_expiry) {
-      const tripDayStr = new Date(tripStart.getTime() + 7 * 3600 * 1000).toISOString().split("T")[0];
-      const expDayStr = new Date(driverProfile.license_expiry).toISOString().split("T")[0];
+      const tripDayStr = new Date(tripStart.getTime() + 7 * 3600 * 1000)
+        .toISOString()
+        .split("T")[0];
+      const expDayStr = new Date(driverProfile.license_expiry)
+        .toISOString()
+        .split("T")[0];
       if (expDayStr < tripDayStr) {
         const err = new Error(
           `Giấy phép lái xe của tài xế đã hết hạn (${expDayStr}), không thể điều phối chuyến.`,
@@ -873,8 +912,12 @@ const createTrip = async (payload, userId = 1) => {
     }
     if (truckRow?.required_license_class) {
       const LICENSE_RANK = { B2: 1, C: 2, D: 3, E: 4, FC: 5 };
-      const drvClass = String(driverProfile.license_class || "").trim().toUpperCase();
-      const reqClass = String(truckRow.required_license_class || "").trim().toUpperCase();
+      const drvClass = String(driverProfile.license_class || "")
+        .trim()
+        .toUpperCase();
+      const reqClass = String(truckRow.required_license_class || "")
+        .trim()
+        .toUpperCase();
       const drvRank = LICENSE_RANK[drvClass] || 0;
       const reqRank = LICENSE_RANK[reqClass] || 0;
       if (reqRank > 0 && drvRank < reqRank) {
@@ -890,17 +933,27 @@ const createTrip = async (payload, userId = 1) => {
     const tripVnStr = startVn.toISOString().split("T")[0];
     const tripUtcStr = tripStart.toISOString().split("T")[0];
     const targetDates = [...new Set([tripVnStr, tripUtcStr])];
-    const targetDateObjs = targetDates.map((d) => new Date(`${d}T00:00:00.000Z`));
+    const targetDateObjs = targetDates.map(
+      (d) => new Date(`${d}T00:00:00.000Z`),
+    );
 
     const shifts = await prisma.driver_shifts.findMany({
       where: {
         driver_id: bigDriverId,
         date: { in: targetDateObjs },
       },
-      select: { id: true, date: true, status: true, start_time: true, end_time: true },
+      select: {
+        id: true,
+        date: true,
+        status: true,
+        start_time: true,
+        end_time: true,
+      },
     });
 
-    const approvedShifts = (shifts || []).filter((s) => String(s.status || "").toUpperCase() === "APPROVED");
+    const approvedShifts = (shifts || []).filter(
+      (s) => String(s.status || "").toUpperCase() === "APPROVED",
+    );
 
     const toVnMinutes = (d) => {
       const dt = new Date(d);
@@ -1010,9 +1063,9 @@ const createTrip = async (payload, userId = 1) => {
     );
   }
 
-  const cleanPlate = truckRow?.plate_number || (truck_plate
-    ? String(truck_plate).split(" ")[0].trim()
-    : "29H-995.72");
+  const cleanPlate =
+    truckRow?.plate_number ||
+    (truck_plate ? String(truck_plate).split(" ")[0].trim() : "29H-995.72");
   const cleanDriverName = targetDriverName
     ? String(targetDriverName).split("·")[0].trim()
     : "Nguyễn Văn Lái";
@@ -1021,7 +1074,7 @@ const createTrip = async (payload, userId = 1) => {
     tripData: {
       trip_code: tripCode,
       status: "Assigned",
-      planned_start: new Date(),
+      planned_start: resolvedPlannedStart,
       planned_distance: planned_distance || 65.6,
       planned_duration: planned_duration || 97,
       created_by: userId,

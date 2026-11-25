@@ -285,6 +285,8 @@ const createConsultationOrder = async (req, res) => {
       flight_arrival_time: flight_arrival_time || null,
       flight_datetime: flight_datetime || null,
       export_pickup_suggestion: export_pickup_suggestion || null,
+      required_pickup_date: required_pickup_date || flight_arrival_date || null,
+      operating_time_slot: req.body.operating_time_slot || "FULL_DAY",
       customer_email: customer_email || null,
       customer_tax_code: taxCode,
       accounting_email: accounting_email || customer_email || null,
@@ -492,11 +494,9 @@ const createDirectOrder = async (req, res) => {
         .json({ message: "Vui lòng nhập tên người nhận hàng / liên hệ" });
     }
     if (!receiver_phone || !String(receiver_phone).trim()) {
-      return res
-        .status(400)
-        .json({
-          message: "Vui lòng nhập số điện thoại người nhận hàng / liên hệ",
-        });
+      return res.status(400).json({
+        message: "Vui lòng nhập số điện thoại người nhận hàng / liên hệ",
+      });
     }
 
     const hasItemsArr =
@@ -516,26 +516,23 @@ const createDirectOrder = async (req, res) => {
           ? req.body.items.reduce(
               (sum, it) =>
                 sum +
-                (parseFloat(it.weight_kg || it.actual_weight || it.weight) || 0),
+                (parseFloat(it.weight_kg || it.actual_weight || it.weight) ||
+                  0),
               0,
             )
           : null),
     );
     if (isNaN(parsedWeight) || parsedWeight <= 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Trọng lượng hàng hóa không hợp lệ (phải lớn hơn 0 kg)",
-        });
+      return res.status(400).json({
+        message: "Trọng lượng hàng hóa không hợp lệ (phải lớn hơn 0 kg)",
+      });
     }
 
     const parsedPrice = parseInt(agreed_price, 10);
     if (isNaN(parsedPrice) || parsedPrice <= 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Giá cước thỏa thuận không hợp lệ (phải lớn hơn 0 VNĐ)",
-        });
+      return res.status(400).json({
+        message: "Giá cước thỏa thuận không hợp lệ (phải lớn hơn 0 VNĐ)",
+      });
     }
 
     // 2. Validate định dạng & độ dài dữ liệu (BUG-DO-05)
@@ -601,11 +598,9 @@ const createDirectOrder = async (req, res) => {
     if (customer_address && String(customer_address).trim()) {
       const cCheck = validateVietnamAddressText(customer_address);
       if (!cCheck.valid) {
-        return res
-          .status(400)
-          .json({
-            message: `Địa chỉ trụ sở / kho khách hàng không hợp lệ: ${cCheck.reason}`,
-          });
+        return res.status(400).json({
+          message: `Địa chỉ trụ sở / kho khách hàng không hợp lệ: ${cCheck.reason}`,
+        });
       }
     }
     if (
@@ -722,7 +717,8 @@ const createDirectOrder = async (req, res) => {
             contact_person: String(customer_name).trim(),
             phone: cleanCustomerPhone,
             tax_code: cleanTaxCode || null,
-            registered_address: customer_address || delivery_address || "Hà Nội",
+            registered_address:
+              customer_address || delivery_address || "Hà Nội",
             email: cleanCustomerEmail,
             created_by: BigInt(directDispatcherId),
           },
@@ -732,7 +728,9 @@ const createDirectOrder = async (req, res) => {
       }
 
       if (!customerId) {
-        throw new Error("Không thể khởi tạo hoặc xác thực thông tin khách hàng");
+        throw new Error(
+          "Không thể khởi tạo hoặc xác thực thông tin khách hàng",
+        );
       }
 
       const orderCode = ensureNexOrderCode(generateNexOrderCode());
@@ -781,7 +779,8 @@ const createDirectOrder = async (req, res) => {
       if (Array.isArray(req.body.items) && req.body.items.length > 0) {
         for (const it of req.body.items) {
           const itBulk = it.cargo_type === "BULK" || it.cargo_type === "Bulk";
-          const itActualWeight = parseFloat(it.weight_kg || it.actual_weight || it.weight) || 0;
+          const itActualWeight =
+            parseFloat(it.weight_kg || it.actual_weight || it.weight) || 0;
           let itLength = null;
           let itWidth = null;
           let itHeight = null;
@@ -974,7 +973,11 @@ const createDirectOrder = async (req, res) => {
               ),
               is_required: true,
               file_link: hasFile ? String(doc.file).slice(0, 255) : null,
-              file_type: doc.file_type ? String(doc.file_type).slice(0, 10) : (hasFile ? "pdf" : null),
+              file_type: doc.file_type
+                ? String(doc.file_type).slice(0, 10)
+                : hasFile
+                  ? "pdf"
+                  : null,
               file_size: doc.file_size ? parseInt(doc.file_size, 10) : null,
               uploaded_by: hasFile ? BigInt(directDispatcherId) : null,
               uploaded_time: hasFile ? new Date() : null,
@@ -1021,6 +1024,9 @@ const createDirectOrder = async (req, res) => {
       flight_arrival_time: req.body.flight_arrival_time || null,
       flight_datetime: req.body.flight_datetime || null,
       export_pickup_suggestion: req.body.export_pickup_suggestion || null,
+      required_pickup_date:
+        required_pickup_date || req.body.flight_arrival_date || null,
+      operating_time_slot: req.body.operating_time_slot || "FULL_DAY",
       customer_email: cleanCustomerEmail,
       accounting_email: accounting_email || cleanCustomerEmail,
       authorized_bank: authorized_bank || "Vietcombank",
@@ -1047,7 +1053,9 @@ const createDirectOrder = async (req, res) => {
     if (err.statusCode) {
       return res.status(err.statusCode).json({ message: err.message });
     }
-    return res.status(500).json({ message: err.message || "Internal Server Error" });
+    return res
+      .status(500)
+      .json({ message: err.message || "Internal Server Error" });
   }
 };
 

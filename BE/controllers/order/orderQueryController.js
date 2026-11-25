@@ -254,6 +254,91 @@ const getAllOrders = async (req, res) => {
           ? { lat: rawDeliveryLat, lng: rawDeliveryLng }
           : null;
 
+      const formatOrderDeparture = () => {
+        const pad2 = (n) => String(n).padStart(2, "0");
+        const toVnDateStr = (ymd) => {
+          const m = String(ymd || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+          return null;
+        };
+
+        const dirUpper = String(
+          meta.shipping_direction ||
+            (order.order_type === "PICKUP" || order.order_type === "Export"
+              ? "EXPORT"
+              : "IMPORT"),
+        ).toUpperCase();
+
+        // 1. Đơn Nhập khẩu: ưu tiên ngày & giờ máy bay hạ cánh
+        if (dirUpper === "IMPORT" && meta.flight_arrival_date) {
+          const dStr = toVnDateStr(meta.flight_arrival_date);
+          const tStr = (meta.flight_arrival_time || "08:00").slice(0, 5);
+          if (dStr) {
+            return {
+              display: `${dStr} ${tStr}`,
+              iso: `${String(meta.flight_arrival_date).slice(0, 10)}T${tStr}:00+07:00`,
+            };
+          }
+        }
+
+        // 2. Đơn Xuất khẩu: ưu tiên ngày lấy hàng yêu cầu + khung giờ (hoặc giờ gợi ý cut-off)
+        const rawPickupDate =
+          meta.required_pickup_date ||
+          (order.requested_pickup_date
+            ? new Date(order.requested_pickup_date).toISOString().slice(0, 10)
+            : null);
+
+        if (rawPickupDate) {
+          const dStr = toVnDateStr(rawPickupDate);
+          let tStr =
+            meta.operating_time_slot === "AFTERNOON" ? "12:00" : "08:00";
+          if (dirUpper === "IMPORT" && meta.flight_arrival_time) {
+            tStr = String(meta.flight_arrival_time).slice(0, 5);
+          } else if (meta.export_pickup_suggestion) {
+            const timeMatch = String(meta.export_pickup_suggestion).match(
+              /(\d{1,2}:\d{2})/,
+            );
+            if (timeMatch) {
+              const [hh, mm] = timeMatch[1].split(":");
+              tStr = `${pad2(hh)}:${mm}`;
+            }
+          }
+          if (dStr) {
+            return {
+              display: `${dStr} ${tStr}`,
+              iso: `${String(rawPickupDate).slice(0, 10)}T${tStr}:00+07:00`,
+            };
+          }
+        }
+
+        // 3. Nếu có flight_datetime (YYYY-MM-DDTHH:mm)
+        if (meta.flight_datetime) {
+          const dt = new Date(meta.flight_datetime);
+          if (!Number.isNaN(dt.getTime())) {
+            const pickupDt =
+              dirUpper === "EXPORT"
+                ? new Date(dt.getTime() - 4 * 3600 * 1000)
+                : dt;
+            const vn = new Date(pickupDt.getTime() + 7 * 3600 * 1000);
+            return {
+              display: `${pad2(vn.getUTCDate())}/${pad2(vn.getUTCMonth() + 1)}/${vn.getUTCFullYear()} ${pad2(vn.getUTCHours())}:${pad2(vn.getUTCMinutes())}`,
+              iso: pickupDt.toISOString(),
+            };
+          }
+        }
+
+        // 4. Fallback theo thời điểm đơn sẵn sàng điều xe hoặc thời điểm tạo đơn thực tế
+        const fallbackDt = new Date(
+          order.ready_for_planning_at || order.created_at || Date.now(),
+        );
+        const vn = new Date(fallbackDt.getTime() + 7 * 3600 * 1000);
+        return {
+          display: `${pad2(vn.getUTCDate())}/${pad2(vn.getUTCMonth() + 1)}/${vn.getUTCFullYear()} ${pad2(vn.getUTCHours())}:${pad2(vn.getUTCMinutes())}`,
+          iso: fallbackDt.toISOString(),
+        };
+      };
+
+      const plannedDeparture = formatOrderDeparture();
       const customerRequestedVehicle =
         meta.customer_requested_vehicle ||
         meta.vehicle_type_required ||
@@ -427,6 +512,14 @@ const getAllOrders = async (req, res) => {
         flight_arrival_time: meta.flight_arrival_time || null,
         flight_datetime: meta.flight_datetime || null,
         export_pickup_suggestion: meta.export_pickup_suggestion || null,
+        requested_pickup_date: plannedDeparture.display,
+        planned_start_iso: plannedDeparture.iso,
+        required_pickup_date:
+          meta.required_pickup_date ||
+          (order.requested_pickup_date
+            ? new Date(order.requested_pickup_date).toISOString().slice(0, 10)
+            : null),
+        operating_time_slot: meta.operating_time_slot || "FULL_DAY",
         request_split_trucks: Boolean(
           meta.request_split_trucks || meta.web_workflow?.request_split_trucks,
         ),

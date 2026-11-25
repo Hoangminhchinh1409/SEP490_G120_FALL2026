@@ -120,7 +120,43 @@ function TripAssignmentModalContent({
   const customerName = order?.customer || order?.customer_name || 'Khách hàng';
   const actualWeight = Number(order?.weight || order?.weight_kg || 2000);
   const chargeableWeight = Number(order?.chargeable || order?.chargeable_weight || actualWeight);
-  const plannedStart = order?.requested_pickup_date || '28/10/2026 07:00';
+  const plannedStart = useMemo(() => {
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const formatYmdToVn = (ymd) => {
+      const m = String(ymd || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : null;
+    };
+
+    if (order?.requested_pickup_date) {
+      const raw = String(order.requested_pickup_date).trim();
+      const onlyYmd = formatYmdToVn(raw);
+      if (onlyYmd) {
+        const slotTime = order?.operating_time_slot === 'AFTERNOON' ? '12:00' : (order?.flight_arrival_time || '08:00');
+        return `${onlyYmd} ${String(slotTime).slice(0, 5)}`;
+      }
+      return raw;
+    }
+
+    if (order?.flight_arrival_date) {
+      const d = formatYmdToVn(order.flight_arrival_date) || order.flight_arrival_date;
+      const t = String(order.flight_arrival_time || '08:00').slice(0, 5);
+      return `${d} ${t}`;
+    }
+
+    if (order?.required_pickup_date) {
+      const d = formatYmdToVn(order.required_pickup_date) || order.required_pickup_date;
+      const t = order?.operating_time_slot === 'AFTERNOON' ? '12:00' : '08:00';
+      return `${d} ${t}`;
+    }
+
+    if (order?.export_pickup_suggestion) {
+      return order.export_pickup_suggestion;
+    }
+
+    const fallbackDate = order?.date ? new Date(order.date.replace(' ', 'T')) : new Date();
+    const validDt = Number.isNaN(fallbackDate.getTime()) ? new Date() : fallbackDate;
+    return `${pad2(validDt.getDate())}/${pad2(validDt.getMonth() + 1)}/${validDt.getFullYear()} ${pad2(validDt.getHours())}:${pad2(validDt.getMinutes())}`;
+  }, [order]);
 
   const [transportMode, setTransportMode] = useState('INTERNAL');
   const [multiDropMode, setMultiDropMode] = useState('STANDALONE');
@@ -636,6 +672,7 @@ function TripAssignmentModalContent({
         driver1_name: cleanDriver1,
         driver2_name: cleanDriver2,
         stops: stops,
+        planned_start: order?.planned_start_iso || undefined,
         planned_distance: routeSummary.distanceKm,
         planned_duration: routeSummary.durationMins
       });
