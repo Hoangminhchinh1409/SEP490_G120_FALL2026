@@ -4,7 +4,7 @@ export const dispatcherApi = {
   // --- 1. Fleet & Drivers & Vendors ---
   getTrucks: async () => {
     try {
-      const data = await fetchWithAuth('/fleet/trucks');
+      const data = await fetchWithAuth('/dispatcher/fleet/trucks');
       return data.trucks || [];
     } catch (error) {
       console.warn('dispatcherApi.getTrucks warn:', error?.message);
@@ -14,7 +14,7 @@ export const dispatcherApi = {
 
   createTruck: async (truckData) => {
     try {
-      const data = await fetchWithAuth('/fleet/trucks', {
+      const data = await fetchWithAuth('/dispatcher/fleet/trucks', {
         method: 'POST',
         body: JSON.stringify(truckData)
       });
@@ -27,7 +27,7 @@ export const dispatcherApi = {
 
   updateTruck: async (id, updateData) => {
     try {
-      const data = await fetchWithAuth(`/fleet/trucks/${id}`, {
+      const data = await fetchWithAuth(`/dispatcher/fleet/trucks/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(updateData)
       });
@@ -40,7 +40,7 @@ export const dispatcherApi = {
 
   getDrivers: async () => {
     try {
-      const data = await fetchWithAuth('/fleet/drivers');
+      const data = await fetchWithAuth('/dispatcher/fleet/drivers');
       return data.drivers || [];
     } catch (error) {
       console.warn('dispatcherApi.getDrivers warn:', error?.message);
@@ -50,7 +50,7 @@ export const dispatcherApi = {
 
   updateDriver: async (id, updateData) => {
     try {
-      const data = await fetchWithAuth(`/fleet/drivers/${id}`, {
+      const data = await fetchWithAuth(`/dispatcher/fleet/drivers/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(updateData)
       });
@@ -63,7 +63,7 @@ export const dispatcherApi = {
 
   getVendors: async () => {
     try {
-      const data = await fetchWithAuth('/fleet/vendors');
+      const data = await fetchWithAuth('/dispatcher/fleet/vendors');
       return data.vendors || [];
     } catch (error) {
       console.warn('dispatcherApi.getVendors warn:', error?.message);
@@ -74,7 +74,7 @@ export const dispatcherApi = {
   // --- 2. Locations ---
   getLocations: async () => {
     try {
-      const data = await fetchWithAuth('/locations');
+      const data = await fetchWithAuth('/dispatcher/locations');
       return data.locations || [];
     } catch (error) {
       console.warn('dispatcherApi.getLocations warn:', error?.message);
@@ -84,7 +84,7 @@ export const dispatcherApi = {
 
   getAlsWarehouses: async () => {
     try {
-      const data = await fetchWithAuth('/locations?als_only=true');
+      const data = await fetchWithAuth('/dispatcher/locations?als_only=true');
       return data.locations || [];
     } catch (error) {
       console.warn('dispatcherApi.getAlsWarehouses warn:', error?.message);
@@ -94,7 +94,7 @@ export const dispatcherApi = {
 
   createLocation: async (locationData) => {
     try {
-      const data = await fetchWithAuth('/locations', {
+      const data = await fetchWithAuth('/dispatcher/locations', {
         method: 'POST',
         body: JSON.stringify(locationData)
       });
@@ -107,7 +107,7 @@ export const dispatcherApi = {
 
   updateLocation: async (id, locationData) => {
     try {
-      const data = await fetchWithAuth(`/locations/${id}`, {
+      const data = await fetchWithAuth(`/dispatcher/locations/${id}`, {
         method: 'PUT',
         body: JSON.stringify(locationData)
       });
@@ -120,7 +120,7 @@ export const dispatcherApi = {
 
   deleteLocation: async (id) => {
     try {
-      const data = await fetchWithAuth(`/locations/${id}`, {
+      const data = await fetchWithAuth(`/dispatcher/locations/${id}`, {
         method: 'DELETE'
       });
       return data;
@@ -133,7 +133,7 @@ export const dispatcherApi = {
   // --- 3. Transport Contracts ---
   getContracts: async () => {
     try {
-      const data = await fetchWithAuth('/contracts');
+      const data = await fetchWithAuth('/dispatcher/contracts');
       return data.contracts || [];
     } catch (error) {
       console.warn('dispatcherApi.getContracts warn:', error?.message);
@@ -143,7 +143,7 @@ export const dispatcherApi = {
 
   getOrderDocumentsBundle: async () => {
     try {
-      const data = await fetchWithAuth('/contracts/documents-bundle');
+      const data = await fetchWithAuth('/dispatcher/contracts/documents-bundle');
       return data.documents_bundle || [];
     } catch (error) {
       console.warn('dispatcherApi.getOrderDocumentsBundle warn:', error?.message);
@@ -153,7 +153,7 @@ export const dispatcherApi = {
 
   createContract: async (contractData) => {
     try {
-      const data = await fetchWithAuth('/contracts', {
+      const data = await fetchWithAuth('/dispatcher/contracts', {
         method: 'POST',
         body: JSON.stringify(contractData)
       });
@@ -166,7 +166,7 @@ export const dispatcherApi = {
 
   getCustomers: async () => {
     try {
-      const data = await fetchWithAuth('/customers');
+      const data = await fetchWithAuth('/dispatcher/customers');
       return data.customers || [];
     } catch (error) {
       console.warn('dispatcherApi.getCustomers warn:', error?.message);
@@ -177,7 +177,7 @@ export const dispatcherApi = {
   // --- 4. Trips & Planning ---
   getTrips: async () => {
     try {
-      const data = await fetchWithAuth('/trips');
+      const data = await fetchWithAuth('/dispatcher/trips');
       return data.trips || [];
     } catch (error) {
       console.warn('dispatcherApi.getTrips warn:', error?.message);
@@ -187,7 +187,7 @@ export const dispatcherApi = {
 
   createTrip: async (tripData) => {
     try {
-      const data = await fetchWithAuth('/trips', {
+      const data = await fetchWithAuth('/dispatcher/trips', {
         method: 'POST',
         body: JSON.stringify(tripData)
       });
@@ -200,7 +200,7 @@ export const dispatcherApi = {
 
   updateTripStatus: async (id, status) => {
     try {
-      const data = await fetchWithAuth(`/trips/${id}/status`, {
+      const data = await fetchWithAuth(`/dispatcher/trips/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status })
       });
@@ -213,7 +213,7 @@ export const dispatcherApi = {
 
   getTripReplay: async (id) => {
     try {
-      const data = await fetchWithAuth(`/trips/${id}/replay`);
+      const data = await fetchWithAuth(`/dispatcher/trips/${id}/replay`);
       return data;
     } catch (error) {
       console.warn('dispatcherApi.getTripReplay warn:', error?.message);
@@ -223,7 +223,7 @@ export const dispatcherApi = {
 
   getIncidents: async () => {
     try {
-      const data = await fetchWithAuth('/incidents');
+      const data = await fetchWithAuth('/dispatcher/incidents');
       return data.incidents || [];
     } catch (error) {
       console.warn('dispatcherApi.getIncidents warn:', error?.message);
@@ -233,7 +233,7 @@ export const dispatcherApi = {
 
   createIncident: async (incidentData) => {
     try {
-      const data = await fetchWithAuth('/incidents', {
+      const data = await fetchWithAuth('/dispatcher/incidents', {
         method: 'POST',
         body: JSON.stringify(incidentData)
       });
@@ -251,7 +251,7 @@ export const dispatcherApi = {
           ? statusOrPayload
           : { status: statusOrPayload };
 
-      const data = await fetchWithAuth(`/incidents/${id}/status`, {
+      const data = await fetchWithAuth(`/dispatcher/incidents/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify(bodyPayload)
       });
@@ -264,7 +264,7 @@ export const dispatcherApi = {
 
   createClaim: async (claimData) => {
     try {
-      const data = await fetchWithAuth('/claims', {
+      const data = await fetchWithAuth('/dispatcher/claims', {
         method: 'POST',
         body: JSON.stringify(claimData)
       });
@@ -277,7 +277,7 @@ export const dispatcherApi = {
 
   getClaims: async () => {
     try {
-      const data = await fetchWithAuth('/claims');
+      const data = await fetchWithAuth('/dispatcher/claims');
       return data;
     } catch (error) {
       console.error('dispatcherApi.getClaims error:', error);
@@ -287,7 +287,7 @@ export const dispatcherApi = {
 
   getClaimById: async (id) => {
     try {
-      const data = await fetchWithAuth(`/claims/${id}`);
+      const data = await fetchWithAuth(`/dispatcher/claims/${id}`);
       return data.claim;
     } catch (error) {
       console.error('dispatcherApi.getClaimById error:', error);
@@ -297,7 +297,7 @@ export const dispatcherApi = {
 
   recordClaimCall: async (id, payload) => {
     try {
-      const data = await fetchWithAuth(`/claims/${id}/record-call`, {
+      const data = await fetchWithAuth(`/dispatcher/claims/${id}/record-call`, {
         method: 'POST',
         body: JSON.stringify(payload)
       });
@@ -350,7 +350,7 @@ export const dispatcherApi = {
       return baseKpi;
     } catch (error) {
       console.warn('dispatcherApi.getDashboardStats warn:', error?.message);
-      return null;
+      throw error;
     }
   },
 
@@ -372,7 +372,7 @@ export const dispatcherApi = {
   getExtraFees: async (status = '') => {
     try {
       const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-      const data = await fetchWithAuth(`/extra-fees${qs}`);
+      const data = await fetchWithAuth(`/dispatcher/extra-fees${qs}`);
       return data.extra_fees || [];
     } catch (error) {
       console.warn('dispatcherApi.getExtraFees warn:', error?.message);
@@ -382,7 +382,7 @@ export const dispatcherApi = {
 
   reviewExtraFee: async (id, action, note = '') => {
     try {
-      return await fetchWithAuth(`/extra-fees/${id}/review`, {
+      return await fetchWithAuth(`/dispatcher/extra-fees/${id}/review`, {
         method: 'PATCH',
         body: JSON.stringify({ action, note })
       });

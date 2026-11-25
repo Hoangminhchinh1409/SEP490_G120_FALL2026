@@ -27,6 +27,5 @@ router.use("/manager", managerRoutes);
 router.use("/ai", aiRoutes);
 router.use("/uploads", uploadRoutes);
 router.use("/routing", routingRoutes);
-router.use(dispatcherRoutes);
 
 module.exports = router;
