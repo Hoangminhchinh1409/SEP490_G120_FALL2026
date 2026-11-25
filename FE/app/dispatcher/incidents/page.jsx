@@ -34,16 +34,16 @@ export default function DispatcherIncidentsPage() {
       label: (
         <span className="flex items-center gap-2 font-semibold">
           <ShieldCheck size={16} className="text-emerald-500" />
-          Duyệt Bồi thường &amp; Khiếu nại
+          Duyệt Bồi thường &amp; Gọi khách (Claims)
         </span>
       ),
-      children: <ApprovalsPage readOnly={true} />
+      children: <ApprovalsPage readOnly={true} dispatcherCallMode={true} />
     }
   ];
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-4 max-w-[1600px] mx-auto">
-      <ReadOnlyBanner moduleName="Xử lý Sự cố & Duyệt Bồi thường (Chế độ xem chéo Điều phối viên)" />
+      <ReadOnlyBanner moduleName="Sự cố & Khiếu nại Bồi thường (ĐPV xem tiến độ & ghi nhận cuộc gọi thông báo khách hàng)" />
       <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
         <Tabs
           activeKey={activeTab}

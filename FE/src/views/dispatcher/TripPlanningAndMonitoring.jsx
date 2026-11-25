@@ -428,6 +428,7 @@ export default function TripPlanningAndMonitoring({ readOnly = false }) {
         incident={activeIncidentModal}
         onCancel={() => setActiveIncidentModal(null)}
         onResolveSuccess={handleResolveIncident}
+        onClaimCreated={fetchData}
         isReadOnly={isReadOnly}
       />
 

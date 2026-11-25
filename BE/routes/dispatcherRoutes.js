@@ -60,6 +60,9 @@ router.get('/incidents', incidentController.getAllIncidents);
 router.post('/incidents', requireDispatcherOrAdmin, incidentController.createIncident);
 router.patch('/incidents/:id/status', requireDispatcherOrAdmin, incidentController.updateIncidentStatus);
 router.get('/claims', incidentController.getClaims);
+router.get('/claims/:id', incidentController.getClaimById);
+router.post('/claims', requireDispatcherOrAdmin, incidentController.createDispatcherClaim);
+router.post('/claims/:id/record-call', requireDispatcherOrAdmin, incidentController.recordDispatcherClaimCall);
 router.get('/approvals', incidentController.getApprovals);
 
 // 6. Dashboard Stats

@@ -30,21 +30,47 @@ model compensation_claims {
   amount                                       BigInt
   reason                                       String
   evidence                                     String?
-  status                                       String     @default("Pending") @db.VarChar(20)
-  created_by                                   BigInt
+  status                                       String     @default("Pending") @db.VarChar(30)
+  created_by                                   BigInt?
   created_time                                 DateTime   @default(now()) @db.Timestamptz(6)
   reviewed_by                                  BigInt?
   reviewed_time                                DateTime?  @db.Timestamptz(6)
   review_comment                               String?
   updated_at                                   DateTime   @default(now()) @db.Timestamptz(6)
-  source                                       String?    @default("Incident") @db.VarChar(20)
+  source                                       String?    @default("Incident") @db.VarChar(30)
   claim_type                                   String?    @default("Damage") @db.VarChar(30)
-  users_compensation_claims_created_byTousers  users      @relation("compensation_claims_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  evidence_photos                              Json?      @default("[]")
+  submitted_by_name                            String?    @db.VarChar(150)
+  submitted_by_phone                           String?    @db.VarChar(30)
+  assessment_result                            String?
+  damage_percentage                            Int?
+  outcome                                      String?    @db.VarChar(50)
+  approved_amount                              BigInt?    @default(0)
+  contract_clause_ref                          String?    @db.VarChar(255)
+  rejection_reason                             String?
+  contact_hotline                              String?    @default("1900 1234") @db.VarChar(20)
+  called_by                                    BigInt?
+  called_at                                    DateTime?  @db.Timestamptz(6)
+  call_note                                    String?
+  call_contact_phone                           String?    @db.VarChar(30)
+  paid_by                                      BigInt?
+  paid_at                                      DateTime?  @db.Timestamptz(6)
+  payment_date                                 DateTime?  @db.Date
+  transaction_code                             String?    @db.VarChar(100)
+  payment_proof_url                            String?    @db.VarChar(500)
+  payment_note                                 String?
+  customer_confirmed_at                        DateTime?  @db.Timestamptz(6)
+  closed_at                                    DateTime?  @db.Timestamptz(6)
+  close_method                                 String?    @db.VarChar(30)
+  users_compensation_claims_called_byTousers   users?     @relation("compensation_claims_called_byTousers", fields: [called_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_compensation_claims_created_byTousers  users?     @relation("compensation_claims_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   incidents                                    incidents? @relation(fields: [incident_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   orders                                       orders     @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_compensation_claims_paid_byTousers     users?     @relation("compensation_claims_paid_byTousers", fields: [paid_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users_compensation_claims_reviewed_byTousers users?     @relation("compensation_claims_reviewed_byTousers", fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([order_id], map: "idx_compensation_claims_order_id")
+  @@index([status, paid_at], map: "idx_compensation_claims_status_paid_at")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -610,7 +636,9 @@ model users {
   created_at                                                 DateTime                @default(now()) @db.Timestamptz(6)
   updated_at                                                 DateTime                @default(now()) @db.Timestamptz(6)
   activity_logs                                              activity_logs[]
+  compensation_claims_compensation_claims_called_byTousers   compensation_claims[]   @relation("compensation_claims_called_byTousers")
   compensation_claims_compensation_claims_created_byTousers  compensation_claims[]   @relation("compensation_claims_created_byTousers")
+  compensation_claims_compensation_claims_paid_byTousers     compensation_claims[]   @relation("compensation_claims_paid_byTousers")
   compensation_claims_compensation_claims_reviewed_byTousers compensation_claims[]   @relation("compensation_claims_reviewed_byTousers")
   customer_documents_customer_documents_checked_byTousers    customer_documents[]    @relation("customer_documents_checked_byTousers")
   customer_documents_customer_documents_required_byTousers   customer_documents[]    @relation("customer_documents_required_byTousers")

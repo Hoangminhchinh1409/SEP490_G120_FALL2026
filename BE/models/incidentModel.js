@@ -24,10 +24,39 @@ const INCIDENT_SAFE_SELECT = {
 
 const INCIDENT_SELECT = {
   ...INCIDENT_SAFE_SELECT,
+  compensation_claims: {
+    select: {
+      id: true,
+      order_id: true,
+      status: true,
+      amount: true,
+      approved_amount: true,
+      claim_type: true,
+      created_time: true
+    },
+    orderBy: { id: 'desc' }
+  },
   trips: {
     select: {
       id: true,
       trip_code: true,
+      trip_stops: {
+        where: { order_id: { not: null } },
+        select: {
+          order_id: true,
+          orders: {
+            select: {
+              id: true,
+              order_code: true,
+              receiver_name: true,
+              receiver_phone: true,
+              customers: {
+                select: { company_name: true, phone: true }
+              }
+            }
+          }
+        }
+      },
       trip_trucks: {
         select: {
           id: true,
@@ -55,10 +84,53 @@ const INCIDENT_SELECT = {
   }
 };
 
+const normalizePhotosArray = (rawPhotos) => {
+  if (!rawPhotos) return [];
+  if (Array.isArray(rawPhotos)) return rawPhotos.filter(Boolean);
+  if (typeof rawPhotos === 'string') {
+    try {
+      const parsed = JSON.parse(rawPhotos);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [rawPhotos];
+    } catch {
+      return [rawPhotos];
+    }
+  }
+  return [];
+};
+
 const mapIncident = (inc) => {
   if (!inc) return null;
   const s = serializePrisma(inc);
   const tripRow = inc.trips;
+  const orderMap = new Map();
+  if (tripRow?.trip_stops) {
+    for (const ts of tripRow.trip_stops) {
+      if (ts.orders && !orderMap.has(String(ts.orders.id))) {
+        const oid = toNum(ts.orders.id);
+        orderMap.set(String(ts.orders.id), {
+          id: oid,
+          order_code: ts.orders.order_code,
+          customer_name: ts.orders.customers?.company_name || ts.orders.receiver_name || 'Khách hàng',
+          contact_phone: ts.orders.customers?.phone || ts.orders.receiver_phone || null
+        });
+      }
+    }
+  }
+  const tripOrders = Array.from(orderMap.values());
+  const claims = (s.compensation_claims || []).map((c) => {
+    const cid = toNum(c.id);
+    return {
+      id: cid,
+      claim_code: `CLM-${String(cid).padStart(4, '0')}`,
+      order_id: toNum(c.order_id),
+      status: c.status,
+      amount: Number(c.amount || 0),
+      approved_amount: Number(c.approved_amount || 0),
+      claim_type: c.claim_type || 'Damage',
+      created_time: c.created_time || null
+    };
+  });
+
   const trip = tripRow
     ? {
         id: toNum(tripRow.id),
@@ -94,7 +166,7 @@ const mapIncident = (inc) => {
       }
     : null;
 
-  const { trips: _omitTrips, ...rest } = s;
+  const { trips: _omitTrips, compensation_claims: _omitClaims, ...rest } = s;
   return {
     ...rest,
     id: toNum(inc.id),
@@ -104,6 +176,7 @@ const mapIncident = (inc) => {
     escalated_by: toNum(inc.escalated_by),
     resolved_by: toNum(inc.resolved_by),
     closed_by: toNum(inc.closed_by),
+    photos: normalizePhotosArray(s.photos),
     proposed_compensation_amount: toNum(inc.proposed_compensation_amount) || 0,
     approved_compensation_amount: toNum(inc.approved_compensation_amount) || 0,
     damage_percentage: toNum(inc.damage_percentage),
@@ -117,6 +190,8 @@ const mapIncident = (inc) => {
     is_on_route: inc.is_on_route !== false,
     route_deviation_km: inc.route_deviation_km ? Number(inc.route_deviation_km) : 0,
     closed_at: s.closed_at || null,
+    trip_orders: tripOrders,
+    claims,
     trip
   };
 };

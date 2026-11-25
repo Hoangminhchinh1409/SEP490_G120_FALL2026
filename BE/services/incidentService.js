@@ -1,3 +1,4 @@
+const prisma = require('../config/prisma');
 const incidentModel = require('../models/incidentModel');
 
 const COMPENSATION_ELIGIBLE_NORMALIZED_TYPES = [
@@ -74,7 +75,10 @@ const formatIncident = (inc) => {
     escalation_reason: inc.escalation_reason || null,
     resolved_time: inc.resolved_time || null,
     escalated_time: inc.escalated_time || null,
-    photos: inc.photos || []
+    photos: Array.isArray(inc.photos) ? inc.photos : [],
+    trip_orders: inc.trip_orders || [],
+    claims: inc.claims || [],
+    has_claim: Array.isArray(inc.claims) && inc.claims.length > 0
   };
 };
 
@@ -221,11 +225,48 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
       throw error;
     }
 
+    const now = new Date();
+    const escReason = payload.escalation_reason || payload.resolution_note || 'Sự cố mức độ nghiêm trọng vượt thẩm quyền Điều phối viên, chuyển Quản lý phê duyệt phương án xử lý.';
     const updated = await incidentModel.update(realId, {
       status: 'Escalated',
-      escalated_time: new Date(),
-      escalation_reason: payload.escalation_reason || payload.resolution_note || 'Sự cố mức độ nghiêm trọng vượt thẩm quyền Điều phối viên, chuyển Quản lý phê duyệt phương án xử lý.'
+      escalated_by: userId || null,
+      escalated_time: now,
+      escalation_reason: escReason
     });
+
+    try {
+      const managers = await prisma.users.findMany({
+        where: { role_id: 2n, status: { in: ['ACTIVE', 'Active'] } },
+        select: { id: true }
+      });
+      if (managers && managers.length > 0) {
+        const incCode = `INC-${String(realId).padStart(3, '0')}`;
+        await prisma.notifications.createMany({
+          data: managers.map((m) => ({
+            user_account_id: m.id,
+            target_type: 'INCIDENT',
+            target_id: BigInt(realId),
+            message: `[${incCode}] Điều phối viên đã chuyển tiếp sự cố nghiêm trọng lên Quản lý: ${escReason}`,
+            created_time: now
+          }))
+        });
+      }
+      await prisma.activity_logs.create({
+        data: {
+          actor_id: userId ? BigInt(userId) : null,
+          actor_type: 'DISPATCHER',
+          action: 'ESCALATE_INCIDENT',
+          target_type: 'INCIDENT',
+          target_id: BigInt(realId),
+          changes: { status: 'Escalated', escalation_reason: escReason },
+          reason: escReason.slice(0, 255),
+          created_time: now
+        }
+      });
+    } catch (notifyErr) {
+      console.warn('[incidentService] escalate notify/log warning:', notifyErr.message);
+    }
+
     return formatIncident(updated);
   }
 

@@ -262,6 +262,52 @@ export const dispatcherApi = {
     }
   },
 
+  createClaim: async (claimData) => {
+    try {
+      const data = await fetchWithAuth('/claims', {
+        method: 'POST',
+        body: JSON.stringify(claimData)
+      });
+      return data;
+    } catch (error) {
+      console.error('dispatcherApi.createClaim error:', error);
+      throw error;
+    }
+  },
+
+  getClaims: async () => {
+    try {
+      const data = await fetchWithAuth('/claims');
+      return data;
+    } catch (error) {
+      console.error('dispatcherApi.getClaims error:', error);
+      throw error;
+    }
+  },
+
+  getClaimById: async (id) => {
+    try {
+      const data = await fetchWithAuth(`/claims/${id}`);
+      return data.claim;
+    } catch (error) {
+      console.error('dispatcherApi.getClaimById error:', error);
+      throw error;
+    }
+  },
+
+  recordClaimCall: async (id, payload) => {
+    try {
+      const data = await fetchWithAuth(`/claims/${id}/record-call`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('dispatcherApi.recordClaimCall error:', error);
+      throw error;
+    }
+  },
+
   getLeaveReassignments: async (options = {}) => {
     try {
       const qs = options?.refresh ? '?refresh=1' : '';

@@ -1,9 +1,11 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { Steps, Card, Upload, Button, Alert, Modal, message } from 'antd';
-import { Upload as LucideUpload, Phone, MessageCircle, Image as ImageIcon, Clock, ShieldCheck, Package } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Steps, Card, Upload, Button, Alert, Modal, message, Tag, Input, InputNumber, Select, Image } from 'antd';
+import { Upload as LucideUpload, Phone, MessageCircle, Image as ImageIcon, Clock, ShieldCheck, Package, AlertTriangle, FileText, CheckCircle2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { fetchWithoutAuth } from '../../api/apiClient';
+import { orderApi } from '../../api/orderApi';
+import { uploadApi } from '../../api/uploadApi';
 
 const DEMO_FALLBACK_ORDER = {
   id: 'ALS260930-0001',
@@ -77,8 +79,29 @@ function mapApiOrderToViewModel(apiOrder) {
     sealImage: apiOrder.seal_image || null,
     podImage: apiOrder.pod_image || null,
     incident: apiOrder.incident || null,
+    claims: Array.isArray(apiOrder.claims) ? apiOrder.claims : [],
+    canSubmitClaim: Boolean(apiOrder.can_submit_claim),
+    claimWindowDays: Number(apiOrder.claim_window_days || 14),
+    claimWindowDeadline: apiOrder.claim_window_deadline || null,
+    claimWindowExpired: Boolean(apiOrder.claim_window_expired),
   };
 }
+
+const CLAIM_STATUS_CONFIG = {
+  PENDING: { color: 'orange', label: 'Chờ Quản lý thẩm định' },
+  APPROVED: { color: 'blue', label: 'Đã duyệt bồi thường (Chờ chi trả)' },
+  REJECTED: { color: 'red', label: 'Từ chối bồi thường (Chờ liên hệ)' },
+  PAID: { color: 'cyan', label: 'Đã chuyển tiền (Chờ xác nhận)' },
+  CLOSED_COMPENSATED: { color: 'green', label: 'Đã bồi thường (Hoàn tất)' },
+  CLOSED_REJECTED: { color: 'red', label: 'Đã đóng (Từ chối)' },
+  CLOSED: { color: 'default', label: 'Đã đóng' },
+};
+
+const CLAIM_TYPE_LABELS = {
+  Damage: 'Hư hỏng hàng hóa',
+  Shortage: 'Thiếu hụt hàng hóa',
+  Loss: 'Thất lạc / Mất hàng',
+};
 
 export default function GuestTrackingPage() {
   const params = useParams();
@@ -86,38 +109,102 @@ export default function GuestTrackingPage() {
 
   const [order, setOrder] = useState(null);
   const [isPODOpen, setIsPODOpen] = useState(false);
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+  const [claimType, setClaimType] = useState('Damage');
+  const [claimAmount, setClaimAmount] = useState(null);
+  const [claimReason, setClaimReason] = useState('');
+  const [claimContactName, setClaimContactName] = useState('');
+  const [claimContactPhone, setClaimContactPhone] = useState('');
+  const [claimFileList, setClaimFileList] = useState([]);
+  const [submittingClaim, setSubmittingClaim] = useState(false);
+  const [confirmingClaimId, setConfirmingClaimId] = useState(null);
 
-  useEffect(() => {
-    let active = true;
+  const loadOrder = useCallback(async () => {
+    if (!token) {
+      setOrder(DEMO_FALLBACK_ORDER);
+      return;
+    }
 
-    const fetchOrder = async () => {
-      if (!token) {
-        if (active) setOrder(DEMO_FALLBACK_ORDER);
+    try {
+      const res = await fetchWithoutAuth(`/orders/customer-view/${encodeURIComponent(token)}`);
+      if (res?.order) {
+        setOrder(mapApiOrderToViewModel(res.order));
         return;
       }
+    } catch (err) {
+      console.warn('Không tải được dữ liệu thực qua tracking token, dùng dữ liệu mẫu dự phòng:', err?.message);
+    }
 
-      try {
-        const res = await fetchWithoutAuth(`/orders/customer-view/${encodeURIComponent(token)}`);
-        if (!active) return;
-
-        if (res?.order) {
-          setOrder(mapApiOrderToViewModel(res.order));
-          return;
-        }
-      } catch (err) {
-        console.warn('Không tải được dữ liệu thực qua tracking token, dùng dữ liệu mẫu dự phòng:', err?.message);
-      }
-
-      if (active) {
-        setOrder(DEMO_FALLBACK_ORDER);
-      }
-    };
-
-    fetchOrder();
-    return () => {
-      active = false;
-    };
+    setOrder(DEMO_FALLBACK_ORDER);
   }, [token]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadOrder();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadOrder]);
+
+  const handleOpenClaimModal = () => {
+    setClaimType('Damage');
+    setClaimAmount(null);
+    setClaimReason('');
+    setClaimContactName(order?.customer || '');
+    setClaimContactPhone('');
+    setClaimFileList([]);
+    setIsClaimModalOpen(true);
+  };
+
+  const handleSubmitGuestClaim = async () => {
+    if (!claimReason.trim()) {
+      message.warning('Vui lòng nhập mô tả thiệt hại / lý do khiếu nại.');
+      return;
+    }
+    try {
+      setSubmittingClaim(true);
+      const evidencePhotos = claimFileList
+        .map((f) => f.url || f.response?.url)
+        .filter(Boolean);
+      const res = await orderApi.submitGuestClaim(token, {
+        claim_type: claimType,
+        amount: claimAmount !== null && claimAmount !== undefined ? Number(claimAmount) : 0,
+        reason: claimReason.trim(),
+        submitted_by_name: claimContactName.trim() || undefined,
+        submitted_by_phone: claimContactPhone.trim() || undefined,
+        evidence_photos: evidencePhotos,
+      });
+      message.success(res?.message || 'Đã gửi yêu cầu bồi thường thành công!');
+      setIsClaimModalOpen(false);
+      await loadOrder();
+    } catch (err) {
+      message.error(err?.message || 'Không thể gửi yêu cầu bồi thường');
+    } finally {
+      setSubmittingClaim(false);
+    }
+  };
+
+  const handleConfirmMoneyReceived = (claim) => {
+    if (!token || !claim?.id) return;
+    Modal.confirm({
+      title: `Xác nhận đã nhận tiền bồi thường (${claim.claim_code})`,
+      content: `Quý khách xác nhận đã nhận đủ số tiền ${Number(claim.approved_amount || claim.amount || 0).toLocaleString('vi-VN')} đ (Mã GD: ${claim.transaction_code || 'N/A'}) và đồng ý đóng hồ sơ bồi thường?`,
+      okText: 'Xác nhận đã nhận tiền',
+      cancelText: 'Hủy',
+      okButtonProps: { className: 'bg-emerald-600 hover:bg-emerald-700' },
+      onOk: async () => {
+        try {
+          setConfirmingClaimId(claim.id);
+          const res = await orderApi.confirmGuestClaimPayment(token, claim.id);
+          message.success(res?.message || 'Cảm ơn Quý khách! Hồ sơ bồi thường đã được đóng.');
+          await loadOrder();
+        } catch (err) {
+          message.error(err?.message || 'Không thể xác nhận đã nhận tiền');
+        } finally {
+          setConfirmingClaimId(null);
+        }
+      }
+    });
+  };
 
   if (!order) return <div className="p-10 text-center">Đang tải dữ liệu tra cứu...</div>;
 
@@ -350,9 +437,278 @@ export default function GuestTrackingPage() {
         </Card>
       </div>
 
+      <Card
+        title={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <FileText className="text-[#0056a0]" size={18} />
+              <span>Khiếu nại &amp; Yêu cầu Bồi thường (Claims)</span>
+            </span>
+            {order.canSubmitClaim && token && (
+              <Button
+                type="primary"
+                danger
+                size="small"
+                icon={<AlertTriangle size={14} />}
+                onClick={handleOpenClaimModal}
+              >
+                Gửi yêu cầu bồi thường
+              </Button>
+            )}
+          </div>
+        }
+        className="shadow-sm rounded-xl"
+      >
+        <div className="space-y-4">
+          {order.canSubmitClaim && (
+            <Alert
+              type="info"
+              showIcon
+              title={
+                <span className="text-xs font-semibold">
+                  Quý khách có quyền gửi yêu cầu bồi thường trong vòng {order.claimWindowDays} ngày sau khi nhận hàng (BR-59)
+                  {order.claimWindowDeadline ? ` — Hạn cuối: ${new Date(order.claimWindowDeadline).toLocaleDateString('vi-VN')}` : ''}.
+                </span>
+              }
+              className="rounded-lg"
+            />
+          )}
+
+          {order.claimWindowExpired && (
+            <Alert
+              type="warning"
+              showIcon
+              title={`Đã quá thời hạn ${order.claimWindowDays} ngày kể từ khi giao hàng để gửi khiếu nại mới theo quy định hợp đồng & Điều 237 Luật Thương mại.`}
+              className="rounded-lg"
+            />
+          )}
+
+          {(!order.claims || order.claims.length === 0) ? (
+            <p className="text-sm text-gray-500 italic">
+              Chưa có yêu cầu bồi thường nào được ghi nhận cho đơn hàng này.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {order.claims.map((cl) => {
+                const stKey = String(cl.status || 'PENDING').toUpperCase();
+                const stCfg = CLAIM_STATUS_CONFIG[stKey] || { color: 'default', label: cl.status };
+                const displayAmount = Number(cl.approved_amount || cl.amount || 0);
+                return (
+                  <div key={cl.id} className="p-4 rounded-xl border border-gray-200 bg-gray-50/70 space-y-2 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-[#0056a0]">{cl.claim_code}</span>
+                        <Tag>{CLAIM_TYPE_LABELS[cl.claim_type] || cl.claim_type || 'Damage'}</Tag>
+                        <Tag color="geekblue">
+                          {cl.source === 'CUSTOMER_CLAIM' ? 'Khách hàng gửi' : 'Từ sự cố vận chuyển'}
+                        </Tag>
+                      </div>
+                      <Tag color={stCfg.color} className="font-bold m-0">{stCfg.label}</Tag>
+                    </div>
+
+                    <p className="text-gray-700">
+                      <b>Nội dung / Lý do:</b> {cl.reason}
+                    </p>
+
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
+                      <span>
+                        Số tiền yêu cầu: <b className="font-mono text-gray-900">{Number(cl.amount || 0).toLocaleString('vi-VN')} đ</b>
+                      </span>
+                      {displayAmount > 0 && stKey !== 'PENDING' && stKey !== 'REJECTED' && stKey !== 'CLOSED_REJECTED' && (
+                        <span>
+                          Số tiền duyệt chi: <b className="font-mono text-red-600">{displayAmount.toLocaleString('vi-VN')} đ</b>
+                        </span>
+                      )}
+                      {cl.created_time && (
+                        <span>Ngày gửi: <b>{new Date(cl.created_time).toLocaleString('vi-VN')}</b></span>
+                      )}
+                    </div>
+
+                    {cl.rejection_reason && (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">
+                        <b>Lý do từ chối:</b> {cl.rejection_reason}
+                        {cl.contract_clause_ref ? ` (${cl.contract_clause_ref})` : ''}
+                      </p>
+                    )}
+
+                    {Array.isArray(cl.evidence_photos) && cl.evidence_photos.length > 0 && (
+                      <div className="pt-1">
+                        <span className="text-xs font-semibold text-gray-600 block mb-1">Ảnh minh chứng đã gửi:</span>
+                        <Image.PreviewGroup>
+                          <div className="flex flex-wrap gap-2">
+                            {cl.evidence_photos.map((url, idx) => (
+                              <Image
+                                key={idx}
+                                src={url}
+                                alt={`Bằng chứng ${idx + 1}`}
+                                width={64}
+                                height={64}
+                                className="rounded-lg object-cover border border-gray-200"
+                              />
+                            ))}
+                          </div>
+                        </Image.PreviewGroup>
+                      </div>
+                    )}
+
+                    {cl.payment_proof_url && (
+                      <div className="pt-1">
+                        <a
+                          href={cl.payment_proof_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-bold text-green-700 hover:underline"
+                        >
+                          <ImageIcon size={14} /> Xem chứng từ chuyển khoản {cl.transaction_code ? `(Mã GD: ${cl.transaction_code})` : ''}
+                        </a>
+                      </div>
+                    )}
+
+                    {stKey === 'PAID' && (
+                      <div className="mt-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200 space-y-2 text-xs">
+                        <div className="font-bold text-emerald-900">
+                          ALS đã hoàn tất chuyển khoản bồi thường {Number(cl.approved_amount || cl.amount || 0).toLocaleString('vi-VN')} đ
+                        </div>
+                        <div className="text-emerald-950 flex flex-wrap gap-x-4 gap-y-1">
+                          {cl.payment_date && <span>Ngày chi: <b>{cl.payment_date}</b></span>}
+                          {cl.transaction_code && <span>Mã GD: <b className="font-mono">{cl.transaction_code}</b></span>}
+                          {cl.auto_close_deadline && (
+                            <span>Tự động đóng nếu không phản hồi sau: <b>{new Date(cl.auto_close_deadline).toLocaleDateString('vi-VN')}</b></span>
+                          )}
+                        </div>
+                        {token && (
+                          <Button
+                            type="primary"
+                            size="small"
+                            loading={confirmingClaimId === cl.id}
+                            icon={<CheckCircle2 size={14} />}
+                            onClick={() => handleConfirmMoneyReceived(cl)}
+                            className="bg-emerald-600 hover:bg-emerald-700 font-bold"
+                          >
+                            Xác nhận đã nhận tiền bồi thường
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {(stKey === 'CLOSED_COMPENSATED' || stKey === 'CLOSED_REJECTED') && (
+                      <div className={`mt-2 p-2.5 rounded-lg border text-xs ${
+                        stKey === 'CLOSED_COMPENSATED'
+                          ? 'bg-green-50 border-green-200 text-green-900'
+                          : 'bg-red-50 border-red-200 text-red-900'
+                      }`}>
+                        <div className="font-bold">
+                          Hồ sơ Kết thúc (Final Record): {stKey === 'CLOSED_COMPENSATED' ? 'Đã bồi thường' : 'Đã từ chối'}
+                        </div>
+                        <div className="mt-0.5">
+                          {cl.close_method === 'CUSTOMER_CONFIRMED'
+                            ? 'Khách hàng đã xác nhận nhận đủ tiền bồi thường.'
+                            : cl.close_method === 'AUTO_7_DAYS'
+                              ? 'Hệ thống tự động đóng sau 7 ngày không có phản hồi khác.'
+                              : 'Điều phối viên đã gọi điện thông báo kết quả từ chối cho khách hàng.'}
+                          {cl.closed_at ? ` (${new Date(cl.closed_at).toLocaleString('vi-VN')})` : ''}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </Card>
+
       <Modal open={isPODOpen} footer={null} onCancel={() => setIsPODOpen(false)} width={600} title="Biên bản Bàn giao Hàng hóa (POD)">
         {order.podImage && <img src={order.podImage} alt="POD" className="w-full rounded-lg mb-4" />}
         <Button type="primary" icon={<LucideUpload size={14} />} block onClick={() => message.success('Đang tải xuống...')}>Tải xuống PDF/JPG</Button>
+      </Modal>
+
+      <Modal
+        open={isClaimModalOpen}
+        onCancel={() => setIsClaimModalOpen(false)}
+        onOk={handleSubmitGuestClaim}
+        confirmLoading={submittingClaim}
+        okText="Gửi yêu cầu bồi thường"
+        cancelText="Hủy"
+        title={`Gửi yêu cầu bồi thường — Đơn ${order.id}`}
+        width={600}
+      >
+        <div className="space-y-3 py-2 text-xs">
+          <div>
+            <label className="font-bold text-gray-700 block mb-1">Loại khiếu nại *</label>
+            <Select className="w-full" value={claimType} onChange={setClaimType}>
+              <Select.Option value="Damage">Hư hỏng hàng hóa (Damage)</Select.Option>
+              <Select.Option value="Shortage">Thiếu hụt số lượng (Shortage)</Select.Option>
+              <Select.Option value="Loss">Thất lạc / Mất hàng (Loss)</Select.Option>
+            </Select>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-gray-700 block mb-1">Người liên hệ</label>
+              <Input
+                value={claimContactName}
+                onChange={(e) => setClaimContactName(e.target.value)}
+                placeholder="Họ tên người gửi khiếu nại"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-gray-700 block mb-1">Số điện thoại liên hệ</label>
+              <Input
+                value={claimContactPhone}
+                onChange={(e) => setClaimContactPhone(e.target.value)}
+                placeholder="Số điện thoại nhận thông báo"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="font-bold text-gray-700 block mb-1">Số tiền đề nghị bồi thường (VNĐ)</label>
+            <InputNumber
+              className="w-full"
+              min={0}
+              step={100000}
+              value={claimAmount}
+              onChange={setClaimAmount}
+              formatter={(v) => (v ? `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
+              parser={(v) => (v ? v.replace(/,/g, '') : '')}
+              placeholder="Nhập số tiền ước tính (nếu có)"
+            />
+          </div>
+          <div>
+            <label className="font-bold text-gray-700 block mb-1">Mô tả thiệt hại &amp; Lý do *</label>
+            <Input.TextArea
+              rows={3}
+              value={claimReason}
+              onChange={(e) => setClaimReason(e.target.value)}
+              placeholder="Mô tả chi tiết tình trạng hàng hóa bị hư hỏng, thiếu hụt hoặc thất lạc..."
+            />
+          </div>
+          <div>
+            <label className="font-bold text-gray-700 block mb-1">Ảnh minh chứng (Tối đa 5 ảnh)</label>
+            <Upload
+              listType="picture-card"
+              maxCount={5}
+              multiple
+              accept="image/*"
+              fileList={claimFileList}
+              onChange={({ fileList }) => setClaimFileList(fileList)}
+              customRequest={async ({ file, onSuccess, onError }) => {
+                try {
+                  const uploaded = await uploadApi.uploadToCloudinary(file, 'nexlog/claims', { requireAuthCookie: false });
+                  onSuccess?.({ url: uploaded.url });
+                  message.success('Đã tải ảnh minh chứng lên thành công.');
+                } catch (err) {
+                  message.error(err?.message || 'Lỗi tải ảnh minh chứng');
+                  onError?.(err);
+                }
+              }}
+            >
+              <div className="flex flex-col items-center text-gray-500">
+                <LucideUpload size={16} />
+                <span className="text-[11px] mt-1">Tải ảnh</span>
+              </div>
+            </Upload>
+          </div>
+        </div>
       </Modal>
     </div>
   );

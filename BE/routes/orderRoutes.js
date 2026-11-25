@@ -12,6 +12,8 @@ const {
   splitOrder,
   redirectOrderToAlsWarehouse,
   getOrderByToken,
+  submitGuestClaimByToken,
+  confirmGuestClaimPayment,
   getPublicInvoiceCaptcha,
   lookupPublicInvoice,
   downloadPublicInvoiceFile,
@@ -71,8 +73,22 @@ router.get('/customer-view/:token', getOrderByToken);
 // 4. Khách hàng: Đồng ý chốt giá cước đơn hàng (Public)
 router.post('/customer-agree/:token', customerAgreeOrderPrice);
 
+const claimSubmitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Quý khách gửi yêu cầu quá nhiều lần. Vui lòng thử lại sau 15 phút.' }
+});
+
 // 5. Khách hàng: Upload hồ sơ chứng từ liên quan (Public)
 router.post('/customer-upload-docs/:token', customerUploadDocuments);
+
+// 5a. Khách hàng: Gửi yêu cầu bồi thường thiệt hại hàng hóa từ Tracking Page (Public, <= 14 ngày - BR-59)
+router.post('/customer-claim/:token', claimSubmitLimiter, submitGuestClaimByToken);
+
+// 5b. Khách hàng: Xác nhận đã nhận tiền bồi thường trên Tracking Page (Public - BF-04)
+router.post('/customer-confirm-claim/:token', claimSubmitLimiter, confirmGuestClaimPayment);
 
 // 5b. Điều phối viên: Từ chối 1 chứng từ & tự động gửi email yêu cầu khách tải lại
 router.post('/:id/reject-document', ...requireDispatcherOrAdmin, rejectOrderDocument);

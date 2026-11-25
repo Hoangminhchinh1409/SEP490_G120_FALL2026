@@ -17,6 +17,8 @@ const {
 const {
   getAllOrders,
   getOrderByToken,
+  submitGuestClaimByToken,
+  confirmGuestClaimPayment,
   getPublicInvoiceCaptcha,
   lookupPublicInvoice,
   downloadPublicInvoiceFile
@@ -58,6 +60,8 @@ module.exports = {
   // Query
   getAllOrders,
   getOrderByToken,
+  submitGuestClaimByToken,
+  confirmGuestClaimPayment,
   getPublicInvoiceCaptcha,
   lookupPublicInvoice,
   downloadPublicInvoiceFile,

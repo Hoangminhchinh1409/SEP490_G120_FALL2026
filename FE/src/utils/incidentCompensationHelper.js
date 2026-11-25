@@ -163,38 +163,50 @@ export function validateRequestMoreInfo({ requestInfoNote } = {}) {
  */
 export function determineIncidentStatus(incident = {}) {
   const rawStatus = (incident.status || incident.raw_status || '').toUpperCase();
-  const isRejected =
-    Boolean(incident.rejection_reason) ||
-    rawStatus === 'REJECTED' ||
-    String(incident.claim_status || '').toUpperCase() === 'REJECTED' ||
-    Boolean(incident.resolution_note && String(incident.resolution_note).includes('Từ chối bồi thường'));
-  const isFinalized =
+  const claimStatus = String(incident.claim_status || '').toUpperCase();
+  const isClosedCompensated =
+    claimStatus === 'CLOSED_COMPENSATED' ||
+    rawStatus === 'CLOSED_COMPENSATED' ||
     rawStatus === 'DONE' ||
     rawStatus === 'CLOSED' ||
-    rawStatus === 'RESOLVED' ||
-    rawStatus === 'APPROVED' ||
-    String(incident.claim_status || '').toUpperCase() === 'APPROVED' ||
-    String(incident.claim_status || '').toUpperCase() === 'PAID' ||
-    Number(incident.approved_compensation_amount) > 0 ||
-    Boolean(incident.closed_at) ||
-    Boolean(incident.payment_proof_url) ||
-    Boolean(incident.transaction_code);
-  const isDone = isRejected || isFinalized;
-  const isApproved = false;
-  const isPending = !isDone;
+    rawStatus === 'RESOLVED';
+  const isClosedRejected =
+    claimStatus === 'CLOSED_REJECTED' ||
+    rawStatus === 'CLOSED_REJECTED';
+  const isPaid = claimStatus === 'PAID' || rawStatus === 'PAID';
+  const isRejected =
+    isClosedRejected ||
+    claimStatus === 'REJECTED' ||
+    rawStatus === 'REJECTED' ||
+    Boolean(incident.rejection_reason) ||
+    Boolean(incident.resolution_note && String(incident.resolution_note).includes('Từ chối bồi thường'));
+  const isApproved =
+    !isClosedCompensated &&
+    !isPaid &&
+    !isRejected &&
+    (rawStatus === 'APPROVED' || claimStatus === 'APPROVED');
+  const isDone = isClosedCompensated || isClosedRejected;
+  const isPending = !isDone && !isApproved && !isRejected && !isPaid;
 
   let badge = { color: 'orange', label: 'Chờ Quản lý xét duyệt' };
-  if (isDone) {
-    badge = isRejected
-      ? { color: 'red', label: 'Đã từ chối bồi thường (Đóng)' }
-      : { color: 'green', label: 'Đã hoàn tất (Đóng)' };
+  if (isClosedRejected) {
+    badge = { color: 'red', label: 'Đã từ chối bồi thường (Đóng)' };
+  } else if (isClosedCompensated) {
+    badge = { color: 'green', label: 'Đã hoàn tất (Đóng)' };
+  } else if (isPaid) {
+    badge = { color: 'cyan', label: 'Đã chi trả (Chờ khách xác nhận)' };
+  } else if (isApproved) {
+    badge = { color: 'blue', label: 'Đã duyệt (Chờ gọi / thanh toán)' };
+  } else if (isRejected) {
+    badge = { color: 'red', label: 'Đã từ chối (Chờ ĐPV gọi khách)' };
   }
 
   return {
     isPending,
     isApproved,
+    isPaid,
     isRejected,
-    isPaymentClosed: isFinalized,
+    isPaymentClosed: isClosedCompensated,
     isDone,
     badge
   };

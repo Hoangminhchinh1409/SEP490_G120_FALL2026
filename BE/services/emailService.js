@@ -936,6 +936,125 @@ const sendIncidentCompensationRejectionEmail = async ({
   }
 };
 
+/**
+ * Gửi email thông báo ĐÃ CHI TRẢ TIỀN BỒI THƯỜNG kèm chứng từ để Khách hàng xác nhận (BF-04)
+ */
+const sendClaimPaymentRecordedEmail = async ({
+  customerEmail,
+  customerName,
+  contactPerson,
+  orderCode,
+  claimCode,
+  approvedAmount,
+  paymentDate,
+  transactionCode,
+  paymentProofUrl,
+  paymentNote,
+  contactHotline = '1900 1234',
+  trackingUrl
+}) => {
+  const mailTransporter = await getTransporter();
+  const formattedAmount = Number(approvedAmount || 0).toLocaleString('vi-VN');
+  const formattedDate = paymentDate ? escapeHtml(paymentDate) : new Date().toISOString().split('T')[0];
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 20px 10px; color: #1e293b; }
+        .container { max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); border: 1px solid #e2e8f0; }
+        .header { background: linear-gradient(135deg, #064e3b 0%, #059669 60%, #10b981 100%); padding: 32px 28px; text-align: center; color: #ffffff; }
+        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; opacity: 0.85; margin-bottom: 8px; }
+        .header h1 { margin: 0; font-size: 22px; font-weight: 800; line-height: 1.3; }
+        .header p { margin: 8px 0 0; font-size: 13px; opacity: 0.92; }
+        .content { padding: 28px; }
+        .amount-card { background: #ecfdf5; border: 2px solid #10b981; border-radius: 14px; padding: 20px; text-align: center; margin: 18px 0; }
+        .amount-label { font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase; letter-spacing: 1px; }
+        .amount-value { font-size: 30px; font-weight: 900; color: #047857; font-family: 'Consolas', monospace; margin: 6px 0; }
+        .detail-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; margin: 18px 0; }
+        .detail-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .detail-table td { padding: 7px 4px; border-bottom: 1px dashed #e2e8f0; vertical-align: top; }
+        .detail-table tr:last-child td { border-bottom: none; }
+        .td-label { color: #64748b; width: 180px; font-weight: 500; }
+        .td-val { color: #0f172a; font-weight: 600; text-align: right; }
+        .notice-box { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #d97706; border-radius: 12px; padding: 16px 18px; margin: 18px 0; font-size: 13px; color: #78350f; line-height: 1.6; }
+        .btn-wrap { text-align: center; margin: 24px 0 12px; }
+        .btn { display: inline-block; background: #059669; color: #ffffff !important; padding: 13px 28px; border-radius: 10px; font-weight: 800; font-size: 14px; text-decoration: none; }
+        .proof-link { display: inline-block; margin-top: 8px; color: #0284c7; font-weight: 700; font-size: 13px; }
+        .footer { background: #0f172a; padding: 20px 24px; text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.6; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <div class="header-brand">ALS · NEXLOG COMPENSATION PAYMENT</div>
+          <h1>Thông Báo Đã Chuyển Khoản Bồi Thường</h1>
+          <p>Hồ sơ ${escapeHtml(claimCode || '')} · Đơn hàng #${escapeHtml(orderCode || '')}</p>
+        </div>
+        <div class="content">
+          <p style="font-size:15px;font-weight:700;margin-bottom:8px;">Kính gửi ${escapeHtml(customerName || 'Quý khách hàng')}${contactPerson ? ` (${escapeHtml(contactPerson)})` : ''},</p>
+          <p style="font-size:14px;line-height:1.65;color:#475569;">
+            Công ty Cổ phần Logistics Hàng không (ALS) đã hoàn tất thanh toán khoản bồi thường cho yêu cầu <b>${escapeHtml(claimCode || '')}</b> của đơn hàng <b>#${escapeHtml(orderCode || '')}</b>.
+          </p>
+
+          <div class="amount-card">
+            <div class="amount-label">Số tiền đã chi trả</div>
+            <div class="amount-value">${formattedAmount} VNĐ</div>
+            <div style="font-size:12px;color:#065f46;">Ngày chuyển khoản: <b>${formattedDate}</b></div>
+          </div>
+
+          <div class="detail-box">
+            <table class="detail-table">
+              <tr><td class="td-label">Mã yêu cầu bồi thường:</td><td class="td-val">${escapeHtml(claimCode || 'N/A')}</td></tr>
+              <tr><td class="td-label">Đơn hàng:</td><td class="td-val">#${escapeHtml(orderCode || 'N/A')}</td></tr>
+              <tr><td class="td-label">Mã giao dịch (UNC):</td><td class="td-val">${escapeHtml(transactionCode || 'N/A')}</td></tr>
+              <tr><td class="td-label">Ngày thanh toán:</td><td class="td-val">${formattedDate}</td></tr>
+              ${paymentNote ? `<tr><td class="td-label">Ghi chú thanh toán:</td><td class="td-val">${escapeHtml(paymentNote)}</td></tr>` : ''}
+            </table>
+            ${paymentProofUrl ? `<div style="text-align:right;"><a href="${escapeHtml(paymentProofUrl)}" target="_blank" class="proof-link">Xem chứng từ / biên lai chuyển khoản &rarr;</a></div>` : ''}
+          </div>
+
+          <div class="notice-box">
+            <b>Xác nhận đã nhận tiền (BF-04):</b><br/>
+            Quý khách vui lòng truy cập trang tra cứu đơn hàng bên dưới và bấm nút <b>"Xác nhận đã nhận tiền bồi thường"</b> sau khi kiểm tra tài khoản.<br/>
+            Lưu ý: Nếu không có phản hồi sau <b>07 ngày</b> kể từ ngày thanh toán, hệ thống sẽ tự động đóng hồ sơ với trạng thái đã bồi thường. Mọi thắc mắc vui lòng liên hệ Hotline <b>${escapeHtml(contactHotline || '1900 1234')}</b>.
+          </div>
+
+          ${trackingUrl ? `
+          <div class="btn-wrap">
+            <a href="${escapeHtml(trackingUrl)}" class="btn" target="_blank">Xác Nhận Đã Nhận Tiền Bồi Thường</a>
+          </div>
+          ` : ''}
+        </div>
+        <div class="footer">
+          <div><b>CÔNG TY CỔ PHẦN LOGISTICS HÀNG KHÔNG (ALS) — HỆ THỐNG ĐIỀU VẬN NEXLOG</b></div>
+          <div>Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội · © 2026 NEXLOG Logistics. All rights reserved.</div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const fromAddress = process.env.SMTP_FROM || `ALS NEXLOG Claims <${process.env.SMTP_USER || 'claims@nexlog.vn'}>`;
+    const info = await mailTransporter.sendMail({
+      from: fromAddress,
+      to: customerEmail || 'khachhang@example.com',
+      subject: `[ALS - NEXLOG] Đã chuyển khoản bồi thường ${claimCode || ''} (Đơn #${orderCode || ''})`,
+      html: htmlContent
+    });
+    const previewUrl = nodemailer.getTestMessageUrl ? nodemailer.getTestMessageUrl(info) : null;
+    console.log('[EmailService] Claim payment recorded email sent:', info.messageId, previewUrl || '');
+    return { success: true, messageId: info.messageId, previewUrl: previewUrl || null };
+  } catch (error) {
+    console.error('[EmailService] Error sending claim payment recorded email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   sendOrderPriceConfirmationEmail,
   sendDocumentRejectionEmail,
@@ -943,5 +1062,6 @@ module.exports = {
   sendContractToCustomerEmail,
   sendPasswordResetEmail,
   sendIncidentCompensationApprovalEmail,
-  sendIncidentCompensationRejectionEmail
+  sendIncidentCompensationRejectionEmail,
+  sendClaimPaymentRecordedEmail
 };

@@ -180,6 +180,34 @@ export const orderApi = {
     }
   },
 
+  // 11a. Khách hàng: Gửi yêu cầu bồi thường thiệt hại hàng hóa từ Tracking Page (BR-59)
+  submitGuestClaim: async (token, payload) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/customer-claim/${encodeURIComponent(token)}`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.submitGuestClaim Error:', error);
+      throw error;
+    }
+  },
+
+  // 11b. Khách hàng: Xác nhận đã nhận tiền bồi thường trên Tracking Page (BF-04)
+  confirmGuestClaimPayment: async (token, claimId) => {
+    try {
+      const data = await fetchWithoutAuth(`/orders/customer-confirm-claim/${encodeURIComponent(token)}`, {
+        method: 'POST',
+        body: JSON.stringify({ claim_id: claimId })
+      });
+      return data;
+    } catch (error) {
+      console.error('orderApi.confirmGuestClaimPayment Error:', error);
+      throw error;
+    }
+  },
+
   // 11b. Điều phối viên: Từ chối 1 chứng từ & tự động gửi email yêu cầu khách tải lại
   rejectOrderDocument: async (orderId, { doc_key, reject_reason, documents }) => {
     try {

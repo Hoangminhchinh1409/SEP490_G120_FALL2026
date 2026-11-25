@@ -69,7 +69,9 @@ router.post('/incidents/:id/close', requireManagerOrAdmin, incidentController.cl
 router.patch('/incidents/:id/close', requireManagerOrAdmin, incidentController.closeIncidentCase);
 
 router.get('/claims', incidentController.getClaims);
+router.get('/claims/:id', incidentController.getClaimById);
 router.post('/claims/:id/decide', requireManagerOrAdmin, incidentController.decideClaim);
+router.post('/claims/:id/record-payment', requireManagerOrAdmin, incidentController.recordManagerClaimPayment);
 router.get('/approvals', incidentController.getApprovals);
 router.post('/approvals/:id/decide', requireManagerOrAdmin, incidentController.decideApproval);
 

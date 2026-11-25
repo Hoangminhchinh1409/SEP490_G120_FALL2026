@@ -1,4 +1,5 @@
 const fleetService = require("../services/fleetService");
+const claimService = require("../services/claimService");
 const prisma = require('../config/prisma');
 const queueAdapter = require('./queueAdapter');
 
@@ -7,19 +8,43 @@ const queueAdapter = require('./queueAdapter');
  * Tích hợp Distributed Queue Adapter & PostgreSQL Advisory Lock (Improvement 3):
  * - Đảm bảo tải cho hàng nghìn xe truyền vị trí GPS không làm nghẽn Event Loop.
  * - Tránh race-condition khi chạy nhiều instance backend bằng pg_try_advisory_lock.
- * - JOB-01: File Retention - Bảo lưu chứng từ, ảnh chì, POD của các đơn có khiếu nại đang PENDING.
+ * - JOB-01: File Retention - Bảo lưu chứng từ, dữ liệu GPS của các đơn/chuyến có khiếu nại chưa ĐÓNG (BF-04 Keep Trip Data).
  * - JOB-02: GPS & Shift Overtime Check - Cảnh báo 4h lái liên tục và cảnh báo hết ca khi chuyến chưa hoàn tất.
  * - JOB-03: Order Flagger - Tự động gắn cờ các đơn Draft quá hạn và đơn Confirmed chưa gán chuyến quá hạn.
  * - JOB-06: Auto-lock Expired Trucks - Tự động khóa xe hết hạn đăng kiểm sang Inactive.
  * - JOB-07: Auto-assign Shifts & Reminders - Tự động nhắc và xếp ca tài xế hàng tuần.
+ * - JOB-08: Auto-close Paid Claims - Tự động đóng hồ sơ bồi thường sau 7 ngày không có phản hồi từ khách hàng (BF-04).
  */
 
 // Định nghĩa mã khóa Advisory Lock cho từng Job
 const LOCK_KEYS = {
-  JOB_06: 1006,
-  JOB_03: 1003,
+  JOB_01: 1001,
   JOB_02: 1002,
-  JOB_07: 1007
+  JOB_03: 1003,
+  JOB_06: 1006,
+  JOB_07: 1007,
+  JOB_08: 1008
+};
+
+const readNumericSetting = async (key, defaultValue) => {
+  try {
+    const setting = await prisma.system_settings.findUnique({
+      where: { key },
+      select: { value: true }
+    });
+    if (setting && setting.value !== null && setting.value !== undefined) {
+      const rawVal = typeof setting.value === 'object'
+        ? (setting.value.days ?? setting.value.value)
+        : setting.value;
+      const parsed = parseInt(String(rawVal), 10);
+      if (Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn(`[Settings] Không đọc được ${key}, dùng mặc định ${defaultValue}:`, err.message);
+  }
+  return defaultValue;
 };
 
 // JOB-06: Tự động khóa xe hết hạn đăng kiểm (trừ xe đang ON_TRIP) và gửi cảnh báo 30 ngày lúc 06:00 mỗi ngày
@@ -320,10 +345,104 @@ const runJob07_AutoAssignNextWeekShifts = async () => {
   }
 };
 
+// JOB-08: Tự động đóng Claim đã thanh toán quá 7 ngày chưa có phản hồi khách hàng (BF-04)
+const runJob08_AutoClosePaidClaims = async (options = {}) => {
+  try {
+    const res = await claimService.autoCloseOverduePaidClaims(options);
+    if (res?.closedCount > 0) {
+      console.log(`[JOB-08] Đã tự động đóng ${res.closedCount} hồ sơ bồi thường quá hạn 7 ngày (AUTO_7_DAYS).`);
+    }
+    return res;
+  } catch (err) {
+    console.warn('[JOB-08] Lỗi tự động đóng hồ sơ bồi thường 7 ngày:', err.message);
+    return { closedCount: 0, closedClaimIds: [], error: true };
+  }
+};
+
+// JOB-01: Dọn dẹp chứng từ & GPS quá hạn, luôn bảo lưu (Keep Trip Data) các đơn/chuyến có Claim chưa ĐÓNG (BF-04)
+const runJob01_RetentionWithClaimHold = async ({ dryRun = false } = {}) => {
+  try {
+    const [docRetentionDays, gpsRetentionDays, protectedRefs] = await Promise.all([
+      readNumericSetting('document_retention_days', 60),
+      readNumericSetting('gps_track_retention_days', 90),
+      claimService.getProtectedClaimOrderAndTripIds()
+    ]);
+
+    const nowMs = Date.now();
+    const docCutoff = new Date(nowMs - docRetentionDays * 86400000);
+    const gpsCutoff = new Date(nowMs - gpsRetentionDays * 86400000);
+
+    const protectedOrderIds = protectedRefs?.protectedOrderIds || [];
+    const protectedTripIds = protectedRefs?.protectedTripIds || [];
+
+    const gpsWhere = {
+      recorded_time: { lt: gpsCutoff },
+      ...(protectedTripIds.length > 0 ? { trip_id: { notIn: protectedTripIds.map((id) => BigInt(id)) } } : {})
+    };
+
+    const docWhere = {
+      file_link: { not: null },
+      uploaded_time: { lt: docCutoff },
+      ...(protectedOrderIds.length > 0 ? { order_id: { notIn: protectedOrderIds.map((id) => BigInt(id)) } } : {})
+    };
+
+    let cleanedGpsPoints = 0;
+    let cleanedDocuments = 0;
+
+    if (dryRun) {
+      const [gpsCount, docCount] = await Promise.all([
+        prisma.trip_track_points.count({ where: gpsWhere }),
+        prisma.customer_documents.count({ where: docWhere })
+      ]);
+      cleanedGpsPoints = gpsCount;
+      cleanedDocuments = docCount;
+    } else {
+      const [gpsDel, docUpd] = await Promise.all([
+        prisma.trip_track_points.deleteMany({ where: gpsWhere }),
+        prisma.customer_documents.updateMany({
+          where: docWhere,
+          data: { file_link: null }
+        })
+      ]);
+      cleanedGpsPoints = gpsDel?.count || 0;
+      cleanedDocuments = docUpd?.count || 0;
+    }
+
+    if (cleanedGpsPoints > 0 || cleanedDocuments > 0) {
+      console.log(
+        `[JOB-01] Retention (${dryRun ? 'dry-run' : 'live'}): dọn ${cleanedDocuments} chứng từ (> ${docRetentionDays} ngày) & ${cleanedGpsPoints} điểm GPS (> ${gpsRetentionDays} ngày); bảo lưu ${protectedOrderIds.length} đơn & ${protectedTripIds.length} chuyến đang có Claim mở.`
+      );
+    }
+
+    return {
+      protectedOrderCount: protectedOrderIds.length,
+      protectedTripCount: protectedTripIds.length,
+      cleanedGpsPoints,
+      cleanedDocuments,
+      docRetentionDays,
+      gpsRetentionDays,
+      dryRun
+    };
+  } catch (err) {
+    console.warn('[JOB-01] Lỗi thực thi Retention Policy:', err.message);
+    return {
+      protectedOrderCount: 0,
+      protectedTripCount: 0,
+      cleanedGpsPoints: 0,
+      cleanedDocuments: 0,
+      error: true
+    };
+  }
+};
+
 const initManagerJobs = () => {
-  console.log('Khởi tạo Background Jobs Phân hệ Quản lý (JOB-01, JOB-02, JOB-03, JOB-06, JOB-07) qua Distributed Queue Adapter...');
+  console.log('Khởi tạo Background Jobs Phân hệ Quản lý (JOB-01, JOB-02, JOB-03, JOB-06, JOB-07, JOB-08) qua Distributed Queue Adapter...');
 
   // Đăng ký các background queue workers
+  queueAdapter.process('job:retention-cleanup', async () => {
+    await queueAdapter.runWithAdvisoryLock(LOCK_KEYS.JOB_01, 'JOB-01', () => runJob01_RetentionWithClaimHold());
+  });
+
   queueAdapter.process('job:lock-expired-trucks', async () => {
     await queueAdapter.runWithAdvisoryLock(LOCK_KEYS.JOB_06, 'JOB-06', runJob06_AutoLockExpiredTrucks);
   });
@@ -340,12 +459,26 @@ const initManagerJobs = () => {
     await queueAdapter.runWithAdvisoryLock(LOCK_KEYS.JOB_07, 'JOB-07', runJob07_AutoAssignNextWeekShifts);
   });
 
-  // Chạy JOB-03, JOB-02, JOB-07 khi khởi động; riêng JOB-06 chạy đúng lịch 06:00 sáng GMT+7 hằng ngày
+  queueAdapter.process('job:auto-close-paid-claims', async () => {
+    await queueAdapter.runWithAdvisoryLock(LOCK_KEYS.JOB_08, 'JOB-08', () => runJob08_AutoClosePaidClaims());
+  });
+
+  // Chạy JOB-03, JOB-02, JOB-07, JOB-08 khi khởi động; riêng JOB-06 chạy đúng lịch 06:00 sáng GMT+7 hằng ngày
   queueAdapter.enqueue('job:flag-overdue-orders');
   queueAdapter.enqueue('job:check-driver-shift');
   queueAdapter.enqueue('job:auto-assign-shifts');
+  queueAdapter.enqueue('job:auto-close-paid-claims');
 
   // Định kỳ:
+  // JOB-01: Mỗi 24 giờ
+  setInterval(() => {
+    queueAdapter.enqueue('job:retention-cleanup');
+  }, 24 * 60 * 60 * 1000);
+
+  // JOB-08: Mỗi 1 giờ quét các Claim đã chi trả quá 7 ngày chưa có phản hồi
+  setInterval(() => {
+    queueAdapter.enqueue('job:auto-close-paid-claims');
+  }, 60 * 60 * 1000);
   // JOB-03: Mỗi 15 phút (900,000 ms)
   setInterval(() => {
     queueAdapter.enqueue('job:flag-overdue-orders');
@@ -384,8 +517,10 @@ const initManagerJobs = () => {
 
 module.exports = {
   initManagerJobs,
+  runJob01_RetentionWithClaimHold,
   runJob06_AutoLockExpiredTrucks,
   runJob03_FlagOverdueOrders,
   runJob02_CheckDriverShiftOvertime,
   runJob07_AutoAssignNextWeekShifts,
+  runJob08_AutoClosePaidClaims,
 };

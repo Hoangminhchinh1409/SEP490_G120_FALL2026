@@ -291,15 +291,38 @@ export const managerApi = {
     }
   },
 
-  decideClaim: async (id, { action, comment }) => {
+  getClaimById: async (id) => {
+    try {
+      const data = await fetchWithAuth(`/manager/claims/${id}`);
+      return data.claim;
+    } catch (error) {
+      console.error('managerApi.getClaimById Error:', error);
+      throw error;
+    }
+  },
+
+  decideClaim: async (id, payload) => {
     try {
       const data = await fetchWithAuth(`/manager/claims/${id}/decide`, {
         method: 'POST',
-        body: JSON.stringify({ action, comment })
+        body: JSON.stringify(payload)
       });
       return data;
     } catch (error) {
       console.error('managerApi.decideClaim Error:', error);
+      throw error;
+    }
+  },
+
+  recordClaimPayment: async (id, payload) => {
+    try {
+      const data = await fetchWithAuth(`/manager/claims/${id}/record-payment`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return data;
+    } catch (error) {
+      console.error('managerApi.recordClaimPayment Error:', error);
       throw error;
     }
   },
