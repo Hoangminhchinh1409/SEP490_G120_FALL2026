@@ -15,14 +15,14 @@ export const SHIFT_OPTIONS = [
   {
     value: "MORNING",
     title: "Ca Sáng (Thứ 2 – Chủ Nhật)",
-    timeRange: "08:00 - 17:00",
+    timeRange: "08:00 - 18:00",
     subDesc: "Làm việc khung giờ ban ngày cố định suốt cả tuần",
     icon: Sun,
   },
   {
     value: "NIGHT",
     title: "Ca Đêm (Thứ 2 – Chủ Nhật)",
-    timeRange: "17:00 - 08:00 hôm sau",
+    timeRange: "19:00 - 07:00 hôm sau",
     subDesc: "Làm việc khung giờ ca đêm xuyên ngày cố định suốt cả tuần",
     icon: Moon,
   },
@@ -52,14 +52,14 @@ export const formatShiftSummaryText = (shift) => {
   if (!shift) return "Chưa đăng ký / chưa được xếp ca";
   const st = shift.start_time ? dayjs(shift.start_time).format("HH:mm") : null;
   const et = shift.end_time ? dayjs(shift.end_time).format("HH:mm") : null;
-  if (st === "08:00" && et === "17:00") return "Ca Sáng • 08:00 – 17:00";
-  if (st === "17:00" && et === "08:00")
-    return "Ca Đêm • 17:00 – 08:00 (+1 ngày)";
+  if (st === "08:00" && et === "18:00") return "Ca Sáng • 08:00 – 18:00";
+  if (st === "19:00" && et === "07:00")
+    return "Ca Đêm • 19:00 – 07:00 (+1 ngày)";
   if (st && et) return `Ca tùy chỉnh • ${st} – ${et}`;
   const sType = detectShiftType(shift);
   return sType === "NIGHT"
-    ? "Ca Đêm • 17:00 – 08:00 (+1 ngày)"
-    : "Ca Sáng • 08:00 – 17:00";
+    ? "Ca Đêm • 19:00 – 07:00 (+1 ngày)"
+    : "Ca Sáng • 08:00 – 18:00";
 };
 
 export const isSystemAutoAssigned = (shift) => {

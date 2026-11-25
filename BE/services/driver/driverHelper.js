@@ -107,7 +107,7 @@ const normalizeWeeklyShiftType = ({ shift_type, start_time } = {}) => {
     if (timeMatch) {
       const h = parseInt(timeMatch[1], 10);
       if (h === 8) return "MORNING";
-      if (h === 17) return "NIGHT";
+      if (h === 19 || h === 17) return "NIGHT";
     }
   }
   return null;

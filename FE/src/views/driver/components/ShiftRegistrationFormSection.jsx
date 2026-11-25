@@ -162,8 +162,8 @@ export default function ShiftRegistrationFormSection({
             {weekEnd.format("DD/MM")}):{" "}
             <strong className="text-white">
               {lockedShiftType === "NIGHT"
-                ? "Ca Đêm (17:00 - 08:00 hôm sau)"
-                : "Ca Sáng (08:00 - 17:00)"}
+                ? "Ca Đêm (19:00 - 07:00 hôm sau)"
+                : "Ca Sáng (08:00 - 18:00)"}
             </strong>
             . Lịch đã chốt không thể sửa đổi hoặc hủy trực tiếp. Nếu có sự cố
             bất khả kháng, vui lòng liên hệ Quản lý.
@@ -181,8 +181,8 @@ export default function ShiftRegistrationFormSection({
                 Ca đã chọn:{" "}
                 <strong className="text-white">
                   {lockedShiftType === "NIGHT"
-                    ? "Ca Đêm (17:00 - 08:00 hôm sau)"
-                    : "Ca Sáng (08:00 - 17:00)"}
+                    ? "Ca Đêm (19:00 - 07:00 hôm sau)"
+                    : "Ca Sáng (08:00 - 18:00)"}
                 </strong>{" "}
                 cho toàn bộ tuần ({activeWeekShifts.length} ngày).
               </p>

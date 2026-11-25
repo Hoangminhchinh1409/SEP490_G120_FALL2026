@@ -25,7 +25,7 @@ const registerShift = async (userId, shiftData = {}) => {
   const shiftType = normalizeWeeklyShiftType({ shift_type, start_time });
   if (!shiftType) {
     const err = new Error(
-      "Vui lòng chọn ca làm việc hợp lệ: Ca Sáng (08:00 - 17:00) hoặc Ca Đêm (17:00 - 08:00 hôm sau).",
+      "Vui lòng chọn ca làm việc hợp lệ: Ca Sáng (08:00 - 18:00) hoặc Ca Đêm (19:00 - 07:00 hôm sau).",
     );
     err.statusCode = 400;
     throw err;
@@ -94,8 +94,8 @@ const registerShift = async (userId, shiftData = {}) => {
 
   const shiftLabel =
     shiftType === "MORNING"
-      ? "Ca Sáng (08:00 - 17:00)"
-      : "Ca Đêm (17:00 - 08:00 hôm sau)";
+      ? "Ca Sáng (08:00 - 18:00)"
+      : "Ca Đêm (19:00 - 07:00 hôm sau)";
   const effectiveStartDate =
     weekStart < nowInfo.todayStr ? nowInfo.todayStr : weekStart;
   const shiftPayloads = [];
@@ -105,12 +105,12 @@ const registerShift = async (userId, shiftData = {}) => {
     const startIso =
       shiftType === "MORNING"
         ? `${curDate}T08:00:00+07:00`
-        : `${curDate}T17:00:00+07:00`;
+        : `${curDate}T19:00:00+07:00`;
     const endDate = shiftType === "MORNING" ? curDate : addDaysStr(curDate, 1);
     const endIso =
       shiftType === "MORNING"
-        ? `${endDate}T17:00:00+07:00`
-        : `${endDate}T08:00:00+07:00`;
+        ? `${endDate}T18:00:00+07:00`
+        : `${endDate}T07:00:00+07:00`;
     const trimmedNote =
       note && String(note).trim() ? String(note).trim() : null;
     const finalNote = trimmedNote

@@ -172,10 +172,10 @@ export default function ShiftTablesSection({
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
             <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-300 text-amber-800">
-              Ca Sáng (08:00–17:00): {weeklyOverview.morningCount} tài xế
+              Ca Sáng (08:00–18:00): {weeklyOverview.morningCount} tài xế
             </span>
             <span className="px-3 py-1 rounded-full bg-indigo-50 border border-indigo-300 text-indigo-800">
-              Ca Đêm (17:00–08:00): {weeklyOverview.nightCount} tài xế
+              Ca Đêm (19:00–07:00): {weeklyOverview.nightCount} tài xế
             </span>
             {weeklyOverview.unscheduledCount > 0 && (
               <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-300 text-slate-600">
@@ -225,7 +225,7 @@ export default function ShiftTablesSection({
                         )}
                       </td>
                       <td className="py-3 px-3 font-mono font-bold">
-                        {row.shiftType === "NIGHT" ? "Ca Đêm (17:00 – 08:00)" : "Ca Sáng (08:00 – 17:00)"}
+                        {row.shiftType === "NIGHT" ? "Ca Đêm (19:00 – 07:00)" : "Ca Sáng (08:00 – 18:00)"}
                       </td>
                       <td className="py-3 px-3 font-mono font-semibold">{row.daysCount}/7 ngày</td>
                       <td className="py-3 px-3">

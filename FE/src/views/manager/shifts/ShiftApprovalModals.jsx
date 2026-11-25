@@ -189,17 +189,17 @@ export default function ShiftApprovalModals({
               </button>
               <button
                 type="button"
-                onClick={() => onApplyShiftTemplate(8, 0, 17, 0)}
+                onClick={() => onApplyShiftTemplate(8, 0, 18, 0)}
                 className="px-2.5 py-1 rounded-lg bg-surface-container text-[11px] font-medium hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
               >
-                Hành chính (08:00 - 17:00)
+                Ca Sáng (08:00 - 18:00)
               </button>
               <button
                 type="button"
-                onClick={() => onApplyShiftTemplate(17, 0, 8, 0)}
+                onClick={() => onApplyShiftTemplate(19, 0, 7, 0)}
                 className="px-2.5 py-1 rounded-lg bg-surface-container text-[11px] font-medium hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
               >
-                Ca Đêm (17:00 - 08:00)
+                Ca Đêm (19:00 - 07:00)
               </button>
             </div>
 
