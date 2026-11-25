@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import RouteMapPicker from '../../common/RouteMapPicker';
 import { getVehicleSpecByKey, VEHICLE_SPECS } from '../../../data/dispatcherPresets';
-import { aiApi } from '../../../api/aiApi';
 import { orderApi } from '../../../api/orderApi';
 import { OrderVehicleRecommendationBox, OrderOverviewPreDocsBox } from './OrderOverviewSubSections';
 
@@ -64,10 +63,6 @@ export default function OrderOverviewTab({
 
   const currentProposedSpec = getVehicleSpecByKey(proposedVehicleType || order.vehicle_type_required || 'TRUCK_2.5T') || VEHICLE_SPECS[1];
   const customerInitialSpec = vehicleRecommendation?.customerSpec || getVehicleSpecByKey(order.customer_requested_vehicle || order.vehicle_type_required || 'TRUCK_2.5T') || VEHICLE_SPECS[1];
-  const recommendedSpec = vehicleRecommendation?.recommendedSpec || currentProposedSpec;
-
-  const [aiAnalyzingVehicle, setAiAnalyzingVehicle] = useState(false);
-  const [aiVehicleInsight, setAiVehicleInsight] = useState(null);
 
   // State Điều hướng hàng bị từ chối về Kho ALS
   const [alsWarehouses, setAlsWarehouses] = useState(DEFAULT_ALS_WAREHOUSES);
@@ -166,35 +161,6 @@ export default function OrderOverviewTab({
   const handleDeleteOverviewDoc = (docKey) => {
     setDocuments?.(prev => prev.filter(d => d.key !== docKey));
     message.info('Đã xóa loại chứng từ khỏi danh mục.');
-  };
-
-  const handleGeminiAnalyzeVehicle = async () => {
-    try {
-      setAiAnalyzingVehicle(true);
-      const res = await aiApi.analyzeVehicleAndQuote({
-        order,
-        customerRequestedVehicle: customerInitialSpec.label,
-        systemRecommendedVehicle: recommendedSpec.label,
-        distanceKm: routeInfo?.distanceKm || 35,
-        estimatedPriceVnd: estimatedBaselineRate
-      });
-
-      if (res?.recommendedVehicleKey) {
-        const matchedSpec = getVehicleSpecByKey(res.recommendedVehicleKey);
-        if (matchedSpec && canEditPrice) {
-          setProposedVehicleType?.(matchedSpec.key);
-        }
-      }
-      if (res?.customerAdvisoryNote && canEditPrice) {
-        setVehicleAnalysisNote?.(res.customerAdvisoryNote);
-      }
-      setAiVehicleInsight(res);
-      message.success(`Google Gemini AI (${res.model || 'Gemini Pro'}) đã phân tích phương án xe & soạn lời tư vấn!`);
-    } catch (err) {
-      message.error('Không thể kết nối Gemini AI lúc này');
-    } finally {
-      setAiAnalyzingVehicle(false);
-    }
   };
 
   return (
@@ -377,9 +343,6 @@ export default function OrderOverviewTab({
         customerInitialSpec={customerInitialSpec}
         estimatedBaselineRate={estimatedBaselineRate}
         canEditPrice={canEditPrice}
-        aiAnalyzingVehicle={aiAnalyzingVehicle}
-        handleGeminiAnalyzeVehicle={handleGeminiAnalyzeVehicle}
-        aiVehicleInsight={aiVehicleInsight}
         vehicleAnalysisNote={vehicleAnalysisNote}
         setVehicleAnalysisNote={setVehicleAnalysisNote}
         onOpen3DModal={onOpen3DModal}

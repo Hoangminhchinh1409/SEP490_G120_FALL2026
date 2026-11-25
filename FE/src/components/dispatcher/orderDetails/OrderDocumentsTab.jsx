@@ -30,9 +30,7 @@ export default function OrderDocumentsTab({
   handleRejectDoc,
   triggerUploadDoc,
   handleConfirmAllDocuments,
-  confirmingDocs,
-  handleScanCustomsFromDocs,
-  scanningCustoms
+  confirmingDocs
 }) {
   const rejectedDocs = documents.filter(d => d.status === 'REJECTED');
   const hasRejectedDocs = rejectedDocs.length > 0;
@@ -372,19 +370,6 @@ export default function OrderDocumentsTab({
                 </span>
               )}
             </span>
-
-            {/* Nút scan tờ khai hải quan tự động sau khi khách đã ký hợp đồng */}
-            {(order.web_workflow?.stage === 'CONTRACT_SIGNED' || order.status === 'READY_FOR_PLANNING') && (
-              <Button
-                type="primary"
-                icon={<Sparkles size={13} className="text-amber-300" />}
-                loading={scanningCustoms}
-                onClick={handleScanCustomsFromDocs}
-                className="bg-indigo-700 hover:bg-indigo-600 text-white font-bold text-xs h-8 rounded-lg shadow-sm"
-              >
-                Tự động scan chứng từ &amp; Điền Tờ khai hải quan (Gemini AI)
-              </Button>
-            )}
           </div>
 
           {isDocsApprovedStage && (

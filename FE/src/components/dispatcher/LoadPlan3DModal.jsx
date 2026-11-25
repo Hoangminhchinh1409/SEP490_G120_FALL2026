@@ -1,15 +1,12 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Modal, Button, Tooltip, Tag, Alert, message } from 'antd';
+import { Modal, Button, Tooltip, Tag, Alert } from 'antd';
 import {
   Eye,
   EyeOff,
   RotateCcw,
-  Box,
-  Sparkles,
-  Bot
+  Box
 } from 'lucide-react';
 import { calculate3DLoadPlan } from '../../utils/loadPlanAlgorithm';
-import { aiApi } from '../../api/aiApi';
 import { LoadPlanCanvas } from './loadPlan/LoadPlanCanvas';
 
 export default function LoadPlan3DModal({ open, trip, onClose }) {
@@ -20,9 +17,6 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
 
   const [cameraAngle, setCameraAngle] = useState({ yaw: -22, pitch: 26 });
   const [dragStart, setDragStart] = useState(null);
-
-  const [aiLoadPlanLoading, setAiLoadPlanLoading] = useState(false);
-  const [aiLoadPlanAdvice, setAiLoadPlanAdvice] = useState(null);
   const resetThreeViewRef = useRef(null);
 
   const truckSpec = useMemo(() => {
@@ -111,31 +105,6 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
     setHiddenStopIds((prev) =>
       prev.includes(stopId) ? prev.filter((id) => id !== stopId): [...prev, stopId]
     );
-  };
-
-  const handleAskGeminiLoadPlan = async () => {
-    try {
-      setAiLoadPlanLoading(true);
-      const res = await aiApi.analyzeLoadPlan3D({
-        tripCode,
-        truckPlate,
-        truckModel,
-        boxDimText,
-        truck,
-        summary,
-        stops,
-        blocksData,
-        overflowBlocks,
-        cargoSpecDetails
-      });
-      setAiLoadPlanAdvice(res);
-      message.success(`Google Gemini AI (${res.model || 'Gemini Pro'}) đã hoàn tất phân tích bốc xếp 3D!`);
-    } catch (err) {
-      console.error(err);
-      message.error('Không thể kết nối Gemini AI lúc này');
-    } finally {
-      setAiLoadPlanLoading(false);
-    }
   };
 
   return (
@@ -412,47 +381,8 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                 <span className="text-[11px] text-emerald-700 font-semibold">
                   ✓ Trọng tâm sàn xe ổn định
                 </span>
-                <Button
-                  size="small"
-                  icon={<Sparkles size={12} />}
-                  loading={aiLoadPlanLoading}
-                  onClick={handleAskGeminiLoadPlan}
-                  className="bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100 text-[11px] font-bold"
-                >
-                  Gemini AI Tư vấn Bốc xếp
-                </Button>
               </div>
             </div>
-
-            {/* Gemini AI Advice */}
-            {aiLoadPlanAdvice && (
-              <div className="p-3 bg-gradient-to-r from-purple-50/90 to-indigo-50/90 border border-purple-200 rounded text-xs space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-purple-950 flex items-center gap-1.5">
-                    <Bot size={14} className="text-purple-600" />
-                    Hướng dẫn Bốc xếp &amp; Chằng buộc từ Google Gemini AI:
-                  </span>
-                  <Tag color={aiLoadPlanAdvice.safetyStatus === 'SAFE' ? 'green': 'gold'} className="m-0 text-[10px] font-bold">
-                    {aiLoadPlanAdvice.safetyStatus || 'SAFE'}
-                  </Tag>
-                </div>
-                {aiLoadPlanAdvice.headline && (
-                  <div className="font-semibold text-indigo-900">{aiLoadPlanAdvice.headline}</div>
-                )}
-                {Array.isArray(aiLoadPlanAdvice.stepByStepInstructions) && (
-                  <ul className="list-disc pl-4 m-0 space-y-0.5 text-gray-700">
-                    {aiLoadPlanAdvice.stepByStepInstructions.map((step, i) => (
-                      <li key={i}>{step}</li>
-                    ))}
-                  </ul>
-                )}
-                {aiLoadPlanAdvice.driverChecklist && (
-                  <div className="text-[11px] text-purple-900 pt-1 border-t border-purple-200/60">
-                    <b>📋 Lưu ý cho Tài xế &amp; Đội kho:</b> {aiLoadPlanAdvice.driverChecklist}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Chi tiết khối hàng khi click */}
             {selectedBlock && (

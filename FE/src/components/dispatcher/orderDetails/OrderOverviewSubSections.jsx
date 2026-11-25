@@ -11,9 +11,6 @@ export function OrderVehicleRecommendationBox({
   customerInitialSpec,
   estimatedBaselineRate,
   canEditPrice,
-  aiAnalyzingVehicle,
-  handleGeminiAnalyzeVehicle,
-  aiVehicleInsight,
   vehicleAnalysisNote,
   setVehicleAnalysisNote,
   onOpen3DModal,
@@ -118,26 +115,10 @@ export function OrderVehicleRecommendationBox({
 
       {/* Nhận xét phân tích tự động & Ghi chú tư vấn chọn xe gửi khách */}
       <div className="p-2.5 bg-white rounded-lg border border-emerald-100 text-xs space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-gray-700 leading-relaxed flex-1">
-            <b className="text-emerald-800">📊 Nhận định kỹ thuật xếp hàng: </b>
-            <span>{aiVehicleInsight?.technicalAssessment || vehicleRecommendation?.reason}</span>
-          </div>
-          <Button
-            size="small"
-            icon={<Sparkles size={12} />}
-            loading={aiAnalyzingVehicle}
-            onClick={handleGeminiAnalyzeVehicle}
-            className="bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 text-[11px] font-semibold shrink-0"
-          >
-            Gemini AI Phân tích &amp; Soạn tư vấn
-          </Button>
+        <div className="text-gray-700 leading-relaxed">
+          <b className="text-emerald-800">📊 Nhận định kỹ thuật xếp hàng: </b>
+          <span>{vehicleRecommendation?.reason}</span>
         </div>
-        {aiVehicleInsight?.loadingTips && (
-          <div className="text-[11px] text-purple-900 bg-purple-50/70 px-2.5 py-1.5 rounded border border-purple-200">
-            <b>🤖 Gemini AI gợi ý bốc xếp ({aiVehicleInsight.model || 'Gemini Pro'}):</b> {aiVehicleInsight.loadingTips}
-          </div>
-        )}
         {canEditPrice ? (
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1.5 border-t border-gray-100">
             <span className="text-[11px] font-semibold text-gray-600 shrink-0">
