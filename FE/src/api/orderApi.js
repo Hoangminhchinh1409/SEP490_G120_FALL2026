@@ -1,4 +1,5 @@
 import { fetchWithAuth, fetchWithoutAuth } from './apiClient';
+import { API_URL } from './apiConfig';
 
 export const orderApi = {
   // 1. Lấy danh sách toàn bộ đơn hàng từ Backend Supabase (hỗ trợ lọc theo dispatcher_id)
@@ -301,5 +302,24 @@ export const orderApi = {
     } catch (error) {
       return [];
     }
+  },
+
+  // 18. Khách hàng: Lấy mã Captcha tra cứu hóa đơn (Public)
+  getPublicInvoiceCaptcha: async () => {
+    return fetchWithoutAuth('/orders/public-invoice-captcha');
+  },
+
+  // 19. Khách hàng: Tra cứu hóa đơn điện tử công khai (Public)
+  lookupPublicInvoice: async (payload) => {
+    return fetchWithoutAuth('/orders/public-invoice-lookup', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  // 20. Khách hàng: Tạo URL tải / xem file PDF hoặc XML hóa đơn (Public)
+  getPublicInvoiceFileUrl: (downloadToken, format = 'pdf') => {
+    const safeFormat = format === 'xml' ? 'xml' : 'pdf';
+    return `${API_URL}/orders/public-invoice-file/${encodeURIComponent(downloadToken)}?format=${safeFormat}`;
   }
 };

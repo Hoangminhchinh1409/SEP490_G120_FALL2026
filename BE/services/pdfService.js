@@ -243,7 +243,207 @@ const generateContractPdfBuffer = async ({
   });
 };
 
+const escapeXml = (val) =>
+  String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+const formatVnDate = (isoOrDate) => {
+  const d = isoOrDate ? new Date(isoOrDate) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+};
+
+const formatVnMoney = (num) => `${Math.round(Number(num) || 0).toLocaleString('vi-VN')} VNĐ`;
+
+/**
+ * Sinh bản thể hiện PDF Hóa đơn GTGT điện tử (Thông tư 78 / NĐ-123)
+ */
+const generateInvoicePdfBuffer = async ({
+  invoiceNumber,
+  orderCode,
+  issuedAt,
+  issuedBy,
+  customer = {},
+  subtotalAmount = 0,
+  vatRate = 8,
+  vatAmount = 0,
+  totalAmount = 0,
+  authorizedBank = '',
+  notes = ''
+}) => {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!PDFDocument) {
+        return reject(new Error('Thư viện pdfkit chưa được cài đặt'));
+      }
+
+      const doc = new PDFDocument({
+        margin: 45,
+        size: 'A4',
+        info: {
+          Title: `HoaDonGTGT_${invoiceNumber}`,
+          Author: 'NEXLOG Logistics',
+          Subject: 'Hóa đơn giá trị gia tăng điện tử'
+        }
+      });
+
+      const regularFont = 'C:/Windows/Fonts/times.ttf';
+      const boldFont = 'C:/Windows/Fonts/timesbd.ttf';
+      const italicFont = 'C:/Windows/Fonts/timesi.ttf';
+      const hasTimes = fs.existsSync(regularFont);
+      if (hasTimes) {
+        doc.registerFont('Times', regularFont);
+        doc.registerFont('Times-Bold', boldFont);
+        doc.registerFont('Times-Italic', italicFont);
+      }
+
+      const fontReg = hasTimes ? 'Times' : 'Helvetica';
+      const fontBold = hasTimes ? 'Times-Bold' : 'Helvetica-Bold';
+      const fontItalic = hasTimes ? 'Times-Italic' : 'Helvetica-Oblique';
+
+      const buffers = [];
+      doc.on('data', (chunk) => buffers.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+      doc.on('error', (err) => reject(err));
+
+      const issuedDateStr = formatVnDate(issuedAt);
+      const custName = customer.company_name || 'Khách hàng NEXLOG';
+      const custTax = customer.tax_code || '';
+      const custAddr = customer.registered_address || 'Chưa cập nhật';
+
+      // Header
+      doc.font(fontBold).fontSize(15).text('HÓA ĐƠN GIÁ TRỊ GIA TĂNG', { align: 'center' });
+      doc.font(fontItalic).fontSize(10.5).text('(Bản thể hiện của hóa đơn điện tử)', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.font(fontReg).fontSize(10.5).text(`Số hóa đơn: ${invoiceNumber}   |   Ngày phát hành: ${issuedDateStr}`, { align: 'center' });
+      if (orderCode) {
+        doc.text(`Mã đơn vận chuyển tham chiếu: ${orderCode}`, { align: 'center' });
+      }
+      doc.moveDown(1);
+
+      // Seller info
+      doc.font(fontBold).fontSize(11).text('ĐƠN VỊ BÁN HÀNG (BÊN CUNG CẤP DỊCH VỤ)');
+      doc.font(fontReg).fontSize(10.5);
+      doc.text('• Tên đơn vị: HỆ THỐNG ĐIỀU PHỐI VẬN TẢI NEXLOG');
+      doc.text('• Email liên hệ: nexlogcustomerservice@gmail.com');
+      if (authorizedBank) {
+        doc.text(`• Ngân hàng ủy quyền thu hộ: ${authorizedBank}`);
+      }
+      doc.moveDown(0.8);
+
+      // Buyer info
+      doc.font(fontBold).fontSize(11).text('ĐƠN VỊ MUA HÀNG (KHÁCH HÀNG)');
+      doc.font(fontReg).fontSize(10.5);
+      doc.text(`• Tên đơn vị: ${custName}`);
+      doc.text(`• Mã số thuế: ${custTax}`);
+      doc.text(`• Địa chỉ: ${custAddr}`);
+      doc.moveDown(1);
+
+      // Financial breakdown
+      doc.font(fontBold).fontSize(11).text('CHI TIẾT DỊCH VỤ & THANH TOÁN');
+      doc.moveDown(0.4);
+      doc.font(fontReg).fontSize(10.5);
+      doc.text(`• Nội dung dịch vụ: Dịch vụ vận chuyển hàng hóa (Đơn ${orderCode || invoiceNumber})`);
+      doc.text(`• Cộng tiền hàng (chưa bao gồm thuế GTGT): ${formatVnMoney(subtotalAmount)}`);
+      doc.text(`• Thuế suất GTGT: ${Number(vatRate) || 0}%`);
+      doc.text(`• Tiền thuế GTGT: ${formatVnMoney(vatAmount)}`);
+      doc.font(fontBold).fontSize(11.5).text(`• Tổng cộng tiền thanh toán: ${formatVnMoney(totalAmount)}`);
+      doc.font(fontItalic).fontSize(10.5).text(`Số tiền viết bằng chữ: ${readVietnameseCurrency(totalAmount)}.`);
+      if (notes) {
+        doc.moveDown(0.5);
+        doc.font(fontReg).fontSize(10).text(`Ghi chú: ${notes}`);
+      }
+
+      doc.moveDown(1.5);
+      const signY = doc.y;
+      doc.font(fontBold).fontSize(10.5).text('NGƯỜI LẬP / ĐƠN VỊ PHÁT HÀNH', 300, signY, { width: 240, align: 'center' });
+      doc.font(fontItalic).fontSize(9.5).text('(Đã phát hành điện tử trên hệ thống NEXLOG)', 300, signY + 16, { width: 240, align: 'center' });
+      doc.font(fontBold).fontSize(10).text(issuedBy || 'Bộ phận Điều phối / Kế toán vận tải', 300, signY + 55, { width: 240, align: 'center' });
+
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+};
+
+/**
+ * Sinh chuỗi XML Hóa đơn GTGT điện tử theo cấu trúc Thông tư 78 / NĐ-123
+ */
+const generateInvoiceXml = ({
+  invoiceNumber,
+  orderCode,
+  issuedAt,
+  issuedBy,
+  customer = {},
+  subtotalAmount = 0,
+  vatRate = 8,
+  vatAmount = 0,
+  totalAmount = 0,
+  authorizedBank = '',
+  notes = ''
+}) => {
+  const issuedIso = issuedAt ? new Date(issuedAt).toISOString() : new Date().toISOString();
+  const totalRounded = Math.round(Number(totalAmount) || 0);
+  const vatRounded = Math.round(Number(vatAmount) || 0);
+  const subtotalRounded = Math.round(Number(subtotalAmount) || 0);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<HDon>
+  <DLHDon>
+    <TTChung>
+      <PBan>2.0.1</PBan>
+      <THDon>Hóa đơn giá trị gia tăng</THDon>
+      <SHDon>${escapeXml(invoiceNumber)}</SHDon>
+      <NLap>${escapeXml(issuedIso.slice(0, 10))}</NLap>
+      <DVTTe>VND</DVTTe>
+      <TGia>1</TGia>
+      <MaDonVanChuyen>${escapeXml(orderCode || '')}</MaDonVanChuyen>
+      <NguoiPhatHanh>${escapeXml(issuedBy || 'NEXLOG')}</NguoiPhatHanh>
+    </TTChung>
+    <NDHDon>
+      <NBan>
+        <Ten>HỆ THỐNG ĐIỀU PHỐI VẬN TẢI NEXLOG</Ten>
+        <DCTDTu>nexlogcustomerservice@gmail.com</DCTDTu>
+        <NganHangUyQuyen>${escapeXml(authorizedBank)}</NganHangUyQuyen>
+      </NBan>
+      <NMua>
+        <Ten>${escapeXml(customer.company_name || '')}</Ten>
+        <MST>${escapeXml(customer.tax_code || '')}</MST>
+        <DChi>${escapeXml(customer.registered_address || '')}</DChi>
+      </NMua>
+      <DSHHDVu>
+        <HHDVu>
+          <STT>1</STT>
+          <THHDVu>Dịch vụ vận chuyển hàng hóa (${escapeXml(orderCode || invoiceNumber)})</THHDVu>
+          <ThTien>${subtotalRounded}</ThTien>
+          <TSuat>${Number(vatRate) || 0}%</TSuat>
+        </HHDVu>
+      </DSHHDVu>
+      <TToan>
+        <TgTCThue>${subtotalRounded}</TgTCThue>
+        <TgTThue>${vatRounded}</TgTThue>
+        <TgTTTBSo>${totalRounded}</TgTTTBSo>
+        <TgTTTBChu>${escapeXml(readVietnameseCurrency(totalRounded))}</TgTTTBChu>
+        <GhiChu>${escapeXml(notes)}</GhiChu>
+      </TToan>
+    </NDHDon>
+  </DLHDon>
+</HDon>`;
+};
+
 module.exports = {
   generateContractPdfBuffer,
+  generateInvoicePdfBuffer,
+  generateInvoiceXml,
   readVietnameseCurrency
 };

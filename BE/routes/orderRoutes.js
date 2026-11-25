@@ -1,4 +1,5 @@
 const express = require('express');
+const { rateLimit } = require('express-rate-limit');
 const {
   getAllOrders,
   createConsultationOrder,
@@ -11,6 +12,9 @@ const {
   splitOrder,
   redirectOrderToAlsWarehouse,
   getOrderByToken,
+  getPublicInvoiceCaptcha,
+  lookupPublicInvoice,
+  downloadPublicInvoiceFile,
   customerAgreeOrderPrice,
   customerUploadDocuments,
   rejectOrderDocument,
@@ -42,8 +46,21 @@ const requireDispatcherOnly = (req, res, next) => {
 // 1. Lấy danh sách đơn hàng (Chỉ dành riêng cho Điều phối viên - BUG-OL-01)
 router.get('/', requireAuth, requireDispatcherOnly, getAllOrders);
 
+const invoiceLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Quý khách tra cứu quá nhiều lần. Vui lòng thử lại sau 15 phút.' }
+});
+
 // 1b. Khách hàng: Lấy danh sách hệ thống kho ALS công khai (Public)
 router.get('/public-locations', locationController.getPublicAlsWarehouses);
+
+// 1c. Khách hàng: Captcha & Tra cứu / Tải hóa đơn điện tử công khai (Public)
+router.get('/public-invoice-captcha', getPublicInvoiceCaptcha);
+router.post('/public-invoice-lookup', invoiceLookupLimiter, lookupPublicInvoice);
+router.get('/public-invoice-file/:downloadToken', downloadPublicInvoiceFile);
 
 // 2. Khách hàng gửi tư vấn từ Homepage (Public)
 router.post('/consultation', createConsultationOrder);
