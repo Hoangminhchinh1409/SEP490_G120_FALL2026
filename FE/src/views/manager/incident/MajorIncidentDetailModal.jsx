@@ -170,39 +170,39 @@ export default function MajorIncidentDetailModal({
   const currentData = detail || incident;
   const { isPending, isRejected, isDone } = determineIncidentStatus(currentData);
 
-  const claimCode = currentData.claim_code || currentData.compensation_claim?.claim_code || `CLM-${String(currentData.id || 1).padStart(4, '0')}`;
-  const orderCode = currentData.order_code || currentData.order?.order_code || 'NEX-208337';
-  const orderType = currentData.order?.order_type || currentData.order_type || 'Xuất khẩu';
-  const orderStatus = currentData.order?.status || 'Đã giao';
-  const customerName = currentData.order?.customer?.company_name || currentData.customer_name || 'BV Đa khoa Thái Nguyên';
-  const contactPerson = currentData.order?.contact_person || currentData.receiver_name || currentData.order?.receiver_name || 'Nguyễn Thị Lan';
-  const contactPhone = currentData.order?.contact_phone || currentData.order?.customer?.phone || '0912 345 678';
+  const claimCode = currentData.claim_code || currentData.compensation_claim?.claim_code || 'Chưa có hồ sơ bồi thường';
+  const orderCode = currentData.order_code || currentData.order?.order_code || 'Chưa cập nhật';
+  const orderType = currentData.order?.order_type || currentData.order_type || 'Chưa cập nhật';
+  const orderStatus = currentData.order?.status || 'Chưa cập nhật';
+  const customerName = currentData.order?.customer?.company_name || currentData.customer_name || 'Chưa cập nhật';
+  const contactPerson = currentData.order?.contact_person || currentData.receiver_name || currentData.order?.receiver_name || 'Chưa cập nhật';
+  const contactPhone = currentData.order?.contact_phone || currentData.order?.customer?.phone || 'Chưa cập nhật';
   const customerEmailDisplay =
     currentData.customer_email ||
     currentData.order?.customer?.email ||
     currentData.order?.order_contract?.contract_details?.customer_email ||
-    'khachhang@example.com';
+    'Chưa cập nhật';
   const receiverName = currentData.receiver_name || currentData.order?.receiver_name || contactPerson;
   const routeDisplay =
     currentData.order?.route_display ||
     (currentData.order?.pickup_address && currentData.order?.delivery_address
       ? `${currentData.order.pickup_address} → ${currentData.order.delivery_address}`
-      : 'Kho ALS Nội Bài → BV Đa khoa TN');
+      : 'Chưa cập nhật');
   const firstCargo = Array.isArray(currentData.order?.order_cargos) ? currentData.order.order_cargos[0] : null;
   const cargoDescription =
     currentData.order?.cargo_description ||
     (firstCargo?.cargo_name
       ? `${firstCargo.cargo_name}${firstCargo.package_count ? ` - ${firstCargo.package_count} kiện` : ''}${firstCargo.weight_kg ? ` - ${firstCargo.weight_kg} kg` : ''}`
-      : 'Thiết bị y tế - 12 kiện - 480 kg');
-  const declaredValue = Number(currentData.order?.declared_value || currentData.declared_value || 120000000);
-  const agreedPrice = Number(currentData.order?.agreed_price || currentData.agreed_price || 5000000);
-  const tripCode = currentData.trip_code || (currentData.trip_id ? `TR${currentData.trip_id}` : 'TR261107-003');
-  const truckPlate = currentData.truck_plate || '29H-456.78';
-  const driverName = currentData.driver_name || 'Trần Văn Khang';
-  const driverPhone = currentData.driver_phone || '0987 654 321';
+      : 'Chưa cập nhật');
+  const declaredValue = Number(currentData.order?.declared_value || currentData.declared_value || 0);
+  const agreedPrice = Number(currentData.order?.agreed_price || currentData.agreed_price || 0);
+  const tripCode = currentData.trip_code || (currentData.trip_id ? `TR${currentData.trip_id}` : 'Chưa cập nhật');
+  const truckPlate = currentData.truck_plate || 'Chưa cập nhật';
+  const driverName = currentData.driver_name || 'Chưa cập nhật';
+  const driverPhone = currentData.driver_phone || 'Chưa cập nhật';
   const sealNumber = currentData.seal_number || currentData.order?.seal_number || 'Chưa ghi nhận';
-  const contractNumber = currentData.contract?.contract_number || 'HĐ vận chuyển ký ngày 02/11/2026';
-  const contractCap = Number(currentData.contract?.liability_cap || 200000000);
+  const contractNumber = currentData.contract?.contract_number || 'Chưa có hợp đồng khung';
+  const contractCap = Number(currentData.contract?.liability_cap || 0);
 
   // Nhận diện đơn hàng có Hợp đồng khung đối tác dài hạn hay là khách vãng lai
   const hasFrameworkContract = checkHasFrameworkContract({

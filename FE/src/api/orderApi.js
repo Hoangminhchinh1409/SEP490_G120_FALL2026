@@ -90,16 +90,11 @@ export const orderApi = {
 
   // 7. Hủy đơn hàng (chuyển sang CANCELLED)
   cancelOrder: async (orderId, { cancellation_reason, cancellation_fee }) => {
-    try {
-      const data = await fetchWithoutAuth(`/orders/${orderId}/cancel`, {
-        method: 'POST',
-        body: JSON.stringify({ cancellation_reason, cancellation_fee })
-      });
-      return data.order;
-    } catch (error) {
-      console.warn('orderApi.cancelOrder API note:', error);
-      return { id: orderId, status: 'CANCELLED', cancellation_reason, cancellation_fee };
-    }
+    const data = await fetchWithoutAuth(`/orders/${orderId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ cancellation_reason, cancellation_fee })
+    });
+    return data.order;
   },
 
   // 8. Đóng đơn hàng (chuyển sang CLOSED)

@@ -155,6 +155,34 @@ const decideIncidentCompensation = async (req, res) => {
       }
     }
 
+    // BUG-SYS-32: Chặn duyệt mức bồi thường vượt quá hạn mức trách nhiệm của hợp đồng (hoặc trần luật định 500.000.000 VNĐ)
+    if (isApprove) {
+      const requestedApprove = Number(approved_amount || 0);
+      const incCheck = await prisma.incidents.findUnique({
+        where: { id: BigInt(id) },
+        select: {
+          order_id: true,
+          orders: { select: { customer_id: true } }
+        }
+      });
+      let effectiveCap = 500000000;
+      if (incCheck?.orders?.customer_id) {
+        const activeContract = await prisma.contracts.findFirst({
+          where: { customer_id: incCheck.orders.customer_id },
+          orderBy: { id: 'desc' },
+          select: { liability_cap: true }
+        });
+        if (activeContract?.liability_cap && Number(activeContract.liability_cap) > 0) {
+          effectiveCap = Number(activeContract.liability_cap);
+        }
+      }
+      if (requestedApprove > effectiveCap) {
+        return res.status(400).json({
+          message: `Số tiền bồi thường (${requestedApprove.toLocaleString('vi-VN')} VNĐ) vượt quá giới hạn trách nhiệm tối đa cho phép (${effectiveCap.toLocaleString('vi-VN')} VNĐ).`
+        });
+      }
+    }
+
     const nowDate = new Date();
     const now = nowDate.toISOString();
     const managerInt = Number(managerId || 1);

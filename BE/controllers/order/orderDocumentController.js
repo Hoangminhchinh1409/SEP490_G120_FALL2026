@@ -191,6 +191,19 @@ const customerAgreeOrderPrice = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
     }
 
+    // BUG-SYS-08: Chỉ cho phép khách xác nhận đồng ý khi đơn đang ở DRAFT/PENDING và đã có giá cước thỏa thuận > 0
+    const currentSt = String(order.status || '').trim().toUpperCase();
+    if (!['DRAFT', 'PENDING', 'QUOTED'].includes(currentSt)) {
+      return res.status(400).json({
+        message: `Đơn hàng đang ở trạng thái ${order.status}, không thể xác nhận chốt giá lại.`
+      });
+    }
+    if (!order.agreed_price || Number(order.agreed_price) <= 0) {
+      return res.status(400).json({
+        message: 'Đơn hàng chưa có giá cước thỏa thuận từ Điều phối viên nên chưa thể xác nhận.'
+      });
+    }
+
     const meta = parseOrderMeta(order);
     if (!meta.web_workflow) meta.web_workflow = {};
     meta.web_workflow.stage = 'CUSTOMER_CONFIRMED';
@@ -230,6 +243,19 @@ const customerUploadDocuments = async (req, res) => {
     const order = await findOrderByIdentifier(token, false);
     if (!order) {
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    }
+
+    // BUG-SYS-08: Chỉ cho phép khách xác nhận đồng ý khi đơn đang ở DRAFT/PENDING và đã có giá cước thỏa thuận > 0
+    const currentSt = String(order.status || '').trim().toUpperCase();
+    if (!['DRAFT', 'PENDING', 'QUOTED'].includes(currentSt)) {
+      return res.status(400).json({
+        message: `Đơn hàng đang ở trạng thái ${order.status}, không thể xác nhận chốt giá lại.`
+      });
+    }
+    if (!order.agreed_price || Number(order.agreed_price) <= 0) {
+      return res.status(400).json({
+        message: 'Đơn hàng chưa có giá cước thỏa thuận từ Điều phối viên nên chưa thể xác nhận.'
+      });
     }
 
     const meta = parseOrderMeta(order);

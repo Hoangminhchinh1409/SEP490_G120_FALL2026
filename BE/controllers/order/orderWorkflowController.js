@@ -55,6 +55,20 @@ const confirmOrder = async (req, res) => {
       });
     }
 
+    // BUG-SYS-06: Kiểm tra đầy đủ điều kiện cổng trước khi chuyển READY_FOR_PLANNING (giá cước > 0, chứng từ đã duyệt)
+    const effectivePrice = agreed_price ? parseInt(agreed_price, 10) : Number(currentOrder.agreed_price || 0);
+    if (!effectivePrice || effectivePrice <= 0) {
+      return res.status(400).json({
+        message: "Chưa có giá cước thỏa thuận hợp lệ (> 0 VNĐ) để xác nhận đơn hàng.",
+      });
+    }
+    const docStatusUpper = String(currentOrder.document_status || "").trim().toUpperCase();
+    if (upperSt === "DRAFT" && docStatusUpper !== "APPROVED") {
+      return res.status(400).json({
+        message: "Đơn hàng ở trạng thái Nháp chưa được duyệt hồ sơ chứng từ nên không thể chuyển thẳng sang Sẵn sàng xếp xe.",
+      });
+    }
+
     const nowDate = new Date();
     const nowIso = nowDate.toISOString();
     const updates = {
@@ -270,7 +284,7 @@ const cancelOrder = async (req, res) => {
         },
       });
 
-      // BR-43 / IT-ORD-008: Nếu đơn đã được gán chuyến (ASSIGNED) -> Hủy chuyến liên quan và giải phóng xe về AVAILABLE
+      // BR-43 / BUG-SYS-39: Nếu đơn đã được gán chuyến -> gỡ điểm dừng của đơn này; chỉ hủy chuyến & giải phóng xe nếu KHÔNG còn đơn hàng nào khác trên chuyến
       const relatedStops = await tx.trip_stops.findMany({
         where: { order_id: currentOrder.id },
         select: { trip_id: true },
@@ -280,6 +294,24 @@ const cancelOrder = async (req, res) => {
         ...new Set((relatedStops || []).map((s) => s.trip_id).filter(Boolean)),
       ];
       for (const tId of tripIds) {
+        const otherActiveStops = await tx.trip_stops.count({
+          where: {
+            trip_id: tId,
+            order_id: { not: currentOrder.id },
+            orders: {
+              status: { notIn: ["CANCELLED", "Cancelled", "CLOSED", "Closed"] },
+            },
+          },
+        });
+
+        if (otherActiveStops > 0) {
+          // Chuyến ghép vẫn còn đơn khác: chỉ xóa điểm dừng của đơn bị hủy, giữ nguyên chuyến
+          await tx.trip_stops.deleteMany({
+            where: { trip_id: tId, order_id: currentOrder.id },
+          });
+          continue;
+        }
+
         await tx.trips.updateMany({
           where: { id: tId },
           data: { status: "Cancelled", updated_at: nowDate },

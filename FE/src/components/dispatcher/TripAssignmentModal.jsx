@@ -205,11 +205,12 @@ function TripAssignmentModalContent({
   ]);
   const [vendors, setVendors] = useState([]);
 
-  // Đồng bộ trạng thái thực tế từ database vào danh sách xe nội bộ (BR-23)
+  // Xây dựng danh sách đội xe nội bộ trực tiếp từ database thực tế
   const internalFleetOptions = useMemo(() => {
-    return BASE_INTERNAL_FLEET_OPTIONS.map((opt) => {
-      const liveTruck = trucks.find((t) => (t.plate_number || t.plate) === opt.plate);
-      if (!liveTruck) return opt;
+    if (!Array.isArray(trucks) || trucks.length === 0) return [];
+    return trucks.map((liveTruck) => {
+      const plate = liveTruck.plate_number || liveTruck.plate || `XE-${liveTruck.id}`;
+      const payloadKg = Number(liveTruck.payload_kg || 0);
       const rawStatus = String(liveTruck.status || '').toUpperCase();
       const isAvailable = rawStatus === 'AVAILABLE' || rawStatus === 'ACTIVE';
       const isMaintenance = rawStatus === 'MAINTENANCE';
@@ -217,19 +218,28 @@ function TripAssignmentModalContent({
         rawStatus === 'ON TRIP' || rawStatus === 'ON_TRIP' || rawStatus === 'IN_TRANSIT';
 
       let statusLabel = 'Sẵn sàng';
-      if (isOnTrip) statusLabel = 'Đang chạy chuyến (On Trip)';
+      if (isOnTrip) statusLabel = 'Đang chạy chuyến';
       else if (isMaintenance) statusLabel = 'Đang bảo dưỡng';
       else if (!isAvailable) statusLabel = liveTruck.status || 'Không khả dụng';
 
-      const parts = opt.label.split('·');
-      const middlePart =
-        parts.length > 2 ? parts.slice(1, -1).join('·').trim() : parts[1]?.trim() || '';
+      let specKey = 'TRUCK_2.5T';
+      if (payloadKg >= 10000) specKey = 'CONTAINER_20';
+      else if (payloadKg >= 7000) specKey = 'TRUCK_8T';
+      else if (payloadKg >= 4500) specKey = 'TRUCK_5T';
+      else if (payloadKg >= 3000) specKey = 'TRUCK_3.5T';
+      else if (payloadKg >= 2000) specKey = 'TRUCK_2.5T';
+      else if (payloadKg > 0) specKey = 'TRUCK_1.25T';
+
+      const modelText = liveTruck.model || (payloadKg ? `Xe tải ${(payloadKg / 1000).toFixed(payloadKg % 1000 === 0 ? 0 : 1)}T` : 'Xe tải');
+      const payloadText = payloadKg ? `${payloadKg.toLocaleString('vi-VN')} kg` : 'Chưa rõ tải trọng';
 
       return {
-        ...opt,
+        value: `${plate} - ${payloadText} - ${statusLabel}`,
+        plate,
+        specKey,
         disabled: !isAvailable,
         status: liveTruck.status,
-        label: `${opt.plate} · ${middlePart} · ${statusLabel}`
+        label: `${plate} · ${modelText} · ${payloadText} · ${statusLabel}`
       };
     });
   }, [trucks]);

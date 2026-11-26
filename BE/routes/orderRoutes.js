@@ -132,7 +132,7 @@ router.post('/:id/split', ...requireDispatcherOrAdmin, splitOrder);
 // 13. Đóng đơn hàng (chuyển sang CLOSED)
 router.post('/:id/close', ...requireDispatcherOrAdmin, closeOrder);
 
-// 14. Điều tài xế chở hàng bị từ chối về Kho ALS & Đóng đơn ngoại lệ
-router.post('/:id/redirect-warehouse', requireAuth, redirectOrderToAlsWarehouse);
+// 14. Điều tài xế chở hàng bị từ chối về Kho ALS & Đóng đơn ngoại lệ (Chỉ Điều phối viên / Quản trị)
+router.post('/:id/redirect-warehouse', ...requireDispatcherOrAdmin, redirectOrderToAlsWarehouse);
 
 module.exports = router;

@@ -11,8 +11,8 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
   const [escalationReason, setEscalationReason] = useState('');
   const [cargoAffectedOnEscalate, setCargoAffectedOnEscalate] = useState(false);
   const [mode, setMode] = useState('RESOLVE'); // 'RESOLVE' | 'REPLACE' | 'ESCALATE' | 'CREATE_CLAIM'
-  const [replacementTruck, setReplacementTruck] = useState('29H-767.99');
-  const [replacementDriver, setReplacementDriver] = useState('Nguyễn Tấn Tài');
+  const [replacementTruck, setReplacementTruck] = useState('');
+  const [replacementDriver, setReplacementDriver] = useState('');
   const [replacementReason, setReplacementReason] = useState('Hỏng xe giữa đường cần chuyển tải gấp');
   const [claimOrderId, setClaimOrderId] = useState(null);
   const [claimType, setClaimType] = useState('Damage');
@@ -44,15 +44,19 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
       setClaimReason(incident.description || '');
       setCustomerInformed(false);
       setClaimFileList([]);
-      if (Array.isArray(tList) && tList.length > 0) {
-        setTrucks(tList);
-        const availTruck = tList.find(t => t.plate !== incident.truck && (t.status === 'AVAILABLE' || t.status === 'Available'));
-        if (availTruck?.plate) setReplacementTruck(availTruck.plate);
+      if (Array.isArray(tList)) {
+        const availableTrucks = tList.filter(
+          t => t.plate !== incident.truck && ['AVAILABLE', 'READY', 'IDLE'].includes(String(t.status || '').toUpperCase())
+        );
+        setTrucks(availableTrucks);
+        setReplacementTruck(availableTrucks[0]?.plate || '');
       }
-      if (Array.isArray(dList) && dList.length > 0) {
-        setDrivers(dList);
-        const availDriver = dList.find(d => d.name !== incident.driver);
-        if (availDriver?.name) setReplacementDriver(availDriver.name);
+      if (Array.isArray(dList)) {
+        const availableDrivers = dList.filter(
+          d => d.name !== incident.driver && !['ON_TRIP', 'BUSY', 'INACTIVE', 'OFF_DUTY'].includes(String(d.status || '').toUpperCase())
+        );
+        setDrivers(availableDrivers);
+        setReplacementDriver(availableDrivers[0]?.name || '');
       }
     });
     return () => { active = false; };
@@ -78,6 +82,14 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
         ].includes(normalizedRawType);
 
   const handleDispatchReplacement = async () => {
+    if (!replacementTruck) {
+      message.error('Không có xe sẵn sàng hoặc chưa chọn xe thay thế!');
+      return;
+    }
+    if (!replacementDriver) {
+      message.error('Không có tài xế sẵn sàng hoặc chưa chọn tài xế thay thế!');
+      return;
+    }
     if (!replacementReason.trim()) {
       message.error('Vui lòng nhập lý do thay đổi xe!');
       return;
@@ -304,7 +316,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
           </div>
           <div className="mt-3 flex items-center gap-2 text-xs text-gray-600">
             <Camera size={14} className="text-gray-400" />
-            <span>Vị trí ghi nhận: <b>{incident.location || 'Km 18 cao tốc Nội Bài - Bắc Ninh'}</b></span>
+            <span>Vị trí ghi nhận: <b>{incident.location || 'Chưa ghi nhận vị trí'}</b></span>
           </div>
           {Array.isArray(incident.photos) && incident.photos.length > 0 && (
             <div className="mt-3 pt-3 border-t border-red-200/70">
@@ -368,33 +380,33 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1">Xe thay thế (Sẵn sàng):</label>
-                <Select className="w-full text-xs" value={replacementTruck} onChange={setReplacementTruck}>
-                  <Option value="29H-767.99">29H-767.99 (Xe tải 5T - Kho ALS Nội Bài)</Option>
-                  <Option value="29C-456.78">29C-456.78 (Xe tải 2.5T - Sẵn sàng)</Option>
-                  <Option value="29A-112.34">29A-112.34 (Xe tải 1.25T - Sẵn sàng)</Option>
-                  {trucks
-                    .filter(t => !['29H-767.99', '29C-456.78', '29A-112.34'].includes(t.plate))
-                    .map(t => (
-                      <Option key={t.id} value={t.plate}>
-                        {t.plate} ({t.model} - {t.payload_kg} kg)
-                      </Option>
-                    ))}
+                <Select
+                  className="w-full text-xs"
+                  value={replacementTruck || undefined}
+                  onChange={setReplacementTruck}
+                  placeholder={trucks.length === 0 ? 'Không có xe sẵn sàng' : 'Chọn xe thay thế'}
+                >
+                  {trucks.map(t => (
+                    <Option key={t.id} value={t.plate}>
+                      {t.plate} ({t.model || 'Xe tải'} - {t.payload_kg || 0} kg)
+                    </Option>
+                  ))}
                 </Select>
               </div>
 
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1">Tài xế thay thế:</label>
-                <Select className="w-full text-xs" value={replacementDriver} onChange={setReplacementDriver}>
-                  <Option value="Nguyễn Tấn Tài">Nguyễn Tấn Tài - 0912345678</Option>
-                  <Option value="Đỗ Duy Hải">Đỗ Duy Hải - 0988776655</Option>
-                  <Option value="Nguyễn Văn Lái">Nguyễn Văn Lái - 0901234567</Option>
-                  {drivers
-                    .filter(d => !['Nguyễn Tấn Tài', 'Đỗ Duy Hải', 'Nguyễn Văn Lái'].includes(d.name))
-                    .map(d => (
-                      <Option key={d.id} value={d.name}>
-                        {d.name} - {d.phone}
-                      </Option>
-                    ))}
+                <Select
+                  className="w-full text-xs"
+                  value={replacementDriver || undefined}
+                  onChange={setReplacementDriver}
+                  placeholder={drivers.length === 0 ? 'Không có tài xế sẵn sàng' : 'Chọn tài xế thay thế'}
+                >
+                  {drivers.map(d => (
+                    <Option key={d.id} value={d.name}>
+                      {d.name}{d.phone ? ` - ${d.phone}` : ''}
+                    </Option>
+                  ))}
                 </Select>
               </div>
             </div>

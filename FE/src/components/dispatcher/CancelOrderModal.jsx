@@ -34,8 +34,8 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
   // - Đơn xe đã lăn bánh hoặc đã giao/đóng -> KHÔNG THỂ HỦY
   const isLoadedOrDelivered = ['PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'CLOSED'].includes(order?.status);
 
-  // - Đơn đã xếp xe / xe đã đến kho lấy hàng nhưng chưa bốc -> Tính tiền công tài xế / công đoạn
-  const isAssigned = order?.status === 'ASSIGNED' || order?.status === 'READY_FOR_PLANNING';
+  // - Đơn đã xếp xe / tài xế đã nhận chuyến nhưng chưa bốc hàng -> Tính tiền công tài xế / công đoạn
+  const isAssigned = ['ASSIGNED', 'READY_FOR_PLANNING', 'ACCEPTED', 'IN_PROGRESS'].includes(order?.status);
 
   const defaultDriverFee = 500000; // Tiền công điều xe & tài xế đến lấy hàng
 
@@ -81,7 +81,7 @@ function CancelOrderModalContent({ open, order, onCancel, onConfirmCancel }) {
       onCancel();
     } catch (err) {
       console.error(err);
-      message.error('Có lỗi xảy ra khi thực hiện hủy đơn hàng.');
+      message.error(err?.message || 'Có lỗi xảy ra khi thực hiện hủy đơn hàng.');
     } finally {
       setSubmitting(false);
     }

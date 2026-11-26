@@ -338,46 +338,52 @@ const dispatchReplacementWithTransaction = async ({
   const numTripId = toNum(tripId);
   const reasonText = String(replacementReason || 'Điều xe thay thế do sự cố hiện trường').slice(0, 255);
 
-  // 1. Tìm xe thay thế
-  let newTruck = null;
-  if (newTruckPlate) {
-    const cleanPlate = String(newTruckPlate).split(' ')[0].trim();
-    newTruck = await prisma.trucks.findFirst({
-      where: {
-        deleted_at: null,
-        plate_number: { contains: cleanPlate, mode: 'insensitive' }
-      },
-      select: { id: true, plate_number: true }
-    });
+  // 1. Tìm xe thay thế (BUG-SYS-21: không tự ý thay bằng xe bất kỳ khi biển số không tồn tại hoặc không sẵn sàng)
+  if (!newTruckPlate || !String(newTruckPlate).trim()) {
+    const err = new Error('Vui lòng chọn xe thay thế hợp lệ.');
+    err.statusCode = 400;
+    throw err;
   }
+  const cleanPlate = String(newTruckPlate).split(' ')[0].trim();
+  const newTruck = await prisma.trucks.findFirst({
+    where: {
+      deleted_at: null,
+      plate_number: { contains: cleanPlate, mode: 'insensitive' }
+    },
+    select: { id: true, plate_number: true, status: true }
+  });
   if (!newTruck) {
-    newTruck = await prisma.trucks.findFirst({
-      where: {
-        deleted_at: null,
-        status: { in: ['Available', 'AVAILABLE'] }
-      },
-      select: { id: true, plate_number: true }
-    });
+    const err = new Error(`Không tìm thấy xe thay thế với biển số "${cleanPlate}".`);
+    err.statusCode = 400;
+    throw err;
   }
-  if (!newTruck) {
-    newTruck = await prisma.trucks.findFirst({
-      where: { deleted_at: null },
-      select: { id: true, plate_number: true }
-    });
+  const truckStUpper = String(newTruck.status || '').trim().toUpperCase();
+  if (!['AVAILABLE', 'READY', 'IDLE'].includes(truckStUpper)) {
+    const err = new Error(`Xe ${newTruck.plate_number} hiện không sẵn sàng (trạng thái: ${newTruck.status}).`);
+    err.statusCode = 400;
+    throw err;
   }
 
   // 2. Tìm tài xế thay thế
-  let newDriver = null;
-  if (newDriverName) {
-    const cleanDriver = String(newDriverName).split('-')[0].split('·')[0].trim();
-    newDriver = await prisma.driver_profiles.findFirst({
-      where: {
-        users: {
-          full_name: { contains: cleanDriver, mode: 'insensitive' }
-        }
-      },
-      include: { users: { select: { full_name: true } } }
-    });
+  if (!newDriverName || !String(newDriverName).trim()) {
+    const err = new Error('Vui lòng chọn tài xế thay thế hợp lệ.');
+    err.statusCode = 400;
+    throw err;
+  }
+  const cleanDriver = String(newDriverName).split('-')[0].split('·')[0].trim();
+  const newDriver = await prisma.driver_profiles.findFirst({
+    where: {
+      users: {
+        full_name: { contains: cleanDriver, mode: 'insensitive' }
+      }
+    },
+    include: { users: { select: { full_name: true } } }
+  });
+  if (!newDriver) {
+    const err = new Error(`Không tìm thấy tài xế thay thế "${cleanDriver}".`);
+    err.statusCode = 400;
+    throw err;
+  }
   }
   if (!newDriver) {
     newDriver = await prisma.driver_profiles.findFirst({

@@ -101,11 +101,27 @@ export default function OrderDocumentsView() {
 
           // Nếu điều phối vừa từ chối 1 chứng từ
           if (hasAnyRejected && prevStage !== 'DOCS_REJECTED') {
-            setDocuments(latestDocs);
+            setDocuments(prevDocs =>
+              latestDocs.map(ld => {
+                const localDoc = prevDocs.find(p => p.key === ld.key);
+                if (localDoc?.reuploaded && localDoc.status === 'PENDING_REVIEW') {
+                  return localDoc;
+                }
+                return ld;
+              })
+            );
             setSubmitted(false);
             message.warning('Điều phối viên vừa yêu cầu tải lại một số chứng từ chưa hợp lệ!');
           } else if (hasAnyRejected) {
-            setDocuments(latestDocs);
+            setDocuments(prevDocs =>
+              latestDocs.map(ld => {
+                const localDoc = prevDocs.find(p => p.key === ld.key);
+                if (localDoc?.reuploaded && localDoc.status === 'PENDING_REVIEW') {
+                  return localDoc;
+                }
+                return ld;
+              })
+            );
             setSubmitted(false);
           } else {
             // Không có chứng từ nào bị từ chối

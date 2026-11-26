@@ -116,6 +116,11 @@ const arriveAtStop = async (
     error.statusCode = 404;
     throw error;
   }
+  if (String(trip.status || "").trim().toUpperCase() === "CANCELLED") {
+    const error = new Error("Chuyến xe đã bị hủy, không thể tiếp tục thao tác.");
+    error.statusCode = 400;
+    throw error;
+  }
 
   const stop = await driverModel.getTripStopById(stopId, tripId);
   if (!stop) {
@@ -248,6 +253,11 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     error.statusCode = 404;
     throw error;
   }
+  if (String(trip.status || "").trim().toUpperCase() === "CANCELLED") {
+    const error = new Error("Chuyến xe đã bị hủy, không thể tiếp tục thao tác.");
+    error.statusCode = 400;
+    throw error;
+  }
 
   // 2. Kiểm tra quá tải trọng xe
   const truckPayload = trip.truck?.allowed_payload || 5000;
@@ -362,6 +372,11 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
   if (!trip) {
     const error = new Error("Chuyến xe không tồn tại");
     error.statusCode = 404;
+    throw error;
+  }
+  if (String(trip.status || "").trim().toUpperCase() === "CANCELLED") {
+    const error = new Error("Chuyến xe đã bị hủy, không thể tiếp tục thao tác.");
+    error.statusCode = 400;
     throw error;
   }
 
@@ -606,6 +621,11 @@ const recordStopEvent = async (
     error.statusCode = 404;
     throw error;
   }
+  if (String(trip.status || "").trim().toUpperCase() === "CANCELLED") {
+    const error = new Error("Chuyến xe đã bị hủy, không thể tiếp tục thao tác.");
+    error.statusCode = 400;
+    throw error;
+  }
   const stop = await driverModel.getTripStopById(stopId, tripId);
   if (!stop) {
     const error = new Error("Điểm dừng không tồn tại");
@@ -617,6 +637,32 @@ const recordStopEvent = async (
   const { time: recordedTime, timeFlagged } = validatePhoneTime(phoneTime);
 
   const normalizedEventType = (eventType || "Stop Event").trim();
+  const currentStopStatus = String(stop.status || "").trim().toUpperCase();
+
+  // BUG-SYS-16: Bắt buộc tuân thủ thứ tự 4 bước điểm dừng (Arrived -> Loading Started -> Loading Done -> Left)
+  if (
+    ["Loading Started", "Loading Done", "Left"].includes(normalizedEventType) &&
+    (!currentStopStatus || currentStopStatus === "PENDING" || currentStopStatus === "SCHEDULED")
+  ) {
+    const error = new Error(
+      `Không thể ghi nhận "${normalizedEventType}" khi chưa xác nhận đến điểm dừng (Arrived).`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // BUG-SYS-36: Không cho phép thao tác trên đơn hàng đã bị hủy
+  if (stop.order_id) {
+    const stopOrder = await prisma.orders.findUnique({
+      where: { id: BigInt(stop.order_id) },
+      select: { status: true },
+    });
+    if (String(stopOrder?.status || "").trim().toUpperCase() === "CANCELLED") {
+      const error = new Error("Đơn hàng của điểm dừng này đã bị hủy, không thể cập nhật trạng thái.");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
   let eventPayload = {
     ...(payload || {}),
     time_flagged: timeFlagged,
