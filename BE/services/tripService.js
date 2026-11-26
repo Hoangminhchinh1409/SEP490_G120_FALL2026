@@ -12,12 +12,14 @@ const getAllTrips = async () => {
 const createTrip = async (payload, userId = 1) => {
   const {
     order_id,
+    order_ids,
     order_code,
     truck_id,
     truck_plate,
     driver_id,
     driver_name,
     driver1_name,
+    driver2_id,
     driver2_name,
     stops,
     planned_start,
@@ -32,31 +34,61 @@ const createTrip = async (payload, userId = 1) => {
     vendor_vehicles_count,
   } = payload;
 
-  // Tìm đơn hàng thực tế trong DB & kiểm tra trạng thái hợp lệ (chỉ lập chuyến cho đơn READY_FOR_PLANNING)
-  if (!order_id && !order_code) {
+  // Tìm đơn hàng thực tế trong DB & kiểm tra trạng thái hợp lệ (chỉ lập chuyến cho đơn READY_FOR_PLANNING, hỗ trợ ghép nhiều đơn order_ids - BUG-SYS-14)
+  const rawOrderIdentifiers = Array.isArray(order_ids) && order_ids.length > 0
+    ? order_ids
+    : (order_id || order_code ? [order_id || order_code] : []);
+  if (rawOrderIdentifiers.length === 0) {
     const err = new Error("Vui lòng chọn đơn hàng hợp lệ để lập chuyến.");
     err.statusCode = 400;
     throw err;
   }
-  const matchedOrder = await tripModel.findOrderByCodeOrId(
-    order_id || order_code,
-  );
-  if (!matchedOrder) {
-    const err = new Error(`Không tìm thấy đơn hàng ${order_id || order_code}.`);
-    err.statusCode = 404;
-    throw err;
+
+  const matchedOrders = [];
+  const seenOrderIds = new Set();
+  for (const ident of rawOrderIdentifiers) {
+    const o = await tripModel.findOrderByCodeOrId(ident);
+    if (!o) {
+      const err = new Error(`Không tìm thấy đơn hàng ${ident}.`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const normSt = String(o.status || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "_");
+    if (normSt !== "READY_FOR_PLANNING") {
+      const err = new Error(
+        `Chỉ có thể lập chuyến cho đơn hàng đang ở trạng thái READY_FOR_PLANNING (đơn ${o.order_code || o.id} hiện ở trạng thái: ${o.status}).`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!seenOrderIds.has(String(o.id))) {
+      seenOrderIds.add(String(o.id));
+      matchedOrders.push(o);
+    }
   }
-  const normalizedOrderStatus = String(matchedOrder.status || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "_");
-  if (normalizedOrderStatus !== "READY_FOR_PLANNING") {
-    const err = new Error(
-      `Chỉ có thể lập chuyến cho đơn hàng đang ở trạng thái READY_FOR_PLANNING (trạng thái hiện tại: ${matchedOrder.status}).`,
-    );
-    err.statusCode = 400;
-    throw err;
+
+  if (matchedOrders.length > 1) {
+    const firstCustId = String(matchedOrders[0].customer_id || "");
+    const diffCustomer = matchedOrders.some((o) => String(o.customer_id || "") !== firstCustId);
+    if (diffCustomer) {
+      const err = new Error("Chỉ được ghép các đơn hàng của cùng một khách hàng vào một chuyến.");
+      err.statusCode = 400;
+      throw err;
+    }
+    const notAgreed = matchedOrders.find((o) => !o.customer_agrees_to_grouping);
+    if (notAgreed) {
+      const err = new Error(
+        `Đơn hàng ${notAgreed.order_code || notAgreed.id} chưa được khách hàng đồng ý đi ghép chuyến.`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
   }
+
+  const matchedOrder = matchedOrders[0];
   const resolvedOrderId = matchedOrder.id;
 
   // TRƯỜNG HỢP 1: BÀN GIAO NHÀ XE ĐỐI TÁC 3PL
@@ -182,20 +214,41 @@ const createTrip = async (payload, userId = 1) => {
       throw err;
     }
 
-    const cargosArr = Array.isArray(matchedOrder?.order_cargos)
-      ? matchedOrder.order_cargos
-      : matchedOrder?.order_cargos
-        ? [matchedOrder.order_cargos]
-        : [];
-    const totalOrderWeight = cargosArr.reduce(
-      (sum, c) =>
-        sum +
-        Math.max(
-          Number(c?.actual_weight_kg || 0),
-          Number(c?.chargeable_weight_kg || 0),
-        ),
-      0,
-    );
+    // Kiểm tra hạn đăng kiểm & bảo hiểm xe (BUG-SYS-11)
+    const todayVnStr = new Date(Date.now() + 7 * 3600 * 1000).toISOString().split("T")[0];
+    if (truckRow.inspection_expiry) {
+      const inspStr = new Date(truckRow.inspection_expiry).toISOString().split("T")[0];
+      if (inspStr < todayVnStr) {
+        const err = new Error(`Xe tải ${truckRow.plate_number} đã hết hạn đăng kiểm (${inspStr}), không thể điều phối!`);
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+    if (truckRow.insurance_expiry) {
+      const insStr = new Date(truckRow.insurance_expiry).toISOString().split("T")[0];
+      if (insStr < todayVnStr) {
+        const err = new Error(`Xe tải ${truckRow.plate_number} đã hết hạn bảo hiểm (${insStr}), không thể điều phối!`);
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    const totalOrderWeight = matchedOrders.reduce((orderSum, ord) => {
+      const cargosArr = Array.isArray(ord?.order_cargos)
+        ? ord.order_cargos
+        : ord?.order_cargos
+          ? [ord.order_cargos]
+          : [];
+      return orderSum + cargosArr.reduce(
+        (sum, c) =>
+          sum +
+          Math.max(
+            Number(c?.actual_weight_kg || 0),
+            Number(c?.chargeable_weight_kg || 0),
+          ),
+        0,
+      );
+    }, 0);
     const allowedPayload = Number(truckRow.allowed_payload || 0);
     if (allowedPayload > 0 && totalOrderWeight > allowedPayload) {
       const err = new Error(
@@ -308,6 +361,36 @@ const createTrip = async (payload, userId = 1) => {
       err.statusCode = 400;
       throw err;
     }
+    // Kiểm tra tài xế có đang chạy chuyến chưa hoàn thành không (BUG-SYS-12 / WF2-04)
+    const activeDriverTrip = await prisma.trip_drivers.findFirst({
+      where: {
+        driver_id: bigDriverId,
+        released_time: null,
+        trips: {
+          status: {
+            in: [
+              "Assigned",
+              "Accepted",
+              "In Progress",
+              "In Transit",
+              "Loading Started",
+              "Loading Done",
+            ],
+          },
+        },
+      },
+      include: {
+        trips: { select: { trip_code: true, status: true } },
+      },
+    });
+    if (activeDriverTrip) {
+      const err = new Error(
+        `Tài xế ${driverProfile.users?.full_name || `#${driverId}`} hiện đang có chuyến ${activeDriverTrip.trips?.trip_code || ""} chưa hoàn thành (trạng thái: ${activeDriverTrip.trips?.status}), không thể gán chuyến mới!`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
     if (driverProfile.license_expiry) {
       const tripDayStr = new Date(tripStart.getTime() + 7 * 3600 * 1000)
         .toISOString()
@@ -396,16 +479,46 @@ const createTrip = async (payload, userId = 1) => {
     }
   }
 
-  let secondaryDriverId = null;
-  if (driver2_name && String(driver2_name).trim()) {
+  let secondaryDriverId = driver2_id ? Number(driver2_id) : null;
+  if (!secondaryDriverId && driver2_name && String(driver2_name).trim()) {
     secondaryDriverId = await tripModel.findDriverByName(driver2_name);
     if (!secondaryDriverId) {
       const err = new Error(`Không tìm thấy tài xế phụ ${driver2_name}`);
       err.statusCode = 400;
       throw err;
     }
+  }
+  if (secondaryDriverId) {
     if (Number(secondaryDriverId) === Number(driverId)) {
       const err = new Error("Tài xế 2 phải khác tài xế 1.");
+      err.statusCode = 400;
+      throw err;
+    }
+    const activeDriver2Trip = await prisma.trip_drivers.findFirst({
+      where: {
+        driver_id: BigInt(Number(secondaryDriverId)),
+        released_time: null,
+        trips: {
+          status: {
+            in: [
+              "Assigned",
+              "Accepted",
+              "In Progress",
+              "In Transit",
+              "Loading Started",
+              "Loading Done",
+            ],
+          },
+        },
+      },
+      include: {
+        trips: { select: { trip_code: true, status: true } },
+      },
+    });
+    if (activeDriver2Trip) {
+      const err = new Error(
+        `Tài xế phụ #${secondaryDriverId} hiện đang có chuyến ${activeDriver2Trip.trips?.trip_code || ""} chưa hoàn thành.`,
+      );
       err.statusCode = 400;
       throw err;
     }
@@ -426,6 +539,14 @@ const createTrip = async (payload, userId = 1) => {
   if (isNaN(parsedDuration) || parsedDuration <= 0) {
     const err = new Error(
       "Vui lòng cung cấp thời gian dự kiến hợp lệ (planned_duration > 0).",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  // BUG-SYS-13: Chuyến >= 8 giờ (480 phút) bắt buộc có 2 tài xế
+  if (parsedDuration >= 480 && !secondaryDriverId) {
+    const err = new Error(
+      "Chuyến đi có thời gian dự kiến từ 8 giờ (480 phút) trở lên bắt buộc phải phân công 2 tài xế.",
     );
     err.statusCode = 400;
     throw err;
@@ -511,22 +632,27 @@ const createTrip = async (payload, userId = 1) => {
       });
     }
   } else {
-    resolvedStopsData.push(
-      {
-        type: "Pickup",
-        location_id: matchedOrder?.pickup_location_id || 1,
-        order_id: resolvedOrderId,
-        planned_arrival: new Date(resolvedPlannedStart.getTime() + Math.round(parsedDuration * 0.25) * 60000),
-        status: "Pending",
-      },
-      {
-        type: "Drop-off",
-        location_id: matchedOrder?.delivery_location_id || 24,
-        order_id: resolvedOrderId,
-        planned_arrival: new Date(resolvedPlannedStart.getTime() + parsedDuration * 60000),
-        status: "Pending",
-      },
-    );
+    const totalOrd = matchedOrders.length;
+    matchedOrders.forEach((ord, idx) => {
+      const pickupFrac = (idx * 2 + 1) / (totalOrd * 2 + 1);
+      const dropFrac = (idx * 2 + 2) / (totalOrd * 2 + 1);
+      resolvedStopsData.push(
+        {
+          type: "Pickup",
+          location_id: ord?.pickup_location_id || 1,
+          order_id: ord.id,
+          planned_arrival: new Date(resolvedPlannedStart.getTime() + Math.round(parsedDuration * pickupFrac) * 60000),
+          status: "Pending",
+        },
+        {
+          type: "Drop-off",
+          location_id: ord?.delivery_location_id || 24,
+          order_id: ord.id,
+          planned_arrival: new Date(resolvedPlannedStart.getTime() + Math.round(parsedDuration * dropFrac) * 60000),
+          status: "Pending",
+        },
+      );
+    });
   }
 
   const cleanPlate =
@@ -551,6 +677,7 @@ const createTrip = async (payload, userId = 1) => {
     secondaryDriverId,
     stopsData: resolvedStopsData,
     orderId: resolvedOrderId,
+    orderIds: matchedOrders.map((o) => o.id),
     waybillSnapshot: {
       order_code: matchedOrder?.order_code || order_code,
       customer: matchedOrder?.customers?.company_name || "Khách hàng",

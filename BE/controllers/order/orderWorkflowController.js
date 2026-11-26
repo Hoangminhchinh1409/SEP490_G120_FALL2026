@@ -2,7 +2,7 @@ const adminModel = require("../../models/adminModel");
 const { getClientIp } = require("../../utils/ipHelper");
 const prisma = require("../../config/prisma");
 const { serializePrisma, formatDateOnly } = require("../../utils/prismaHelper");
-const { saveOrderMeta } = require("../../services/orderHelperService");
+const { parseOrderMeta, saveOrderMeta } = require("../../services/orderHelperService");
 
 const buildOrderWhere = (idParam) => {
   const clean = String(idParam || "").trim();
@@ -29,6 +29,11 @@ const confirmOrder = async (req, res) => {
     // 1. Kiểm tra đơn hàng hiện tại
     const currentOrder = await prisma.orders.findFirst({
       where: buildOrderWhere(id),
+      include: {
+        order_notes: {
+          where: { content: { startsWith: "[META_" } },
+        },
+      },
     });
     if (!currentOrder) {
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
@@ -55,7 +60,12 @@ const confirmOrder = async (req, res) => {
       });
     }
 
-    // BUG-SYS-06: Kiểm tra đầy đủ điều kiện cổng trước khi chuyển READY_FOR_PLANNING (giá cước > 0, chứng từ đã duyệt)
+    // BUG-SYS-06: Chỉ cho phép chuyển READY_FOR_PLANNING khi đơn ở trạng thái CONFIRMED, giá > 0, chứng từ đã APPROVED và đã có hợp đồng
+    if (upperSt !== "CONFIRMED") {
+      return res.status(400).json({
+        message: `Chỉ có thể xác nhận sẵn sàng xếp xe cho đơn hàng đang ở trạng thái CONFIRMED (trạng thái hiện tại: ${currentOrder.status}).`,
+      });
+    }
     const effectivePrice = agreed_price ? parseInt(agreed_price, 10) : Number(currentOrder.agreed_price || 0);
     if (!effectivePrice || effectivePrice <= 0) {
       return res.status(400).json({
@@ -63,9 +73,23 @@ const confirmOrder = async (req, res) => {
       });
     }
     const docStatusUpper = String(currentOrder.document_status || "").trim().toUpperCase();
-    if (upperSt === "DRAFT" && docStatusUpper !== "APPROVED") {
+    const orderMeta = parseOrderMeta(currentOrder);
+    const docsApproved = docStatusUpper === "APPROVED" || Boolean(orderMeta?.web_workflow?.docs_approved_at);
+    if (!docsApproved) {
       return res.status(400).json({
-        message: "Đơn hàng ở trạng thái Nháp chưa được duyệt hồ sơ chứng từ nên không thể chuyển thẳng sang Sẵn sàng xếp xe.",
+        message: "Đơn hàng chưa được duyệt hồ sơ chứng từ nên không thể chuyển sang Sẵn sàng xếp xe.",
+      });
+    }
+    const hasContract = Boolean(
+      currentOrder.signed_order_contract_file ||
+      currentOrder.contract_id ||
+      orderMeta?.contract_uploaded ||
+      orderMeta?.contract_file ||
+      orderMeta?.web_workflow?.signed_contract
+    );
+    if (!hasContract) {
+      return res.status(400).json({
+        message: "Đơn hàng chưa có hợp đồng vận chuyển đã ký nên không thể chuyển sang Sẵn sàng xếp xe.",
       });
     }
 
@@ -388,6 +412,11 @@ const closeOrder = async (req, res) => {
     // 1. Kiểm tra đơn hàng hiện tại
     const currentOrder = await prisma.orders.findFirst({
       where: buildOrderWhere(id),
+      include: {
+        order_notes: {
+          where: { content: { startsWith: "[META_" } },
+        },
+      },
     });
     if (!currentOrder) {
       return res

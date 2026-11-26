@@ -336,9 +336,15 @@ const createTripWithRelations = async ({
   secondaryDriverId = null,
   stopsData,
   orderId,
+  orderIds = [],
   waybillSnapshot = {}
 }) => {
   const numOrderId = orderId ? Number(orderId) : null;
+  const uniqueOrderIds = [...new Set(
+    (Array.isArray(orderIds) && orderIds.length > 0 ? orderIds : (numOrderId ? [numOrderId] : []))
+      .map((id) => Number(id))
+      .filter((id) => !isNaN(id) && id > 0)
+  )];
   const bigTruckId = BigInt(Number(truckId));
   const bigDriverId = BigInt(Number(driverId));
   const bigDriver2Id = secondaryDriverId ? BigInt(Number(secondaryDriverId)) : null;
@@ -437,8 +443,8 @@ const createTripWithRelations = async ({
       data: { status: 'On Trip', updated_at: now }
     });
 
-    if (numOrderId) {
-      const bigOrderId = BigInt(numOrderId);
+    for (const oId of uniqueOrderIds) {
+      const bigOrderId = BigInt(oId);
       await tx.orders.update({
         where: { id: bigOrderId },
         data: { status: 'ASSIGNED', updated_at: now }

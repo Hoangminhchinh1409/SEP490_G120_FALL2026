@@ -519,10 +519,9 @@ const getNextDispatcherForWebOrder = async () => {
       return Number(candidateDispatchers[0].id);
     }
 
-    // Nếu nhiều điều phối viên có cùng số đơn ít nhất, xoay vòng theo đơn Web gần nhất
+    // Nếu nhiều điều phối viên có cùng số đơn ít nhất, xoay vòng theo đơn gần nhất (không phân biệt nguồn)
     const lastAssignedOrder = await prisma.orders.findFirst({
       where: {
-        source: 'Web',
         responsible_dispatcher_id: { in: candidateDispatchers.map((d) => d.id) }
       },
       orderBy: { id: 'desc' },

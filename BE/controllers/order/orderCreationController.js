@@ -53,6 +53,30 @@ const createConsultationOrder = async (req, res) => {
       export_pickup_suggestion,
     } = req.body;
 
+    // Validate bắt buộc & định dạng cho đơn tư vấn Web (BUG-SYS-02)
+    if (!customer_name || !String(customer_name).trim()) {
+      return res.status(400).json({ message: "Vui lòng nhập tên khách hàng / tên công ty" });
+    }
+    const cleanPhoneInput = String(customer_phone || "").trim().replace(/[\s.-]/g, "");
+    if (!cleanPhoneInput || !/^(0[3|5|7|8|9])[0-9]{8}$/.test(cleanPhoneInput)) {
+      return res.status(400).json({ message: "Số điện thoại khách hàng không hợp lệ (gồm 10 chữ số, bắt đầu bằng 03/05/07/08/09)" });
+    }
+    const cleanEmailInput = String(customer_email || "").trim();
+    if (!cleanEmailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmailInput)) {
+      return res.status(400).json({ message: "Email khách hàng không hợp lệ" });
+    }
+    if (!req.body.pickup_location_id && (!pickup_address || !String(pickup_address).trim())) {
+      return res.status(400).json({ message: "Vui lòng chọn hoặc nhập điểm lấy hàng" });
+    }
+    if (!req.body.delivery_location_id && (!delivery_address || !String(delivery_address).trim())) {
+      return res.status(400).json({ message: "Vui lòng chọn hoặc nhập điểm giao hàng" });
+    }
+    const hasConsultItems = Array.isArray(items) && items.length > 0;
+    const primaryConsultCargo = hasConsultItems ? items[0]?.cargo_name : cargo_name;
+    if (!primaryConsultCargo || !String(primaryConsultCargo).trim()) {
+      return res.status(400).json({ message: "Vui lòng nhập tên mặt hàng vận chuyển" });
+    }
+
     // Validate chống nhập địa chỉ gõ bừa/vô nghĩa cho các điểm giao nhận không phải kho ALS
     if (
       !req.body.pickup_location_id &&
@@ -167,6 +191,11 @@ const createConsultationOrder = async (req, res) => {
       actualWeight,
       chargeableWeight,
     );
+    if (effectiveWeightConsultation <= 0) {
+      return res.status(400).json({
+        message: "Trọng lượng hàng hóa không hợp lệ (phải lớn hơn 0 kg).",
+      });
+    }
     if (effectiveWeightConsultation > 4000) {
       return res.status(400).json({
         message: `Khối lượng đơn hàng (${effectiveWeightConsultation.toLocaleString("vi-VN")} kg) vượt quá giới hạn tối đa 4.000 kg mỗi đơn theo quy định vận chuyển.`,

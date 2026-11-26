@@ -229,6 +229,11 @@ const validateDirectOrderInput = (body) => {
       error: "Trọng lượng hàng hóa không hợp lệ (phải lớn hơn 0 kg)",
     };
   }
+  if (parsedWeight > 4000) {
+    return {
+      error: `Tổng trọng lượng đơn hàng (${parsedWeight.toLocaleString("vi-VN")} kg) vượt quá giới hạn tối đa 4.000 kg cho mỗi đơn hàng`,
+    };
+  }
 
   const parsedPrice = parseInt(agreed_price, 10);
   if (isNaN(parsedPrice) || parsedPrice <= 0) {

@@ -68,11 +68,10 @@ const uploadContractFile = async (req, res) => {
 
     await saveOrderMeta(currentOrder.id, meta);
 
-    // Nếu chứng từ đã được duyệt hoặc đơn đang ở trạng thái CONFIRMED, chuyển sang READY_FOR_PLANNING
+    // BUG-SYS-07: Chỉ chuyển sang READY_FOR_PLANNING nếu chứng từ đã được duyệt (APPROVED)
     const shouldMoveToReady =
-      currentOrder.document_status === 'APPROVED' ||
-      meta.web_workflow?.docs_approved_at ||
-      currentOrder.status === 'CONFIRMED';
+      String(currentOrder.document_status || '').trim().toUpperCase() === 'APPROVED' ||
+      Boolean(meta.web_workflow?.docs_approved_at);
 
     const updatePayload = {
       signed_order_contract_file: file_name,
