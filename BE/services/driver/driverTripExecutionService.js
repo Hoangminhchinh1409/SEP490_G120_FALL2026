@@ -649,15 +649,31 @@ const recordStopEvent = async (
   const currentStopStatus = String(stop.status || "").trim().toUpperCase();
 
   // BUG-SYS-16: Bắt buộc tuân thủ thứ tự 4 bước điểm dừng (Arrived -> Loading Started -> Loading Done -> Left)
-  if (
-    ["Loading Started", "Loading Done", "Left"].includes(normalizedEventType) &&
-    (!currentStopStatus || currentStopStatus === "PENDING" || currentStopStatus === "SCHEDULED")
-  ) {
+  const normStopSt = currentStopStatus.replace(/\s+/g, "_");
+  const isRestStop = String(stop.stop_type || stop.type || "").trim().toUpperCase() === "REST";
+  if (normalizedEventType === "Loading Started" && normStopSt !== "ARRIVED") {
     const error = new Error(
-      `Không thể ghi nhận "${normalizedEventType}" khi chưa xác nhận đến điểm dừng (Arrived).`,
+      `Không thể ghi nhận "Loading Started" khi điểm dừng chưa ở trạng thái Arrived (hiện tại: ${stop.status}).`,
     );
     error.statusCode = 400;
     throw error;
+  }
+  if (normalizedEventType === "Loading Done" && normStopSt !== "LOADING_STARTED") {
+    const error = new Error(
+      `Không thể ghi nhận "Loading Done" khi chưa bắt đầu bốc/dỡ hàng (Loading Started).`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  if (normalizedEventType === "Left") {
+    const allowedBeforeLeft = isRestStop ? ["ARRIVED", "LOADING_DONE"] : ["LOADING_DONE"];
+    if (!allowedBeforeLeft.includes(normStopSt)) {
+      const error = new Error(
+        `Không thể ghi nhận "Left" khi chưa hoàn thành các bước trước đó (hiện tại: ${stop.status}).`,
+      );
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   // BUG-SYS-36: Không cho phép thao tác trên đơn hàng đã bị hủy

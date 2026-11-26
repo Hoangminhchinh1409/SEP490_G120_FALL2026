@@ -600,8 +600,7 @@ const createTrip = async (payload, userId = 1) => {
         } else if (
           (sType === "DROPOFF" || sType === "DROP-OFF") &&
           i === rawStops.length - 1 &&
-          matchedOrder?.delivery_location_id &&
-          matchedOrder.delivery_location_id !== 1
+          matchedOrder?.delivery_location_id
         ) {
           locId = matchedOrder.delivery_location_id;
         } else {
