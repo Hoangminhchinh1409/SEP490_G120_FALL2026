@@ -233,7 +233,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl lg:text-3xl font-black text-primary tracking-tight">
-              Sự cố &amp; Bồi thường (Incidents &amp; Compensation)
+              Sự cố &amp; Bồi thường
             </h1>
             {summary.escalated > 0 ? (
               <Tag color="error" className="font-bold text-xs px-2.5 py-0.5 rounded-full">
@@ -246,7 +246,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
             )}
           </div>
           <p className="text-xs text-on-surface-variant mt-1.5 max-w-3xl">
-            Thẩm định hồ sơ bằng chứng đối chiếu 3 góc nhìn (Pickup - Sự cố - Delivery), căn cứ Hợp đồng vận chuyển và phê duyệt bồi thường thiệt hại hàng hóa.
+            Thẩm định hồ sơ bằng chứng đối chiếu 3 góc nhìn, căn cứ Hợp đồng vận chuyển và phê duyệt bồi thường thiệt hại hàng hóa.
           </p>
         </div>
 
