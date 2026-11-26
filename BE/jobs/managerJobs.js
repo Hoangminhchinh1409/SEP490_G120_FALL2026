@@ -469,25 +469,26 @@ const initManagerJobs = () => {
   queueAdapter.enqueue('job:auto-assign-shifts');
   queueAdapter.enqueue('job:auto-close-paid-claims');
 
-  // Định kỳ:
+  // Định kỳ (tối ưu tốc độ chạy nền cho demo/vận hành thời gian thực):
   // JOB-01: Mỗi 24 giờ
   setInterval(() => {
     queueAdapter.enqueue('job:retention-cleanup');
   }, 24 * 60 * 60 * 1000);
 
-  // JOB-08: Mỗi 1 giờ quét các Claim đã chi trả quá 7 ngày chưa có phản hồi
+  // JOB-08: Mỗi 1 phút quét các Claim đã chi trả quá 7 ngày chưa có phản hồi
   setInterval(() => {
     queueAdapter.enqueue('job:auto-close-paid-claims');
-  }, 60 * 60 * 1000);
-  // JOB-03: Mỗi 15 phút (900,000 ms)
+  }, 60 * 1000);
+
+  // JOB-03: Mỗi 1 phút quét đơn hàng chờ quá lâu
   setInterval(() => {
     queueAdapter.enqueue('job:flag-overdue-orders');
-  }, 15 * 60 * 1000);
+  }, 60 * 1000);
 
-  // JOB-02: Mỗi 5 phút (300,000 ms)
+  // JOB-02: Mỗi 30 giây kiểm tra thời gian lái xe liên tục & ca làm việc
   setInterval(() => {
     queueAdapter.enqueue('job:check-driver-shift');
-  }, 5 * 60 * 1000);
+  }, 30 * 1000);
 
   // JOB-06: Hằng ngày lúc 06:00 GMT+7 (có Advisory Lock)
   const scheduleDaily0600Job06 = () => {
@@ -509,10 +510,10 @@ const initManagerJobs = () => {
   };
   scheduleDaily0600Job06();
 
-  // JOB-07: Mỗi 1 phút quét reminder và phân ca
+  // JOB-07: Mỗi 30 giây quét reminder và phân ca
   setInterval(() => {
     queueAdapter.enqueue('job:auto-assign-shifts');
-  }, 60 * 1000);
+  }, 30 * 1000);
 };
 
 module.exports = {

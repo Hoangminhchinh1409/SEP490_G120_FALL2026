@@ -230,7 +230,7 @@ class BackgroundQueueAdapter extends EventEmitter {
     }
   }
 
-  startGpsBatchFlusher(intervalMs = 5000) {
+  startGpsBatchFlusher(intervalMs = 1500) {
     if (this.gpsFlushTimer) clearInterval(this.gpsFlushTimer);
     this.gpsFlushTimer = setInterval(() => {
       this.flushGpsBuffer();
