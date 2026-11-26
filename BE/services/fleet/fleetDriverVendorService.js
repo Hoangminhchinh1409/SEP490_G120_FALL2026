@@ -1,19 +1,46 @@
+const prisma = require('../../config/prisma');
 const driverModel = require('../../models/driverModel');
 const fleetModel = require('../../models/fleetModel');
 const leaveModel = require('../../models/leaveModel');
 
 const getAllDrivers = async () => {
-  const profiles = await fleetModel.findAllDrivers();
+  const [profiles, openAssignments] = await Promise.all([
+    fleetModel.findAllDrivers(),
+    prisma.trip_drivers.findMany({
+      where: {
+        released_time: null,
+        trips: {
+          status: { in: ['Assigned', 'Accepted', 'In Progress', 'In Transit', 'Loading Started', 'Loading Done'] }
+        }
+      },
+      select: {
+        driver_id: true,
+        trips: { select: { trip_code: true } }
+      }
+    }).catch(() => [])
+  ]);
+
+  const activeTripByDriver = new Map();
+  for (const row of openAssignments || []) {
+    const key = String(row.driver_id);
+    if (!activeTripByDriver.has(key)) {
+      activeTripByDriver.set(key, row.trips?.trip_code || 'ACTIVE');
+    }
+  }
+
   return (profiles || []).map((d) => {
     const u = d.user || {};
     const rawSt = String(d.status || '').trim().toUpperCase().replace(/\s+/g, '_');
-    let status = 'UNKNOWN';
-    if (rawSt === 'AVAILABLE' || rawSt === 'ACTIVE') status = 'AVAILABLE';
-    else if (rawSt === 'ON_TRIP' || rawSt === 'ON_DUTY') status = 'ON_DUTY';
+    const activeTripCode = activeTripByDriver.get(String(d.id)) || null;
+    const hasActiveTrip = Boolean(activeTripCode);
+
+    let status = 'AVAILABLE';
+    if (hasActiveTrip || rawSt === 'ON_TRIP' || rawSt === 'ON_DUTY') status = 'ON_DUTY';
+    else if (rawSt === 'AVAILABLE' || rawSt === 'ACTIVE') status = 'AVAILABLE';
     else if (rawSt === 'RESTING' || rawSt === 'INACTIVE') status = 'RESTING';
     else if (rawSt === 'SUSPENDED') status = 'SUSPENDED';
     else if (rawSt === 'LEAVE') status = 'LEAVE';
-    else status = rawSt || 'UNKNOWN';
+    else status = rawSt || 'AVAILABLE';
 
     const expYears = d.experience_years !== undefined && d.experience_years !== null
       ? `${d.experience_years} năm kinh nghiệm`
@@ -36,7 +63,8 @@ const getAllDrivers = async () => {
       shift_hours_today: d.shift_hours_today ?? null,
       max_shift_hours: null,
       assigned_truck: d.assigned_truck || null,
-      current_trip: null,
+      current_trip: activeTripCode,
+      has_active_trip: hasActiveTrip,
       status: status,
       raw_status: d.status
     };

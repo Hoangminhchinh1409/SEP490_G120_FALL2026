@@ -1,38 +1,65 @@
 const prisma = require('../../config/prisma');
-const { serializePrisma } = require('../../utils/prismaHelper');
+const { serializePrisma, formatDateOnly } = require('../../utils/prismaHelper');
 const cloudinaryService = require('../../services/cloudinaryService');
 const { parseOrderMeta } = require('../../services/orderHelperService');
 const {
   sendIncidentCompensationApprovalEmail,
-  sendIncidentCompensationRejectionEmail
+  sendIncidentCompensationRejectionEmail,
+  sendClaimPaymentRecordedEmail
 } = require('../../services/emailService');
 const {
   INCIDENT_SAFE_SELECT,
+  parseIncidentIdParam,
   mapOrderSummaryAliases
 } = require('./incidentHelper');
 
 const resolveIncident = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fault, compensation_amount, resolution_note } = req.body;
+    const numId = parseIncidentIdParam(id);
+    if (!numId) {
+      return res.status(400).json({ message: 'Mã sự cố không hợp lệ.' });
+    }
+    const { fault, compensation_amount, resolution_note } = req.body || {};
     const managerId = req.user?.id || null;
 
     if (!fault) {
       return res.status(400).json({ message: 'Vui lòng xác định bên có lỗi (Công ty, Khách hàng, Bên thứ ba).' });
     }
 
-    const amountNum = Number(compensation_amount) || 0;
+    const hasCompAmount =
+      compensation_amount !== undefined &&
+      compensation_amount !== null &&
+      String(compensation_amount).trim() !== '';
+    const amountNum = hasCompAmount ? Number(compensation_amount) : 0;
+    if (!Number.isFinite(amountNum) || amountNum < 0) {
+      return res.status(400).json({ message: 'Số tiền bồi thường không hợp lệ (>= 0).' });
+    }
+
+    const existingInc = await prisma.incidents.findUnique({
+      where: { id: BigInt(numId) },
+      select: { id: true, status: true }
+    });
+    if (!existingInc) {
+      return res.status(404).json({ message: 'Không tìm thấy thông tin sự cố.' });
+    }
+    const existingStatusUpper = String(existingInc.status || '').toUpperCase();
+    if (['DONE', 'CLOSED', 'PAID', 'RESOLVED'].includes(existingStatusUpper)) {
+      return res.status(400).json({ message: 'Sự cố này đã được giải quyết hoặc đóng hồ sơ trước đó.' });
+    }
+
     const nowDate = new Date();
-    const resolvedByInt = managerId ? Number(managerId) : null;
+    const actorBigId = managerId ? BigInt(managerId) : null;
 
     const updatedIncRow = await prisma.incidents.update({
-      where: { id: BigInt(id) },
+      where: { id: BigInt(numId) },
       data: {
         fault: fault,
         resolution_note: resolution_note || 'Quản lý đã thẩm định và giải quyết sự cố.',
         status: 'RESOLVED',
-        resolved_by: resolvedByInt,
+        resolved_by: actorBigId,
         resolved_time: nowDate,
+        ...(amountNum === 0 ? { closed_by: actorBigId, closed_at: nowDate } : {}),
         updated_at: nowDate
       },
       select: INCIDENT_SAFE_SELECT
@@ -43,7 +70,7 @@ const resolveIncident = async (req, res) => {
     let createdClaim = null;
     if (amountNum > 0) {
       const existingClaim = await prisma.compensation_claims.findFirst({
-        where: { incident_id: BigInt(id) },
+        where: { incident_id: BigInt(numId) },
         select: { id: true }
       });
 
@@ -67,25 +94,24 @@ const resolveIncident = async (req, res) => {
         }
 
         if (!orderId) {
-          const anyOrder = await prisma.orders.findFirst({ select: { id: true } });
-          orderId = anyOrder?.id || BigInt(37);
-        }
-
-        try {
-          const newClaimRow = await prisma.compensation_claims.create({
-            data: {
-              incident_id: BigInt(id),
-              order_id: BigInt(orderId),
-              source: 'INCIDENT',
-              amount: BigInt(Math.round(amountNum)),
-              reason: `Bồi thường phát sinh từ sự cố INC-${String(id).padStart(3, '0')}: ${resolution_note || updatedInc.description || 'Lỗi vận hành'}`,
-              status: 'PENDING',
-              created_by: Number(managerId || 20)
-            }
-          });
-          createdClaim = serializePrisma(newClaimRow);
-        } catch (claimErr) {
-          console.error('Tự động tạo compensation_claim thất bại:', claimErr);
+          console.warn(`[resolveIncident] Không tìm thấy order_id cho sự cố #${numId} (trip_id=${updatedInc.trip_id}), bỏ qua tự động tạo compensation_claim.`);
+        } else {
+          try {
+            const newClaimRow = await prisma.compensation_claims.create({
+              data: {
+                incident_id: BigInt(numId),
+                order_id: BigInt(orderId),
+                source: 'INCIDENT',
+                amount: BigInt(Math.round(amountNum)),
+                reason: `Bồi thường phát sinh từ sự cố INC-${String(numId).padStart(3, '0')}: ${resolution_note || updatedInc.description || 'Lỗi vận hành'}`,
+                status: 'PENDING',
+                created_by: actorBigId
+              }
+            });
+            createdClaim = serializePrisma(newClaimRow);
+          } catch (claimErr) {
+            console.error('Tự động tạo compensation_claim thất bại:', claimErr);
+          }
         }
       }
     }
@@ -93,11 +119,11 @@ const resolveIncident = async (req, res) => {
     try {
       await prisma.activity_logs.create({
         data: {
-          actor_id: resolvedByInt,
+          actor_id: actorBigId,
           actor_type: 'MANAGER',
           action: 'RESOLVE_INCIDENT',
           target_type: 'INCIDENT',
-          target_id: BigInt(id),
+          target_id: BigInt(numId),
           changes: { fault, compensation_amount: amountNum, status: 'RESOLVED' },
           reason: resolution_note || null,
           created_time: nowDate
@@ -119,13 +145,19 @@ const resolveIncident = async (req, res) => {
 };
 
 /**
- * Manager quyết định Xét duyệt hoặc Từ chối bồi thường (State: APPROVED | DONE)
+ * Manager quyết định Xét duyệt hoặc Từ chối bồi thường (BF-04: APPROVED | REJECTED | IN_PROGRESS)
+ * Áp dụng Option B (TC_IC_07-10 / BUG-SYS-32): Kiểm tra hạn mức contract liability_cap (mặc định 500M VNĐ),
+ * trả về 400 (MSG56) nếu vượt hạn mức mà không có nhận xét/lý do ngoại lệ.
  */
 const decideIncidentCompensation = async (req, res) => {
   try {
     const { id } = req.params;
+    const numId = parseIncidentIdParam(id);
+    if (!numId) {
+      return res.status(400).json({ message: 'Mã sự cố không hợp lệ.' });
+    }
     const {
-      action, // 'APPROVE' | 'REJECT'
+      action, // 'APPROVE' | 'REJECT' | 'REQUEST_MORE_INFO'
       fault,
       approved_amount,
       damage_percentage,
@@ -135,55 +167,104 @@ const decideIncidentCompensation = async (req, res) => {
       rejection_reason,
       contact_hotline,
       resolution_note
-    } = req.body;
+    } = req.body || {};
     const managerId = req.user?.id || 1;
 
-    const isRequestMoreInfo = action === 'REQUEST_MORE_INFO';
-    const isApprove = action === 'APPROVE' || action === 'Approve';
-    // Sau khi Manager chốt giá bồi thường và gửi email cho khách -> kết thúc luồng (DONE)
-    // Nếu từ chối: Đơn phương dứt điểm theo căn cứ hợp đồng -> đóng ngay (DONE)
-    // Nếu yêu cầu bổ sung hồ sơ: Chuyển IN_PROGRESS để ĐPV/Tài xế/Khách hàng tải thêm ảnh/chứng từ
-    let targetStatus = 'DONE';
+    const normalizedAction = String(action || '').trim().toUpperCase();
+    if (!['APPROVE', 'REJECT', 'REQUEST_MORE_INFO'].includes(normalizedAction)) {
+      return res.status(400).json({
+        message: 'Hành động xét duyệt không hợp lệ (chỉ nhận APPROVE, REJECT hoặc REQUEST_MORE_INFO).'
+      });
+    }
+
+    const isRequestMoreInfo = normalizedAction === 'REQUEST_MORE_INFO';
+    const isApprove = normalizedAction === 'APPROVE';
+    // Theo BF-04: Approve/Reject giữ trạng thái APPROVED / REJECTED để Điều phối viên gọi điện cho khách hàng trước khi chuyển bước tiếp theo
+    let targetStatus = isApprove ? 'APPROVED' : 'REJECTED';
     if (isRequestMoreInfo) targetStatus = 'IN_PROGRESS';
 
     if (!isApprove && !isRequestMoreInfo) {
-      if (!rejection_reason || !rejection_reason.trim()) {
+      if (!rejection_reason || !String(rejection_reason).trim()) {
         return res.status(400).json({ message: 'Bắt buộc nhập lý do chi tiết khi từ chối bồi thường.' });
       }
-      if (!contract_clause_ref || !contract_clause_ref.trim()) {
+      if (!contract_clause_ref || !String(contract_clause_ref).trim()) {
         return res.status(400).json({ message: 'Bắt buộc viện dẫn điều khoản hợp đồng áp dụng khi từ chối bồi thường.' });
       }
     }
 
-    // BUG-SYS-32 & BUG-SYS-33: Bắt buộc số tiền bồi thường > 0 và không vượt quá hạn mức trách nhiệm hợp đồng (hoặc trần luật định 500.000.000 VNĐ)
+    let approvedNum = 0;
     if (isApprove) {
-      const requestedApprove = Number(approved_amount || 0);
-      if (!Number.isFinite(requestedApprove) || requestedApprove <= 0) {
-        return res.status(400).json({
-          message: 'Vui lòng nhập số tiền bồi thường hợp lệ (> 0 VNĐ) khi phê duyệt.'
-        });
+      const hasApprovedInput =
+        approved_amount !== undefined &&
+        approved_amount !== null &&
+        String(approved_amount).trim() !== '';
+      approvedNum = hasApprovedInput ? Number(approved_amount) : NaN;
+      if (!hasApprovedInput || !Number.isFinite(approvedNum) || approvedNum <= 0) {
+        return res.status(400).json({ message: 'Số tiền phê duyệt bồi thường phải lớn hơn 0 VNĐ.' });
       }
-      const incCheck = await prisma.incidents.findUnique({
-        where: { id: BigInt(id) },
-        select: {
-          order_id: true,
-          orders: { select: { customer_id: true } }
-        }
-      });
-      let effectiveCap = 500000000;
-      if (incCheck?.orders?.customer_id) {
-        const activeContract = await prisma.contracts.findFirst({
-          where: { customer_id: incCheck.orders.customer_id },
-          orderBy: { id: 'desc' },
-          select: { liability_cap: true }
+    }
+
+    const bigIncId = BigInt(numId);
+    const existingInc = await prisma.incidents.findUnique({
+      where: { id: bigIncId },
+      select: {
+        id: true,
+        status: true,
+        trip_id: true,
+        type: true,
+        reported_by: true,
+        compensation_claims: { select: { id: true, status: true }, orderBy: { id: 'desc' } }
+      }
+    });
+    if (!existingInc) {
+      return res.status(404).json({ message: 'Không tìm thấy thông tin sự cố.' });
+    }
+
+    const curStatusUpper = String(existingInc.status || '').toUpperCase();
+    const hasPendingClaim = (existingInc.compensation_claims || []).some(
+      (c) => String(c.status || '').toUpperCase() === 'PENDING'
+    );
+    if (['APPROVED', 'PAID', 'DONE', 'CLOSED', 'REJECTED', 'RESOLVED'].includes(curStatusUpper) && !hasPendingClaim) {
+      return res.status(400).json({ message: 'Sự cố này đã được ra quyết định trước đó, không thể xét duyệt lại.' });
+    }
+
+    if (isApprove) {
+      // Kiểm tra hạn mức trách nhiệm của hợp đồng (BR-37 / Option B - MSG56)
+      let liabilityLimit = 500000000;
+      if (existingInc.trip_id) {
+        const stopOrder = await prisma.trip_stops.findFirst({
+          where: { trip_id: BigInt(existingInc.trip_id), order_id: { not: null } },
+          select: {
+            orders: {
+              select: {
+                customer_id: true,
+                contract_id: true,
+                transport_contracts: { select: { liability_cap: true } }
+              }
+            }
+          }
         });
-        if (activeContract?.liability_cap && Number(activeContract.liability_cap) > 0) {
-          effectiveCap = Number(activeContract.liability_cap);
+        let contractCap = Number(stopOrder?.orders?.transport_contracts?.liability_cap || 0);
+        if (!contractCap && stopOrder?.orders?.customer_id) {
+          const activeContract = await prisma.transport_contracts.findFirst({
+            where: {
+              customer_id: BigInt(stopOrder.orders.customer_id),
+              status: { in: ['ACTIVE', 'Active'] }
+            },
+            orderBy: { id: 'desc' },
+            select: { liability_cap: true }
+          });
+          contractCap = Number(activeContract?.liability_cap || 0);
+        }
+        if (contractCap > 0) {
+          liabilityLimit = contractCap;
         }
       }
-      if (requestedApprove > effectiveCap) {
+
+      const justificationText = String(resolution_note || req.body?.comment || '').trim();
+      if (approvedNum > liabilityLimit && !justificationText) {
         return res.status(400).json({
-          message: `Số tiền bồi thường (${requestedApprove.toLocaleString('vi-VN')} VNĐ) vượt quá giới hạn trách nhiệm tối đa cho phép (${effectiveCap.toLocaleString('vi-VN')} VNĐ).`
+          message: `Số tiền duyệt (${approvedNum.toLocaleString('vi-VN')} đ) vượt hạn mức trách nhiệm (${liabilityLimit.toLocaleString('vi-VN')} đ). Bắt buộc nhập nhận xét/lý do phê duyệt ngoại lệ (MSG56).`
         });
       }
     }
@@ -191,9 +272,11 @@ const decideIncidentCompensation = async (req, res) => {
     const nowDate = new Date();
     const now = nowDate.toISOString();
     const managerInt = Number(managerId || 1);
+    const managerBigId = BigInt(managerInt);
+    const approvedRounded = isApprove ? Math.round(approvedNum) : 0;
     const resolutionNoteFull = resolution_note || (
       isApprove
-        ? `Quản lý đã phê duyệt bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ theo ${contract_clause_ref || 'Hợp đồng vận tải'}. (Hư hỏng: ${damage_percentage || 0}%, xử lý: ${goods_handling_method || 'Khách giữ'})`
+        ? `Quản lý đã phê duyệt bồi thường ${approvedRounded.toLocaleString('vi-VN')} đ theo ${contract_clause_ref || 'Hợp đồng vận tải'}. (Hư hỏng: ${damage_percentage || 0}%, xử lý: ${goods_handling_method || 'Khách giữ'})`
         : isRequestMoreInfo
         ? 'Quản lý yêu cầu bổ sung thêm hồ sơ / biên bản giám định hiện trường.'
         : `Từ chối bồi thường theo ${contract_clause_ref || 'Hợp đồng'}. Lý do: ${rejection_reason}`
@@ -203,8 +286,8 @@ const decideIncidentCompensation = async (req, res) => {
       ...(damage_percentage !== undefined && damage_percentage !== null ? { damage_percentage: Number(damage_percentage) } : {}),
       ...(goods_handling_method ? { goods_handling_method } : {}),
       ...(contract_clause_ref ? { contract_clause_ref } : {}),
-      approved_compensation_amount: isApprove ? (Number(approved_amount) || 0) : 0,
-      rejection_reason: (!isApprove && !isRequestMoreInfo) ? rejection_reason.trim() : null,
+      approved_compensation_amount: approvedRounded,
+      rejection_reason: (!isApprove && !isRequestMoreInfo) ? String(rejection_reason).trim() : null,
       contact_hotline: contact_hotline || '1900 1234'
     };
 
@@ -212,52 +295,44 @@ const decideIncidentCompensation = async (req, res) => {
       fault: fault || (isApprove ? 'COMPANY' : 'CUSTOMER'),
       resolution_note: String(resolutionNoteFull || '').slice(0, 500),
       status: targetStatus,
-      resolved_by: managerInt,
+      resolved_by: managerBigId,
       resolved_time: nowDate,
-      updated_at: nowDate
+      updated_at: nowDate,
+      ...(damage_percentage !== undefined && damage_percentage !== null ? { damage_percentage: Number(damage_percentage) } : {}),
+      ...(goods_handling_method ? { goods_handling_method } : {}),
+      ...(contract_clause_ref ? { contract_clause_ref } : {}),
+      approved_compensation_amount: BigInt(approvedRounded),
+      rejection_reason: (!isApprove && !isRequestMoreInfo) ? String(rejection_reason).trim() : null,
+      contact_hotline: contact_hotline || '1900 1234'
     };
 
-    let updatedInc = null;
-    try {
-      const updatedIncRow = await prisma.incidents.update({
-        where: { id: BigInt(id) },
-        data: corePayload,
-        select: INCIDENT_SAFE_SELECT
-      });
-      updatedInc = serializePrisma(updatedIncRow);
-    } catch (incErr) {
-      console.warn('Fallback incidents status retry with compatible status:', incErr.message);
-      try {
-        const retryRow = await prisma.incidents.update({
-          where: { id: BigInt(id) },
-          data: {
-            ...corePayload,
-            status: isRequestMoreInfo ? 'ESCALATED' : 'RESOLVED'
-          },
-          select: INCIDENT_SAFE_SELECT
-        });
-        updatedInc = serializePrisma(retryRow);
-      } catch (retryErr) {
-        console.warn('Retry incidents update warning:', retryErr.message);
-      }
-    }
-
-    // Đồng bộ hoặc tạo mới bản ghi trong bảng compensation_claims
-    const claimStatus = isApprove ? 'APPROVED' : isRequestMoreInfo ? 'PENDING' : 'REJECTED';
-    const approvedClaimAmount = BigInt(isApprove ? Math.round(Number(approved_amount) || 0) : 0);
-    const existingClaims = await prisma.compensation_claims.findMany({
-      where: { incident_id: BigInt(id) },
-      select: { id: true }
+    const updatedIncRow = await prisma.incidents.update({
+      where: { id: bigIncId },
+      data: corePayload,
+      select: INCIDENT_SAFE_SELECT
     });
+    const updatedInc = serializePrisma(updatedIncRow);
 
-    if (existingClaims && existingClaims.length > 0) {
+    // Đồng bộ hoặc tạo mới bản ghi trong bảng compensation_claims theo chuẩn BF-04
+    const claimStatus = isApprove ? 'APPROVED' : isRequestMoreInfo ? 'PENDING' : 'REJECTED';
+    const approvedClaimAmount = BigInt(approvedRounded);
+    const existingClaims = existingInc.compensation_claims || [];
+    let resolvedClaimId = existingClaims[0]?.id ? Number(existingClaims[0].id) : null;
+
+    if (existingClaims.length > 0) {
       try {
         await prisma.compensation_claims.updateMany({
-          where: { incident_id: BigInt(id) },
+          where: { incident_id: bigIncId },
           data: {
             status: claimStatus,
-            amount: approvedClaimAmount,
-            reviewed_by: managerInt,
+            approved_amount: approvedClaimAmount,
+            outcome: goods_handling_method || (isApprove ? 'CUSTOMER_RETAIN' : null),
+            damage_percentage: damage_percentage !== undefined && damage_percentage !== null ? Number(damage_percentage) : null,
+            assessment_result: survey_org_report || null,
+            contract_clause_ref: contract_clause_ref || null,
+            rejection_reason: (!isApprove && !isRequestMoreInfo) ? String(rejection_reason).trim() : null,
+            contact_hotline: contact_hotline || '1900 1234',
+            reviewed_by: managerBigId,
             reviewed_time: nowDate,
             review_comment: resolutionNoteFull,
             updated_at: nowDate
@@ -267,16 +342,7 @@ const decideIncidentCompensation = async (req, res) => {
         console.warn('compensation_claims update warning:', claimUpdErr.message);
       }
     } else {
-      // Tìm order_id thực tế của chuyến xe
-      let tripIdToLookup = updatedInc?.trip_id;
-      if (!tripIdToLookup) {
-        const curInc = await prisma.incidents.findUnique({
-          where: { id: BigInt(id) },
-          select: { trip_id: true }
-        });
-        tripIdToLookup = curInc?.trip_id ? Number(curInc.trip_id) : null;
-      }
-
+      const tripIdToLookup = updatedInc?.trip_id || (existingInc.trip_id ? Number(existingInc.trip_id) : null);
       let orderId = null;
       if (tripIdToLookup) {
         const stop = await prisma.trip_stops.findFirst({
@@ -289,48 +355,44 @@ const decideIncidentCompensation = async (req, res) => {
         if (stop?.order_id) orderId = stop.order_id;
       }
       if (!orderId) {
-        const anyOrder = await prisma.orders.findFirst({ select: { id: true } });
-        orderId = anyOrder?.id || null;
-      }
-
-      if (orderId) {
+        console.warn(`[decideIncidentCompensation] Không tìm thấy order_id cho sự cố #${numId} (trip_id=${tripIdToLookup}), bỏ qua tạo compensation_claim.`);
+      } else {
         try {
-          await prisma.compensation_claims.create({
+          const createdClaimRow = await prisma.compensation_claims.create({
             data: {
-              incident_id: BigInt(id),
+              incident_id: bigIncId,
               order_id: BigInt(orderId),
               source: 'INCIDENT',
               amount: approvedClaimAmount,
+              approved_amount: approvedClaimAmount,
+              outcome: goods_handling_method || (isApprove ? 'CUSTOMER_RETAIN' : null),
+              damage_percentage: damage_percentage !== undefined && damage_percentage !== null ? Number(damage_percentage) : null,
+              assessment_result: survey_org_report || null,
+              contract_clause_ref: contract_clause_ref || null,
+              rejection_reason: (!isApprove && !isRequestMoreInfo) ? String(rejection_reason).trim() : null,
+              contact_hotline: contact_hotline || '1900 1234',
               reason: resolutionNoteFull,
               status: claimStatus,
-              created_by: managerInt,
-              reviewed_by: managerInt,
+              created_by: managerBigId,
+              reviewed_by: managerBigId,
               reviewed_time: nowDate,
               review_comment: resolutionNoteFull,
               updated_at: nowDate
-            }
+            },
+            select: { id: true }
           });
+          resolvedClaimId = Number(createdClaimRow.id);
         } catch (claimInsErr) {
           console.warn('compensation_claims insert warning:', claimInsErr.message);
         }
       }
     }
 
-    // Gửi Email thông báo kết quả Duyệt / Từ chối bồi thường tới Khách hàng
+    // Gửi Email thông báo kết quả Duyệt / Từ chối bồi thường tới Khách hàng (chỉ khi có email thật)
     let emailResult = { sent: false, customer_email: null, email_type: null, email_sent_at: null };
-    if (isApprove || !isRequestMoreInfo) {
+    if (!isRequestMoreInfo) {
       try {
-        let tripIdForEmail = updatedInc?.trip_id || null;
-        let incMeta = updatedInc || null;
-        if (!incMeta) {
-          const curInc = await prisma.incidents.findUnique({
-            where: { id: BigInt(id) },
-            select: { id: true, trip_id: true, type: true, reported_by: true }
-          });
-          incMeta = serializePrisma(curInc);
-          tripIdForEmail = incMeta?.trip_id || null;
-        }
-
+        const tripIdForEmail = updatedInc?.trip_id || (existingInc.trip_id ? Number(existingInc.trip_id) : null);
         let orderForEmail = null;
         let tripCodeForEmail = tripIdForEmail ? `TRIP-${tripIdForEmail}` : '';
         if (tripIdForEmail) {
@@ -371,7 +433,8 @@ const decideIncidentCompensation = async (req, res) => {
         const customerEmail =
           orderForEmail?.customer?.email ||
           meta?.customer_email ||
-          'khachhang@example.com';
+          meta?.contract_details?.customer_email ||
+          null;
         const customerName =
           orderForEmail?.customer?.company_name ||
           orderForEmail?.receiver_name ||
@@ -380,70 +443,69 @@ const decideIncidentCompensation = async (req, res) => {
           orderForEmail?.customer?.contact_person ||
           orderForEmail?.receiver_name ||
           '';
-        const orderCode = orderForEmail?.order_code || `NEX-${id}`;
+        const orderCode = orderForEmail?.order_code || `NEX-${numId}`;
         const cargoDescription = firstCargo?.cargo_name
           ? `${firstCargo.cargo_name}${firstCargo.quantity ? ` - ${firstCargo.quantity} ${firstCargo.unit || 'kiện'}` : ''}${firstCargo.actual_weight_kg ? ` - ${firstCargo.actual_weight_kg} kg` : ''}`
           : 'Hàng hóa theo vận đơn';
-        const declaredValue =
-          Number(firstCargo?.declared_value || 0) ||
-          Number(orderForEmail?.agreed_price || 0) * 10 ||
-          120000000;
-        const incidentCode = `INC-${String(id).padStart(3, '0')}`;
-        const claimCode = existingClaims?.[0]?.id
-          ? `CLM-${String(existingClaims[0].id).padStart(4, '0')}`
-          : `CLM-${String(id).padStart(4, '0')}`;
+        const declaredValue = Number(firstCargo?.declared_value || 0);
+        const incidentCode = `INC-${String(numId).padStart(3, '0')}`;
+        const claimCode = resolvedClaimId
+          ? `CLM-${String(resolvedClaimId).padStart(4, '0')}`
+          : incidentCode;
         const clientOrigin = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000';
         const trackingToken = (orderForEmail?.tracking_token || orderCode || '').trim();
         const trackingUrl = trackingToken ? `${clientOrigin}/t/${trackingToken}` : null;
 
-        let sendRes;
-        if (isApprove) {
-          sendRes = await sendIncidentCompensationApprovalEmail({
-            customerEmail,
-            customerName,
-            contactPerson,
-            orderCode,
-            tripCode: tripCodeForEmail,
-            incidentCode,
-            claimCode,
-            incidentType: incMeta?.type || 'Sự cố vận chuyển hàng hóa',
-            cargoDescription,
-            declaredValue,
-            damagePercentage: damage_percentage || 0,
-            approvedAmount: Number(approved_amount) || 0,
-            goodsHandlingMethod: goods_handling_method || 'CUSTOMER_RETAIN',
-            contractClauseRef: contract_clause_ref || 'Điều 8.2 - Bồi thường thiệt hại hàng hóa',
-            resolutionNote: resolutionNoteFull,
-            surveyOrgReport: survey_org_report || '',
-            contactHotline: contact_hotline || '1900 1234',
-            trackingUrl
-          });
-        } else {
-          sendRes = await sendIncidentCompensationRejectionEmail({
-            customerEmail,
-            customerName,
-            contactPerson,
-            orderCode,
-            tripCode: tripCodeForEmail,
-            incidentCode,
-            claimCode,
-            incidentType: incMeta?.type || 'Sự cố vận chuyển hàng hóa',
-            cargoDescription,
-            rejectionReason: rejection_reason,
-            rejectionClause: contract_clause_ref || 'Điều 4.2 - Miễn trừ trách nhiệm theo Hợp đồng',
-            resolutionNote: resolutionNoteFull,
-            contactHotline: contact_hotline || '1900 1234',
-            trackingUrl
-          });
-        }
+        if (customerEmail) {
+          let sendRes;
+          if (isApprove) {
+            sendRes = await sendIncidentCompensationApprovalEmail({
+              customerEmail,
+              customerName,
+              contactPerson,
+              orderCode,
+              tripCode: tripCodeForEmail,
+              incidentCode,
+              claimCode,
+              incidentType: updatedInc?.type || existingInc.type || 'Sự cố vận chuyển hàng hóa',
+              cargoDescription,
+              declaredValue,
+              damagePercentage: damage_percentage || 0,
+              approvedAmount: approvedRounded,
+              goodsHandlingMethod: goods_handling_method || 'CUSTOMER_RETAIN',
+              contractClauseRef: contract_clause_ref || 'Điều 8.2 - Bồi thường thiệt hại hàng hóa',
+              resolutionNote: resolutionNoteFull,
+              surveyOrgReport: survey_org_report || '',
+              contactHotline: contact_hotline || '1900 1234',
+              trackingUrl
+            });
+          } else {
+            sendRes = await sendIncidentCompensationRejectionEmail({
+              customerEmail,
+              customerName,
+              contactPerson,
+              orderCode,
+              tripCode: tripCodeForEmail,
+              incidentCode,
+              claimCode,
+              incidentType: updatedInc?.type || existingInc.type || 'Sự cố vận chuyển hàng hóa',
+              cargoDescription,
+              rejectionReason: rejection_reason,
+              rejectionClause: contract_clause_ref || 'Điều 4.2 - Miễn trừ trách nhiệm theo Hợp đồng',
+              resolutionNote: resolutionNoteFull,
+              contactHotline: contact_hotline || '1900 1234',
+              trackingUrl
+            });
+          }
 
-        emailResult = {
-          sent: Boolean(sendRes?.success),
-          customer_email: customerEmail,
-          email_type: isApprove ? 'APPROVAL' : 'REJECTION',
-          email_sent_at: sendRes?.success ? now : null,
-          preview_url: sendRes?.previewUrl || null
-        };
+          emailResult = {
+            sent: Boolean(sendRes?.success),
+            customer_email: customerEmail,
+            email_type: isApprove ? 'APPROVAL' : 'REJECTION',
+            email_sent_at: sendRes?.success ? now : null,
+            preview_url: sendRes?.previewUrl || null
+          };
+        }
       } catch (mailErr) {
         console.warn('Gửi email quyết định bồi thường warning:', mailErr.message);
       }
@@ -452,22 +514,26 @@ const decideIncidentCompensation = async (req, res) => {
     try {
       await prisma.activity_logs.create({
         data: {
-          actor_id: managerInt,
+          actor_id: managerBigId,
           actor_type: 'MANAGER',
           action: isApprove ? 'APPROVE_INCIDENT_COMPENSATION' : isRequestMoreInfo ? 'REQUEST_MORE_INFO_INCIDENT' : 'REJECT_INCIDENT_COMPENSATION',
           target_type: 'INCIDENT',
-          target_id: BigInt(id),
+          target_id: bigIncId,
           changes: {
-            ...corePayload,
+            fault: corePayload.fault,
+            status: targetStatus,
+            resolution_note: corePayload.resolution_note,
+            resolved_by: managerInt,
             resolved_time: now,
             updated_at: now,
             ...extendedMetadata,
+            claim_id: resolvedClaimId,
             email_sent: emailResult.sent,
             customer_email: emailResult.customer_email,
             email_type: emailResult.email_type,
             email_sent_at: emailResult.email_sent_at
           },
-          reason: String(isApprove ? resolution_note : isRequestMoreInfo ? resolution_note : rejection_reason || '').slice(0, 255),
+          reason: String(isApprove ? resolutionNoteFull : isRequestMoreInfo ? resolutionNoteFull : rejection_reason || '').slice(0, 255),
           created_time: nowDate
         }
       });
@@ -477,16 +543,16 @@ const decideIncidentCompensation = async (req, res) => {
 
     // Gửi thông báo tới Điều phối viên (role_id = 3) và Tài xế báo sự cố
     try {
-      const incidentCode = `INC-${String(id).padStart(3, '0')}`;
+      const incidentCode = `INC-${String(numId).padStart(3, '0')}`;
       const notifyMsg = isApprove
-        ? `[${incidentCode}] Quản lý đã chốt mức bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ và gửi email xác nhận cho khách hàng (Hoàn tất hồ sơ).`
+        ? `[${incidentCode}] Quản lý đã phê duyệt bồi thường ${approvedRounded.toLocaleString('vi-VN')} đ và gửi email tới khách hàng. Vui lòng Điều phối viên gọi điện xác nhận với khách hàng.`
         : isRequestMoreInfo
           ? `[${incidentCode}] Quản lý yêu cầu bổ sung hồ sơ/minh chứng: ${resolution_note || 'Kiểm tra chi tiết sự cố.'}`
-          : `[${incidentCode}] Quản lý đã từ chối bồi thường theo ${contract_clause_ref || 'hợp đồng'} và đóng hồ sơ.`;
+          : `[${incidentCode}] Quản lý đã từ chối bồi thường theo ${contract_clause_ref || 'hợp đồng'}. Vui lòng Điều phối viên gọi điện thông báo khách hàng để đóng hồ sơ.`;
 
       const recipientIds = new Set();
       const dispatchers = await prisma.users.findMany({
-        where: { role_id: 3 },
+        where: { role_id: 3n },
         select: { id: true }
       });
       (dispatchers || []).forEach((u) => {
@@ -507,7 +573,7 @@ const decideIncidentCompensation = async (req, res) => {
         const notifRows = Array.from(recipientIds).map((uid) => ({
           user_account_id: BigInt(uid),
           target_type: 'INCIDENT',
-          target_id: BigInt(id),
+          target_id: bigIncId,
           message: notifyMsg,
           created_time: nowDate
         }));
@@ -518,14 +584,14 @@ const decideIncidentCompensation = async (req, res) => {
     }
 
     const msg = isApprove
-      ? `Đã chốt mức bồi thường ${(Number(approved_amount) || 0).toLocaleString('vi-VN')} đ${emailResult.sent ? ` và gửi email xác nhận tới ${emailResult.customer_email}` : ''} — Hoàn tất đóng hồ sơ.`
+      ? `Đã phê duyệt bồi thường ${approvedRounded.toLocaleString('vi-VN')} đ${emailResult.sent ? ` và gửi email tới ${emailResult.customer_email}` : ''} — Chờ Điều phối viên gọi điện khách hàng.`
       : isRequestMoreInfo
       ? 'Đã gửi yêu cầu bổ sung hồ sơ tới Điều phối viên & Khách hàng thành công.'
-      : `Đã từ chối bồi thường${emailResult.sent ? ` và gửi email thông báo tới ${emailResult.customer_email}` : ''} — Hoàn tất đóng hồ sơ (DONE).`;
+      : `Đã từ chối bồi thường${emailResult.sent ? ` và gửi email thông báo tới ${emailResult.customer_email}` : ''} — Chờ Điều phối viên gọi điện thông báo khách hàng.`;
 
     return res.json({
       message: msg,
-      incident: updatedInc ? { ...updatedInc, ...extendedMetadata } : { id: Number(id), ...corePayload, ...extendedMetadata },
+      incident: { ...updatedInc, ...extendedMetadata, claim_id: resolvedClaimId },
       email_result: emailResult
     });
   } catch (error) {
@@ -535,112 +601,132 @@ const decideIncidentCompensation = async (req, res) => {
 };
 
 /**
- * Manager/Điều phối viên xác nhận hoàn tất bồi thường và đóng hồ sơ sự cố (APPROVED -> DONE)
+ * Manager ghi nhận đã thanh toán tiền bồi thường & chứng từ chuyển khoản (APPROVED -> PAID, chờ khách xác nhận)
  */
 const closeIncidentCase = async (req, res) => {
   try {
     const { id } = req.params;
-    const { payment_proof_url, close_note, payment_date, transaction_code, approved_amount } = req.body;
+    const numId = parseIncidentIdParam(id);
+    if (!numId) {
+      return res.status(400).json({ message: 'Mã sự cố không hợp lệ.' });
+    }
+    const { payment_proof_url, close_note, payment_date, transaction_code, approved_amount } = req.body || {};
     const managerId = req.user?.id || 1;
 
-    if (!payment_proof_url || !payment_proof_url.trim()) {
-      return res.status(400).json({ message: 'Vui lòng cung cấp ảnh biên lai / chứng từ chuyển khoản ngân hàng để đóng hồ sơ.' });
+    const noteInput = String(close_note || '').trim();
+    const txMatch = noteInput.match(/Mã GD:\s*([A-Za-z0-9_-]+)/i);
+    const txCode = String(transaction_code || (txMatch ? txMatch[1] : '') || '').trim();
+
+    if (!txCode) {
+      return res.status(400).json({ message: 'Vui lòng nhập mã giao dịch ngân hàng (UNC).' });
+    }
+    if (!payment_proof_url || !String(payment_proof_url).trim()) {
+      return res.status(400).json({ message: 'Vui lòng cung cấp ảnh biên lai / chứng từ chuyển khoản ngân hàng.' });
+    }
+
+    const bigIncId = BigInt(numId);
+    const existingInc = await prisma.incidents.findUnique({
+      where: { id: bigIncId },
+      select: { id: true, status: true, trip_id: true, resolution_note: true, approved_compensation_amount: true }
+    });
+    if (!existingInc) {
+      return res.status(404).json({ message: 'Không tìm thấy thông tin sự cố.' });
+    }
+
+    const existingClaims = await prisma.compensation_claims.findMany({
+      where: { incident_id: bigIncId },
+      select: { id: true, status: true, amount: true, approved_amount: true, order_id: true, called_at: true },
+      orderBy: { id: 'desc' }
+    });
+
+    const incStatusUpper = String(existingInc.status || '').toUpperCase();
+    const primaryClaim = existingClaims[0] || null;
+    const claimStatusUpper = String(primaryClaim?.status || '').toUpperCase();
+    const isApprovedState =
+      claimStatusUpper === 'APPROVED' ||
+      (incStatusUpper === 'APPROVED' && (!primaryClaim || claimStatusUpper === 'APPROVED'));
+    if (!isApprovedState) {
+      return res.status(400).json({
+        message: 'Chỉ có thể ghi nhận thanh toán cho sự cố/khiếu nại đang ở trạng thái APPROVED.'
+      });
+    }
+    if (primaryClaim && !primaryClaim.called_at) {
+      return res.status(400).json({
+        message: 'Điều phối viên chưa ghi nhận cuộc gọi thông báo khách hàng. Cần hoàn tất bước gọi khách trước khi ghi nhận thanh toán.'
+      });
     }
 
     const nowDate = new Date();
     const now = nowDate.toISOString();
     const managerInt = Number(managerId || 1);
+    const managerBigId = BigInt(managerInt);
     const proofStr = await cloudinaryService.uploadDataUriIfNeeded(payment_proof_url, 'nexlog/claims');
-    const noteInput = String(close_note || '').trim();
-    const txMatch = noteInput.match(/Mã GD:\s*([A-Za-z0-9_-]+)/i);
     const dateMatch = noteInput.match(/ngày\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})/i);
 
     const payDate = payment_date || (dateMatch ? dateMatch[1] : now.split('T')[0]);
-    const txCode = String(transaction_code || (txMatch ? txMatch[1] : '') || `FT${payDate.replace(/[^0-9]/g, '').slice(2, 8)}${String(id).padStart(4, '0')}`).trim();
-    const closeNoteFull = noteInput || `Đã hoàn tất chi tiền ngày ${payDate}. Mã GD: ${txCode}`;
-
-    // Đọc thông tin sự cố hiện có để bảo toàn nhận xét phê duyệt & trip_id
-    const existingInc = await prisma.incidents.findUnique({
-      where: { id: BigInt(id) },
-      select: { id: true, trip_id: true, resolution_note: true }
-    });
-
-    const existingClaims = await prisma.compensation_claims.findMany({
-      where: { incident_id: BigInt(id) },
-      select: { id: true, amount: true }
-    });
+    let parsedPaymentDate = nowDate;
+    if (payDate) {
+      const candidate = new Date(
+        String(payDate).includes('T') ? payDate : `${String(payDate).trim()}T00:00:00.000Z`
+      );
+      if (!Number.isNaN(candidate.getTime())) {
+        parsedPaymentDate = candidate;
+      }
+    }
+    const closeNoteFull = noteInput || `Đã chi tiền bồi thường ngày ${payDate}. Mã GD: ${txCode}`;
 
     const resolvedPaidAmount = Number(
       approved_amount ||
-      existingClaims?.[0]?.amount ||
+      primaryClaim?.approved_amount ||
+      primaryClaim?.amount ||
+      existingInc.approved_compensation_amount ||
       0
     );
 
-    const prevNote = existingInc?.resolution_note ? `${existingInc.resolution_note} | ` : '';
+    const prevNote = existingInc.resolution_note ? `${existingInc.resolution_note} | ` : '';
     const mergedNote = `${prevNote}[ĐÃ CHI TIỀN - Ngày: ${payDate} | Mã GD: ${txCode}]`.slice(0, 500);
 
-    const coreClosePayload = {
-      status: 'DONE',
+    const corePaidPayload = {
+      status: 'PAID',
+      payment_proof_url: proofStr,
       resolution_note: mergedNote,
-      resolved_by: managerInt,
+      resolved_by: managerBigId,
       resolved_time: nowDate,
       updated_at: nowDate
     };
 
-    let updatedInc = null;
-    try {
-      const updatedIncRow = await prisma.incidents.update({
-        where: { id: BigInt(id) },
-        data: coreClosePayload,
-        select: INCIDENT_SAFE_SELECT
-      });
-      updatedInc = serializePrisma(updatedIncRow);
-    } catch (incErr) {
-      console.warn('Close incident status DONE failed, retry with RESOLVED:', incErr.message);
-      try {
-        const retryRow = await prisma.incidents.update({
-          where: { id: BigInt(id) },
-          data: {
-            ...coreClosePayload,
-            status: 'RESOLVED'
-          },
-          select: INCIDENT_SAFE_SELECT
-        });
-        updatedInc = serializePrisma(retryRow);
-      } catch (retryErr) {
-        console.warn('Close incident retry warning:', retryErr.message);
-      }
-    }
+    const updatedIncRow = await prisma.incidents.update({
+      where: { id: bigIncId },
+      data: corePaidPayload,
+      select: INCIDENT_SAFE_SELECT
+    });
+    const updatedInc = serializePrisma(updatedIncRow);
 
-    // Cập nhật hoặc tạo mới bản ghi compensation_claims để lưu chứng từ UNC & ghi chú giao dịch
-    if (existingClaims && existingClaims.length > 0) {
-      const claimPayload = {
-        status: 'PAID',
-        evidence: proofStr,
-        review_comment: closeNoteFull,
-        reviewed_by: managerInt,
-        reviewed_time: nowDate,
-        updated_at: nowDate,
-        ...(resolvedPaidAmount > 0 ? { amount: BigInt(Math.round(resolvedPaidAmount)) } : {})
-      };
-      try {
-        await prisma.compensation_claims.updateMany({
-          where: { incident_id: BigInt(id) },
-          data: claimPayload
-        });
-      } catch (paidErr) {
-        console.warn('compensation_claims status PAID rejected by constraint, retry with APPROVED:', paidErr.message);
-        await prisma.compensation_claims.updateMany({
-          where: { incident_id: BigInt(id) },
-          data: {
-            ...claimPayload,
-            status: 'APPROVED'
-          }
-        });
-      }
+    // Cập nhật hoặc tạo mới compensation_claims ở trạng thái PAID (chờ khách hàng xác nhận hoặc JOB-08 tự đóng sau 7 ngày)
+    let claimIdForEmail = primaryClaim?.id ? Number(primaryClaim.id) : null;
+    let orderIdForEmail = primaryClaim?.order_id ? Number(primaryClaim.order_id) : null;
+
+    if (existingClaims.length > 0) {
+      await prisma.compensation_claims.updateMany({
+        where: { incident_id: bigIncId },
+        data: {
+          status: 'PAID',
+          paid_by: managerBigId,
+          paid_at: nowDate,
+          payment_date: parsedPaymentDate,
+          transaction_code: txCode.slice(0, 100),
+          payment_proof_url: proofStr,
+          payment_note: closeNoteFull,
+          closed_at: null,
+          reviewed_by: managerBigId,
+          reviewed_time: nowDate,
+          updated_at: nowDate,
+          ...(resolvedPaidAmount > 0 ? { approved_amount: BigInt(Math.round(resolvedPaidAmount)) } : {})
+        }
+      });
     } else {
       let orderId = null;
-      const tripIdToLookup = updatedInc?.trip_id || (existingInc?.trip_id ? Number(existingInc.trip_id) : null);
+      const tripIdToLookup = updatedInc?.trip_id || (existingInc.trip_id ? Number(existingInc.trip_id) : null);
       if (tripIdToLookup) {
         const stop = await prisma.trip_stops.findFirst({
           where: {
@@ -652,40 +738,82 @@ const closeIncidentCase = async (req, res) => {
         if (stop?.order_id) orderId = stop.order_id;
       }
       if (!orderId) {
-        const anyOrder = await prisma.orders.findFirst({ select: { id: true } });
-        orderId = anyOrder?.id || null;
-      }
-
-      if (orderId) {
-        await prisma.compensation_claims.create({
+        console.warn(`[closeIncidentCase] Không tìm thấy order_id cho sự cố #${numId} (trip_id=${tripIdToLookup}), bỏ qua tạo compensation_claim.`);
+      } else {
+        orderIdForEmail = Number(orderId);
+        const createdClaim = await prisma.compensation_claims.create({
           data: {
-            incident_id: BigInt(id),
+            incident_id: bigIncId,
             order_id: BigInt(orderId),
             source: 'INCIDENT',
             amount: BigInt(Math.round(resolvedPaidAmount)),
+            approved_amount: BigInt(Math.round(resolvedPaidAmount)),
             reason: closeNoteFull,
-            evidence: proofStr,
-            status: 'APPROVED',
-            created_by: managerInt,
-            reviewed_by: managerInt,
+            payment_proof_url: proofStr,
+            transaction_code: txCode.slice(0, 100),
+            payment_date: parsedPaymentDate,
+            payment_note: closeNoteFull,
+            paid_by: managerBigId,
+            paid_at: nowDate,
+            status: 'PAID',
+            created_by: managerBigId,
+            reviewed_by: managerBigId,
             reviewed_time: nowDate,
-            review_comment: closeNoteFull,
             updated_at: nowDate
           }
         });
+        claimIdForEmail = Number(createdClaim.id);
+      }
+    }
+
+    // Gửi email thông báo đã chuyển khoản cho khách hàng vào xác nhận (BF-04)
+    if (orderIdForEmail) {
+      try {
+        const ord = await prisma.orders.findUnique({
+          where: { id: BigInt(orderIdForEmail) },
+          select: {
+            order_code: true,
+            tracking_token: true,
+            receiver_name: true,
+            order_notes: true,
+            customers: { select: { company_name: true, contact_person: true, email: true } }
+          }
+        });
+        const meta = ord ? parseOrderMeta(ord) : {};
+        const customerEmail = ord?.customers?.email || meta?.customer_email || null;
+        if (customerEmail) {
+          const clientOrigin = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000';
+          const trackingToken = (ord?.tracking_token || ord?.order_code || '').trim();
+          const trackingUrl = trackingToken ? `${clientOrigin}/t/${trackingToken}` : null;
+          await sendClaimPaymentRecordedEmail({
+            customerEmail,
+            customerName: ord?.customers?.company_name || ord?.receiver_name || 'Quý khách hàng',
+            contactPerson: ord?.customers?.contact_person || ord?.receiver_name || '',
+            orderCode: ord?.order_code || `ORDER-${orderIdForEmail}`,
+            claimCode: claimIdForEmail ? `CLM-${String(claimIdForEmail).padStart(4, '0')}` : `INC-${String(numId).padStart(3, '0')}`,
+            approvedAmount: resolvedPaidAmount,
+            paymentDate: formatDateOnly(parsedPaymentDate) || payDate,
+            transactionCode: txCode,
+            paymentProofUrl: proofStr,
+            paymentNote: closeNoteFull,
+            trackingUrl
+          });
+        }
+      } catch (mailErr) {
+        console.warn('[closeIncidentCase] sendClaimPaymentRecordedEmail warning:', mailErr.message);
       }
     }
 
     try {
       await prisma.activity_logs.create({
         data: {
-          actor_id: managerInt,
+          actor_id: managerBigId,
           actor_type: 'MANAGER',
-          action: 'CLOSE_INCIDENT_CASE_DONE',
+          action: 'RECORD_INCIDENT_PAYMENT',
           target_type: 'INCIDENT',
-          target_id: BigInt(id),
+          target_id: bigIncId,
           changes: {
-            status: updatedInc?.status || coreClosePayload.status,
+            status: 'PAID',
             resolution_note: mergedNote,
             resolved_by: managerInt,
             resolved_time: now,
@@ -704,9 +832,11 @@ const closeIncidentCase = async (req, res) => {
     }
 
     return res.json({
-      message: 'Đã xác nhận hoàn tất bồi thường và đóng hồ sơ sự cố thành công (DONE).',
+      message: 'Đã ghi nhận thanh toán bồi thường (PAID). Đang chờ khách hàng xác nhận nhận tiền (tự đóng sau 7 ngày).',
       incident: {
-        ...(updatedInc || { id: Number(id), ...coreClosePayload }),
+        ...updatedInc,
+        status: 'PAID',
+        claim_status: 'PAID',
         payment_date: payDate,
         transaction_code: txCode,
         payment_proof_url: proofStr,
@@ -716,7 +846,7 @@ const closeIncidentCase = async (req, res) => {
     });
   } catch (error) {
     console.error('closeIncidentCase Error:', error);
-    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi đóng hồ sơ sự cố', error: error.message });
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Lỗi khi ghi nhận thanh toán bồi thường', error: error.message });
   }
 };
 

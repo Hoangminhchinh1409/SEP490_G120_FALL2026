@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { Image } from 'antd';
+import { Image, Tag, message } from 'antd';
 
 const ORDER_TYPE_VI = {
   IMPORT: 'Nhập khẩu',
@@ -55,6 +55,8 @@ export default function IncidentEvidenceSection({
   podPhoto,
   incidentPhoto,
   incidentPhotosList,
+  cargoAffected,
+  hasCoordinates = true,
   onOpenContractViewer,
   onOpenLocationMap
 }) {
@@ -97,7 +99,9 @@ export default function IncidentEvidenceSection({
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-on-surface-variant shrink-0">Cước phí vận chuyển:</span>
-              <strong className="text-primary font-mono font-bold text-right">{agreedPrice.toLocaleString('vi-VN')} đ</strong>
+              <strong className="text-primary font-mono font-bold text-right">
+                {agreedPrice !== null && agreedPrice !== undefined ? `${Number(agreedPrice).toLocaleString('vi-VN')} đ` : 'Chưa cập nhật'}
+              </strong>
             </div>
           </div>
 
@@ -109,7 +113,9 @@ export default function IncidentEvidenceSection({
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-on-surface-variant shrink-0">Giá trị khai báo:</span>
-              <strong className="text-error font-mono font-bold text-sm text-right">{declaredValue.toLocaleString('vi-VN')} đ</strong>
+              <strong className="text-error font-mono font-bold text-sm text-right">
+                {declaredValue !== null && declaredValue !== undefined ? `${Number(declaredValue).toLocaleString('vi-VN')} đ` : 'Chưa khai báo'}
+              </strong>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-on-surface-variant shrink-0">Chuyến xe:</span>
@@ -160,10 +166,20 @@ export default function IncidentEvidenceSection({
 
           <div className="border-l border-surface-container pl-6 space-y-0.5">
             <div className="text-xs text-on-surface-variant font-medium">
-              Mã yêu cầu: <b className="font-mono text-primary">{claimCode}</b>
+              Mã yêu cầu: <b className="font-mono text-primary">{claimCode || 'Chưa tạo Claim'}</b>
             </div>
             <div className="text-xs text-on-surface-variant font-medium">
               Nguồn gửi: <b className="text-primary">{incidentSource}</b>
+            </div>
+            <div className="text-xs text-on-surface-variant font-medium">
+              Ảnh hưởng hàng hóa:{' '}
+              {cargoAffected === true ? (
+                <Tag color="red" className="m-0 font-bold text-[10px]">Có ảnh hưởng</Tag>
+              ) : cargoAffected === false ? (
+                <Tag color="green" className="m-0 font-bold text-[10px]">Không ảnh hưởng</Tag>
+              ) : (
+                <Tag className="m-0 text-[10px]">Chưa đánh giá</Tag>
+              )}
             </div>
           </div>
         </div>
@@ -209,12 +225,22 @@ export default function IncidentEvidenceSection({
             </div>
             <button
               type="button"
-              onClick={onOpenLocationMap}
-              className="h-8 px-3 rounded-xl bg-red-50 hover:bg-red-100 text-error font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer border border-red-200 transition-colors shrink-0 shadow-2xs"
-              title="Mở bản đồ VietMap xác định vị trí xảy ra sự cố khi tài xế gửi báo cáo"
+              onClick={() => {
+                if (!hasCoordinates) {
+                  message.info('Sự cố này chưa ghi nhận tọa độ GPS hiện trường.');
+                  return;
+                }
+                onOpenLocationMap?.();
+              }}
+              className={`h-8 px-3 rounded-xl font-bold text-xs inline-flex items-center gap-1.5 border transition-colors shrink-0 shadow-2xs ${
+                hasCoordinates
+                  ? 'bg-red-50 hover:bg-red-100 text-error cursor-pointer border-red-200'
+                  : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+              }`}
+              title={hasCoordinates ? 'Mở bản đồ VietMap xác định vị trí xảy ra sự cố khi tài xế gửi báo cáo' : 'Chưa có tọa độ GPS'}
             >
               <span className="material-symbols-outlined text-[16px]">location_on</span>
-              <span>Xác định vị trí sự cố trên bản đồ</span>
+              <span>{hasCoordinates ? 'Xác định vị trí sự cố trên bản đồ' : 'Chưa có tọa độ GPS'}</span>
             </button>
           </div>
         </div>
@@ -248,24 +274,36 @@ export default function IncidentEvidenceSection({
             <Image.PreviewGroup>
               {/* 1. Ảnh hàng khi nhận */}
               <div className="p-2 rounded-xl bg-surface-container-low border border-surface-container flex flex-col items-center justify-between text-center gap-1.5">
-                <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner">
-                  <Image src={pickupPhoto} alt="Ảnh hàng khi nhận" className="w-full h-20 object-cover" />
+                <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner flex items-center justify-center">
+                  {pickupPhoto ? (
+                    <Image src={pickupPhoto} alt="Ảnh hàng khi nhận" className="w-full h-20 object-cover" />
+                  ) : (
+                    <span className="text-[11px] text-outline italic">Chưa có ảnh</span>
+                  )}
                 </div>
                 <span className="text-[11px] font-bold text-primary">Ảnh hàng khi nhận</span>
               </div>
 
               {/* 2. Ảnh seal chì & biển số */}
               <div className="p-2 rounded-xl bg-surface-container-low border border-surface-container flex flex-col items-center justify-between text-center gap-1.5">
-                <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner">
-                  <Image src={sealPhoto} alt="Ảnh seal chì & biển số" className="w-full h-20 object-cover" />
+                <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner flex items-center justify-center">
+                  {sealPhoto ? (
+                    <Image src={sealPhoto} alt="Ảnh seal chì & biển số" className="w-full h-20 object-cover" />
+                  ) : (
+                    <span className="text-[11px] text-outline italic">Chưa có ảnh</span>
+                  )}
                 </div>
                 <span className="text-[11px] font-bold text-primary">Ảnh seal chì &amp; biển số</span>
               </div>
 
               {/* 3. Biên bản / POD giao hàng */}
               <div className="p-2 rounded-xl bg-surface-container-low border border-surface-container flex flex-col items-center justify-between text-center gap-1.5">
-                <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner">
-                  <Image src={podPhoto} alt="Biên bản / POD giao hàng" className="w-full h-20 object-cover" />
+                <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner flex items-center justify-center">
+                  {podPhoto ? (
+                    <Image src={podPhoto} alt="Biên bản / POD giao hàng" className="w-full h-20 object-cover" />
+                  ) : (
+                    <span className="text-[11px] text-outline italic">Chưa có ảnh</span>
+                  )}
                 </div>
                 <span className="text-[11px] font-bold text-primary">Biên bản / POD giao hàng</span>
               </div>
@@ -277,8 +315,12 @@ export default function IncidentEvidenceSection({
                     +{incidentPhotosList.length - 1} ảnh
                   </span>
                 )}
-                <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner">
-                  <Image src={incidentPhoto} alt="Ảnh hiện trường" className="w-full h-20 object-cover" />
+                <div className="w-full h-20 rounded-lg overflow-hidden bg-black/5 shadow-inner flex items-center justify-center">
+                  {incidentPhoto ? (
+                    <Image src={incidentPhoto} alt="Ảnh hiện trường" className="w-full h-20 object-cover" />
+                  ) : (
+                    <span className="text-[11px] text-amber-800 italic">Chưa có ảnh</span>
+                  )}
                 </div>
                 {incidentPhotosList.length > 1 && (
                   <div style={{ display: 'none' }}>

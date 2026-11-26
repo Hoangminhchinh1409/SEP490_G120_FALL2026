@@ -15,15 +15,36 @@ const INCIDENT_SAFE_SELECT = {
   escalated_by: true,
   escalated_time: true,
   escalation_reason: true,
+  cargo_affected: true,
   resolution_note: true,
   resolved_by: true,
   resolved_time: true,
   created_at: true,
-  updated_at: true
+  updated_at: true,
+  damage_percentage: true,
+  goods_handling_method: true,
+  contract_clause_ref: true,
+  proposed_compensation_amount: true,
+  approved_compensation_amount: true,
+  rejection_reason: true,
+  contact_hotline: true,
+  payment_proof_url: true,
+  incident_lat: true,
+  incident_lng: true,
+  is_on_route: true,
+  route_deviation_km: true,
+  closed_by: true,
+  closed_at: true
 };
 
 const INCIDENT_SELECT = {
   ...INCIDENT_SAFE_SELECT,
+  trip_stops: {
+    select: {
+      id: true,
+      locations: { select: { name: true, address: true } }
+    }
+  },
   compensation_claims: {
     select: {
       id: true,
@@ -32,6 +53,7 @@ const INCIDENT_SELECT = {
       amount: true,
       approved_amount: true,
       claim_type: true,
+      called_at: true,
       created_time: true
     },
     orderBy: { id: 'desc' }
@@ -127,6 +149,7 @@ const mapIncident = (inc) => {
       amount: Number(c.amount || 0),
       approved_amount: Number(c.approved_amount || 0),
       claim_type: c.claim_type || 'Damage',
+      called_at: c.called_at || null,
       created_time: c.created_time || null
     };
   });
@@ -166,7 +189,15 @@ const mapIncident = (inc) => {
       }
     : null;
 
-  const { trips: _omitTrips, compensation_claims: _omitClaims, ...rest } = s;
+  const stopLocation = inc.trip_stops?.locations || null;
+  const derivedLocation =
+    stopLocation?.name ||
+    stopLocation?.address ||
+    (inc.incident_lat != null && inc.incident_lng != null
+      ? `${Number(inc.incident_lat).toFixed(5)}, ${Number(inc.incident_lng).toFixed(5)}`
+      : null);
+
+  const { trips: _omitTrips, trip_stops: _omitTripStops, compensation_claims: _omitClaims, ...rest } = s;
   return {
     ...rest,
     id: toNum(inc.id),
@@ -176,6 +207,8 @@ const mapIncident = (inc) => {
     escalated_by: toNum(inc.escalated_by),
     resolved_by: toNum(inc.resolved_by),
     closed_by: toNum(inc.closed_by),
+    location: derivedLocation,
+    cargo_affected: inc.cargo_affected !== undefined ? inc.cargo_affected : null,
     photos: normalizePhotosArray(s.photos),
     proposed_compensation_amount: toNum(inc.proposed_compensation_amount) || 0,
     approved_compensation_amount: toNum(inc.approved_compensation_amount) || 0,
@@ -240,7 +273,13 @@ const create = async (incidentData) => {
     photos: Array.isArray(incidentData.photos) ? incidentData.photos : [],
     fault: incidentData.fault || null,
     status: incidentData.status || 'Reported',
-    reported_time: incidentData.reported_time ? new Date(incidentData.reported_time) : new Date()
+    reported_time: incidentData.reported_time ? new Date(incidentData.reported_time) : new Date(),
+    ...(incidentData.incident_lat !== undefined && incidentData.incident_lat !== null && Number.isFinite(Number(incidentData.incident_lat))
+      ? { incident_lat: Number(incidentData.incident_lat) }
+      : {}),
+    ...(incidentData.incident_lng !== undefined && incidentData.incident_lng !== null && Number.isFinite(Number(incidentData.incident_lng))
+      ? { incident_lng: Number(incidentData.incident_lng) }
+      : {})
   };
 
   if (incidentData.reported_by) {
@@ -274,6 +313,7 @@ const update = async (id, updateData) => {
     'escalated_by',
     'escalated_time',
     'escalation_reason',
+    'cargo_affected',
     'resolution_note',
     'resolved_by',
     'resolved_time',
@@ -301,6 +341,23 @@ const update = async (id, updateData) => {
   return mapIncident(updated);
 };
 
+const ACTIVE_TRIP_STATUSES = [
+  'Assigned',
+  'Accepted',
+  'In Progress',
+  'In Transit',
+  'Loading Started',
+  'Loading Done'
+];
+
+const LICENSE_RANK = { B2: 1, C: 2, D: 3, E: 4, FC: 5 };
+
+const createHttpError = (message, statusCode = 400) => {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+};
+
 /**
  * Điều xe & tài xế thay thế khi có sự cố hiện trường (UC-15, BR-09, UC-41)
  */
@@ -309,11 +366,13 @@ const dispatchReplacementWithTransaction = async ({
   newTruckPlate,
   newDriverName,
   replacementReason,
+  incidentType,
   userId = 1
 }) => {
   const numIncId = Number(incidentId);
   const bigIncId = BigInt(numIncId);
   const now = new Date();
+  const todayStr = new Date(now.getTime() + 7 * 3600 * 1000).toISOString().split('T')[0];
 
   const incident = await prisma.incidents.findUnique({
     where: { id: bigIncId },
@@ -330,59 +389,123 @@ const dispatchReplacementWithTransaction = async ({
   });
 
   if (!incident) {
-    throw new Error('Không tìm thấy sự cố cần xử lý');
+    throw createHttpError('Không tìm thấy sự cố cần xử lý.', 404);
+  }
+
+  const incStatusUpper = String(incident.status || '').toUpperCase();
+  if (['RESOLVED', 'CLOSED', 'DONE', 'PAID'].includes(incStatusUpper)) {
+    throw createHttpError('Sự cố này đã được xử lý xong, không thể điều xe thay thế lại.', 400);
   }
 
   const trip = incident.trips;
+  const tripStatusUpper = String(trip?.status || '').toUpperCase();
+  if (['COMPLETED', 'CANCELLED'].includes(tripStatusUpper)) {
+    throw createHttpError('Chuyến xe đã hoàn thành hoặc đã hủy, không thể điều xe/tài xế thay thế.', 400);
+  }
   const tripId = incident.trip_id;
   const numTripId = toNum(tripId);
   const reasonText = String(replacementReason || 'Điều xe thay thế do sự cố hiện trường').slice(0, 255);
 
-  // 1. Tìm xe thay thế (BUG-SYS-21: không tự ý thay bằng xe bất kỳ khi biển số không tồn tại hoặc không sẵn sàng)
+  const activeTrucksOnTrip = (trip?.trip_trucks || []).filter((tt) => !tt.released_time);
+  const activeDriversOnTrip = (trip?.trip_drivers || []).filter((td) => !td.released_time);
+  const activeTruckIds = new Set(activeTrucksOnTrip.map((tt) => String(tt.truck_id)));
+  const activeDriverIds = new Set(activeDriversOnTrip.map((td) => String(td.driver_id)));
+
+  // 1. Tìm và validate xe thay thế (không fallback sang xe bất kỳ)
   if (!newTruckPlate || !String(newTruckPlate).trim()) {
-    const err = new Error('Vui lòng chọn xe thay thế hợp lệ.');
-    err.statusCode = 400;
-    throw err;
+    throw createHttpError('Thiếu thông tin biển số xe thay thế.', 400);
   }
-  const cleanPlate = String(newTruckPlate).split(' ')[0].trim();
+  const cleanPlate = String(newTruckPlate).split('(')[0].trim();
   const newTruck = await prisma.trucks.findFirst({
     where: {
       deleted_at: null,
-      plate_number: { contains: cleanPlate, mode: 'insensitive' }
+      plate_number: { equals: cleanPlate, mode: 'insensitive' }
     },
-    select: { id: true, plate_number: true, status: true }
+    select: {
+      id: true,
+      plate_number: true,
+      status: true,
+      required_license_class: true
+    }
   });
+
   if (!newTruck) {
-    const err = new Error(`Không tìm thấy xe thay thế với biển số "${cleanPlate}".`);
-    err.statusCode = 400;
-    throw err;
+    throw createHttpError(`Không tìm thấy xe thay thế với biển số ${cleanPlate}.`, 404);
   }
-  const truckStUpper = String(newTruck.status || '').trim().toUpperCase();
-  if (!['AVAILABLE', 'READY', 'IDLE'].includes(truckStUpper)) {
-    const err = new Error(`Xe ${newTruck.plate_number} hiện không sẵn sàng (trạng thái: ${newTruck.status}).`);
-    err.statusCode = 400;
-    throw err;
+  if (activeTruckIds.has(String(newTruck.id))) {
+    throw createHttpError(`Không thể điều lại chính xe đang gặp sự cố (${newTruck.plate_number}).`, 400);
+  }
+  const truckStatusUpper = String(newTruck.status || '').trim().toUpperCase();
+  if (truckStatusUpper !== 'AVAILABLE') {
+    throw createHttpError(`Xe ${newTruck.plate_number} hiện không ở trạng thái sẵn sàng (${newTruck.status}).`, 400);
+  }
+  const openTruckAssign = await prisma.trip_trucks.findFirst({
+    where: {
+      truck_id: newTruck.id,
+      released_time: null,
+      trips: { status: { in: ACTIVE_TRIP_STATUSES } }
+    },
+    select: { id: true }
+  });
+  if (openTruckAssign) {
+    throw createHttpError(`Xe ${newTruck.plate_number} hiện không ở trạng thái sẵn sàng (đang chạy chuyến khác).`, 400);
   }
 
-  // 2. Tìm tài xế thay thế
+  // 2. Tìm và validate tài xế thay thế (không fallback sang tài xế bất kỳ)
   if (!newDriverName || !String(newDriverName).trim()) {
-    const err = new Error('Vui lòng chọn tài xế thay thế hợp lệ.');
-    err.statusCode = 400;
-    throw err;
+    throw createHttpError('Thiếu thông tin tài xế thay thế.', 400);
   }
-  const cleanDriver = String(newDriverName).split('-')[0].split('·')[0].trim();
+  const cleanDriver = String(newDriverName).split(/\s+-\s+/)[0].split('·')[0].trim();
   const newDriver = await prisma.driver_profiles.findFirst({
     where: {
       users: {
-        full_name: { contains: cleanDriver, mode: 'insensitive' }
+        full_name: { equals: cleanDriver, mode: 'insensitive' }
       }
     },
-    include: { users: { select: { full_name: true } } }
+    include: {
+      users: { select: { id: true, full_name: true, status: true } }
+    }
   });
+
   if (!newDriver) {
-    const err = new Error(`Không tìm thấy tài xế thay thế "${cleanDriver}".`);
-    err.statusCode = 400;
-    throw err;
+    throw createHttpError(`Không tìm thấy tài xế thay thế "${cleanDriver}".`, 404);
+  }
+  const driverUserStatus = String(newDriver.users?.status || '').trim().toUpperCase();
+  const driverProfStatus = String(newDriver.status || '').trim().toUpperCase();
+  if (driverUserStatus !== 'ACTIVE' || ['INACTIVE', 'SUSPENDED', 'LEAVE', 'ON_TRIP', 'ON TRIP'].includes(driverProfStatus)) {
+    throw createHttpError(`Tài xế ${newDriver.users?.full_name || cleanDriver} hiện không sẵn sàng nhận chuyến.`, 400);
+  }
+  if (activeDriverIds.has(String(newDriver.id))) {
+    throw createHttpError(`Tài xế ${newDriver.users?.full_name || cleanDriver} đang phụ trách chính chuyến xe gặp sự cố.`, 400);
+  }
+  const openDriverAssign = await prisma.trip_drivers.findFirst({
+    where: {
+      driver_id: newDriver.id,
+      released_time: null,
+      trips: { status: { in: ACTIVE_TRIP_STATUSES } }
+    },
+    select: { id: true }
+  });
+  if (openDriverAssign) {
+    throw createHttpError(`Tài xế ${newDriver.users?.full_name || cleanDriver} đang có chuyến chưa hoàn thành.`, 400);
+  }
+  if (newDriver.license_expiry) {
+    const expStr = new Date(newDriver.license_expiry).toISOString().split('T')[0];
+    if (expStr < todayStr) {
+      throw createHttpError(`Bằng lái của tài xế ${newDriver.users?.full_name || cleanDriver} đã hết hạn (${expStr}).`, 400);
+    }
+  }
+  if (newTruck.required_license_class) {
+    const drvClass = String(newDriver.license_class || '').trim().toUpperCase();
+    const reqClass = String(newTruck.required_license_class || '').trim().toUpperCase();
+    const drvRank = LICENSE_RANK[drvClass] || 0;
+    const reqRank = LICENSE_RANK[reqClass] || 0;
+    if (drvRank < reqRank) {
+      throw createHttpError(
+        `Tài xế ${newDriver.users?.full_name || cleanDriver} (hạng ${drvClass || 'N/A'}) không đủ hạng bằng lái yêu cầu (${reqClass}) cho xe ${newTruck.plate_number}.`,
+        400
+      );
+    }
   }
 
   const prevWaybills = trip?.waybills || [];
@@ -394,8 +517,7 @@ const dispatchReplacementWithTransaction = async ({
   const updatedInc = await prisma.$transaction(async (tx) => {
     // 3. Giải phóng xe cũ & gán xe mới
     if (newTruck && tripId) {
-      const activeTrucks = (trip?.trip_trucks || []).filter((tt) => !tt.released_time);
-      for (const tt of activeTrucks) {
+      for (const tt of activeTrucksOnTrip) {
         await tx.trip_trucks.update({
           where: { id: tt.id },
           data: { released_time: now, replacement_reason: reasonText }
@@ -425,12 +547,27 @@ const dispatchReplacementWithTransaction = async ({
 
     // 4. Giải phóng tài xế cũ & gán tài xế mới
     if (newDriver && tripId) {
-      const activeDrivers = (trip?.trip_drivers || []).filter((td) => !td.released_time);
-      for (const td of activeDrivers) {
+      for (const td of activeDriversOnTrip) {
         await tx.trip_drivers.update({
           where: { id: td.id },
           data: { released_time: now, replacement_reason: reasonText }
         });
+
+        const otherOpenTrip = await tx.trip_drivers.findFirst({
+          where: {
+            driver_id: td.driver_id,
+            released_time: null,
+            trip_id: { not: tripId },
+            trips: { status: { in: ACTIVE_TRIP_STATUSES } }
+          },
+          select: { id: true }
+        });
+        if (!otherOpenTrip) {
+          await tx.driver_profiles.update({
+            where: { id: td.driver_id },
+            data: { status: 'Active', updated_at: now }
+          });
+        }
       }
 
       await tx.trip_drivers.create({
@@ -444,6 +581,13 @@ const dispatchReplacementWithTransaction = async ({
           replacement_reason: reasonText
         }
       });
+
+      if (['IN PROGRESS', 'IN TRANSIT'].includes(tripStatusUpper)) {
+        await tx.driver_profiles.update({
+          where: { id: newDriver.id },
+          data: { status: 'On Trip', updated_at: now }
+        });
+      }
     }
 
     // 5. Cấp lại Vận đơn Waybill mới
@@ -464,19 +608,21 @@ const dispatchReplacementWithTransaction = async ({
           version: nextVersion,
           trip_code: trip?.trip_code,
           replaced_due_to_incident: numIncId,
-          new_truck_plate: newTruck?.plate_number || newTruckPlate,
-          new_driver_name: newDriver?.users?.full_name || newDriverName,
+          new_truck_plate: newTruck.plate_number,
+          new_driver_name: newDriver.users?.full_name || newDriverName,
           replacement_reason: reasonText
         }
       }
     });
 
-    // 6. Cập nhật trạng thái sự cố thành RESOLVED
+    // 6. Cập nhật trạng thái sự cố thành RESOLVED kèm resolved_by
     return tx.incidents.update({
       where: { id: bigIncId },
       data: {
         status: 'RESOLVED',
-        resolution_note: `[Điều xe thay thế ${newTruck?.plate_number || newTruckPlate} - Tài xế ${newDriver?.users?.full_name || newDriverName}]: ${reasonText}`.slice(0, 500),
+        ...(incidentType ? { type: incidentType } : {}),
+        resolution_note: `[Điều xe thay thế ${newTruck.plate_number} - Tài xế ${newDriver.users?.full_name || newDriverName}]: ${reasonText}`.slice(0, 500),
+        resolved_by: actorBigId,
         resolved_time: now,
         updated_at: now
       },

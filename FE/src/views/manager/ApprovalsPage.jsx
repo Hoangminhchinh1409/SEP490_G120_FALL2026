@@ -145,8 +145,12 @@ export default function ApprovalsPage({ readOnly = false, dispatcherCallMode = f
 
   const handleAutoCalculateAmount = () => {
     if (!selectedClaim) return;
+    if (!selectedClaim.declared_value || Number(selectedClaim.declared_value) <= 0) {
+      message.warning('Đơn hàng chưa có giá trị khai báo để tính tự động; vui lòng nhập số tiền bồi thường thủ công.');
+      return;
+    }
     const calc = calculateAutoCompensation({
-      declaredValue: selectedClaim.declared_value || 0,
+      declaredValue: selectedClaim.declared_value,
       damagePercentage: damagePercentage ?? 0,
       handlingMethod: outcome,
       liabilityCap: selectedClaim.liability_limit || 500000000
@@ -159,8 +163,8 @@ export default function ApprovalsPage({ readOnly = false, dispatcherCallMode = f
     const isApprove = decisionMode === 'APPROVE';
 
     if (isApprove) {
-      if (approvedAmount === null || approvedAmount === undefined || Number(approvedAmount) < 0) {
-        message.warning('Vui lòng nhập số tiền bồi thường phê duyệt hợp lệ (>= 0 đ).');
+      if (approvedAmount === null || approvedAmount === undefined || Number(approvedAmount) <= 0) {
+        message.warning('Vui lòng nhập số tiền bồi thường phê duyệt lớn hơn 0 đ.');
         return;
       }
       const limit = Number(selectedClaim.liability_limit || 500000000);

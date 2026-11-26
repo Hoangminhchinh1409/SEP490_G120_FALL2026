@@ -55,30 +55,51 @@ const reportIncident = async (userId, incidentData) => {
     !isNaN(parseInt(trip_id, 10)) &&
     parseInt(trip_id, 10) > 0
   ) {
-    // Nếu tài xế chưa có chuyến In Progress nhưng request truyền trip_id cụ thể hợp lệ
-    realTripId = parseInt(trip_id, 10);
+    const parsedTripId = parseInt(trip_id, 10);
+    const targetTrip = await prisma.trips.findUnique({
+      where: { id: BigInt(parsedTripId) },
+      select: { id: true, trip_code: true, status: true },
+    });
+    if (!targetTrip) {
+      const error = new Error("Không tìm thấy chuyến xe.");
+      error.statusCode = 404;
+      throw error;
+    }
+    const assigned = await prisma.trip_drivers.findFirst({
+      where: {
+        trip_id: BigInt(parsedTripId),
+        driver_id: BigInt(profile.id),
+      },
+      select: { id: true },
+    });
+    if (!assigned) {
+      const error = new Error("Bạn không được phân công trên chuyến xe này.");
+      error.statusCode = 403;
+      throw error;
+    }
+    realTripId = parsedTripId;
+    currentTrip = serializePrisma(targetTrip) || null;
   } else {
-    // Fallback: Tìm chuyến được gán gần đây nhất của tài xế trong bảng trip_drivers
+    // Fallback: Tìm chuyến được gán gần đây nhất của chính tài xế trong bảng trip_drivers (ưu tiên chuyến chưa release)
     const latestAssignment = await prisma.trip_drivers.findFirst({
       where: { driver_id: BigInt(profile.id) },
       select: {
         trip_id: true,
+        released_time: true,
         trips: { select: { id: true, trip_code: true, status: true } },
       },
-      orderBy: { id: "desc" },
+      orderBy: [{ released_time: "asc" }, { id: "desc" }],
     });
 
     if (latestAssignment && latestAssignment.trip_id) {
       realTripId = Number(latestAssignment.trip_id);
       currentTrip = serializePrisma(latestAssignment.trips) || null;
     } else {
-      // Nếu tài xế chưa từng được phân công chuyến nào, lấy chuyến mới nhất trong hệ thống
-      const fallbackTrip = await prisma.trips.findFirst({
-        select: { id: true, trip_code: true, status: true },
-        orderBy: { id: "desc" },
-      });
-      realTripId = fallbackTrip ? Number(fallbackTrip.id) : 1;
-      currentTrip = serializePrisma(fallbackTrip) || null;
+      const error = new Error(
+        "Bạn chưa được phân công chuyến xe nào để báo cáo sự cố.",
+      );
+      error.statusCode = 400;
+      throw error;
     }
   }
 
@@ -232,7 +253,7 @@ const reportCustomerRefusal = async (userId, tripId, stopId, refusalData) => {
   }
 
   const profile = await getMyProfile(userId);
-  const trip = await driverModel.getTripDetail(tripId, profile.id);
+  const trip = await driverModel.getTripDetail(tripId, profile.id, { requireActive: true });
   if (!trip) {
     const error = new Error("Chuyến xe không tồn tại");
     error.statusCode = 404;
@@ -362,7 +383,7 @@ const proposeExtraFee = async (userId, tripId, feeData) => {
   }
 
   const profile = await getMyProfile(userId);
-  const trip = await driverModel.getTripDetail(tripId, profile.id);
+  const trip = await driverModel.getTripDetail(tripId, profile.id, { requireActive: true });
   if (!trip) {
     const error = new Error(
       "Chuyến xe không tồn tại hoặc không thuộc quyền phụ trách",

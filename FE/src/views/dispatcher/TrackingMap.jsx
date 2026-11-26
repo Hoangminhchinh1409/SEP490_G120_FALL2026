@@ -295,12 +295,29 @@ const TrackingMap = () => {
 
   const handleResolveIncident = async (incidentId, payload) => {
     try {
-      await dispatcherApi.updateIncidentStatus(incidentId, payload);
-      message.success('Đã xử lý sự cố và cập nhật lộ trình phương tiện trực tuyến!');
-      setSelectedIncident(null);
+      const res = await dispatcherApi.updateIncidentStatus(incidentId, payload);
+      const updatedInc = res?.incident || res;
+      const actionStatus = String(payload?.status || '').toUpperCase();
+      if (!actionStatus && payload?.type) {
+        message.success('Đã cập nhật phân loại sự cố.');
+        setSelectedIncident((prev) =>
+          prev
+            ? {
+                ...prev,
+                ...(updatedInc && typeof updatedInc === 'object' ? updatedInc : {}),
+                raw_type: payload.type
+              }
+            : prev
+        );
+      } else {
+        message.success('Đã xử lý sự cố và cập nhật lộ trình phương tiện trực tuyến!');
+        setSelectedIncident(null);
+      }
       await loadTrackingData();
     } catch (err) {
       message.error(err.message || 'Lỗi khi xử lý sự cố');
+      if (err && typeof err === 'object') err._handledToast = true;
+      throw err;
     }
   };
 
@@ -578,6 +595,7 @@ const TrackingMap = () => {
         incident={selectedIncident}
         onCancel={() => setSelectedIncident(null)}
         onResolveSuccess={handleResolveIncident}
+        onClaimCreated={loadTrackingData}
       />
     </div>
   );

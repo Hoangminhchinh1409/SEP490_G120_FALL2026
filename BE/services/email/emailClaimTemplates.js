@@ -466,8 +466,109 @@ const sendClaimPaymentRecordedEmail = async ({
 };
 
 
+/**
+ * Gửi email thông báo sự cố ảnh hưởng hàng hóa & yêu cầu bồi thường vừa tạo tới Khách hàng (TC_IC_04-03 / BUG-SYS-26)
+ */
+const sendIncidentCargoAffectedEmail = async ({
+  customerEmail,
+  customerName,
+  contactPerson,
+  orderCode,
+  tripCode,
+  incidentCode,
+  claimCode,
+  claimType,
+  reason,
+  contactHotline = '1900 1234',
+  trackingUrl
+}) => {
+  const mailTransporter = await getTransporter();
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 20px 10px; color: #1e293b; }
+        .container { max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); border: 1px solid #e2e8f0; }
+        .header { background: linear-gradient(135deg, #7c2d12 0%, #c2410c 55%, #ea580c 100%); padding: 32px 28px; text-align: center; color: #ffffff; }
+        .header-brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; opacity: 0.85; margin-bottom: 8px; }
+        .header h1 { margin: 0; font-size: 21px; font-weight: 800; line-height: 1.3; }
+        .header p { margin: 8px 0 0; font-size: 13px; opacity: 0.92; }
+        .content { padding: 28px; }
+        .detail-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; margin: 18px 0; }
+        .detail-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .detail-table td { padding: 7px 4px; border-bottom: 1px dashed #e2e8f0; vertical-align: top; }
+        .detail-table tr:last-child td { border-bottom: none; }
+        .td-label { color: #64748b; width: 170px; font-weight: 500; }
+        .td-val { color: #0f172a; font-weight: 600; text-align: right; }
+        .notice-box { background: #fff7ed; border: 1px solid #fed7aa; border-left: 4px solid #ea580c; border-radius: 12px; padding: 16px 18px; margin: 18px 0; font-size: 13px; color: #7c2d12; line-height: 1.6; }
+        .btn-wrap { text-align: center; margin: 24px 0 12px; }
+        .btn { display: inline-block; background: #ea580c; color: #ffffff !important; padding: 12px 26px; border-radius: 10px; font-weight: 800; font-size: 14px; text-decoration: none; }
+        .footer { background: #0f172a; padding: 20px 24px; text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.6; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <div class="header-brand">ALS · NEXLOG INCIDENT NOTICE</div>
+          <h1>Thông Báo Sự Cố Ảnh Hưởng Hàng Hóa</h1>
+          <p>Hồ sơ ${escapeHtml(claimCode || '')}${incidentCode ? ` · Sự cố ${escapeHtml(incidentCode)}` : ''} · Đơn #${escapeHtml(orderCode || '')}</p>
+        </div>
+        <div class="content">
+          <p style="font-size:15px;font-weight:700;margin-bottom:8px;">Kính gửi ${escapeHtml(customerName || 'Quý khách hàng')}${contactPerson ? ` (${escapeHtml(contactPerson)})` : ''},</p>
+          <p style="font-size:14px;line-height:1.65;color:#475569;">
+            Công ty Cổ phần Logistics Hàng không (ALS) xin thông báo về sự cố phát sinh trong quá trình vận chuyển đơn hàng <b>#${escapeHtml(orderCode || '')}</b> có ảnh hưởng tới hàng hóa của Quý khách. Bộ phận Điều phối đã lập hồ sơ yêu cầu bồi thường để Quản lý thẩm định và xử lý kịp thời.
+          </p>
+          <div class="detail-box">
+            <table class="detail-table">
+              <tr><td class="td-label">Mã hồ sơ bồi thường:</td><td class="td-val">${escapeHtml(claimCode || 'N/A')}</td></tr>
+              ${incidentCode ? `<tr><td class="td-label">Mã sự cố:</td><td class="td-val">${escapeHtml(incidentCode)}</td></tr>` : ''}
+              ${tripCode ? `<tr><td class="td-label">Chuyến xe:</td><td class="td-val">${escapeHtml(tripCode)}</td></tr>` : ''}
+              <tr><td class="td-label">Đơn hàng:</td><td class="td-val">#${escapeHtml(orderCode || 'N/A')}</td></tr>
+              <tr><td class="td-label">Loại thiệt hại:</td><td class="td-val">${escapeHtml(claimType || 'Damage')}</td></tr>
+              <tr><td class="td-label">Mô tả sự cố / Thiệt hại:</td><td class="td-val">${escapeHtml(reason || '')}</td></tr>
+            </table>
+          </div>
+          <div class="notice-box">
+            Hồ sơ bồi thường của Quý khách đang được Bộ phận Quản lý của ALS xem xét và thẩm định theo hợp đồng. Quý khách có thể theo dõi tiến độ trực tiếp qua đường dẫn bên dưới hoặc liên hệ Hotline <b>${escapeHtml(contactHotline || '1900 1234')}</b>.
+          </div>
+          ${trackingUrl ? `
+          <div class="btn-wrap">
+            <a href="${escapeHtml(trackingUrl)}" class="btn" target="_blank">Theo Dõi Tiến Độ Hồ Sơ</a>
+          </div>
+          ` : ''}
+        </div>
+        <div class="footer">
+          <div><b>CÔNG TY CỔ PHẦN LOGISTICS HÀNG KHÔNG (ALS) — HỆ THỐNG ĐIỀU VẬN NEXLOG</b></div>
+          <div>Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội · © 2026 NEXLOG Logistics.</div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const fromAddress = process.env.SMTP_FROM || `ALS NEXLOG Claims <${process.env.SMTP_USER || 'claims@nexlog.vn'}>`;
+    const info = await mailTransporter.sendMail({
+      from: fromAddress,
+      to: customerEmail,
+      subject: `[ALS - NEXLOG] Thông báo sự cố ảnh hưởng hàng hóa ${claimCode || ''} (Đơn #${orderCode || ''})`,
+      html: htmlContent
+    });
+    const previewUrl = nodemailer.getTestMessageUrl ? nodemailer.getTestMessageUrl(info) : null;
+    console.log('[EmailService] Incident cargo-affected email sent:', info.messageId, previewUrl || '');
+    return { success: true, messageId: info.messageId, previewUrl: previewUrl || null };
+  } catch (error) {
+    console.error('[EmailService] Error sending incident cargo-affected email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   sendIncidentCompensationApprovalEmail,
   sendIncidentCompensationRejectionEmail,
-  sendClaimPaymentRecordedEmail
+  sendClaimPaymentRecordedEmail,
+  sendIncidentCargoAffectedEmail
 };

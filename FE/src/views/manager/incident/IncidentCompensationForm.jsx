@@ -5,9 +5,12 @@ import { Input, Select, InputNumber, Space, Alert } from 'antd';
 export default function IncidentCompensationForm({
   currentData,
   isPending,
+  isApproved = false,
+  isPaid = false,
   isRejected,
   isDone,
   isReadOnly,
+  isFormLocked: isFormLockedProp,
   submitting,
   damagePercentage,
   fault,
@@ -28,10 +31,12 @@ export default function IncidentCompensationForm({
   handleFaultChange,
   handleHandlingMethodChange,
   handleApproveCompensation,
+  handleResolveWithoutCompensation,
   onOpenRejectModal,
   onOpenRequestInfoModal,
   onOpenEmailPreview
 }) {
+  const isFormLocked = isFormLockedProp !== undefined ? isFormLockedProp : (!isPending || isReadOnly);
   return (
     <>
       {/* MỤC 10: KẾT QUẢ GIÁM ĐỊNH (GIÁM ĐỊNH THỰC HIỆN NGOÀI HỆ THỐNG) */}
@@ -56,7 +61,7 @@ export default function IncidentCompensationForm({
                   controls={false}
                   value={damagePercentage}
                   onChange={handlePercentageChange}
-                  disabled={isDone || isReadOnly || goodsHandlingMethod === 'COMPANY_RECOVERY'}
+                  disabled={isFormLocked || goodsHandlingMethod === 'COMPANY_RECOVERY'}
                   placeholder="Nhập %"
                   style={{ width: '100%' }}
                   className="w-full font-mono font-bold text-center h-9 text-xs"
@@ -71,7 +76,7 @@ export default function IncidentCompensationForm({
                   <button
                     key={p}
                     type="button"
-                    disabled={isDone || isReadOnly || goodsHandlingMethod === 'COMPANY_RECOVERY'}
+                    disabled={isFormLocked || goodsHandlingMethod === 'COMPANY_RECOVERY'}
                     onClick={() => handlePercentageChange(p)}
                     className={`h-7.5 rounded-lg text-xs font-bold cursor-pointer border transition-all text-center flex items-center justify-center ${
                       damagePercentage === p
@@ -94,7 +99,7 @@ export default function IncidentCompensationForm({
             <Select
               value={fault}
               onChange={handleFaultChange}
-              disabled={isDone || isReadOnly}
+              disabled={isFormLocked}
               placeholder="Chọn bên chịu trách nhiệm lỗi..."
               className="w-full h-9"
               options={[
@@ -123,7 +128,7 @@ export default function IncidentCompensationForm({
             <Input
               value={surveyOrgReport}
               onChange={(e) => setSurveyOrgReport(e.target.value)}
-              disabled={isDone || isReadOnly}
+              disabled={isFormLocked}
               placeholder="VD: Giám định ABC - BB-2026-118"
               className="h-9 rounded-xl text-xs font-medium"
             />
@@ -145,12 +150,16 @@ export default function IncidentCompensationForm({
             Hạn mức bồi thường áp dụng ({hasFrameworkContract ? 'Hợp đồng khung đối tác' : 'Khách vãng lai - NĐ 163/2017/NĐ-CP'}): <b className="font-mono font-bold">{effectiveLiabilityCap.toLocaleString('vi-VN')} đ</b>
           </div>
           <div>
-            {damagePercentage !== null && damagePercentage !== undefined ? (
-              <>
-                Giá trị khai báo {declaredValue.toLocaleString('vi-VN')} đ × {Number(damagePercentage)}% hỏng = <b className="font-mono font-bold text-error">{(declaredValue * (Number(damagePercentage) / 100)).toLocaleString('vi-VN')} đ</b>, {Number(compensationAmount || 0) <= effectiveLiabilityCap ? 'trong hạn mức.' : <span className="text-error font-bold">⚠ VƯỢT HẠN MỨC TRÁCH NHIỆM!</span>}
-              </>
+            {declaredValue !== null && declaredValue !== undefined ? (
+              damagePercentage !== null && damagePercentage !== undefined ? (
+                <>
+                  Giá trị khai báo {Number(declaredValue).toLocaleString('vi-VN')} đ × {Number(damagePercentage)}% hỏng = <b className="font-mono font-bold text-error">{(Number(declaredValue) * (Number(damagePercentage) / 100)).toLocaleString('vi-VN')} đ</b>, {Number(compensationAmount || 0) <= effectiveLiabilityCap ? 'trong hạn mức.' : <span className="text-error font-bold">⚠ VƯỢT HẠN MỨC TRÁCH NHIỆM!</span>}
+                </>
+              ) : (
+                <span>Giá trị khai báo hàng hóa: <b className="font-mono font-bold">{Number(declaredValue).toLocaleString('vi-VN')} đ</b> (Vui lòng chọn tỷ lệ hàng hỏng bên dưới để hệ thống tính mức đề xuất).</span>
+              )
             ) : (
-              <span>Giá trị khai báo hàng hóa: <b className="font-mono font-bold">{declaredValue.toLocaleString('vi-VN')} đ</b> (Vui lòng chọn tỷ lệ hàng hỏng bên dưới để hệ thống tính mức đề xuất).</span>
+              <span>Giá trị khai báo hàng hóa: <b>Chưa khai báo</b>.</span>
             )}
           </div>
         </div>
@@ -173,7 +182,7 @@ export default function IncidentCompensationForm({
             <Select
               value={goodsHandlingMethod}
               onChange={(val) => handleHandlingMethodChange(val)}
-              disabled={isDone || isReadOnly}
+              disabled={isFormLocked}
               placeholder="Chọn hướng xử lý bồi thường..."
               className="w-full sm:w-[420px] h-9"
               options={[
@@ -215,7 +224,7 @@ export default function IncidentCompensationForm({
                   controls={false}
                   value={compensationAmount}
                   onChange={(val) => setCompensationAmount(val === null || val === undefined ? null : Number(val))}
-                  disabled={isDone || isReadOnly}
+                  disabled={isFormLocked}
                   placeholder="Nhập số tiền chốt bồi thường..."
                   formatter={(val) => (val !== undefined && val !== null && val !== '') ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : ''}
                   parser={(val) => String(val || '').replace(/\./g, '')}
@@ -254,19 +263,34 @@ export default function IncidentCompensationForm({
           * Vui lòng kiểm tra kỹ kết quả giám định và căn cứ hợp đồng trước khi ban hành quyết định.
         </div>
 
-        {/* CỤM NÚT HÀNH ĐỘNG (MỤC 15, 16, 17) */}
+        {/* CỤM NÚT HÀNH ĐỘNG (MỤC 15, 16, 17 + Đóng không bồi thường UI-38) */}
         {isPending && !isReadOnly ? (
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-surface-container/60">
-            {/* Nút 15: Từ chối bồi thường */}
-            <button
-              type="button"
-              onClick={onOpenRejectModal}
-              disabled={submitting}
-              className="w-full sm:w-auto h-10 px-5 rounded-xl bg-red-100 hover:bg-red-200 text-error font-bold cursor-pointer transition-all border border-red-300 inline-flex items-center justify-center gap-1.5 text-xs shadow-2xs"
-            >
-              <span className="material-symbols-outlined text-[18px]">cancel</span>
-              <span>Từ chối bồi thường</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              {/* Nút 15: Từ chối bồi thường */}
+              <button
+                type="button"
+                onClick={onOpenRejectModal}
+                disabled={submitting}
+                className="w-full sm:w-auto h-10 px-4 rounded-xl bg-red-100 hover:bg-red-200 text-error font-bold cursor-pointer transition-all border border-red-300 inline-flex items-center justify-center gap-1.5 text-xs shadow-2xs"
+              >
+                <span className="material-symbols-outlined text-[18px]">cancel</span>
+                <span>Từ chối bồi thường</span>
+              </button>
+
+              {/* Nút UI-38 / BUG-UI-06: Xác định lỗi & Đóng không bồi thường */}
+              {handleResolveWithoutCompensation && (
+                <button
+                  type="button"
+                  onClick={handleResolveWithoutCompensation}
+                  disabled={submitting}
+                  className="w-full sm:w-auto h-10 px-4 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold cursor-pointer transition-all border border-emerald-300 inline-flex items-center justify-center gap-1.5 text-xs shadow-2xs"
+                >
+                  <span className="material-symbols-outlined text-[18px]">verified</span>
+                  <span>Xác định lỗi &amp; Đóng (Không bồi thường)</span>
+                </button>
+              )}
+            </div>
 
             <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
               {/* Nút Xem mẫu Email gửi khách */}
@@ -290,7 +314,7 @@ export default function IncidentCompensationForm({
                 <span>Yêu cầu bổ sung hồ sơ</span>
               </button>
 
-              {/* Nút 17: Chốt bồi thường, gửi email khách xác nhận & kết thúc luồng */}
+              {/* Nút 17: Chốt bồi thường, gửi email khách xác nhận */}
               <button
                 type="button"
                 onClick={handleApproveCompensation}
@@ -302,20 +326,24 @@ export default function IncidentCompensationForm({
               </button>
             </div>
           </div>
-        ) : isDone && (
+        ) : (
           <div className={`pt-2.5 mt-1 border-t border-surface-container/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold ${
-            isRejected ? 'text-error' : 'text-emerald-700'
+            isRejected ? 'text-error' : isPaid ? 'text-cyan-700' : isApproved ? 'text-blue-700' : 'text-emerald-700'
           }`}>
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px]">
-                {isRejected ? 'block' : 'lock'}
+                {isRejected ? 'block' : isPaid ? 'payments' : isApproved ? 'hourglass_top' : 'lock'}
               </span>
               <span>
                 {isRejected
-                  ? 'Đã ban hành quyết định Từ chối bồi thường · Hồ sơ đã khóa'
-                  : Number(currentData.approved_compensation_amount || compensationAmount) > 0
-                    ? '✔ Đã chốt mức bồi thường & gửi email xác nhận cho khách · Hồ sơ đã hoàn tất (Đóng)'
-                    : '✔ Sự cố đã xử lý hoàn tất (không phát sinh chi trả) · Hồ sơ đã khóa'}
+                  ? (isDone ? 'Đã ban hành quyết định Từ chối bồi thường · Hồ sơ đã khóa' : 'Đã từ chối bồi thường · Chờ ĐPV gọi điện thông báo khách hàng')
+                  : isPaid
+                    ? 'Đã chuyển khoản chi trả · Chờ khách hàng xác nhận nhận tiền (tự đóng sau 7 ngày)'
+                    : isApproved
+                      ? 'Đã phê duyệt bồi thường · Chờ ĐPV gọi khách & Quản lý ghi nhận chi trả'
+                      : Number(currentData.approved_compensation_amount || compensationAmount) > 0
+                        ? '✔ Đã chốt mức bồi thường & hoàn tất chi trả · Hồ sơ đã đóng'
+                        : '✔ Sự cố đã xử lý hoàn tất (không phát sinh chi trả) · Hồ sơ đã khóa'}
               </span>
             </div>
 
@@ -331,21 +359,27 @@ export default function IncidentCompensationForm({
         )}
       </div>
 
-      {/* KHI ĐÃ ĐÓNG (DONE): READ-ONLY SUMMARY KẾT QUẢ CHỐT BỒI THƯỜNG */}
-      {isDone && (
+      {/* KHI ĐÃ XÉT DUYỆT / CHI TRẢ / ĐÓNG: READ-ONLY SUMMARY KẾT QUẢ */}
+      {!isPending && (
         <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-400/40 space-y-3 shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-emerald-200/70">
             <span className="font-bold text-primary uppercase text-xs flex items-center gap-2 tracking-wide">
-              <span className={`material-symbols-outlined text-[20px] ${isRejected ? 'text-error' : 'text-emerald-600'}`}>
-                {isRejected ? 'cancel' : 'verified'}
+              <span className={`material-symbols-outlined text-[20px] ${isRejected ? 'text-error' : isPaid ? 'text-cyan-600' : isApproved ? 'text-blue-600' : 'text-emerald-600'}`}>
+                {isRejected ? 'cancel' : isPaid ? 'payments' : isApproved ? 'pending_actions' : 'verified'}
               </span>
               {isRejected
-                ? 'Hồ sơ bồi thường đã đóng (Từ chối)'
-                : 'Quyết định Chốt Bồi thường & Xác nhận Email (DONE)'}
+                ? (isDone ? 'Hồ sơ bồi thường đã đóng (Từ chối)' : 'Đã từ chối bồi thường (Chờ ĐPV gọi khách)')
+                : isPaid
+                  ? 'Đã chi trả bồi thường (Chờ khách xác nhận)'
+                  : isApproved
+                    ? 'Đã duyệt bồi thường (Chờ gọi khách & chi trả)'
+                    : 'Quyết định Chốt Bồi thường & Hoàn tất (DONE)'}
             </span>
-            <span className="text-[11px] text-outline font-mono">
-              Đã xử lý lúc: {currentData.closed_at ? new Date(currentData.closed_at).toLocaleString('vi-VN') : (currentData.resolved_time ? new Date(currentData.resolved_time).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN'))}
-            </span>
+            {(currentData.closed_at || currentData.resolved_time) && (
+              <span className="text-[11px] text-outline font-mono">
+                Cập nhật lúc: {new Date(currentData.closed_at || currentData.resolved_time).toLocaleString('vi-VN')}
+              </span>
+            )}
           </div>
 
           {isRejected || currentData.rejection_reason ? (
@@ -366,7 +400,7 @@ export default function IncidentCompensationForm({
             <div className="space-y-3 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
-                  <span className="text-[11px] text-on-surface-variant block">Mức bồi thường đã chốt:</span>
+                  <span className="text-[11px] text-on-surface-variant block">Mức bồi thường đã duyệt:</span>
                   <strong className="text-error font-mono text-base font-black block">
                     {Number(currentData.approved_compensation_amount || compensationAmount).toLocaleString('vi-VN')} đ
                   </strong>
@@ -375,17 +409,36 @@ export default function IncidentCompensationForm({
                 <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
                   <span className="text-[11px] text-on-surface-variant block">Email thông báo khách hàng:</span>
                   <strong className="text-emerald-700 font-bold block">
-                    {currentData.customer_email || customerEmailDisplay}
+                    {currentData.customer_email || customerEmailDisplay || 'Chưa có email'}
                   </strong>
                 </div>
 
                 <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-0.5">
                   <span className="text-[11px] text-on-surface-variant block">Trạng thái luồng xử lý:</span>
-                  <strong className="text-emerald-700 font-bold block">
-                    Đã chốt &amp; Kết thúc luồng
+                  <strong className={`${isPaid ? 'text-cyan-700' : isApproved ? 'text-blue-700' : 'text-emerald-700'} font-bold block`}>
+                    {isPaid
+                      ? 'Đã chuyển khoản (Chờ khách xác nhận)'
+                      : isApproved
+                        ? 'Đã duyệt (Chờ ĐPV gọi khách & chi trả)'
+                        : 'Đã chốt & Kết thúc luồng'}
                   </strong>
                 </div>
               </div>
+
+              {(currentData.transaction_code || currentData.payment_proof_url) && (
+                <div className="p-3 bg-cyan-50/70 rounded-xl border border-cyan-200 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="font-bold text-cyan-950">Chứng từ thanh toán: </span>
+                    <span className="font-mono">{currentData.transaction_code || '—'}</span>
+                    {currentData.payment_date && <span> · Ngày: <b>{currentData.payment_date}</b></span>}
+                  </div>
+                  {currentData.payment_proof_url && (
+                    <a href={currentData.payment_proof_url} target="_blank" rel="noopener noreferrer" className="text-cyan-800 font-bold underline">
+                      Xem biên lai chuyển khoản
+                    </a>
+                  )}
+                </div>
+              )}
 
               <div className="p-3 bg-white rounded-xl border border-emerald-200/80 space-y-1">
                 <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider block">

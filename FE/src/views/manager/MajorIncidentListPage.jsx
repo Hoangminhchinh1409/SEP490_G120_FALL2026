@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Table, Tag, Input, Select, message, Spin, Tooltip } from 'antd';
 import { managerApi } from '../../api/managerApi';
 import { useAuth } from '../../providers/AuthProvider';
+import { determineIncidentStatus } from '../../utils/incidentCompensationHelper';
 import MajorIncidentDetailModal from './incident/MajorIncidentDetailModal';
 
 const { Option } = Select;
@@ -12,7 +13,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
   const isReadOnly = readOnly || (Number(user?.role_id) !== 1 && Number(user?.role_id) !== 2);
   const [loading, setLoading] = useState(true);
   const [incidents, setIncidents] = useState([]);
-  const [summary, setSummary] = useState({ total: 0, pending: 0, escalated: 0, resolved: 0 });
+  const [summary, setSummary] = useState({ total: 0, pending: 0, escalated: 0, approved: 0, paid: 0, rejected: 0, resolved: 0 });
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('ESCALATED'); // 'ESCALATED' (mặc định), 'RESOLVED', 'ALL'
@@ -119,7 +120,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
           <div className="text-on-surface-variant text-[11px] mt-0.5">
             Xe: <span className="font-mono font-semibold text-primary">{r.truck_plate || 'Chưa cập nhật'}</span>
           </div>
-          <div className="text-outline text-[10px]">Tài xế: {r.driver_name || 'Tài xế'}</div>
+          <div className="text-outline text-[10px]">Tài xế: {r.driver_name || 'Chưa cập nhật'}</div>
         </div>
       )
     },
@@ -156,33 +157,13 @@ export default function MajorIncidentListPage({ readOnly = false }) {
     {
       title: 'Trạng thái',
       key: 'status',
-      width: 150,
+      width: 170,
       align: 'center',
       render: (_, r) => {
-        const s = (r.status || r.raw_status || '').toUpperCase();
-        const isRejected =
-          Boolean(r.rejection_reason) ||
-          String(r.claim_status || '').toUpperCase() === 'REJECTED' ||
-          s === 'REJECTED';
-        const isDone =
-          s === 'DONE' ||
-          s === 'CLOSED' ||
-          s === 'RESOLVED' ||
-          s === 'APPROVED' ||
-          Number(r.approved_compensation_amount) > 0 ||
-          Boolean(r.closed_at) ||
-          Boolean(r.payment_proof_url) ||
-          isRejected;
-        if (isDone) {
-          return (
-            <Tag color={isRejected ? "red" : "green"} className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
-              {isRejected ? "Đã từ chối" : "Đã hoàn tất (Đóng)"}
-            </Tag>
-          );
-        }
+        const { badge } = determineIncidentStatus(r);
         return (
-          <Tag color="orange" className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
-            Chờ xét duyệt
+          <Tag color={badge.color} className="font-bold text-xs px-2.5 py-0.5 rounded-full uppercase border-0 shadow-2xs">
+            {badge.label}
           </Tag>
         );
       }
@@ -193,21 +174,8 @@ export default function MajorIncidentListPage({ readOnly = false }) {
       width: 120,
       align: 'center',
       render: (_, r) => {
-        const s = (r.status || r.raw_status || '').toUpperCase();
-        const isRejected =
-          Boolean(r.rejection_reason) ||
-          String(r.claim_status || '').toUpperCase() === 'REJECTED' ||
-          s === 'REJECTED';
-        const isDone =
-          s === 'DONE' ||
-          s === 'CLOSED' ||
-          s === 'RESOLVED' ||
-          s === 'APPROVED' ||
-          Number(r.approved_compensation_amount) > 0 ||
-          Boolean(r.closed_at) ||
-          Boolean(r.payment_proof_url) ||
-          isRejected;
-        const btnText = (isReadOnly || isDone) ? 'Xem lại' : 'Xét duyệt';
+        const { isPending } = determineIncidentStatus(r);
+        const btnText = (isReadOnly || !isPending) ? 'Xem lại' : 'Xét duyệt';
 
         return (
           <button
@@ -239,6 +207,10 @@ export default function MajorIncidentListPage({ readOnly = false }) {
               <Tag color="error" className="font-bold text-xs px-2.5 py-0.5 rounded-full">
                 {summary.escalated} Chờ Quản lý xử lý
               </Tag>
+            ) : ((summary.approved || 0) + (summary.paid || 0) + (summary.rejected || 0)) > 0 ? (
+              <Tag color="blue" className="font-bold text-xs px-2.5 py-0.5 rounded-full">
+                {(summary.approved || 0) + (summary.paid || 0) + (summary.rejected || 0)} Đang xử lý chi trả / gọi khách
+              </Tag>
             ) : (
               <Tag color="green" className="font-bold text-xs px-2.5 py-0.5 rounded-full">
                 Tất cả đã giải quyết
@@ -262,15 +234,15 @@ export default function MajorIncidentListPage({ readOnly = false }) {
         </div>
       </div>
 
-      {/* KPI Cards Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* KPI Cards Summary (tính trên toàn tập sự cố độc lập bộ lọc - BUG-UI-10) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 bg-surface-container-lowest rounded-2xl border border-surface-container shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
             <span className="material-symbols-outlined text-[22px]">warning</span>
           </div>
           <div>
             <div className="text-xs text-on-surface-variant font-medium">Tổng sự cố</div>
-            <div className="text-xl font-black text-primary font-mono">{summary.total}</div>
+            <div className="text-xl font-black text-primary font-mono">{summary.total || 0}</div>
           </div>
         </div>
 
@@ -280,7 +252,17 @@ export default function MajorIncidentListPage({ readOnly = false }) {
           </div>
           <div>
             <div className="text-xs text-on-surface-variant font-medium">Chờ xét duyệt (Escalated)</div>
-            <div className="text-xl font-black text-amber-600 font-mono">{summary.escalated || summary.pending || 0}</div>
+            <div className="text-xl font-black text-amber-600 font-mono">{summary.escalated || 0}</div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-surface-container-lowest rounded-2xl border border-surface-container shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
+            <span className="material-symbols-outlined text-[22px]">payments</span>
+          </div>
+          <div>
+            <div className="text-xs text-on-surface-variant font-medium">Đã duyệt - chờ thanh toán</div>
+            <div className="text-xl font-black text-blue-600 font-mono">{summary.approved || 0}</div>
           </div>
         </div>
 
@@ -290,7 +272,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
           </div>
           <div>
             <div className="text-xs text-on-surface-variant font-medium">Đã hoàn tất (Đóng)</div>
-            <div className="text-xl font-black text-emerald-600 font-mono">{(summary.resolved || 0) + (summary.approved || 0)}</div>
+            <div className="text-xl font-black text-emerald-600 font-mono">{summary.resolved || 0}</div>
           </div>
         </div>
       </div>
@@ -307,9 +289,12 @@ export default function MajorIncidentListPage({ readOnly = false }) {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="h-9 px-3 bg-surface-container-low border border-surface-container rounded-xl text-xs font-bold text-primary focus:outline-none cursor-pointer"
               >
-                <option value="ESCALATED">Chờ xét duyệt (Escalated)</option>
-                <option value="RESOLVED">Đã hoàn tất (Đóng)</option>
-                <option value="ALL">Tất cả ({summary.total})</option>
+                <option value="ESCALATED">Chờ xét duyệt ({summary.escalated || 0})</option>
+                <option value="APPROVED">Đã duyệt - chờ thanh toán ({summary.approved || 0})</option>
+                <option value="PAID">Đã chi trả - chờ khách xác nhận ({summary.paid || 0})</option>
+                <option value="REJECTED">Đã từ chối - chờ gọi khách ({summary.rejected || 0})</option>
+                <option value="RESOLVED">Đã hoàn tất (Đóng) ({summary.resolved || 0})</option>
+                <option value="ALL">Tất cả ({summary.total || 0})</option>
               </select>
             </div>
 

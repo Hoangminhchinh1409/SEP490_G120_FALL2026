@@ -333,9 +333,10 @@ const getClaimRelationsInclude = () => ({
           id: true,
           trip_code: true,
           status: true,
-          trip_trucks: { select: { trucks: { select: { plate_number: true } } } },
+          trip_trucks: { select: { released_time: true, trucks: { select: { plate_number: true } } } },
           trip_drivers: {
             select: {
+              released_time: true,
               driver_profiles: {
                 select: { users: { select: { full_name: true, phone: true } } }
               }
@@ -383,9 +384,9 @@ const formatDetailedClaim = (row, activeContractMap = {}) => {
       : [];
   const firstCargo = cargosList[0] || null;
   const declaredValue =
-    Number(firstCargo?.declared_value || 0) ||
-    Number(order?.agreed_price || 0) * 10 ||
-    0;
+    firstCargo?.declared_value !== null && firstCargo?.declared_value !== undefined
+      ? Number(firstCargo.declared_value)
+      : null;
   const cargoDescription = firstCargo?.cargo_name
     ? `${firstCargo.cargo_name}${firstCargo.quantity ? ` - ${firstCargo.quantity} ${firstCargo.unit || 'kiện'}` : ''}${firstCargo.actual_weight_kg ? ` - ${firstCargo.actual_weight_kg} kg` : ''}`
     : 'Hàng hóa theo đơn vận chuyển';
@@ -415,8 +416,10 @@ const formatDetailedClaim = (row, activeContractMap = {}) => {
   });
 
   const tripObj = incident?.trips || null;
-  const truckPlate = tripObj?.trip_trucks?.[0]?.trucks?.plate_number || null;
-  const driverUser = tripObj?.trip_drivers?.[0]?.driver_profiles?.users || null;
+  const activeTripTruck = (tripObj?.trip_trucks || []).find((tt) => !tt.released_time && tt.trucks) || tripObj?.trip_trucks?.[0];
+  const activeTripDriver = (tripObj?.trip_drivers || []).find((td) => !td.released_time && td.driver_profiles?.users) || tripObj?.trip_drivers?.[0];
+  const truckPlate = activeTripTruck?.trucks?.plate_number || null;
+  const driverUser = activeTripDriver?.driver_profiles?.users || null;
   const incidentCode = incident?.id ? `INC-${String(incident.id).padStart(3, '0')}` : null;
   const incidentPhotos = parseJsonStringArray(incident?.photos);
 

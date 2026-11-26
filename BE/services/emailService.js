@@ -9,7 +9,8 @@ const {
 const {
   sendIncidentCompensationApprovalEmail,
   sendIncidentCompensationRejectionEmail,
-  sendClaimPaymentRecordedEmail
+  sendClaimPaymentRecordedEmail,
+  sendIncidentCargoAffectedEmail
 } = require('./email/emailClaimTemplates');
 
 module.exports = {
@@ -20,5 +21,6 @@ module.exports = {
   sendPasswordResetEmail,
   sendIncidentCompensationApprovalEmail,
   sendIncidentCompensationRejectionEmail,
-  sendClaimPaymentRecordedEmail
+  sendClaimPaymentRecordedEmail,
+  sendIncidentCargoAffectedEmail
 };

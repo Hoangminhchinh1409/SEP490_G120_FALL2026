@@ -161,7 +161,7 @@ export default function IncidentContractViewerModal({
                     <span className="font-mono font-bold text-black pl-4 block py-1">
                       Số tiền bồi thường = Tỷ lệ hư hỏng thực tế (%) × Giá trị khai báo của từng đơn hàng
                     </span>
-                    Trong mọi trường hợp, tổng mức trách nhiệm bồi thường tối đa của Bên A cho mỗi vụ việc không vượt quá Hạn mức trách nhiệm hợp đồng đối tác là: <b className="font-mono text-black font-bold">{contractCap.toLocaleString('vi-VN')} VNĐ</b>.
+                    Trong mọi trường hợp, tổng mức trách nhiệm bồi thường tối đa của Bên A cho mỗi vụ việc không vượt quá Hạn mức trách nhiệm hợp đồng đối tác là: <b className="font-mono text-black font-bold">{contractCap != null ? `${Number(contractCap).toLocaleString('vi-VN')} VNĐ` : 'Chưa quy định'}</b>.
                   </p>
                   <p>
                     <b>Khoản 8.3:</b> Thời hạn khách hàng lập yêu cầu khiếu nại bồi thường tối đa 14 ngày kể từ thời điểm bàn giao hàng hóa. Quá thời hạn trên, quyền khiếu nại không còn hiệu lực.
@@ -247,7 +247,7 @@ export default function IncidentContractViewerModal({
                   <div><strong>CÔNG TY TNHH VẬN TẢI &amp; LOGISTICS HÀNG KHÔNG ALS</strong></div>
                   <div>Xe vận chuyển: <b className="font-mono text-black">{truckPlate}</b></div>
                   <div>Tài xế phụ trách: <b>{driverName}</b> ({driverPhone})</div>
-                  <div>Cước phí chuyến: <b className="font-mono text-black font-bold">{agreedPrice.toLocaleString('vi-VN')} VNĐ</b></div>
+                  <div>Cước phí chuyến: <b className="font-mono text-black font-bold">{agreedPrice != null ? `${Number(agreedPrice).toLocaleString('vi-VN')} VNĐ` : 'Chưa cập nhật'}</b></div>
                 </div>
 
                 <div className="space-y-1">
@@ -267,7 +267,7 @@ export default function IncidentContractViewerModal({
                   <div className="flex items-center justify-between text-xs">
                     <span>Giá trị khai báo tính bồi thường:</span>
                     <strong className="font-mono text-black font-bold text-sm">
-                      {declaredValue.toLocaleString('vi-VN')} VNĐ
+                      {declaredValue != null ? `${Number(declaredValue).toLocaleString('vi-VN')} VNĐ` : 'Chưa khai báo'}
                     </strong>
                   </div>
                   <p className="text-[11px] text-black italic pt-0.5">
@@ -297,10 +297,10 @@ export default function IncidentContractViewerModal({
                     1. Bên vận chuyển cam kết bảo quản nguyên đai nguyên kiện và nguyên tem niêm phong chì trong suốt hành trình từ điểm nhận đến điểm giao.
                   </p>
                   <p>
-                    2. Trường hợp xảy ra móp vỡ, đổ vỡ do lỗi vận hành xe: Mức bồi thường = <b>Tỷ lệ hư hỏng (%) × Giá trị khai báo ({declaredValue.toLocaleString('vi-VN')} VNĐ)</b>.
+                    2. Trường hợp xảy ra móp vỡ, đổ vỡ do lỗi vận hành xe: Mức bồi thường = <b>Tỷ lệ hư hỏng (%) × Giá trị khai báo ({declaredValue != null ? `${Number(declaredValue).toLocaleString('vi-VN')} VNĐ` : 'Chưa khai báo'})</b>.
                   </p>
                   <p>
-                    3. Giới hạn trách nhiệm tối đa áp dụng: <b className="font-mono font-bold text-black">{effectiveLiabilityCap.toLocaleString('vi-VN')} VNĐ</b> {!hasFrameworkContract && '(Theo mức trần luật định Nghị định 163/2017/NĐ-CP)'}.
+                    3. Giới hạn trách nhiệm tối đa áp dụng: <b className="font-mono font-bold text-black">{effectiveLiabilityCap != null ? `${Number(effectiveLiabilityCap).toLocaleString('vi-VN')} VNĐ` : 'Chưa quy định'}</b> {!hasFrameworkContract && '(Theo mức trần luật định Nghị định 163/2017/NĐ-CP)'}.
                   </p>
                 </div>
               </div>

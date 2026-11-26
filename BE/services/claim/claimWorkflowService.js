@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const cloudinaryService = require('../cloudinaryService');
 const { parseOrderMeta } = require('../orderHelperService');
 const {
   sendIncidentCompensationApprovalEmail,
@@ -66,13 +67,14 @@ const decideClaim = async (id, payload = {}, managerId = 1) => {
   let emailResult = { sent: false, customer_email: detailedBefore.customer_email || null, email_type: null, error: null };
 
   if (isApprove) {
-    const approvedAmount =
-      payload.approved_amount !== undefined && payload.approved_amount !== null && payload.approved_amount !== ''
-        ? Number(payload.approved_amount)
-        : Number(rawClaim.amount || 0);
+    const hasApprovedInput =
+      payload.approved_amount !== undefined &&
+      payload.approved_amount !== null &&
+      String(payload.approved_amount).trim() !== '';
+    const approvedAmount = hasApprovedInput ? Number(payload.approved_amount) : NaN;
 
-    if (!Number.isFinite(approvedAmount) || approvedAmount < 0) {
-      throw createHttpError('Số tiền phê duyệt bồi thường không hợp lệ (>= 0).', 400);
+    if (!hasApprovedInput || !Number.isFinite(approvedAmount) || approvedAmount <= 0) {
+      throw createHttpError('Số tiền phê duyệt bồi thường phải lớn hơn 0 VNĐ.', 400);
     }
 
     const commentStr = String(payload.comment || payload.resolution_note || payload.note || '').trim();
@@ -435,7 +437,6 @@ const recordManagerPayment = async (id, payload = {}, managerId = 1) => {
       payment_date: parsedPaymentDate,
       transaction_code: transactionCode.slice(0, 100),
       payment_proof_url: uploadedProofUrl,
-      evidence: uploadedProofUrl,
       payment_note: paymentNote,
       updated_at: now
     },
@@ -446,6 +447,7 @@ const recordManagerPayment = async (id, payload = {}, managerId = 1) => {
     await prisma.incidents.update({
       where: { id: rawClaim.incident_id },
       data: {
+        status: 'PAID',
         payment_proof_url: uploadedProofUrl,
         updated_at: now
       },

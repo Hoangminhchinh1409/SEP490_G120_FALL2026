@@ -69,7 +69,7 @@ export default function MajorIncidentDetailModal({
       }
 
       const initStatus = determineIncidentStatus(incident);
-      if (initStatus.isDone || initStatus.isRejected) {
+      if (!initStatus.isPending) {
         setFault(incident.fault || null);
         setResolutionNote(incident.resolution_note || '');
         setDamagePercentage(
@@ -79,7 +79,7 @@ export default function MajorIncidentDetailModal({
         );
         setGoodsHandlingMethod(incident.goods_handling_method || null);
         setContractClauseRef(incident.contract_clause_ref || '');
-        setSurveyOrgReport(incident.survey_org_report || '');
+        setSurveyOrgReport(incident.survey_org_report || incident.assessment_result || '');
         setRejectionReason(incident.rejection_reason || '');
         setRejectionClause(initStatus.isRejected ? (incident.contract_clause_ref || '') : '');
         const initAmt = incident.approved_compensation_amount ?? incident.proposed_compensation_amount;
@@ -111,7 +111,7 @@ export default function MajorIncidentDetailModal({
           const dataStatus = determineIncidentStatus(data);
           setDetail(data);
 
-          if (dataStatus.isDone || dataStatus.isRejected) {
+          if (!dataStatus.isPending) {
             setFault(data.fault || null);
             setResolutionNote(data.resolution_note || '');
             setDamagePercentage(
@@ -121,7 +121,7 @@ export default function MajorIncidentDetailModal({
             );
             setGoodsHandlingMethod(data.goods_handling_method || null);
             setContractClauseRef(data.contract_clause_ref || '');
-            setSurveyOrgReport(data.survey_org_report || '');
+            setSurveyOrgReport(data.survey_org_report || data.assessment_result || '');
             setRejectionReason(data.rejection_reason || '');
             if (data.rejection_reason && data.contract_clause_ref) {
               setRejectionClause(data.contract_clause_ref);
@@ -168,20 +168,21 @@ export default function MajorIncidentDetailModal({
   if (!open || !incident) return null;
 
   const currentData = detail || incident;
-  const { isPending, isRejected, isDone } = determineIncidentStatus(currentData);
+  const { isPending, isApproved, isPaid, isRejected, isDone, badge } = determineIncidentStatus(currentData);
+  const isFormLocked = !isPending || isReadOnly;
 
-  const claimCode = currentData.claim_code || currentData.compensation_claim?.claim_code || 'Chưa có hồ sơ bồi thường';
-  const orderCode = currentData.order_code || currentData.order?.order_code || 'Chưa cập nhật';
+  const claimCode = currentData.claim_code || currentData.compensation_claim?.claim_code || null;
+  const orderCode = currentData.order_code || currentData.order?.order_code || 'Chưa gắn đơn';
   const orderType = currentData.order?.order_type || currentData.order_type || 'Chưa cập nhật';
   const orderStatus = currentData.order?.status || 'Chưa cập nhật';
   const customerName = currentData.order?.customer?.company_name || currentData.customer_name || 'Chưa cập nhật';
   const contactPerson = currentData.order?.contact_person || currentData.receiver_name || currentData.order?.receiver_name || 'Chưa cập nhật';
-  const contactPhone = currentData.order?.contact_phone || currentData.order?.customer?.phone || 'Chưa cập nhật';
+  const contactPhone = currentData.order?.contact_phone || currentData.order?.customer?.phone || 'Chưa có';
   const customerEmailDisplay =
     currentData.customer_email ||
     currentData.order?.customer?.email ||
     currentData.order?.order_contract?.contract_details?.customer_email ||
-    'Chưa cập nhật';
+    null;
   const receiverName = currentData.receiver_name || currentData.order?.receiver_name || contactPerson;
   const routeDisplay =
     currentData.order?.route_display ||
@@ -192,17 +193,19 @@ export default function MajorIncidentDetailModal({
   const cargoDescription =
     currentData.order?.cargo_description ||
     (firstCargo?.cargo_name
-      ? `${firstCargo.cargo_name}${firstCargo.package_count ? ` - ${firstCargo.package_count} kiện` : ''}${firstCargo.weight_kg ? ` - ${firstCargo.weight_kg} kg` : ''}`
-      : 'Chưa cập nhật');
-  const declaredValue = Number(currentData.order?.declared_value || currentData.declared_value || 0);
-  const agreedPrice = Number(currentData.order?.agreed_price || currentData.agreed_price || 0);
-  const tripCode = currentData.trip_code || (currentData.trip_id ? `TR${currentData.trip_id}` : 'Chưa cập nhật');
+      ? `${firstCargo.cargo_name}${firstCargo.quantity ? ` - ${firstCargo.quantity} ${firstCargo.unit || 'kiện'}` : ''}${firstCargo.actual_weight_kg ? ` - ${firstCargo.actual_weight_kg} kg` : ''}`
+      : 'Chưa có thông tin hàng hóa');
+  const rawDeclaredVal = currentData.order?.declared_value ?? currentData.declared_value ?? null;
+  const declaredValue = rawDeclaredVal !== null && rawDeclaredVal !== undefined ? Number(rawDeclaredVal) : null;
+  const rawAgreedPrice = currentData.order?.agreed_price ?? currentData.agreed_price ?? null;
+  const agreedPrice = rawAgreedPrice !== null && rawAgreedPrice !== undefined ? Number(rawAgreedPrice) : null;
+  const tripCode = currentData.trip_code || (currentData.trip_id ? `TRIP-${currentData.trip_id}` : 'Chưa cập nhật');
   const truckPlate = currentData.truck_plate || 'Chưa cập nhật';
   const driverName = currentData.driver_name || 'Chưa cập nhật';
-  const driverPhone = currentData.driver_phone || 'Chưa cập nhật';
+  const driverPhone = currentData.driver_phone || 'Chưa có';
   const sealNumber = currentData.seal_number || currentData.order?.seal_number || 'Chưa ghi nhận';
-  const contractNumber = currentData.contract?.contract_number || 'Chưa có hợp đồng khung';
-  const contractCap = Number(currentData.contract?.liability_cap || 0);
+  const contractNumber = currentData.contract?.contract_number || 'Không có hợp đồng khung';
+  const contractCap = currentData.contract?.liability_cap ? Number(currentData.contract.liability_cap) : null;
 
   // Nhận diện đơn hàng có Hợp đồng khung đối tác dài hạn hay là khách vãng lai
   const hasFrameworkContract = checkHasFrameworkContract({
@@ -218,36 +221,37 @@ export default function MajorIncidentDetailModal({
   const requestedClaimAmount = Number(currentData.claim_amount || currentData.proposed_compensation_amount || 0);
   const escalatedTimeDisplay = currentData.escalated_time
     ? new Date(currentData.escalated_time).toLocaleString('vi-VN')
-    : 'Chờ điều phối cập nhật';
+    : 'Chưa chuyển cấp';
   const escalationReasonDisplay =
     currentData.escalation_reason ||
-    'Sự cố vượt thẩm quyền điều phối viên, chuyển Quản lý thẩm định và phê duyệt phương án bồi thường.';
+    'Chưa có ghi chú chuyển cấp.';
 
   // Thông tin sự cố phát sinh (Mục 5 & 6)
-  const incidentCode = currentData.code || `INC-${currentData.id || 12}`;
-  const incidentTitle = currentData.type_display || currentData.type || 'Hàng hóa hư hỏng (Cargo Damaged)';
-  const incidentSource = currentData.source_display || 'Tài xế báo cáo';
-  const incidentTime = currentData.reported_time ? new Date(currentData.reported_time).toLocaleString('vi-VN') : '07:52 07/11/2026';
-  const incidentLocation = currentData.incident_location || 'QL18, Sóc Sơn (21.2113, 105.8340)';
-  const incidentDescription = currentData.description || 'Xe phanh gấp tránh va chạm, 2 kiện hàng đổ vỡ, niêm phong chì vẫn nguyên vẹn.';
-  const tripEventsTimeline = currentData.trip_events_timeline || '07:31 Lấy hàng, seal SL-894201 · 07:45 Rời kho · 07:52 Báo sự cố · 08:10 Tiếp tục hành trình · 09:20 Giao hàng';
+  const incidentCode = currentData.code || (currentData.id ? `INC-${String(currentData.id).padStart(3, '0')}` : '—');
+  const incidentTitle = currentData.type_display || currentData.type || 'Sự cố vận chuyển';
+  const incidentSource = currentData.source_display || (currentData.driver_name ? 'Tài xế báo cáo' : 'Hệ thống');
+  const incidentTime = currentData.reported_time ? new Date(currentData.reported_time).toLocaleString('vi-VN') : 'Chưa ghi nhận';
+  const incidentLocation = currentData.incident_location || 'Chưa có thông tin vị trí';
+  const hasCoordinates = currentData.incident_lat != null && currentData.incident_lng != null;
+  const incidentDescription = currentData.description || 'Chưa có mô tả chi tiết.';
+  const tripEventsTimeline = currentData.trip_events_timeline || 'Chưa ghi nhận sự kiện chuyến xe.';
 
-  // 4 Khung hình ảnh minh chứng (Mục 9)
-  const pickupPhoto = currentData.pickup_photos?.[0] || 'https://images.unsplash.com/photo-1586528116311-ad8ed7c50a41?q=80&w=800';
-  const sealPhoto = currentData.seal_photos?.[0] || currentData.pickup_photos?.[1] || currentData.pickup_photos?.[0] || 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?q=80&w=800';
-  const podPhoto = currentData.delivery_photos?.[0] || 'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=800';
+  // 4 Khung hình ảnh minh chứng (Mục 9 — chỉ dùng ảnh thật từ DB, không fallback ảnh mẫu)
+  const pickupPhoto = currentData.pickup_photos?.[0] || null;
+  const sealPhoto = currentData.seal_photos?.[0] || null;
+  const podPhoto = currentData.delivery_photos?.[0] || null;
   const incidentPhotosList =
     Array.isArray(currentData.incident_photos) && currentData.incident_photos.length > 0
       ? currentData.incident_photos
       : Array.isArray(currentData.photos) && currentData.photos.length > 0
         ? currentData.photos
-        : ['https://images.unsplash.com/photo-1578575437130-527eed3abbec?q=80&w=800'];
-  const incidentPhoto = incidentPhotosList[0];
+        : [];
+  const incidentPhoto = incidentPhotosList[0] || null;
 
   // Tính toán bồi thường theo hợp đồng (Mục 11 & Mục 13)
   const calculateAutoCompensation = (pct, method) => {
     return calcCompensation({
-      declaredValue,
+      declaredValue: declaredValue || 0,
       damagePercentage: pct,
       handlingMethod: method,
       liabilityCap: effectiveLiabilityCap
@@ -261,7 +265,7 @@ export default function MajorIncidentDetailModal({
     }
     const num = Number(val);
     setDamagePercentage(num);
-    if (fault !== 'CUSTOMER') {
+    if (fault !== 'CUSTOMER' && declaredValue !== null && declaredValue > 0) {
       setCompensationAmount(
         calculateAutoCompensation(num, goodsHandlingMethod || 'CUSTOMER_RETAIN')
       );
@@ -270,7 +274,13 @@ export default function MajorIncidentDetailModal({
 
   const handleHandlingMethodChange = (method) => {
     setGoodsHandlingMethod(method);
-    if (fault !== 'CUSTOMER' && damagePercentage !== null && damagePercentage !== undefined) {
+    if (
+      fault !== 'CUSTOMER' &&
+      declaredValue !== null &&
+      declaredValue > 0 &&
+      damagePercentage !== null &&
+      damagePercentage !== undefined
+    ) {
       setCompensationAmount(calculateAutoCompensation(damagePercentage, method));
     }
   };
@@ -282,6 +292,8 @@ export default function MajorIncidentDetailModal({
     } else if (
       val === 'COMPANY' &&
       (!compensationAmount || compensationAmount === 0) &&
+      declaredValue !== null &&
+      declaredValue > 0 &&
       damagePercentage > 0
     ) {
       setCompensationAmount(
@@ -303,6 +315,10 @@ export default function MajorIncidentDetailModal({
       message.warning(validation.error);
       return;
     }
+    if (Number(compensationAmount) > effectiveLiabilityCap && !String(resolutionNote || '').trim()) {
+      message.warning(`Số tiền duyệt vượt hạn mức trách nhiệm (${effectiveLiabilityCap.toLocaleString('vi-VN')} đ)! Bắt buộc nhập nhận xét ngoại lệ (MSG56).`);
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -320,13 +336,39 @@ export default function MajorIncidentDetailModal({
       const res = await managerApi.decideIncidentCompensation(incId, payload);
       message.success(
         res?.message ||
-          'Đã chốt mức bồi thường, gửi email xác nhận tới khách hàng và hoàn tất hồ sơ!'
+          'Đã chốt mức bồi thường và gửi email thông báo tới khách hàng!'
       );
       onSuccess?.();
       onClose();
     } catch (error) {
       console.error('Lỗi duyệt bồi thường:', error);
       message.error(error.message || 'Lỗi khi phê duyệt bồi thường');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Xác định lỗi & Đóng sự cố không phát sinh bồi thường (UI-38 / BUG-UI-06)
+  const handleResolveWithoutCompensation = async () => {
+    if (!fault) {
+      message.warning('Vui lòng chọn bên chịu trách nhiệm lỗi trước khi đóng sự cố!');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const incId = currentData.id || currentData.raw_id;
+      const res = await managerApi.resolveIncident(incId, {
+        fault,
+        compensation_amount: 0,
+        resolution_note: resolutionNote.trim() || 'Quản lý đã xác định bên có lỗi và đóng sự cố (không phát sinh bồi thường).'
+      });
+      message.success(res?.message || 'Đã xác định lỗi và đóng hồ sơ sự cố (không bồi thường)!');
+      onSuccess?.();
+      onClose();
+    } catch (error) {
+      console.error('Lỗi đóng sự cố không bồi thường:', error);
+      message.error(error.message || 'Lỗi khi đóng sự cố');
     } finally {
       setSubmitting(false);
     }
@@ -379,7 +421,7 @@ export default function MajorIncidentDetailModal({
       });
 
       const res = await managerApi.decideIncidentCompensation(incId, payload);
-      message.success(res?.message || 'Đã từ chối bồi thường và hoàn tất đóng hồ sơ (DONE)!');
+      message.success(res?.message || 'Đã từ chối bồi thường — Chờ Điều phối viên gọi điện thông báo khách hàng.');
       setIsRejectModalOpen(false);
       onSuccess?.();
       onClose();
@@ -393,6 +435,10 @@ export default function MajorIncidentDetailModal({
 
   // Gửi trực tiếp hoặc gửi lại Email thông báo tới Khách hàng
   const handleSendEmailToCustomer = async () => {
+    if (!customerEmailDisplay) {
+      message.warning('Đơn hàng chưa có email khách hàng để gửi thông báo.');
+      return;
+    }
     try {
       setSendingEmail(true);
       const incId = currentData.id || currentData.raw_id;
@@ -438,18 +484,11 @@ export default function MajorIncidentDetailModal({
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-base sm:text-lg font-black text-primary tracking-tight font-mono">
-                    Xét duyệt Bồi thường: {claimCode} – Đơn {orderCode}
+                    {claimCode ? `Xét duyệt Bồi thường: ${claimCode}` : `Thẩm định Sự cố: ${incidentCode}`} – Đơn {orderCode}
                   </h3>
-                  {isPending && (
-                    <Tag color="orange" className="font-bold text-xs uppercase px-2.5 py-0.5 rounded-full border-0 shadow-2xs">
-                      Chờ Quản lý xét duyệt
-                    </Tag>
-                  )}
-                  {isDone && (
-                    <Tag color={isRejected ? "red" : "green"} className="font-bold text-xs uppercase px-2.5 py-0.5 rounded-full border-0 shadow-2xs">
-                      {isRejected ? "Đã từ chối bồi thường (Đóng)" : "Đã chốt bồi thường · Hoàn tất (Đóng)"}
-                    </Tag>
-                  )}
+                  <Tag color={badge.color} className="font-bold text-xs uppercase px-2.5 py-0.5 rounded-full border-0 shadow-2xs">
+                    {badge.label}
+                  </Tag>
                   {currentData.is_major && (
                     <Tag color="red" className="font-bold text-xs uppercase px-2.5 py-0.5 rounded-full border-0 shadow-2xs">
                       Sự cố nghiêm trọng
@@ -507,6 +546,8 @@ export default function MajorIncidentDetailModal({
               podPhoto={podPhoto}
               incidentPhoto={incidentPhoto}
               incidentPhotosList={incidentPhotosList}
+              cargoAffected={currentData.cargo_affected}
+              hasCoordinates={hasCoordinates}
               onOpenContractViewer={() => setIsContractViewerOpen(true)}
               onOpenLocationMap={() => setIsLocationMapOpen(true)}
             />
@@ -514,9 +555,12 @@ export default function MajorIncidentDetailModal({
             <IncidentCompensationForm
               currentData={currentData}
               isPending={isPending}
+              isApproved={isApproved}
+              isPaid={isPaid}
               isRejected={isRejected}
               isDone={isDone}
               isReadOnly={isReadOnly}
+              isFormLocked={isFormLocked}
               submitting={submitting}
               damagePercentage={damagePercentage}
               fault={fault}
@@ -537,6 +581,7 @@ export default function MajorIncidentDetailModal({
               handleFaultChange={handleFaultChange}
               handleHandlingMethodChange={handleHandlingMethodChange}
               handleApproveCompensation={handleApproveCompensation}
+              handleResolveWithoutCompensation={handleResolveWithoutCompensation}
               onOpenRejectModal={() => setIsRejectModalOpen(true)}
               onOpenRequestInfoModal={() => setIsRequestInfoModalOpen(true)}
               onOpenEmailPreview={(type) => {
@@ -555,10 +600,10 @@ export default function MajorIncidentDetailModal({
         mode="INCIDENT_LOCATION"
         tripId={currentData.trip_id || currentData.trip?.id || (currentData.trip_code ? parseInt(String(currentData.trip_code).replace(/\D/g, ''), 10) : null)}
         incidentInfo={{
-          incident_location_lat: currentData.incident_lat || currentData.latitude || 21.2113,
-          incident_location_lng: currentData.incident_lng || currentData.longitude || 105.8340,
+          incident_location_lat: currentData.incident_lat ?? currentData.latitude ?? null,
+          incident_location_lng: currentData.incident_lng ?? currentData.longitude ?? null,
           location: incidentLocation,
-          reported_time: currentData.reported_time || '2026-11-07T07:52:00Z',
+          reported_time: currentData.reported_time || null,
           trip_code: tripCode,
           vehicle_plate: truckPlate,
           driver_name: driverName,

@@ -1,4 +1,6 @@
 const prisma = require('../../config/prisma');
+const { parseOrderMeta } = require('../orderHelperService');
+const { sendIncidentCargoAffectedEmail } = require('../emailService');
 const { serializePrisma, toBigInt, toNum, formatDateOnly } = require('../../utils/prismaHelper');
 const {
   DEFAULT_CLAIM_WINDOW_DAYS,
@@ -40,6 +42,7 @@ const createDispatcherClaim = async (payload = {}, userId = 1) => {
   const claimType = normalizeClaimType(payload.claim_type);
 
   let resolvedIncidentId = null;
+  let resolvedTripCode = null;
   let resolvedOrderId = payload.order_id ? toBigInt(payload.order_id) : null;
 
   if (payload.incident_id !== undefined && payload.incident_id !== null && String(payload.incident_id).trim() !== '') {
@@ -55,6 +58,7 @@ const createDispatcherClaim = async (payload = {}, userId = 1) => {
         trip_id: true,
         trips: {
           select: {
+            trip_code: true,
             trip_stops: {
               where: { order_id: { not: null } },
               select: { order_id: true }
@@ -68,6 +72,7 @@ const createDispatcherClaim = async (payload = {}, userId = 1) => {
       throw createHttpError('Không tìm thấy sự cố liên quan.', 404);
     }
     resolvedIncidentId = incident.id;
+    resolvedTripCode = incident.trips?.trip_code || null;
 
     const tripOrderIds = [...new Set(
       (incident.trips?.trip_stops || [])
@@ -92,7 +97,20 @@ const createDispatcherClaim = async (payload = {}, userId = 1) => {
 
   const order = await prisma.orders.findUnique({
     where: { id: resolvedOrderId },
-    select: { id: true, order_code: true }
+    select: {
+      id: true,
+      order_code: true,
+      tracking_token: true,
+      receiver_name: true,
+      order_notes: true,
+      customers: {
+        select: {
+          company_name: true,
+          contact_person: true,
+          email: true
+        }
+      }
+    }
   });
   if (!order) {
     throw createHttpError('Không tìm thấy đơn hàng tương ứng.', 404);
@@ -117,6 +135,16 @@ const createDispatcherClaim = async (payload = {}, userId = 1) => {
       updated_at: now
     }
   });
+
+  if (resolvedIncidentId) {
+    await prisma.incidents.update({
+      where: { id: resolvedIncidentId },
+      data: { cargo_affected: true, updated_at: now },
+      select: { id: true }
+    }).catch((err) => {
+      console.warn('[claimService] createDispatcherClaim set cargo_affected warning:', err.message);
+    });
+  }
 
   const claimIdNum = toNum(created.id);
   const claimCode = `CLM-${String(claimIdNum).padStart(4, '0')}`;
@@ -153,7 +181,43 @@ const createDispatcherClaim = async (payload = {}, userId = 1) => {
     sourceLabel: 'Điều phối viên (sự cố)'
   });
 
-  return formatPublicClaim(created);
+  let emailSent = false;
+  let customerEmail = null;
+  try {
+    let orderMeta = {};
+    try {
+      orderMeta = parseOrderMeta(order);
+    } catch {
+      orderMeta = {};
+    }
+    customerEmail = order.customers?.email || orderMeta?.customer_email || orderMeta?.contract_details?.customer_email || null;
+    if (customerEmail) {
+      const clientOrigin = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000';
+      const trackingToken = (order.tracking_token || order.order_code || '').trim();
+      const trackingUrl = trackingToken ? `${clientOrigin}/t/${trackingToken}` : null;
+      const sendRes = await sendIncidentCargoAffectedEmail({
+        customerEmail,
+        customerName: order.customers?.company_name || order.receiver_name || 'Quý khách hàng',
+        contactPerson: order.customers?.contact_person || order.receiver_name || '',
+        orderCode: order.order_code,
+        tripCode: resolvedTripCode,
+        incidentCode: resolvedIncidentId ? `INC-${String(toNum(resolvedIncidentId)).padStart(3, '0')}` : null,
+        claimCode,
+        claimType,
+        reason,
+        trackingUrl
+      });
+      emailSent = Boolean(sendRes?.success);
+    }
+  } catch (mailErr) {
+    console.warn('[claimService] createDispatcherClaim email warning:', mailErr.message);
+  }
+
+  return {
+    ...formatPublicClaim(created),
+    email_sent: emailSent,
+    customer_email: customerEmail
+  };
 };
 
 /**

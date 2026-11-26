@@ -24,6 +24,10 @@ process.on("uncaughtException", (err) => {
     console.error("[Process] Uncaught Exception:", err);
 });
 
+process.on("unhandledRejection", (reason, promise) => {
+    console.warn("[Process] Unhandled Rejection at:", promise, "reason:", reason);
+});
+
 const prisma = require("./config/prisma");
 const apiRoutes = require("./routes");
 

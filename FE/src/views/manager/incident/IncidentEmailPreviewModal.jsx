@@ -45,7 +45,7 @@ export default function IncidentEmailPreviewModal({
               Thiết kế Bản Email Thông báo Bồi thường gửi Khách hàng
             </h4>
             <p className="text-[11px] text-on-surface-variant font-normal">
-              Xem trước giao diện, màu sắc, bố cục và nội dung email sẽ tự động gửi tới khách hàng ({customerEmailDisplay})
+              Xem trước giao diện, màu sắc, bố cục và nội dung email sẽ tự động gửi tới khách hàng ({customerEmailDisplay || 'Chưa có email'})
             </p>
           </div>
         </div>
@@ -82,12 +82,15 @@ export default function IncidentEmailPreviewModal({
             {!isReadOnly && (
               <button
                 type="button"
-                disabled={sendingEmail}
+                disabled={sendingEmail || !customerEmailDisplay}
                 onClick={onSendEmail}
-                className={`h-9 px-4 rounded-xl text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition-all ${
-                  emailPreviewType === 'REJECTION'
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-emerald-600 hover:bg-emerald-700'
+                title={!customerEmailDisplay ? 'Đơn hàng chưa có email khách hàng' : undefined}
+                className={`h-9 px-4 rounded-xl text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-all ${
+                  !customerEmailDisplay
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : emailPreviewType === 'REJECTION'
+                      ? 'bg-red-600 hover:bg-red-700 cursor-pointer'
+                      : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">send</span>
@@ -140,7 +143,7 @@ export default function IncidentEmailPreviewModal({
         <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] space-y-1 text-slate-600">
           <div className="flex flex-wrap justify-between gap-2">
             <span><b>Từ:</b> ALS NEXLOG Claims &lt;claims@nexlog.vn&gt;</span>
-            <span><b>Đến:</b> <span className="font-mono text-primary font-semibold">{customerEmailDisplay}</span></span>
+            <span><b>Đến:</b> <span className="font-mono text-primary font-semibold">{customerEmailDisplay || 'Chưa có email'}</span></span>
           </div>
           <div>
             <b>Tiêu đề:</b>{' '}
@@ -218,7 +221,7 @@ export default function IncidentEmailPreviewModal({
                   <div className="divide-y divide-dashed divide-slate-200 text-xs">
                     <div className="py-1.5 flex justify-between gap-2">
                       <span className="text-slate-500">Mã hồ sơ / Mã sự cố:</span>
-                      <b className="font-mono text-emerald-700">{claimCode} / {incidentCode}</b>
+                      <b className="font-mono text-emerald-700">{claimCode || '—'} / {incidentCode}</b>
                     </div>
                     <div className="py-1.5 flex justify-between gap-2">
                       <span className="text-slate-500">Đơn hàng / Chuyến xe:</span>
@@ -234,7 +237,7 @@ export default function IncidentEmailPreviewModal({
                     </div>
                     <div className="py-1.5 flex justify-between gap-2">
                       <span className="text-slate-500">Giá trị khai báo / Tỷ lệ hỏng:</span>
-                      <b className="font-mono text-slate-900">{declaredValue.toLocaleString('vi-VN')} đ · {damagePercentage}%</b>
+                      <b className="font-mono text-slate-900">{declaredValue != null ? `${Number(declaredValue).toLocaleString('vi-VN')} đ` : 'Chưa khai báo'} · {damagePercentage ?? 0}%</b>
                     </div>
                     {surveyOrgReport && (
                       <div className="py-1.5 flex justify-between gap-2">
@@ -331,7 +334,7 @@ export default function IncidentEmailPreviewModal({
                   <div className="divide-y divide-dashed divide-slate-200 text-xs">
                     <div className="py-1.5 flex justify-between gap-2">
                       <span className="text-slate-500">Mã hồ sơ / Mã sự cố:</span>
-                      <b className="font-mono text-red-700">{claimCode} / {incidentCode}</b>
+                      <b className="font-mono text-red-700">{claimCode || '—'} / {incidentCode}</b>
                     </div>
                     <div className="py-1.5 flex justify-between gap-2">
                       <span className="text-slate-500">Đơn hàng / Chuyến xe:</span>

@@ -160,21 +160,37 @@ export default function TripPlanningAndMonitoring({ readOnly = false }) {
 
     try {
       setLoading(true);
-      await dispatcherApi.updateIncidentStatus(targetId, payload);
+      const res = await dispatcherApi.updateIncidentStatus(targetId, payload);
+      const updatedInc = res?.incident || res;
 
       const actionStatus = String(payload.status || '').toUpperCase();
-      if (actionStatus === 'RESOLVED_REPLACED') {
-        message.success(`Đã điều xe cứu hộ ${payload.new_truck || ''}, đổi tài xế ${payload.new_driver || ''} và cấp lại Vận đơn phiên bản mới thành công!`);
-      } else if (actionStatus === 'ESCALATED' || actionStatus === 'ESCALATED_TO_MANAGER') {
-        message.warning('Đã chuyển tiếp sự cố nghiêm trọng lên Quản lý!');
+      if (!actionStatus && payload.type) {
+        message.success('Đã cập nhật phân loại sự cố.');
+        setActiveIncidentModal((prev) =>
+          prev
+            ? {
+                ...prev,
+                ...(updatedInc && typeof updatedInc === 'object' ? updatedInc : {}),
+                raw_type: payload.type
+              }
+            : prev
+        );
       } else {
-        message.success('Đã xác nhận xử lý xong sự cố hiện trường!');
+        if (actionStatus === 'RESOLVED_REPLACED') {
+          message.success(`Đã điều xe cứu hộ ${payload.new_truck || ''}, đổi tài xế ${payload.new_driver || ''} và cấp lại Vận đơn phiên bản mới thành công!`);
+        } else if (actionStatus === 'ESCALATED' || actionStatus === 'ESCALATED_TO_MANAGER') {
+          message.warning('Đã chuyển tiếp sự cố nghiêm trọng lên Quản lý!');
+        } else {
+          message.success('Đã xác nhận xử lý xong sự cố hiện trường!');
+        }
+        setActiveIncidentModal(null);
       }
-      setActiveIncidentModal(null);
       await fetchData();
     } catch (err) {
       console.error('handleResolveIncident error:', err);
       message.error(err.message || 'Lỗi khi cập nhật trạng thái sự cố trên máy chủ');
+      if (err && typeof err === 'object') err._handledToast = true;
+      throw err;
     } finally {
       setLoading(false);
     }

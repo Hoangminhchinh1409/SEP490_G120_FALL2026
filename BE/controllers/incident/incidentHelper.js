@@ -14,11 +14,35 @@ const INCIDENT_SAFE_SELECT = {
   escalated_by: true,
   escalated_time: true,
   escalation_reason: true,
+  cargo_affected: true,
   resolution_note: true,
   resolved_by: true,
   resolved_time: true,
   created_at: true,
-  updated_at: true
+  updated_at: true,
+  damage_percentage: true,
+  goods_handling_method: true,
+  contract_clause_ref: true,
+  proposed_compensation_amount: true,
+  approved_compensation_amount: true,
+  rejection_reason: true,
+  contact_hotline: true,
+  payment_proof_url: true,
+  incident_lat: true,
+  incident_lng: true,
+  is_on_route: true,
+  route_deviation_km: true,
+  closed_by: true,
+  closed_at: true
+};
+
+const parseIncidentIdParam = (rawId) => {
+  if (rawId === undefined || rawId === null) return null;
+  const clean = String(rawId).replace(/^INC-/i, '').trim();
+  if (!/^\d+$/.test(clean)) return null;
+  const num = Number(clean);
+  if (!Number.isSafeInteger(num) || num <= 0) return null;
+  return num;
 };
 
 const COMPENSATION_ELIGIBLE_DB_TYPES = [
@@ -118,6 +142,7 @@ const mapIncidentRelations = (row) => {
 
 module.exports = {
   INCIDENT_SAFE_SELECT,
+  parseIncidentIdParam,
   COMPENSATION_ELIGIBLE_DB_TYPES,
   INCIDENT_TYPE_MAP,
   CLAIM_TYPE_DISPLAY_MAP,

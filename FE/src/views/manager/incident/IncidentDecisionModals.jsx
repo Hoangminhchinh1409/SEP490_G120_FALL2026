@@ -44,8 +44,8 @@ export default function IncidentDecisionModals({
           <Alert
             type="warning"
             showIcon
-            title={<b className="text-xs">Lưu ý quyết định đơn phương</b>}
-            description="Quyết định từ chối bồi thường dựa trên căn cứ Hợp đồng sẽ tự động gửi thông báo cho Khách hàng và chuyển ngay trạng thái sự cố sang ĐÃ ĐÓNG (DONE)."
+            title={<b className="text-xs">Lưu ý quyết định từ chối</b>}
+            description="Quyết định từ chối bồi thường dựa trên căn cứ Hợp đồng sẽ tự động gửi email thông báo cho Khách hàng và chuyển sang trạng thái ĐÃ TỪ CHỐI (REJECTED) để Điều phối viên gọi điện thông báo trước khi đóng hồ sơ."
             className="rounded-xl p-3 border border-amber-200"
           />
 

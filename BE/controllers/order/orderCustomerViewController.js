@@ -1,6 +1,7 @@
 const prisma = require("../../config/prisma");
 const { serializePrisma } = require("../../utils/prismaHelper");
 const { parseOrderMeta } = require("../../services/orderHelperService");
+const claimService = require("../../services/claimService");
 const {
   orderRelationInclude,
   mapOrderWithRelations,
@@ -145,7 +146,11 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
         incLogs = serializePrisma(logsRaw) || [];
       }
 
-      const closeLog = incLogs.find((l) => l.action === "CLOSE_INCIDENT_CASE_DONE");
+      const closeLog = incLogs.find(
+        (l) =>
+          l.action === "CLOSE_INCIDENT_CASE_DONE" ||
+          l.action === "RECORD_INCIDENT_PAYMENT",
+      );
       const approveLog = incLogs.find((l) => l.action === "APPROVE_INCIDENT_COMPENSATION");
       const rejectLog = incLogs.find((l) => l.action === "REJECT_INCIDENT_COMPENSATION");
 
@@ -162,33 +167,40 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
             incidentRow.resolution_note.includes("Từ chối bồi thường"),
         );
 
-      const rawPaymentProofUrl =
-        claimRow?.evidence ||
-        incidentRow?.payment_proof_url ||
-        closeLog?.changes?.payment_proof_url ||
-        null;
-
-      const txSourceText = `${closeLog?.changes?.close_note || ""} ${claimRow?.review_comment || ""} ${incidentRow?.resolution_note || ""}`;
-      const txMatch = txSourceText.match(/Mã GD:\s*([A-Za-z0-9_-]+)/i);
-      let transactionCode =
-        closeLog?.changes?.transaction_code || (txMatch ? txMatch[1] : null);
-
-      const hasPaymentRecord = Boolean(
-        rawPaymentProofUrl ||
-          transactionCode ||
-          closeLog ||
-          claimStatusUpper === "PAID",
-      );
+      const isPaid =
+        !isRejected &&
+        (claimStatusUpper === "PAID" || rawStatusUpper === "PAID");
 
       const isDone =
         !isRejected &&
-        (["DONE", "RESOLVED", "CLOSED"].includes(rawStatusUpper) || hasPaymentRecord);
+        !isPaid &&
+        (claimStatusUpper === "CLOSED_COMPENSATED" ||
+          (["DONE", "RESOLVED", "CLOSED"].includes(rawStatusUpper) &&
+            claimStatusUpper !== "APPROVED" &&
+            claimStatusUpper !== "PAID" &&
+            claimStatusUpper !== "PENDING"));
       const isApproved =
         !isRejected &&
         !isDone &&
+        !isPaid &&
         (rawStatusUpper === "APPROVED" ||
           claimStatusUpper === "APPROVED" ||
           Boolean(approveLog));
+
+      const rawPaymentProofUrl =
+        isPaid || isDone
+          ? claimRow?.payment_proof_url ||
+            incidentRow?.payment_proof_url ||
+            closeLog?.changes?.payment_proof_url ||
+            null
+          : null;
+
+      const txSourceText = `${closeLog?.changes?.close_note || ""} ${claimRow?.review_comment || ""} ${incidentRow?.resolution_note || ""}`;
+      const txMatch = txSourceText.match(/Mã GD:\s*([A-Za-z0-9_-]+)/i);
+      const transactionCode =
+        claimRow?.transaction_code ||
+        closeLog?.changes?.transaction_code ||
+        (txMatch ? txMatch[1] : null);
 
       const noteAmountMatch =
         typeof incidentRow?.resolution_note === "string"
@@ -201,10 +213,11 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
       const compensationAmount = isRejected
         ? 0
         : Number(
-            incidentRow?.approved_compensation_amount ||
+            claimRow?.approved_amount ||
+              incidentRow?.approved_compensation_amount ||
               closeLog?.changes?.approved_amount ||
               approveLog?.changes?.approved_compensation_amount ||
-              (claimStatusUpper === "APPROVED" || claimStatusUpper === "PAID" || isDone
+              (claimStatusUpper === "APPROVED" || claimStatusUpper === "PAID" || claimStatusUpper === "CLOSED_COMPENSATED" || isDone
                 ? claimRow?.amount
                 : 0) ||
               (parsedNoteAmount >= 1000 ? parsedNoteAmount : 0) ||
@@ -214,33 +227,19 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
       const dateMatch = txSourceText.match(
         /ngày\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})/i,
       );
-      let paymentDate =
-        closeLog?.changes?.payment_date || (dateMatch ? dateMatch[1] : null);
-      const closedAt = isDone
-        ? incidentRow?.closed_at ||
-          closeLog?.created_time ||
-          claimRow?.updated_at ||
-          incidentRow?.resolved_time
-        : null;
-      if (!paymentDate && isDone && compensationAmount > 0 && closedAt) {
-        paymentDate = new Date(closedAt).toISOString().split("T")[0];
-      }
-      if (!transactionCode && isDone && compensationAmount > 0 && incidentId) {
-        const compactDate = (
-          paymentDate || new Date().toISOString().split("T")[0]
-        )
-          .replace(/[^0-9]/g, "")
-          .slice(2, 8);
-        transactionCode = `FT${compactDate}${String(incidentId).padStart(4, "0")}`;
-      }
+      const paymentDate = claimRow?.payment_date
+        ? new Date(claimRow.payment_date).toISOString().split("T")[0]
+        : closeLog?.changes?.payment_date || (dateMatch ? dateMatch[1] : null);
 
       const publicStatus = isRejected
         ? "REJECTED"
         : isDone
           ? "DONE"
-          : isApproved
-            ? "APPROVED"
-            : "PENDING_APPROVAL";
+          : isPaid
+            ? "PAID"
+            : isApproved
+              ? "APPROVED"
+              : "PENDING_APPROVAL";
 
       incidentInfo = {
         has_incident: true,
@@ -325,8 +324,10 @@ const getOrderByToken = async (req, res) => {
 
     const order = mapOrderWithRelations(rawOrder);
     const extraMeta = parseOrderMeta(order);
-    const { incident, seal_image, pod_image, eta } =
-      await resolveOrderIncidentAndEvidences(order, extraMeta);
+    const [{ incident, seal_image, pod_image, eta }, claimTracking] = await Promise.all([
+      resolveOrderIncidentAndEvidences(order, extraMeta),
+      claimService.getOrderClaimsForTracking(order),
+    ]);
     const cargosList = Array.isArray(order.order_cargos)
       ? order.order_cargos
       : order.order_cargos
@@ -493,6 +494,11 @@ const getOrderByToken = async (req, res) => {
         seal_image,
         pod_image,
         incident,
+        claims: claimTracking.claims,
+        can_submit_claim: claimTracking.can_submit_claim,
+        claim_window_days: claimTracking.claim_window_days,
+        claim_window_deadline: claimTracking.claim_window_deadline,
+        claim_window_expired: claimTracking.claim_window_expired,
       },
     });
   } catch (err) {

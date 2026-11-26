@@ -22,6 +22,15 @@ const createIncident = async ({
       ? [photos.trim()]
       : [];
 
+  const parsedLat =
+    incidentLat !== null && incidentLat !== undefined && incidentLat !== "" && Number.isFinite(Number(incidentLat))
+      ? Number(incidentLat)
+      : null;
+  const parsedLng =
+    incidentLng !== null && incidentLng !== undefined && incidentLng !== "" && Number.isFinite(Number(incidentLng))
+      ? Number(incidentLng)
+      : null;
+
   const created = await prisma.incidents.create({
     data: {
       trip_id: toBigInt(tripId),
@@ -31,6 +40,8 @@ const createIncident = async ({
       status: "Reported",
       description: String(description || "").slice(0, 500),
       photos: normalizedPhotos,
+      incident_lat: parsedLat,
+      incident_lng: parsedLng,
       reported_time: now,
       created_at: now,
       updated_at: now,
@@ -46,14 +57,17 @@ const createIncident = async ({
       status: true,
       reported_by: true,
       reported_time: true,
+      incident_lat: true,
+      incident_lng: true,
       created_at: true,
       updated_at: true,
     },
   });
+  const serializedCreated = serializePrisma(created);
   return {
-    ...serializePrisma(created),
-    incident_lat: incidentLat !== null && incidentLat !== undefined ? Number(incidentLat) : null,
-    incident_lng: incidentLng !== null && incidentLng !== undefined ? Number(incidentLng) : null,
+    ...serializedCreated,
+    incident_lat: serializedCreated.incident_lat !== null && serializedCreated.incident_lat !== undefined ? Number(serializedCreated.incident_lat) : null,
+    incident_lng: serializedCreated.incident_lng !== null && serializedCreated.incident_lng !== undefined ? Number(serializedCreated.incident_lng) : null,
   };
 };
 

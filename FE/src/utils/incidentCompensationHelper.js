@@ -52,13 +52,7 @@ export function calculateAutoCompensation({
  * @returns {boolean}
  */
 export function checkHasFrameworkContract({ order, contract } = {}) {
-  return Boolean(
-    order?.contract_id ||
-    contract?.id ||
-    (contract?.contract_number &&
-      !contract.contract_number.includes('VÃNG-LAI') &&
-      !contract.contract_number.includes(order?.order_code))
-  );
+  return Boolean(order?.contract_id || contract?.id);
 }
 
 /**
@@ -101,8 +95,8 @@ export function validateApprovalDecision({
   if (!goodsHandlingMethod || !String(goodsHandlingMethod).trim()) {
     return { isValid: false, error: 'Vui lòng chọn hướng xử lý bồi thường!' };
   }
-  if (compensationAmount === null || compensationAmount === undefined || compensationAmount === '' || Number(compensationAmount) < 0) {
-    return { isValid: false, error: 'Vui lòng nhập số tiền chốt bồi thường hợp lệ (>= 0 đ)!' };
+  if (compensationAmount === null || compensationAmount === undefined || compensationAmount === '' || Number(compensationAmount) <= 0) {
+    return { isValid: false, error: 'Vui lòng nhập số tiền chốt bồi thường lớn hơn 0 đ!' };
   }
   if (!resolutionNote || !String(resolutionNote).trim()) {
     return { isValid: false, error: 'Vui lòng nhập nhận xét & căn cứ giải quyết!' };
@@ -162,41 +156,47 @@ export function validateRequestMoreInfo({ requestInfoNote } = {}) {
  * @returns {Object}
  */
 export function determineIncidentStatus(incident = {}) {
-  const rawStatus = (incident.status || incident.raw_status || '').toUpperCase();
+  const rawStatus = (incident.raw_status || incident.status || '').toUpperCase();
+  const normStatus = (incident.status || '').toUpperCase();
   const claimStatus = String(incident.claim_status || '').toUpperCase();
-  const isClosedCompensated =
-    claimStatus === 'CLOSED_COMPENSATED' ||
-    rawStatus === 'CLOSED_COMPENSATED' ||
-    rawStatus === 'DONE' ||
-    rawStatus === 'CLOSED' ||
-    rawStatus === 'RESOLVED';
   const isClosedRejected =
     claimStatus === 'CLOSED_REJECTED' ||
+    normStatus === 'CLOSED_REJECTED' ||
     rawStatus === 'CLOSED_REJECTED';
-  const isPaid = claimStatus === 'PAID' || rawStatus === 'PAID';
   const isRejected =
     isClosedRejected ||
     claimStatus === 'REJECTED' ||
+    normStatus === 'REJECTED' ||
     rawStatus === 'REJECTED' ||
     Boolean(incident.rejection_reason) ||
     Boolean(incident.resolution_note && String(incident.resolution_note).includes('Từ chối bồi thường'));
+  const isPaid =
+    !isRejected &&
+    (claimStatus === 'PAID' || normStatus === 'PAID' || rawStatus === 'PAID');
+  const isClosedCompensated =
+    !isPaid &&
+    !isRejected &&
+    (claimStatus === 'CLOSED_COMPENSATED' ||
+      normStatus === 'CLOSED_COMPENSATED' ||
+      normStatus === 'DONE' ||
+      (['DONE', 'CLOSED', 'RESOLVED'].includes(rawStatus) && !['APPROVED', 'PAID', 'PENDING'].includes(claimStatus)));
   const isApproved =
     !isClosedCompensated &&
     !isPaid &&
     !isRejected &&
-    (rawStatus === 'APPROVED' || claimStatus === 'APPROVED');
-  const isDone = isClosedCompensated || isClosedRejected;
+    (normStatus === 'APPROVED' || rawStatus === 'APPROVED' || claimStatus === 'APPROVED');
+  const isDone = isClosedCompensated || isClosedRejected || (isRejected && !claimStatus);
   const isPending = !isDone && !isApproved && !isRejected && !isPaid;
 
   let badge = { color: 'orange', label: 'Chờ Quản lý xét duyệt' };
-  if (isClosedRejected) {
+  if (isClosedRejected || (isRejected && isDone)) {
     badge = { color: 'red', label: 'Đã từ chối bồi thường (Đóng)' };
   } else if (isClosedCompensated) {
     badge = { color: 'green', label: 'Đã hoàn tất (Đóng)' };
   } else if (isPaid) {
     badge = { color: 'cyan', label: 'Đã chi trả (Chờ khách xác nhận)' };
   } else if (isApproved) {
-    badge = { color: 'blue', label: 'Đã duyệt (Chờ gọi / thanh toán)' };
+    badge = { color: 'blue', label: 'Đã duyệt (Chờ chi trả)' };
   } else if (isRejected) {
     badge = { color: 'red', label: 'Đã từ chối (Chờ ĐPV gọi khách)' };
   }

@@ -4,6 +4,7 @@ const incidentService = require('../../services/incidentService');
 const { parseOrderMeta } = require('../../services/orderHelperService');
 const {
   INCIDENT_SAFE_SELECT,
+  parseIncidentIdParam,
   COMPENSATION_ELIGIBLE_DB_TYPES,
   INCIDENT_TYPE_MAP,
   mapOrderSummaryAliases,
@@ -54,7 +55,7 @@ const getIncidents = async (req, res) => {
   try {
     const { status, type } = req.query;
 
-    const where = {
+    const baseWhere = {
       AND: [
         { type: { in: COMPENSATION_ELIGIBLE_DB_TYPES } },
         {
@@ -64,6 +65,7 @@ const getIncidents = async (req, res) => {
                 in: [
                   'ESCALATED', 'Escalated',
                   'APPROVED', 'Approved',
+                  'PAID', 'Paid',
                   'RESOLVED', 'Resolved',
                   'DONE', 'Done',
                   'CLOSED', 'Closed',
@@ -80,37 +82,8 @@ const getIncidents = async (req, res) => {
       ]
     };
 
-    if (status && status !== 'ALL') {
-      const s = status.toUpperCase();
-      if (s === 'ESCALATED') {
-        where.status = { in: ['ESCALATED', 'Escalated'] };
-      } else if (s === 'APPROVED') {
-        where.status = { in: ['APPROVED', 'Approved'] };
-      } else if (s === 'RESOLVED') {
-        where.status = { in: ['RESOLVED', 'Resolved', 'DONE', 'Done', 'CLOSED', 'Closed', 'REJECTED', 'Rejected'] };
-      } else if (s === 'REPORTED') {
-        where.status = { in: ['REPORTED', 'Reported'] };
-      } else {
-        where.status = status;
-      }
-    }
-
-    if (type && type !== 'ALL') {
-      // Hỗ trợ map nhóm sự cố cần duyệt bồi thường
-      const t = type.toUpperCase();
-      if (t === 'DAMAGED_LOST_CARGO' || t === 'DAMAGED_CARGO') {
-        where.type = { in: ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'CARGO_LOST', 'Cargo Damaged', 'Cargo Lost'] };
-      } else if (t === 'TRAFFIC_ACCIDENT') {
-        where.type = { in: ['TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident'] };
-      } else if (t === 'CARGO_HELD') {
-        where.type = { in: ['CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES'] };
-      } else {
-        where.type = { in: [] };
-      }
-    }
-
     const rawIncidents = await prisma.incidents.findMany({
-      where,
+      where: baseWhere,
       orderBy: { id: 'desc' },
       select: {
         ...INCIDENT_SAFE_SELECT,
@@ -119,9 +92,10 @@ const getIncidents = async (req, res) => {
             id: true,
             trip_code: true,
             status: true,
-            trip_trucks: { select: { trucks: { select: { plate_number: true } } } },
+            trip_trucks: { select: { released_time: true, trucks: { select: { plate_number: true } } } },
             trip_drivers: {
               select: {
+                released_time: true,
                 driver_profiles: {
                   select: { users: { select: { full_name: true, phone: true } } }
                 }
@@ -136,7 +110,22 @@ const getIncidents = async (req, res) => {
           }
         },
         compensation_claims: {
-          select: { id: true, amount: true, status: true, reason: true, source: true }
+          select: {
+            id: true,
+            amount: true,
+            approved_amount: true,
+            status: true,
+            reason: true,
+            evidence: true,
+            review_comment: true,
+            payment_proof_url: true,
+            transaction_code: true,
+            payment_date: true,
+            called_at: true,
+            paid_at: true,
+            source: true
+          },
+          orderBy: { id: 'desc' }
         }
       }
     });
@@ -191,12 +180,14 @@ const getIncidents = async (req, res) => {
       }
     }
 
-    const formatted = (incidents || []).map((i) => {
+    const allFormatted = (incidents || []).map((i) => {
       const claim = Array.isArray(i.compensation_claims)
         ? i.compensation_claims[0]
         : i.compensation_claims;
       const incLogs = logsByIncidentId[Number(i.id)] || [];
-      const closeLog = incLogs.find((l) => l.action === 'CLOSE_INCIDENT_CASE_DONE');
+      const closeLog = incLogs.find(
+        (l) => l.action === 'CLOSE_INCIDENT_CASE_DONE' || l.action === 'RECORD_INCIDENT_PAYMENT'
+      );
       const approveLog = incLogs.find((l) => l.action === 'APPROVE_INCIDENT_COMPENSATION');
       const rejectLog = incLogs.find((l) => l.action === 'REJECT_INCIDENT_COMPENSATION');
 
@@ -206,40 +197,68 @@ const getIncidents = async (req, res) => {
         Boolean(i.rejection_reason) ||
         Boolean(rejectLog) ||
         claimStatusUpper === 'REJECTED' ||
+        claimStatusUpper === 'CLOSED_REJECTED' ||
         rawStatus === 'REJECTED' ||
         Boolean(i.resolution_note && i.resolution_note.includes('Từ chối bồi thường'));
-      const hasPaymentProof = Boolean(i.payment_proof_url || claim?.evidence || closeLog?.changes?.payment_proof_url);
+      const isPaid = !isCaseRejected && (claimStatusUpper === 'PAID' || rawStatus === 'PAID');
+      const isClosedCase =
+        claimStatusUpper === 'CLOSED_COMPENSATED' ||
+        claimStatusUpper === 'CLOSED_REJECTED' ||
+        (['DONE', 'RESOLVED', 'CLOSED'].includes(rawStatus) &&
+          claimStatusUpper !== 'APPROVED' &&
+          claimStatusUpper !== 'PAID' &&
+          claimStatusUpper !== 'PENDING') ||
+        (isCaseRejected && !claim);
+      const isApproved =
+        !isCaseRejected &&
+        !isPaid &&
+        !isClosedCase &&
+        (rawStatus === 'APPROVED' || claimStatusUpper === 'APPROVED' || Boolean(approveLog));
 
       let normStatus = 'REPORTED';
       let statusDisplay = 'Đã báo';
-      if (isCaseRejected || rawStatus === 'RESOLVED' || rawStatus === 'CLOSED' || rawStatus === 'DONE' || rawStatus === 'APPROVED' || claimStatusUpper === 'APPROVED' || claimStatusUpper === 'PAID' || Boolean(approveLog) || hasPaymentProof) {
+      if (isClosedCase) {
         normStatus = 'RESOLVED';
-        statusDisplay = isCaseRejected ? 'Đã từ chối bồi thường' : 'Đã hoàn tất (Đóng)';
-      } else if (rawStatus === 'ESCALATED' || rawStatus === 'IN_PROGRESS') {
+        statusDisplay = isCaseRejected ? 'Đã từ chối (Đóng)' : 'Đã hoàn tất (Đóng)';
+      } else if (isPaid) {
+        normStatus = 'PAID';
+        statusDisplay = 'Đã chi trả (Chờ khách xác nhận)';
+      } else if (isCaseRejected) {
+        normStatus = 'REJECTED';
+        statusDisplay = 'Đã từ chối (Chờ ĐPV gọi khách)';
+      } else if (isApproved) {
+        normStatus = 'APPROVED';
+        statusDisplay = 'Đã duyệt (Chờ thanh toán)';
+      } else if (rawStatus === 'ESCALATED' || rawStatus === 'IN_PROGRESS' || claimStatusUpper === 'PENDING') {
         normStatus = 'ESCALATED';
         statusDisplay = rawStatus === 'IN_PROGRESS' ? 'Chờ bổ sung hồ sơ' : 'Chờ Quản lý xử lý';
       }
 
       const rawType = i.type || 'OTHER';
       const isMajor =
-        ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'Cargo Damaged', 'Cargo Lost', 'TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident', 'CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES'].includes(rawType) ||
+        ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'CARGO_LOST', 'Cargo Damaged', 'Cargo Lost', 'TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident', 'CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES'].includes(rawType) ||
         normStatus === 'ESCALATED';
 
-      const orderCode = orderMapByTrip[i.trip_id] || 'Chưa gắn đơn';
-
-      // Lấy biển số xe và tài xế chuyến nếu có
-      const tripTruck = i.trip?.trip_trucks?.[0]?.truck?.plate_number || null;
-      const tripDriver = i.trip?.trip_drivers?.[0]?.driver?.user?.full_name || null;
-      const tripDriverPhone = i.trip?.trip_drivers?.[0]?.driver?.user?.phone || null;
+      const orderCode = orderMapByTrip[i.trip_id] || null;
+      const activeTruckAssign =
+        (i.trip?.trip_trucks || []).find((tt) => !tt.released_time && tt.truck) ||
+        i.trip?.trip_trucks?.[0];
+      const activeDriverAssign =
+        (i.trip?.trip_drivers || []).find((td) => !td.released_time && td.driver?.user) ||
+        i.trip?.trip_drivers?.[0];
+      const tripTruck = activeTruckAssign?.truck?.plate_number || null;
+      const tripDriver = activeDriverAssign?.driver?.user?.full_name || null;
+      const tripDriverPhone = activeDriverAssign?.driver?.user?.phone || null;
 
       const noteAmountMatch = typeof i.resolution_note === 'string'
         ? i.resolution_note.match(/([\d.,]+)\s*(?:VNĐ|đ)/i)
         : null;
       const parsedNoteAmount = noteAmountMatch ? Number(noteAmountMatch[1].replace(/[.,]/g, '')) : 0;
       const resolvedApprovedAmount = Number(
+        claim?.approved_amount ||
         i.approved_compensation_amount ||
         approveLog?.changes?.approved_compensation_amount ||
-        (claimStatusUpper === 'APPROVED' || claimStatusUpper === 'PAID' || normStatus === 'RESOLVED' ? claim?.amount : 0) ||
+        ((claimStatusUpper === 'APPROVED' || claimStatusUpper === 'PAID' || claimStatusUpper === 'CLOSED_COMPENSATED') ? claim?.amount : 0) ||
         (normStatus === 'RESOLVED' && !isCaseRejected && parsedNoteAmount >= 1000 ? parsedNoteAmount : 0) ||
         0
       );
@@ -247,14 +266,18 @@ const getIncidents = async (req, res) => {
       const txSourceText = `${closeLog?.changes?.close_note || ''} ${claim?.review_comment || ''} ${i.resolution_note || ''}`;
       const txMatch = txSourceText.match(/Mã GD:\s*([A-Za-z0-9_-]+)/i);
       const resolvedTxCode =
+        claim?.transaction_code ||
         closeLog?.changes?.transaction_code ||
         (txMatch ? txMatch[1] : null);
+      const resolvedPaymentDate = claim?.payment_date
+        ? new Date(claim.payment_date).toISOString().split('T')[0]
+        : (closeLog?.changes?.payment_date || null);
 
       return {
         id: i.id,
         code: `INC-${String(i.id).padStart(3, '0')}`,
         trip_id: i.trip_id,
-        trip_code: i.trip?.trip_code || `TRIP-${i.trip_id}`,
+        trip_code: i.trip?.trip_code || (i.trip_id ? `TRIP-${i.trip_id}` : null),
         order_code: orderCode,
         truck_plate: tripTruck || null,
         driver_name: tripDriver || i.driver?.user?.full_name || null,
@@ -265,6 +288,7 @@ const getIncidents = async (req, res) => {
         description: i.description,
         photos: i.photos || [],
         fault: i.fault,
+        cargo_affected: i.cargo_affected !== undefined ? i.cargo_affected : null,
         status: normStatus,
         status_display: statusDisplay,
         raw_status: i.status,
@@ -281,33 +305,76 @@ const getIncidents = async (req, res) => {
         approved_compensation_amount: resolvedApprovedAmount,
         rejection_reason: i.rejection_reason || (isCaseRejected ? (rejectLog?.reason || claim?.review_comment || i.resolution_note) : null),
         contact_hotline: i.contact_hotline || '1900 1234',
-        payment_proof_url: i.payment_proof_url || claim?.evidence || closeLog?.changes?.payment_proof_url || null,
+        payment_proof_url:
+          (isPaid || isClosedCase) && !isCaseRejected
+            ? (claim?.payment_proof_url || i.payment_proof_url || closeLog?.changes?.payment_proof_url || null)
+            : null,
         transaction_code: resolvedTxCode,
-        payment_date: closeLog?.changes?.payment_date || null,
-        incident_lat: i.incident_lat ? Number(i.incident_lat) : null,
-        incident_lng: i.incident_lng ? Number(i.incident_lng) : null,
+        payment_date: resolvedPaymentDate,
+        called_at: claim?.called_at || null,
+        paid_at: claim?.paid_at || null,
+        incident_lat: i.incident_lat != null ? Number(i.incident_lat) : null,
+        incident_lng: i.incident_lng != null ? Number(i.incident_lng) : null,
         is_on_route: i.is_on_route !== false,
         route_deviation_km: i.route_deviation_km ? Number(i.route_deviation_km) : 0,
         claim_id: claim?.id || null,
-        claim_amount: Number(claim?.amount || 0),
+        claim_code: claim?.id ? `CLM-${String(claim.id).padStart(4, '0')}` : null,
+        claim_amount: claim ? Number(claim.amount || 0) : 0,
         claim_status: claim?.status || null,
-        claim_source: claim?.source || 'INCIDENT'
+        claim_source: claim?.source || null
       };
     });
 
-    const pendingCount = formatted.filter((x) => x.status === 'ESCALATED' || x.status === 'REPORTED').length;
-    const resolvedCount = formatted.filter((x) => x.status === 'RESOLVED').length;
-    const approvedCount = formatted.filter((x) => x.status === 'APPROVED').length;
+    // Bộ đếm KPI tính trên toàn bộ danh sách chưa lọc (BUG-UI-10 / UI-48)
+    const summary = {
+      total: allFormatted.length,
+      escalated: allFormatted.filter((x) => x.status === 'ESCALATED').length,
+      approved: allFormatted.filter((x) => x.status === 'APPROVED').length,
+      paid: allFormatted.filter((x) => x.status === 'PAID').length,
+      rejected: allFormatted.filter((x) => x.status === 'REJECTED').length,
+      pending: allFormatted.filter((x) => x.status === 'ESCALATED' || x.status === 'REPORTED').length,
+      resolved: allFormatted.filter((x) => x.status === 'RESOLVED').length
+    };
+
+    let filtered = allFormatted;
+    if (status && status !== 'ALL') {
+      const s = status.toUpperCase();
+      if (s === 'ESCALATED') {
+        filtered = filtered.filter((x) => x.status === 'ESCALATED');
+      } else if (s === 'APPROVED') {
+        filtered = filtered.filter((x) => x.status === 'APPROVED');
+      } else if (s === 'PAID') {
+        filtered = filtered.filter((x) => x.status === 'PAID');
+      } else if (s === 'REJECTED') {
+        filtered = filtered.filter((x) => x.status === 'REJECTED');
+      } else if (s === 'RESOLVED') {
+        filtered = filtered.filter((x) => x.status === 'RESOLVED');
+      } else if (s === 'REPORTED') {
+        filtered = filtered.filter((x) => x.status === 'REPORTED');
+      } else {
+        filtered = filtered.filter((x) => String(x.raw_status || '').toUpperCase() === s || x.status === s);
+      }
+    }
+
+    if (type && type !== 'ALL') {
+      const t = type.toUpperCase();
+      if (t === 'DAMAGED_LOST_CARGO' || t === 'DAMAGED_CARGO') {
+        const group = ['DAMAGED_LOST_CARGO', 'DAMAGED_CARGO', 'CARGO_DAMAGED', 'CARGO_LOST', 'Cargo Damaged', 'Cargo Lost'];
+        filtered = filtered.filter((x) => group.includes(x.type));
+      } else if (t === 'TRAFFIC_ACCIDENT') {
+        const group = ['TRAFFIC_ACCIDENT', 'ACCIDENT', 'Accident'];
+        filtered = filtered.filter((x) => group.includes(x.type));
+      } else if (t === 'CARGO_HELD') {
+        const group = ['CARGO_HELD', 'SEIZED_BY_AUTHORITY', 'HELD_BY_AUTHORITIES'];
+        filtered = filtered.filter((x) => group.includes(x.type));
+      } else {
+        filtered = [];
+      }
+    }
 
     return res.json({
-      incidents: formatted,
-      summary: {
-        total: formatted.length,
-        escalated: formatted.filter((x) => x.status === 'ESCALATED').length,
-        approved: approvedCount,
-        pending: pendingCount,
-        resolved: resolvedCount
-      }
+      incidents: filtered,
+      summary
     });
   } catch (error) {
     console.error('getIncidents Error:', error);
@@ -318,20 +385,31 @@ const getIncidents = async (req, res) => {
 const getIncidentById = async (req, res) => {
   try {
     const { id } = req.params;
+    const numId = parseIncidentIdParam(id);
+    if (!numId) {
+      return res.status(400).json({ message: 'Mã sự cố không hợp lệ.' });
+    }
     const rawIncident = await prisma.incidents.findUnique({
-      where: { id: BigInt(id) },
+      where: { id: BigInt(numId) },
       select: {
         ...INCIDENT_SAFE_SELECT,
+        trip_stops: {
+          select: {
+            id: true,
+            locations: { select: { name: true, address: true } }
+          }
+        },
         trips: {
           select: {
             id: true,
             trip_code: true,
             status: true,
             trip_trucks: {
-              select: { trucks: { select: { id: true, plate_number: true } } }
+              select: { released_time: true, trucks: { select: { id: true, plate_number: true } } }
             },
             trip_drivers: {
               select: {
+                released_time: true,
                 driver_profiles: {
                   select: {
                     id: true,
@@ -348,7 +426,7 @@ const getIncidentById = async (req, res) => {
             users: { select: { id: true, full_name: true, phone: true } }
           }
         },
-        compensation_claims: true
+        compensation_claims: { orderBy: { id: 'desc' } }
       }
     });
 
@@ -380,6 +458,7 @@ const getIncidentById = async (req, res) => {
               order_type: true,
               status: true,
               agreed_price: true,
+              customer_id: true,
               contract_id: true,
               signed_order_contract_file: true,
               receiver_name: true,
@@ -421,7 +500,9 @@ const getIncidentById = async (req, res) => {
           ? orderInfo.order_cargos[0]
           : orderInfo.order_cargos;
         if (firstCargo) {
-          orderInfo.declared_value = Number(firstCargo.declared_value || 0) || Number(orderInfo.agreed_price || 0) * 10 || 120000000;
+          orderInfo.declared_value = firstCargo.declared_value !== null && firstCargo.declared_value !== undefined
+            ? Number(firstCargo.declared_value)
+            : null;
           orderInfo.cargo_description = `${firstCargo.cargo_name || 'Hàng hóa'}${firstCargo.quantity ? ` - ${firstCargo.quantity} ${firstCargo.unit || 'kiện'}` : ''}${firstCargo.actual_weight_kg ? ` - ${firstCargo.actual_weight_kg} kg` : ''}`;
         }
         const pAddr = orderInfo.pickup_location?.name || orderInfo.pickup_location?.address;
@@ -451,7 +532,7 @@ const getIncidentById = async (req, res) => {
       }
     }
 
-    // Tra cứu hợp đồng vận chuyển tương ứng
+    // Tra cứu hợp đồng vận chuyển tương ứng (chỉ dùng hợp đồng thật từ DB, không bịa)
     if (orderInfo?.contract_id) {
       const contract = await prisma.transport_contracts.findUnique({
         where: { id: BigInt(orderInfo.contract_id) },
@@ -466,6 +547,25 @@ const getIncidentById = async (req, res) => {
       });
       if (contract) {
         contractInfo = serializePrisma(contract);
+      }
+    } else if (orderInfo?.customer_id) {
+      const activeContract = await prisma.transport_contracts.findFirst({
+        where: {
+          customer_id: BigInt(orderInfo.customer_id),
+          status: { in: ['ACTIVE', 'Active'] }
+        },
+        orderBy: { id: 'desc' },
+        select: {
+          id: true,
+          contract_number: true,
+          liability_cap: true,
+          attachment_link: true,
+          compensation_terms: true,
+          terms_and_responsibilities: true
+        }
+      });
+      if (activeContract) {
+        contractInfo = serializePrisma(activeContract);
       }
     }
 
@@ -499,45 +599,60 @@ const getIncidentById = async (req, res) => {
       });
     }
 
-    // Fallback ảnh mẫu chất lượng cao cho demo nếu đơn hàng chưa có đủ ảnh lưu
-    if (pickupPhotos.length === 0) {
-      pickupPhotos = [
-        'https://images.unsplash.com/photo-1586528116311-ad8ed7c50a41?q=80&w=800',
-        'https://images.unsplash.com/photo-1587293852726-70cdb56c2866?q=80&w=800'
-      ];
-    }
-    if (sealPhotos.length === 0) {
-      sealPhotos = [
-        'https://images.unsplash.com/photo-1558981806-ec527fa84c39?q=80&w=800'
-      ];
-    }
-    if (deliveryPhotos.length === 0) {
-      deliveryPhotos = [
-        'https://images.unsplash.com/photo-1620023412351-96860000d6cb?q=80&w=800'
-      ];
-    }
+    const activeTruckAssign =
+      (incident.trip?.trip_trucks || []).find((tt) => !tt.released_time && tt.truck) ||
+      incident.trip?.trip_trucks?.[0];
+    const activeDriverAssign =
+      (incident.trip?.trip_drivers || []).find((td) => !td.released_time && td.driver?.user) ||
+      incident.trip?.trip_drivers?.[0];
+    const truckPlate = activeTruckAssign?.truck?.plate_number || null;
+    const driverName = activeDriverAssign?.driver?.user?.full_name || incident.driver?.user?.full_name || null;
+    const driverPhone = activeDriverAssign?.driver?.user?.phone || incident.driver?.user?.phone || null;
+    const stopLocation = incident.trip_stops?.locations || null;
+    const derivedLocation =
+      stopLocation?.name ||
+      stopLocation?.address ||
+      (incident.incident_lat != null && incident.incident_lng != null
+        ? `${Number(incident.incident_lat).toFixed(5)}, ${Number(incident.incident_lng).toFixed(5)}`
+        : null);
 
-    const truckPlate = incident.trip?.trip_trucks?.[0]?.truck?.plate_number || '29C-246.80';
-    const driverName = incident.trip?.trip_drivers?.[0]?.driver?.user?.full_name || incident.driver?.user?.full_name || 'Tài xế hiện trường';
-    const driverPhone = incident.trip?.trip_drivers?.[0]?.driver?.user?.phone || incident.driver?.user?.phone || '0901234567';
-
-    // Xử lý ảnh sự cố hiện trường
+    // Xử lý ảnh sự cố hiện trường (chỉ trả ảnh thật, không fallback ảnh mẫu)
     let incidentPhotos = [];
     if (incident.photos) {
       if (Array.isArray(incident.photos)) {
-        incidentPhotos = incident.photos;
+        incidentPhotos = incident.photos.filter(Boolean);
       } else if (typeof incident.photos === 'string') {
         try {
-          incidentPhotos = JSON.parse(incident.photos);
+          const parsed = JSON.parse(incident.photos);
+          incidentPhotos = Array.isArray(parsed) ? parsed.filter(Boolean) : [incident.photos];
         } catch {
           incidentPhotos = [incident.photos];
         }
       }
     }
-    if (incidentPhotos.length === 0) {
-      incidentPhotos = [
-        'https://images.unsplash.com/photo-1578575437130-527eed3abbec?q=80&w=800'
-      ];
+
+    // Truy vấn chuỗi sự kiện chuyến thực tế quanh thời điểm sự cố
+    let tripEventsTimeline = null;
+    if (incident.trip_id) {
+      try {
+        const events = await prisma.trip_events.findMany({
+          where: { trip_id: BigInt(incident.trip_id) },
+          orderBy: { phone_time: 'asc' },
+          take: 20,
+          select: { event_type: true, phone_time: true, received_time: true }
+        });
+        if (events && events.length > 0) {
+          tripEventsTimeline = events
+            .map((ev) => {
+              const t = ev.phone_time || ev.received_time;
+              const timeStr = t ? new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '';
+              return timeStr ? `${timeStr} ${ev.event_type}` : ev.event_type;
+            })
+            .join(' · ');
+        }
+      } catch (evErr) {
+        console.warn('getIncidentById trip_events warning:', evErr.message);
+      }
     }
 
     const claim = Array.isArray(incident.compensation_claims)
@@ -550,47 +665,65 @@ const getIncidentById = async (req, res) => {
       const rawLogs = await prisma.activity_logs.findMany({
         where: {
           target_type: 'INCIDENT',
-          target_id: BigInt(id)
+          target_id: BigInt(numId)
         },
         select: { action: true, changes: true, reason: true, created_time: true },
         orderBy: { id: 'desc' },
-        take: 10
+        take: 15
       });
       incLogs = serializePrisma(rawLogs) || [];
     } catch (logErr) {
       console.warn('getIncidentById activity_logs warning:', logErr.message);
     }
 
-    const closeLog = incLogs.find((l) => l.action === 'CLOSE_INCIDENT_CASE_DONE');
+    const closeLog = incLogs.find(
+      (l) => l.action === 'CLOSE_INCIDENT_CASE_DONE' || l.action === 'RECORD_INCIDENT_PAYMENT'
+    );
     const approveLog = incLogs.find((l) => l.action === 'APPROVE_INCIDENT_COMPENSATION');
     const rejectLog = incLogs.find((l) => l.action === 'REJECT_INCIDENT_COMPENSATION');
+    const sendEmailLog = incLogs.find((l) => l.action === 'SEND_INCIDENT_DECISION_EMAIL');
 
     const rawStatusUpper = String(incident.status || '').toUpperCase();
     const claimStatusUpper = String(claim?.status || '').toUpperCase();
 
     const isRejected =
       claimStatusUpper === 'REJECTED' ||
+      claimStatusUpper === 'CLOSED_REJECTED' ||
       Boolean(incident.rejection_reason) ||
       Boolean(rejectLog) ||
       rawStatusUpper === 'REJECTED' ||
       Boolean(incident.resolution_note && incident.resolution_note.includes('Từ chối bồi thường'));
     const rejectionReason = isRejected
-      ? (incident.rejection_reason || rejectLog?.reason || claim?.review_comment || incident.resolution_note || 'Không đủ điều kiện theo hợp đồng vận chuyển')
+      ? (incident.rejection_reason || rejectLog?.reason || claim?.review_comment || incident.resolution_note || null)
       : null;
 
     const logPaymentProof = closeLog?.changes?.payment_proof_url || null;
-    const rawPaymentProofUrl = claim?.evidence || incident.payment_proof_url || logPaymentProof || null;
 
     const txSourceText = `${closeLog?.changes?.close_note || ''} ${claim?.review_comment || ''} ${incident.resolution_note || ''}`;
     const txMatch = txSourceText.match(/Mã GD:\s*([A-Za-z0-9_-]+)/i);
-    let transactionCode = closeLog?.changes?.transaction_code || (txMatch ? txMatch[1] : null);
+    const transactionCode = claim?.transaction_code || closeLog?.changes?.transaction_code || (txMatch ? txMatch[1] : null);
 
-    const hasPaymentRecord = Boolean(rawPaymentProofUrl || transactionCode || closeLog || claimStatusUpper === 'PAID');
-    const isDone = ['DONE', 'RESOLVED', 'CLOSED'].includes(rawStatusUpper) || isRejected || hasPaymentRecord;
-    const isApproved = !isDone && (rawStatusUpper === 'APPROVED' || claimStatusUpper === 'APPROVED' || Boolean(approveLog));
+    const isPaid = !isRejected && (claimStatusUpper === 'PAID' || rawStatusUpper === 'PAID');
+    const isDone =
+      claimStatusUpper === 'CLOSED_COMPENSATED' ||
+      claimStatusUpper === 'CLOSED_REJECTED' ||
+      (['DONE', 'RESOLVED', 'CLOSED'].includes(rawStatusUpper) &&
+        claimStatusUpper !== 'APPROVED' &&
+        claimStatusUpper !== 'PAID' &&
+        claimStatusUpper !== 'PENDING') ||
+      (isRejected && !claim);
+    const isApproved =
+      !isDone &&
+      !isPaid &&
+      !isRejected &&
+      (rawStatusUpper === 'APPROVED' || claimStatusUpper === 'APPROVED' || Boolean(approveLog));
+
+    const rawPaymentProofUrl = (isPaid || isDone) && !isRejected
+      ? (claim?.payment_proof_url || incident.payment_proof_url || logPaymentProof || null)
+      : null;
 
     const closedAt = isDone
-      ? (incident.closed_at || closeLog?.created_time || claim?.updated_at || incident.resolved_time || incident.updated_at)
+      ? (claim?.closed_at || incident.closed_at || closeLog?.created_time || claim?.updated_at || incident.resolved_time || incident.updated_at)
       : null;
 
     const noteAmountMatch = typeof incident.resolution_note === 'string'
@@ -601,50 +734,45 @@ const getIncidentById = async (req, res) => {
     const proposedAmount = Number(
       incident.proposed_compensation_amount ||
       claim?.amount ||
-      (parsedNoteAmount >= 1000 ? parsedNoteAmount : 0) ||
       0
     );
 
     const approvedAmount = Number(
+      claim?.approved_amount ||
       incident.approved_compensation_amount ||
       closeLog?.changes?.approved_amount ||
       approveLog?.changes?.approved_compensation_amount ||
-      ((claimStatusUpper === 'APPROVED' || claimStatusUpper === 'PAID' || (isDone && !isRejected)) ? claim?.amount : 0) ||
+      ((claimStatusUpper === 'APPROVED' || claimStatusUpper === 'PAID' || claimStatusUpper === 'CLOSED_COMPENSATED' || (isDone && !isRejected)) ? claim?.amount : 0) ||
       (isDone && !isRejected && parsedNoteAmount >= 1000 ? parsedNoteAmount : 0) ||
-      (isApproved ? proposedAmount : 0)
+      0
     );
 
     const dateMatch = txSourceText.match(/ngày\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})/i);
-    let paymentDate = closeLog?.changes?.payment_date || (dateMatch ? dateMatch[1] : null);
-    if (!paymentDate && isDone && !isRejected && approvedAmount > 0 && closedAt) {
-      paymentDate = new Date(closedAt).toISOString().split('T')[0];
-    }
+    const paymentDate = claim?.payment_date
+      ? new Date(claim.payment_date).toISOString().split('T')[0]
+      : (closeLog?.changes?.payment_date || (dateMatch ? dateMatch[1] : null));
 
-    if (!transactionCode && isDone && !isRejected && approvedAmount > 0) {
-      const compactDate = (paymentDate || new Date().toISOString().split('T')[0]).replace(/[^0-9]/g, '').slice(2, 8);
-      transactionCode = `FT${compactDate}${String(incident.id).padStart(4, '0')}`;
-    }
-
-    const paymentProofUrl =
-      rawPaymentProofUrl ||
-      (isDone && !isRejected && approvedAmount > 0
-        ? 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?q=80&w=800'
-        : null);
+    const paymentProofUrl = rawPaymentProofUrl || null;
 
     const paymentNote =
+      claim?.payment_note ||
       closeLog?.changes?.close_note ||
       claim?.review_comment ||
-      (isDone && !isRejected && approvedAmount > 0
-        ? (incident.resolution_note || `Đã hoàn tất chi trả bồi thường ${approvedAmount.toLocaleString('vi-VN')} đ.`)
-        : null);
+      null;
 
     const normalizedStatus = isRejected
-      ? 'REJECTED'
+      ? ((claimStatusUpper === 'CLOSED_REJECTED' || ['DONE', 'CLOSED'].includes(rawStatusUpper)) ? 'CLOSED_REJECTED' : 'REJECTED')
       : isDone
         ? 'DONE'
-        : isApproved
-          ? 'APPROVED'
-          : incident.status;
+        : isPaid
+          ? 'PAID'
+          : isApproved
+            ? 'APPROVED'
+            : claimStatusUpper === 'PENDING'
+              ? 'ESCALATED'
+              : incident.status;
+
+    const emailLogRef = sendEmailLog || (rejectLog?.changes?.email_sent ? rejectLog : null) || (approveLog?.changes?.email_sent ? approveLog : null);
 
     const enriched = {
       ...incident,
@@ -655,14 +783,10 @@ const getIncidentById = async (req, res) => {
       truck_plate: truckPlate,
       driver_name: driverName,
       driver_phone: driverPhone,
+      cargo_affected: incident.cargo_affected !== undefined ? incident.cargo_affected : null,
       order: orderInfo,
-      contract: contractInfo || {
-        contract_number: 'HĐVC-2026/ALS-VF',
-        liability_cap: 500000000,
-        attachment_link: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-        compensation_terms: 'Bồi thường tối đa 100% giá trị khai báo hoặc theo hạn mức trách nhiệm 500.000.000 VNĐ tùy theo giá trị nào nhỏ hơn.'
-      },
-      // Bằng chứng 4 cụm ảnh đối chiếu (Visual Evidence)
+      contract: contractInfo || null,
+      // Bằng chứng 4 cụm ảnh đối chiếu (chỉ dữ liệu thật, rỗng nếu chưa có)
       pickup_photos: pickupPhotos,
       seal_photos: sealPhotos,
       incident_photos: incidentPhotos,
@@ -670,37 +794,41 @@ const getIncidentById = async (req, res) => {
       seal_number: sealNumber,
       receiver_name: receiverName,
       // Metadata GPS hiện trường & Kiểm tra lộ trình
-      incident_lat: incident.incident_lat ? Number(incident.incident_lat) : 21.2185,
-      incident_lng: incident.incident_lng ? Number(incident.incident_lng) : 105.8042,
-      incident_location: incident.location || 'Km 18 Cao tốc Nội Bài - Lào Cai, Sóc Sơn, Hà Nội',
+      incident_lat: incident.incident_lat != null ? Number(incident.incident_lat) : null,
+      incident_lng: incident.incident_lng != null ? Number(incident.incident_lng) : null,
+      incident_location: derivedLocation,
       is_on_route: incident.is_on_route !== false,
       route_deviation_km: incident.route_deviation_km ? Number(incident.route_deviation_km) : 0,
       gps_timestamp: incident.reported_time || incident.created_at,
+      trip_events_timeline: tripEventsTimeline,
       // Dữ liệu bồi thường & giao dịch chi trả chuẩn hóa
-      damage_percentage: incident.damage_percentage !== undefined && incident.damage_percentage !== null
-        ? incident.damage_percentage
-        : (isDone ? (approveLog?.changes?.damage_percentage || null) : null),
-      goods_handling_method: incident.goods_handling_method || (isDone ? approveLog?.changes?.goods_handling_method : null),
-      contract_clause_ref: incident.contract_clause_ref || (isDone ? (approveLog?.changes?.contract_clause_ref || rejectLog?.changes?.contract_clause_ref) : null),
+      damage_percentage: incident.damage_percentage ?? approveLog?.changes?.damage_percentage ?? claim?.damage_percentage ?? null,
+      goods_handling_method: incident.goods_handling_method || approveLog?.changes?.goods_handling_method || claim?.outcome || null,
+      contract_clause_ref: incident.contract_clause_ref || approveLog?.changes?.contract_clause_ref || rejectLog?.changes?.contract_clause_ref || claim?.contract_clause_ref || null,
+      survey_org_report: claim?.assessment_result || null,
       proposed_compensation_amount: proposedAmount,
       approved_compensation_amount: approvedAmount,
       rejection_reason: rejectionReason,
-      contact_hotline: incident.contact_hotline || '1900 1234',
+      contact_hotline: incident.contact_hotline || claim?.contact_hotline || '1900 1234',
       payment_proof_url: paymentProofUrl,
       transaction_code: transactionCode,
       payment_date: paymentDate,
       payment_note: paymentNote,
+      claim_id: claim?.id || null,
+      claim_code: claim?.id ? `CLM-${String(claim.id).padStart(4, '0')}` : null,
+      claim_amount: claim ? Number(claim.amount || 0) : 0,
       claim_status: claim?.status || null,
-      email_sent: Boolean(approveLog?.changes?.email_sent || rejectLog?.changes?.email_sent),
+      called_at: claim?.called_at || null,
+      paid_at: claim?.paid_at || null,
+      email_sent: Boolean(emailLogRef?.changes?.email_sent),
       customer_email:
-        approveLog?.changes?.customer_email ||
-        rejectLog?.changes?.customer_email ||
+        emailLogRef?.changes?.customer_email ||
         orderInfo?.customer?.email ||
         orderInfo?.order_contract?.contract_details?.customer_email ||
         null,
-      email_sent_at: approveLog?.changes?.email_sent_at || rejectLog?.changes?.email_sent_at || null,
-      email_type: rejectLog ? 'REJECTION' : approveLog ? 'APPROVAL' : null,
-      closed_by: incident.resolved_by || null,
+      email_sent_at: emailLogRef?.changes?.email_sent_at || null,
+      email_type: emailLogRef?.changes?.email_type || (rejectLog ? 'REJECTION' : approveLog ? 'APPROVAL' : null),
+      closed_by: incident.closed_by || incident.resolved_by || null,
       closed_at: closedAt
     };
 

@@ -67,11 +67,14 @@ const mapTripDetailRow = (t) => {
   const truckAssignments = (ttRows || []).map((tt) => ({
     truck_id: tt.truck_id,
     assignment_type: tt.assignment_type,
+    released_time: tt.released_time || null,
     truck: tt.trucks || null,
   }));
 
   const activeTruckAssign =
-    truckAssignments.find((ta) => ta.truck) || truckAssignments[0];
+    truckAssignments.find((ta) => !ta.released_time && ta.truck) ||
+    truckAssignments.find((ta) => ta.truck) ||
+    truckAssignments[0];
 
   return {
     ...rest,
@@ -177,6 +180,7 @@ const getActiveTrip = async (driverProfileId) => {
         select: {
           truck_id: true,
           assignment_type: true,
+          released_time: true,
           trucks: {
             select: {
               id: true,
@@ -329,13 +333,17 @@ const getTripHistory = async (driverProfileId, { page = 1, limit = 10 }) => {
   };
 };
 
-const getTripDetail = async (tripId, driverProfileId) => {
+const getTripDetail = async (tripId, driverProfileId, { requireActive = false } = {}) => {
   const bigTripId = toBigInt(tripId);
   const bigDriverId = toBigInt(driverProfileId);
   if (bigTripId === null || bigDriverId === null) return null;
 
   const assign = await prisma.trip_drivers.findFirst({
-    where: { trip_id: bigTripId, driver_id: bigDriverId },
+    where: {
+      trip_id: bigTripId,
+      driver_id: bigDriverId,
+      ...(requireActive ? { released_time: null } : {}),
+    },
     select: { trip_id: true, driver_role: true },
   });
 
@@ -360,6 +368,7 @@ const getTripDetail = async (tripId, driverProfileId) => {
         select: {
           truck_id: true,
           assignment_type: true,
+          released_time: true,
           trucks: {
             select: {
               id: true,

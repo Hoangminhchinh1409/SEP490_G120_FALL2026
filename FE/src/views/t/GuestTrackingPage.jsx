@@ -338,6 +338,39 @@ export default function GuestTrackingPage() {
               />
             )}
 
+            {inc.status === 'PAID' && (
+              <Alert
+                title={<span className="font-bold text-cyan-900">Đã Chuyển Khoản Bồi Thường ({inc.code}) — Chờ Quý khách xác nhận</span>}
+                description={
+                  <div className="space-y-1 mt-1 text-sm text-cyan-950">
+                    <p>ALS đã chuyển khoản số tiền: <b className="font-mono text-emerald-700">{Number(inc.compensation_amount || 0).toLocaleString('vi-VN')} đ</b>.</p>
+                    {inc.transaction_code && (
+                      <p>• Mã giao dịch ngân hàng (UNC): <b className="font-mono">{inc.transaction_code}</b>{inc.payment_date ? ` (Ngày ${inc.payment_date})` : ''}</p>
+                    )}
+                    <p className="text-xs text-cyan-900 font-semibold">
+                      Vui lòng bấm nút <b>&quot;Xác nhận đã nhận tiền bồi thường&quot;</b> ở mục Khiếu nại &amp; Yêu cầu Bồi thường bên dưới sau khi kiểm tra tài khoản.
+                    </p>
+                    {inc.payment_proof_url && (
+                      <div className="pt-2">
+                        <a
+                          href={inc.payment_proof_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-xs shadow-xs"
+                        >
+                          <ImageIcon size={14} />
+                          <span>Xem Biên lai Chuyển khoản Ngân hàng</span>
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                }
+                type="info"
+                showIcon
+                className="rounded-xl border border-cyan-300 bg-cyan-50"
+              />
+            )}
+
             {inc.status === 'DONE' && (
               <Alert
                 title={<span className="font-bold text-green-900">Đã Hoàn tất Bồi thường &amp; Đóng hồ sơ ({inc.code})</span>}

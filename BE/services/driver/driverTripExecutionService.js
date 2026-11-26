@@ -31,7 +31,7 @@ const acceptTrip = async (
   }
 
   const profile = await getMyProfile(userId);
-  const trip = await driverModel.getTripDetail(tripId, profile.id);
+  const trip = await driverModel.getTripDetail(tripId, profile.id, { requireActive: true });
 
   if (!trip) {
     const error = new Error(
@@ -110,7 +110,7 @@ const arriveAtStop = async (
   }
 
   const profile = await getMyProfile(userId);
-  const trip = await driverModel.getTripDetail(tripId, profile.id);
+  const trip = await driverModel.getTripDetail(tripId, profile.id, { requireActive: true });
   if (!trip) {
     const error = new Error("Chuyến xe không tồn tại");
     error.statusCode = 404;
@@ -247,7 +247,7 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
   const parsedPackages = parseInt(loaded_packages, 10);
 
   const profile = await getMyProfile(userId);
-  const trip = await driverModel.getTripDetail(tripId, profile.id);
+  const trip = await driverModel.getTripDetail(tripId, profile.id, { requireActive: true });
   if (!trip) {
     const error = new Error("Chuyến xe không tồn tại");
     error.statusCode = 404;
@@ -368,7 +368,7 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
   }
 
   const profile = await getMyProfile(userId);
-  const trip = await driverModel.getTripDetail(tripId, profile.id);
+  const trip = await driverModel.getTripDetail(tripId, profile.id, { requireActive: true });
   if (!trip) {
     const error = new Error("Chuyến xe không tồn tại");
     error.statusCode = 404;
@@ -624,7 +624,7 @@ const recordStopEvent = async (
     return { success: true, message: "Hành động đã được ghi nhận trước đó" };
   }
   const profile = await getMyProfile(userId);
-  const trip = await driverModel.getTripDetail(tripId, profile.id);
+  const trip = await driverModel.getTripDetail(tripId, profile.id, { requireActive: true });
   if (!trip) {
     const error = new Error("Chuyến xe không tồn tại");
     error.statusCode = 404;
@@ -770,7 +770,7 @@ const recordStopEvent = async (
       if (trip.truck?.id) {
         await driverModel.updateTruckStatus(trip.truck.id, "Available");
       }
-      await driverModel.updateDriverProfileStatus(profile.id, "Available");
+      await driverModel.updateDriverProfileStatus(profile.id, "Active");
       await prisma.driver_profiles.update({
         where: { id: BigInt(profile.id) },
         data: { last_trip_ended_at: new Date(recordedTime) },

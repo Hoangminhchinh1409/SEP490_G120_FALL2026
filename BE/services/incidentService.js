@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const incidentModel = require('../models/incidentModel');
+const claimService = require('./claimService');
 
 const COMPENSATION_ELIGIBLE_NORMALIZED_TYPES = [
   'DAMAGED_LOST_CARGO',
@@ -73,6 +74,9 @@ const formatIncident = (inc) => {
     description: inc.description || null,
     resolution_note: inc.resolution_note || null,
     escalation_reason: inc.escalation_reason || null,
+    cargo_affected: inc.cargo_affected !== undefined ? inc.cargo_affected : null,
+    resolved_by: inc.resolved_by ?? null,
+    escalated_by: inc.escalated_by ?? null,
     resolved_time: inc.resolved_time || null,
     escalated_time: inc.escalated_time || null,
     photos: Array.isArray(inc.photos) ? inc.photos : [],
@@ -90,13 +94,30 @@ const getAllIncidents = async () => {
 const VALID_INCIDENT_TYPES = [
   'BREAKDOWN',
   'ACCIDENT',
+  'TRAFFIC_ACCIDENT',
   'CARGO_DAMAGED',
+  'DAMAGED_CARGO',
+  'DAMAGED_LOST_CARGO',
   'CARGO_LOST',
+  'CARGO_HELD',
   'HELD_BY_AUTHORITIES',
+  'SEIZED_BY_AUTHORITY',
   'ROAD_BAN',
   'FAILED_DELIVERY',
   'OTHER'
 ];
+
+const normalizeIncidentTypeForValidation = (rawType) => {
+  const trimmed = String(rawType || '').trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.toUpperCase().replace(/\s+/g, '_');
+  if (!VALID_INCIDENT_TYPES.includes(normalized)) {
+    const error = new Error(`Loại sự cố không hợp lệ: ${rawType}`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return trimmed;
+};
 
 const createIncident = async (payload = {}, userId = 1) => {
   if (!payload || !payload.trip_id) {
@@ -182,13 +203,27 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
     throw error;
   }
 
-  // UTC-IN-032: Check payload non-empty and has action/status/resolution
-  if (!payload || Object.keys(payload).length === 0 || (!payload.status && !payload.action && !payload.new_truck && !payload.relief_truck_plate && !payload.resolution_note && !payload.escalation_reason)) {
+  // UTC-IN-032: Check payload non-empty and has action/status/resolution/type
+  if (
+    !payload ||
+    Object.keys(payload).length === 0 ||
+    (
+      !payload.status &&
+      !payload.action &&
+      !payload.type &&
+      payload.cargo_affected === undefined &&
+      !payload.new_truck &&
+      !payload.relief_truck_plate &&
+      !payload.resolution_note &&
+      !payload.escalation_reason
+    )
+  ) {
     const error = new Error('Thiếu thông tin xử lý sự cố');
     error.statusCode = 400;
     throw error;
   }
 
+  const nextType = payload.type !== undefined ? normalizeIncidentTypeForValidation(payload.type) : undefined;
   const rawAction = String(payload.status || payload.action || '').toUpperCase();
 
   // 1. Điều xe & tài xế thay thế + Cấp lại Vận đơn phiên bản mới (UC-15, BR-09, UC-41)
@@ -209,6 +244,7 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
       newTruckPlate: newTruck,
       newDriverName: payload.new_driver || payload.relief_driver_name,
       replacementReason: payload.replacement_reason || payload.resolution_note || 'Điều xe cứu hộ chuyển tải giữa đường',
+      incidentType: nextType,
       userId
     });
     return {
@@ -229,7 +265,15 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
       throw error;
     }
 
-    if (!isCompensationEligibleType(existingIncident.raw_type || existingIncident.type)) {
+    const existingStatusUpper = String(existingIncident.db_status || existingIncident.status || '').toUpperCase();
+    if (['RESOLVED', 'DONE', 'CLOSED', 'PAID', 'APPROVED', 'REJECTED'].includes(existingStatusUpper)) {
+      const error = new Error('Sự cố này đã có kết quả xử lý, không thể chuyển tiếp lại lên Quản lý.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const effectiveType = nextType || existingIncident.raw_type || existingIncident.type;
+    if (!isCompensationEligibleType(effectiveType)) {
       const error = new Error('Sự cố này không phát sinh duyệt bồi thường hàng hóa (thuộc thẩm quyền Điều phối viên xử lý tại chỗ hoặc điều xe thay thế), không thể chuyển lên Quản lý.');
       error.statusCode = 400;
       throw error;
@@ -237,8 +281,11 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
 
     const now = new Date();
     const escReason = payload.escalation_reason || payload.resolution_note || 'Sự cố mức độ nghiêm trọng vượt thẩm quyền Điều phối viên, chuyển Quản lý phê duyệt phương án xử lý.';
+    const cargoAffected = typeof payload.cargo_affected === 'boolean' ? payload.cargo_affected : undefined;
     const updated = await incidentModel.update(realId, {
       status: 'Escalated',
+      ...(nextType ? { type: nextType } : {}),
+      ...(cargoAffected !== undefined ? { cargo_affected: cargoAffected } : {}),
       escalated_by: userId || null,
       escalated_time: now,
       escalation_reason: escReason
@@ -268,7 +315,12 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
           action: 'ESCALATE_INCIDENT',
           target_type: 'INCIDENT',
           target_id: BigInt(realId),
-          changes: { status: 'Escalated', escalation_reason: escReason },
+          changes: {
+            status: 'Escalated',
+            escalation_reason: escReason,
+            ...(cargoAffected !== undefined ? { cargo_affected: cargoAffected } : {}),
+            ...(nextType ? { type: nextType } : {})
+          },
           reason: escReason.slice(0, 255),
           created_time: now
         }
@@ -277,24 +329,80 @@ const updateIncidentStatus = async (id, payload = {}, userId = 1) => {
       console.warn('[incidentService] escalate notify/log warning:', notifyErr.message);
     }
 
-    return formatIncident(updated);
+    let createdClaim = null;
+    if (payload.create_claim === true && cargoAffected !== false) {
+      const hasExistingClaim = Array.isArray(updated.claims) && updated.claims.length > 0;
+      if (!hasExistingClaim) {
+        const orderIdToUse = payload.order_id || updated.trip_orders?.[0]?.id;
+        if (orderIdToUse) {
+          createdClaim = await claimService.createDispatcherClaim({
+            incident_id: realId,
+            order_id: orderIdToUse,
+            claim_type: payload.claim_type || 'Damage',
+            amount: payload.claim_amount ?? payload.amount ?? 0,
+            reason: payload.claim_reason || escReason,
+            evidence_photos: payload.evidence_photos || existingIncident.photos || []
+          }, userId);
+        }
+      }
+    }
+
+    const formatted = formatIncident(updated);
+    if (createdClaim) {
+      const existingClaims = Array.isArray(formatted.claims) ? formatted.claims : [];
+      const hasIt = existingClaims.some((c) => Number(c.id) === Number(createdClaim.id));
+      return {
+        ...formatted,
+        claims: hasIt ? existingClaims : [createdClaim, ...existingClaims],
+        has_claim: true,
+        created_claim: createdClaim
+      };
+    }
+    return formatted;
   }
 
   // 3. Đánh dấu đã giải quyết tại chỗ (UC-14)
   if (rawAction === 'RESOLVED' || rawAction === 'RESOLVE' || payload.resolution_note) {
-    const existingIncident = await prisma.incidents.findUnique({
-      where: { id: BigInt(realId) },
-      select: { id: true }
-    });
+    const existingIncident = await incidentModel.findById(realId);
     if (!existingIncident) {
       const error = new Error('Không tìm thấy sự cố.');
       error.statusCode = 404;
       throw error;
     }
+    const existingStatusUpper = String(existingIncident.db_status || existingIncident.status || '').toUpperCase();
+    if (['RESOLVED', 'DONE', 'CLOSED', 'PAID', 'APPROVED', 'REJECTED'].includes(existingStatusUpper)) {
+      const error = new Error('Sự cố này đã được giải quyết hoặc chốt kết quả trước đó.');
+      error.statusCode = 400;
+      throw error;
+    }
     const updated = await incidentModel.update(realId, {
       status: 'RESOLVED',
+      ...(nextType ? { type: nextType } : {}),
+      resolved_by: userId || null,
       resolution_note: payload.resolution_note || 'Điều phối viên đã hướng dẫn xử lý xong tại hiện trường',
       resolved_time: new Date()
+    });
+    return formatIncident(updated);
+  }
+
+  // 4. Chỉ phân loại lại sự cố / cập nhật đánh giá hàng hóa
+  if (nextType || payload.cargo_affected !== undefined) {
+    const existingIncident = await incidentModel.findById(realId);
+    if (!existingIncident) {
+      const error = new Error('Không tìm thấy sự cố.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const existingStatusUpper = String(existingIncident.db_status || existingIncident.status || '').toUpperCase();
+    if (['RESOLVED', 'DONE', 'CLOSED', 'PAID', 'APPROVED', 'REJECTED'].includes(existingStatusUpper)) {
+      const error = new Error('Sự cố đã có kết quả xử lý, không thể thay đổi phân loại.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const updated = await incidentModel.update(realId, {
+      ...(nextType ? { type: nextType } : {}),
+      ...(typeof payload.cargo_affected === 'boolean' ? { cargo_affected: payload.cargo_affected } : {})
     });
     return formatIncident(updated);
   }

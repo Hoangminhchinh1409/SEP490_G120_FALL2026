@@ -1,18 +1,48 @@
 import { useState, useEffect } from 'react';
-import { Modal, Button, Input, InputNumber, Tag, Select, Checkbox, Upload, Image, message } from 'antd';
-import { AlertTriangle, ArrowUpRight, RotateCcw, Camera, CheckCircle2, FilePlus2, Upload as UploadIcon } from 'lucide-react';
+import { Modal, Button, Input, InputNumber, Tag, Select, Checkbox, Radio, Upload, Image, message } from 'antd';
+import { AlertTriangle, ArrowUpRight, RotateCcw, Camera, CheckCircle2, FilePlus2, PhoneCall, Upload as UploadIcon } from 'lucide-react';
 import { dispatcherApi } from '../../api/dispatcherApi';
 import { uploadApi } from '../../api/uploadApi';
 
 const { Option } = Select;
 
+const INCIDENT_TYPE_OPTIONS = [
+  { value: 'BREAKDOWN', label: 'Hỏng xe giữa đường (BREAKDOWN)' },
+  { value: 'ACCIDENT', label: 'Va chạm giao thông (ACCIDENT)' },
+  { value: 'CARGO_DAMAGED', label: 'Hư hỏng hàng hóa (CARGO_DAMAGED)' },
+  { value: 'CARGO_LOST', label: 'Thất lạc hàng hóa / niêm phong (CARGO_LOST)' },
+  { value: 'HELD_BY_AUTHORITIES', label: 'Kiểm tra hải quan / CSGT (HELD_BY_AUTHORITIES)' },
+  { value: 'ROAD_BAN', label: 'Cấm đường / Kẹt xe (ROAD_BAN)' },
+  { value: 'FAILED_DELIVERY', label: 'Giao hàng không thành công (FAILED_DELIVERY)' },
+  { value: 'OTHER', label: 'Sự cố khác (OTHER)' }
+];
+
+const normalizeTypeCode = (rawType) => {
+  const norm = String(rawType || 'OTHER').trim().toUpperCase().replace(/\s+/g, '_');
+  if (norm === 'VEHICLE_ISSUE' || norm === 'ENGINE_BREAKDOWN') return 'BREAKDOWN';
+  if (norm === 'TRAFFIC') return 'ROAD_BAN';
+  if (norm === 'TRAFFIC_ACCIDENT') return 'ACCIDENT';
+  if (norm === 'DAMAGED_CARGO' || norm === 'DAMAGED_LOST_CARGO') return 'CARGO_DAMAGED';
+  if (norm === 'CARGO_HELD' || norm === 'SEIZED_BY_AUTHORITY') return 'HELD_BY_AUTHORITIES';
+  if (INCIDENT_TYPE_OPTIONS.some((o) => o.value === norm)) return norm;
+  return 'OTHER';
+};
+
+const ESCALATION_ELIGIBLE_TYPES = [
+  'CARGO_DAMAGED',
+  'CARGO_LOST',
+  'ACCIDENT',
+  'HELD_BY_AUTHORITIES'
+];
+
 const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onClaimCreated, isReadOnly = false }) => {
   const [resolutionNote, setResolutionNote] = useState('');
   const [escalationReason, setEscalationReason] = useState('');
-  const [cargoAffectedOnEscalate, setCargoAffectedOnEscalate] = useState(false);
-  const [mode, setMode] = useState('RESOLVE'); // 'RESOLVE' | 'REPLACE' | 'ESCALATE' | 'CREATE_CLAIM'
-  const [replacementTruck, setReplacementTruck] = useState('');
-  const [replacementDriver, setReplacementDriver] = useState('');
+  const [cargoAffectedOnEscalate, setCargoAffectedOnEscalate] = useState(null);
+  const [selectedType, setSelectedType] = useState('OTHER');
+  const [mode, setMode] = useState('RESOLVE'); // 'RESOLVE' | 'REPLACE' | 'ESCALATE' | 'CREATE_CLAIM' | 'RECORD_CALL'
+  const [replacementTruck, setReplacementTruck] = useState(null);
+  const [replacementDriver, setReplacementDriver] = useState(null);
   const [replacementReason, setReplacementReason] = useState('Hỏng xe giữa đường cần chuyển tải gấp');
   const [claimOrderId, setClaimOrderId] = useState(null);
   const [claimType, setClaimType] = useState('Damage');
@@ -20,6 +50,8 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
   const [claimReason, setClaimReason] = useState('');
   const [customerInformed, setCustomerInformed] = useState(false);
   const [claimFileList, setClaimFileList] = useState([]);
+  const [callContactPhone, setCallContactPhone] = useState('');
+  const [callNote, setCallNote] = useState('');
   const [trucks, setTrucks] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -28,36 +60,46 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
     if (!open || !incident) return undefined;
 
     let active = true;
+    const initType = normalizeTypeCode(incident.raw_type || incident.type);
+    setSelectedType(initType);
+    setMode('RESOLVE');
+    setCargoAffectedOnEscalate(typeof incident.cargo_affected === 'boolean' ? incident.cargo_affected : null);
+    setResolutionNote(incident.resolution_note || '');
+    setEscalationReason(incident.escalation_reason || 'Sự cố nghiêm trọng vượt thẩm quyền Điều phối viên, đề xuất Quản lý phê duyệt phương án xử lý / bồi thường.');
+    const firstTripOrder = Array.isArray(incident.trip_orders) && incident.trip_orders.length > 0 ? incident.trip_orders[0] : null;
+    setClaimOrderId(firstTripOrder ? firstTripOrder.id : null);
+    setClaimType('Damage');
+    setClaimAmount(0);
+    setClaimReason(incident.description || '');
+    setCustomerInformed(false);
+    setClaimFileList([]);
+    setCallContactPhone(firstTripOrder?.contact_phone || '');
+    setCallNote('');
+    setReplacementTruck(null);
+    setReplacementDriver(null);
+
     Promise.all([
       dispatcherApi.getTrucks().catch(() => []),
       dispatcherApi.getDrivers().catch(() => [])
     ]).then(([tList, dList]) => {
       if (!active) return;
-      setMode('RESOLVE');
-      setCargoAffectedOnEscalate(false);
-      setResolutionNote(incident.resolution_note || '');
-      setEscalationReason(incident.escalation_reason || 'Sự cố nghiêm trọng vượt thẩm quyền Điều phối viên, đề xuất Quản lý phê duyệt phương án xử lý / bồi thường.');
-      const firstTripOrder = Array.isArray(incident.trip_orders) && incident.trip_orders.length > 0 ? incident.trip_orders[0] : null;
-      setClaimOrderId(firstTripOrder ? firstTripOrder.id : null);
-      setClaimType('Damage');
-      setClaimAmount(0);
-      setClaimReason(incident.description || '');
-      setCustomerInformed(false);
-      setClaimFileList([]);
-      if (Array.isArray(tList)) {
-        const availableTrucks = tList.filter(
-          t => t.plate !== incident.truck && ['AVAILABLE', 'READY', 'IDLE'].includes(String(t.status || '').toUpperCase())
-        );
-        setTrucks(availableTrucks);
-        setReplacementTruck(availableTrucks[0]?.plate || '');
-      }
-      if (Array.isArray(dList)) {
-        const availableDrivers = dList.filter(
-          d => d.name !== incident.driver && !['ON_TRIP', 'BUSY', 'INACTIVE', 'OFF_DUTY'].includes(String(d.status || '').toUpperCase())
-        );
-        setDrivers(availableDrivers);
-        setReplacementDriver(availableDrivers[0]?.name || '');
-      }
+      const availableTrucks = (Array.isArray(tList) ? tList : []).filter(
+        (t) =>
+          (t.status === 'AVAILABLE' || t.status === 'Available') &&
+          t.plate !== incident.truck &&
+          !t.is_inspection_expired
+      );
+      setTrucks(availableTrucks);
+      setReplacementTruck(availableTrucks[0]?.plate || null);
+
+      const availableDrivers = (Array.isArray(dList) ? dList : []).filter(
+        (d) =>
+          d.status === 'AVAILABLE' &&
+          !d.has_active_trip &&
+          d.name !== incident.driver
+      );
+      setDrivers(availableDrivers);
+      setReplacementDriver(availableDrivers[0]?.name || null);
     });
     return () => { active = false; };
   }, [open, incident]);
@@ -65,29 +107,35 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
   if (!open || !incident) return null;
 
   const isAlreadyResolved = incident.status === 'RESOLVED';
-  const normalizedRawType = String(incident.raw_type || '').trim().toUpperCase().replace(/\s+/g, '_');
-  const canEscalateToManager =
-    incident.can_escalate_to_manager !== undefined
-      ? Boolean(incident.can_escalate_to_manager)
-      : [
-          'DAMAGED_LOST_CARGO',
-          'DAMAGED_CARGO',
-          'CARGO_DAMAGED',
-          'CARGO_LOST',
-          'ACCIDENT',
-          'TRAFFIC_ACCIDENT',
-          'CARGO_HELD',
-          'HELD_BY_AUTHORITIES',
-          'SEIZED_BY_AUTHORITY'
-        ].includes(normalizedRawType);
+  const initialType = normalizeTypeCode(incident.raw_type || incident.type);
+  const canEscalateToManager = ESCALATION_ELIGIBLE_TYPES.includes(selectedType);
+  const pendingCallClaim = (Array.isArray(incident.claims) ? incident.claims : []).find(
+    (cl) => ['APPROVED', 'REJECTED'].includes(String(cl.status || '').toUpperCase()) && !cl.called_at
+  );
+
+  const handleSaveReclassifyOnly = async () => {
+    setSubmitting(true);
+    try {
+      await onResolveSuccess?.(incident.raw_id || incident.id, { type: selectedType });
+      if (!onResolveSuccess) {
+        message.success('Đã cập nhật phân loại sự cố.');
+      }
+    } catch (err) {
+      if (!err?._handledToast) {
+        message.error(err.message || 'Lỗi khi cập nhật phân loại sự cố');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleDispatchReplacement = async () => {
     if (!replacementTruck) {
-      message.error('Không có xe sẵn sàng hoặc chưa chọn xe thay thế!');
+      message.error('Không có xe sẵn sàng hợp lệ để điều thay thế!');
       return;
     }
     if (!replacementDriver) {
-      message.error('Không có tài xế sẵn sàng hoặc chưa chọn tài xế thay thế!');
+      message.error('Không có tài xế rảnh hợp lệ để điều thay thế!');
       return;
     }
     if (!replacementReason.trim()) {
@@ -98,6 +146,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
     try {
       const payload = {
         status: 'RESOLVED_REPLACED',
+        type: selectedType,
         new_truck: replacementTruck,
         new_driver: replacementDriver,
         replacement_reason: replacementReason.trim()
@@ -105,7 +154,9 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
       await onResolveSuccess?.(incident.raw_id || incident.id, payload);
       onCancel();
     } catch (err) {
-      message.error(err.message || 'Lỗi khi phát lệnh điều xe thay thế');
+      if (!err?._handledToast) {
+        message.error(err.message || 'Lỗi khi phát lệnh điều xe thay thế');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -116,10 +167,16 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
       message.error('Vui lòng nhập lý do chuyển tiếp lên Quản lý!');
       return;
     }
+    if (cargoAffectedOnEscalate === null) {
+      message.warning('Vui lòng xác nhận hàng của khách hàng có bị ảnh hưởng hay không!');
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {
         status: 'ESCALATED',
+        type: selectedType,
+        cargo_affected: cargoAffectedOnEscalate,
         escalation_reason: escalationReason.trim()
       };
       if (cargoAffectedOnEscalate) {
@@ -132,7 +189,9 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
         onCancel();
       }
     } catch (err) {
-      message.error(err.message || 'Lỗi khi chuyển tiếp sự cố lên Quản lý');
+      if (!err?._handledToast) {
+        message.error(err.message || 'Lỗi khi chuyển tiếp sự cố lên Quản lý');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -174,6 +233,28 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
     }
   };
 
+  const handleRecordCustomerCall = async () => {
+    if (!pendingCallClaim) return;
+    if (!callNote.trim()) {
+      message.warning('Vui lòng nhập nội dung trao đổi & kết quả cuộc gọi với khách hàng.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await dispatcherApi.recordClaimCall(pendingCallClaim.id, {
+        call_contact_phone: callContactPhone.trim(),
+        call_note: callNote.trim()
+      });
+      message.success(res?.message || 'Đã ghi nhận cuộc gọi thông báo khách hàng!');
+      await onClaimCreated?.();
+      onCancel();
+    } catch (err) {
+      message.error(err.message || 'Không thể ghi nhận cuộc gọi');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleMarkResolved = async () => {
     if (!resolutionNote.trim()) {
       message.error('Vui lòng nhập phương án xử lý!');
@@ -183,12 +264,15 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
     try {
       const payload = {
         status: 'RESOLVED',
+        type: selectedType,
         resolution_note: resolutionNote.trim()
       };
       await onResolveSuccess?.(incident.raw_id || incident.id, payload);
       onCancel();
     } catch (err) {
-      message.error(err.message || 'Lỗi khi xác nhận xử lý sự cố');
+      if (!err?._handledToast) {
+        message.error(err.message || 'Lỗi khi xác nhận xử lý sự cố');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -204,7 +288,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
           <div>
             <h3 className="text-lg font-bold text-gray-800">Xử lý sự cố hiện trường</h3>
             <p className="text-xs text-gray-500 font-normal">
-              Mã sự cố: <b className="text-red-600 font-mono">{incident.id || 'INC-2026-091'}</b> | Chuyến xe: <b className="font-mono text-[#7367f0]">{incident.trip_code || 'TRIP-8821'}</b>
+              Mã sự cố: <b className="text-red-600 font-mono">{incident.id || '—'}</b> | Chuyến xe: <b className="font-mono text-[#7367f0]">{incident.trip_code || '—'}</b>
             </p>
           </div>
         </div>
@@ -216,6 +300,28 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
         <Button key="back" type="primary" onClick={onCancel}>Đóng</Button>
       ] : [
         <Button key="back" onClick={onCancel}>Đóng</Button>,
+        pendingCallClaim && mode !== 'RECORD_CALL' && (
+          <Button
+            key="recordCallMode"
+            icon={<PhoneCall size={14} />}
+            className="border-amber-500 text-amber-700 hover:bg-amber-50 font-semibold"
+            onClick={() => setMode('RECORD_CALL')}
+          >
+            Ghi nhận gọi khách ({pendingCallClaim.claim_code})
+          </Button>
+        ),
+        pendingCallClaim && mode === 'RECORD_CALL' && (
+          <Button
+            key="confirmRecordCall"
+            type="primary"
+            loading={submitting}
+            icon={<PhoneCall size={14} />}
+            className="bg-amber-600 hover:bg-amber-700 font-bold"
+            onClick={handleRecordCustomerCall}
+          >
+            Lưu nhật ký cuộc gọi
+          </Button>
+        ),
         !isAlreadyResolved && canEscalateToManager && mode !== 'ESCALATE' && (
           <Button
             key="escalateMode"
@@ -304,19 +410,19 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
         <div className="p-4 bg-red-50/60 rounded-xl border border-red-200">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <Tag color="red" className="font-bold text-xs">{incident.type || 'HỎNG XE'}</Tag>
+              <Tag color="red" className="font-bold text-xs">{incident.type || 'SỰ CỐ'}</Tag>
               <span className="text-xs font-semibold text-gray-700">
-                Xe: <b className="font-mono">{incident.truck}</b> · Tài xế: <b>{incident.driver || 'Nguyễn Văn Lái'}</b> - {incident.phone || '0901234567'}
+                Xe: <b className="font-mono">{incident.truck || 'Chưa cập nhật'}</b> · Tài xế: <b>{incident.driver || 'Chưa cập nhật'}</b>{incident.phone ? ` - ${incident.phone}` : ''}
               </span>
             </div>
-            <span className="text-[11px] text-gray-400">Báo lúc: {incident.reported_at || '09:15'}</span>
+            <span className="text-[11px] text-gray-400">Báo lúc: {incident.reported_at || '—'}</span>
           </div>
           <div className="text-xs text-red-900 font-medium">
-            {incident.description || 'Xe gặp sự cố trên cao tốc Nội Bài - Bắc Ninh. Cần phương án điều phối gấp.'}
+            {incident.description || 'Chưa có mô tả chi tiết'}
           </div>
           <div className="mt-3 flex items-center gap-2 text-xs text-gray-600">
             <Camera size={14} className="text-gray-400" />
-            <span>Vị trí ghi nhận: <b>{incident.location || 'Chưa ghi nhận vị trí'}</b></span>
+            <span>Vị trí ghi nhận: <b>{incident.location || 'Chưa có vị trí'}</b></span>
           </div>
           {Array.isArray(incident.photos) && incident.photos.length > 0 && (
             <div className="mt-3 pt-3 border-t border-red-200/70">
@@ -351,14 +457,60 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
           )}
         </div>
 
-        {isAlreadyResolved ? (
+        {/* Phân loại lại sự cố (TC_IC_02-02 / UI-35 / BUG-SYS-22) */}
+        {!isAlreadyResolved && !isReadOnly && (
+          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-end justify-between gap-2 text-xs">
+            <div className="flex-1">
+              <label className="font-bold text-gray-700 block mb-1">
+                Phân loại sự cố (Xác nhận hoặc phân loại lại sau khi kiểm tra bằng chứng):
+              </label>
+              <Select className="w-full text-xs" value={selectedType} onChange={setSelectedType}>
+                {INCIDENT_TYPE_OPTIONS.map((opt) => (
+                  <Option key={opt.value} value={opt.value}>{opt.label}</Option>
+                ))}
+              </Select>
+            </div>
+            {selectedType !== initialType && (
+              <Button size="small" loading={submitting} onClick={handleSaveReclassifyOnly}>
+                Lưu phân loại
+              </Button>
+            )}
+          </div>
+        )}
+
+        {mode === 'RECORD_CALL' && pendingCallClaim ? (
+          <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-300 space-y-3 text-xs">
+            <div className="font-bold text-amber-950 uppercase flex items-center gap-1.5">
+              <PhoneCall size={15} /> Ghi nhận cuộc gọi thông báo khách hàng ({pendingCallClaim.claim_code} · {pendingCallClaim.status})
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">Số điện thoại đã gọi</label>
+                <Input
+                  value={callContactPhone}
+                  onChange={(e) => setCallContactPhone(e.target.value)}
+                  placeholder="SĐT khách hàng"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="font-bold text-gray-700 block mb-1">Nội dung trao đổi / Kết quả cuộc gọi *</label>
+                <Input.TextArea
+                  rows={2}
+                  value={callNote}
+                  onChange={(e) => setCallNote(e.target.value)}
+                  placeholder="Ghi nhận kết quả gọi điện thông báo khách hàng..."
+                />
+              </div>
+            </div>
+          </div>
+        ) : isAlreadyResolved ? (
           <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2 text-xs">
             <div className="font-bold text-emerald-800 flex items-center gap-1.5">
               <CheckCircle2 size={16} className="text-emerald-600" />
               Sự cố này đã được giải quyết hoàn tất
             </div>
             <div className="text-emerald-900">
-              <b>Biên bản / Phương án xử lý:</b> {incident.resolution_note || 'Đã điều xe thay thế và cấp lại Vận đơn phiên bản mới.'}
+              <b>Biên bản / Phương án xử lý:</b> {incident.resolution_note || 'Đã xử lý xong.'}
             </div>
           </div>
         ) : isReadOnly ? (
@@ -382,27 +534,29 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
                 <label className="text-xs font-bold text-gray-700 block mb-1">Xe thay thế (Sẵn sàng):</label>
                 <Select
                   className="w-full text-xs"
-                  value={replacementTruck || undefined}
+                  value={replacementTruck}
                   onChange={setReplacementTruck}
-                  placeholder={trucks.length === 0 ? 'Không có xe sẵn sàng' : 'Chọn xe thay thế'}
+                  placeholder={trucks.length === 0 ? 'Không có xe sẵn sàng' : 'Chọn xe thay thế...'}
+                  disabled={trucks.length === 0}
                 >
-                  {trucks.map(t => (
+                  {trucks.map((t) => (
                     <Option key={t.id} value={t.plate}>
-                      {t.plate} ({t.model || 'Xe tải'} - {t.payload_kg || 0} kg)
+                      {t.plate}{t.model ? ` (${t.model}` : ' ('}{t.payload_kg ? `${t.payload_kg} kg)` : ')'}
                     </Option>
                   ))}
                 </Select>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-gray-700 block mb-1">Tài xế thay thế:</label>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Tài xế thay thế (Đang rảnh):</label>
                 <Select
                   className="w-full text-xs"
-                  value={replacementDriver || undefined}
+                  value={replacementDriver}
                   onChange={setReplacementDriver}
-                  placeholder={drivers.length === 0 ? 'Không có tài xế sẵn sàng' : 'Chọn tài xế thay thế'}
+                  placeholder={drivers.length === 0 ? 'Không có tài xế rảnh' : 'Chọn tài xế thay thế...'}
+                  disabled={drivers.length === 0}
                 >
-                  {drivers.map(d => (
+                  {drivers.map((d) => (
                     <Option key={d.id} value={d.name}>
                       {d.name}{d.phone ? ` - ${d.phone}` : ''}
                     </Option>
@@ -436,13 +590,23 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
                 className="text-xs"
               />
             </div>
-            <Checkbox
-              checked={cargoAffectedOnEscalate}
-              onChange={(e) => setCargoAffectedOnEscalate(e.target.checked)}
-              className="text-xs font-semibold text-red-900"
-            >
-              Hàng của khách hàng bị ảnh hưởng (chuyển tiếp xong sẽ mở form thông báo khách &amp; tạo Claim)
-            </Checkbox>
+            <div>
+              <label className="text-xs font-bold text-red-900 block mb-1.5">
+                Hàng của khách hàng có bị ảnh hưởng không? *
+              </label>
+              <Radio.Group
+                value={cargoAffectedOnEscalate}
+                onChange={(e) => setCargoAffectedOnEscalate(e.target.value)}
+                className="flex flex-col gap-1.5 text-xs"
+              >
+                <Radio value={true}>
+                  <b>Có</b> — Hàng khách bị ảnh hưởng (chuyển tiếp xong sẽ mở form thông báo khách &amp; tạo Claim)
+                </Radio>
+                <Radio value={false}>
+                  <b>Không</b> — Hàng khách không bị ảnh hưởng (chỉ chuyển Quản lý xác định lỗi)
+                </Radio>
+              </Radio.Group>
+            </div>
           </div>
         ) : mode === 'CREATE_CLAIM' ? (
           <div className="p-4 bg-orange-50/60 rounded-xl border border-orange-200 space-y-3 text-xs">

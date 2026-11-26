@@ -3,6 +3,10 @@ const assert = require('node:assert/strict');
 
 const prisma = require('../config/prisma');
 const claimService = require('../services/claimService');
+const incidentService = require('../services/incidentService');
+const incidentModel = require('../models/incidentModel');
+const incidentController = require('../controllers/incidentController');
+const driverModel = require('../models/driverModel');
 const {
   runJob01_RetentionWithClaimHold,
   runJob08_AutoClosePaidClaims
@@ -11,14 +15,16 @@ const queueAdapter = require('../jobs/queueAdapter');
 
 describe('BF-04 Incident & Compensation Claims Lifecycle', () => {
   const createdClaimIds = [];
+  const createdIncidentIds = [];
   let managerId = null;
   let dispatcherId = null;
   let sampleOrder = null;
   let deliveredOrder = null;
   let nonDeliveredOrder = null;
+  let sampleTrip = null;
 
   before(async () => {
-    const [manager, dispatcher, anyOrder, delivOrder, draftOrTransit] = await Promise.all([
+    const [manager, dispatcher, anyOrder, delivOrder, draftOrTransit, anyTrip] = await Promise.all([
       prisma.users.findFirst({ where: { role_id: 2n }, select: { id: true } }),
       prisma.users.findFirst({ where: { role_id: 3n }, select: { id: true } }),
       prisma.orders.findFirst({ orderBy: { id: 'desc' }, select: { id: true, order_code: true, tracking_token: true } }),
@@ -30,7 +36,8 @@ describe('BF-04 Incident & Compensation Claims Lifecycle', () => {
       prisma.orders.findFirst({
         where: { status: { in: ['Draft', 'DRAFT', 'In Transit', 'IN_TRANSIT'] } },
         select: { id: true, order_code: true, tracking_token: true }
-      })
+      }),
+      prisma.trips.findFirst({ orderBy: { id: 'desc' }, select: { id: true, trip_code: true } })
     ]);
 
     assert.ok(manager, 'Seed Manager user must exist');
@@ -42,6 +49,7 @@ describe('BF-04 Incident & Compensation Claims Lifecycle', () => {
     sampleOrder = anyOrder;
     deliveredOrder = delivOrder;
     nonDeliveredOrder = draftOrTransit;
+    sampleTrip = anyTrip;
   });
 
   after(async () => {
@@ -56,6 +64,18 @@ describe('BF-04 Incident & Compensation Claims Lifecycle', () => {
         });
         await prisma.compensation_claims.deleteMany({
           where: { id: { in: bigIds } }
+        });
+      }
+      if (createdIncidentIds.length > 0) {
+        const bigIncIds = createdIncidentIds.map((id) => BigInt(id));
+        await prisma.notifications.deleteMany({
+          where: { target_type: 'INCIDENT', target_id: { in: bigIncIds } }
+        });
+        await prisma.activity_logs.deleteMany({
+          where: { target_type: 'INCIDENT', target_id: { in: bigIncIds } }
+        });
+        await prisma.incidents.deleteMany({
+          where: { id: { in: bigIncIds } }
         });
       }
     } finally {
@@ -242,5 +262,268 @@ describe('BF-04 Incident & Compensation Claims Lifecycle', () => {
         assert.equal(guestClaim.source, 'CUSTOMER_CLAIM');
       }
     }
+  });
+
+  it('6. WF4 Guards: reject 0/empty approval, enforce liability_cap (MSG56), reject unknown replacement truck/driver', async () => {
+    // 6a. Reject approval with 0 or omitted approved_amount (BUG-SYS-33 / TC_IC_07-11)
+    const claimZero = await claimService.createDispatcherClaim({
+      order_id: Number(sampleOrder.id),
+      claim_type: 'Damage',
+      amount: 1000000,
+      reason: '[UNIT_TEST] Zero/empty amount guard'
+    }, dispatcherId);
+    createdClaimIds.push(claimZero.id);
+
+    await assert.rejects(
+      () => claimService.decideClaim(claimZero.id, { action: 'APPROVE', approved_amount: 0 }, managerId),
+      (err) => err.statusCode === 400
+    );
+    await assert.rejects(
+      () => claimService.decideClaim(claimZero.id, { action: 'APPROVE' }, managerId),
+      (err) => err.statusCode === 400
+    );
+
+    // 6b. Enforce liability_cap Option B: > cap without comment -> 400; with comment -> 200 (BUG-SYS-32 / TC_IC_07-10)
+    await assert.rejects(
+      () => claimService.decideClaim(claimZero.id, {
+        action: 'APPROVE',
+        approved_amount: 900000000
+      }, managerId),
+      (err) => err.statusCode === 400
+    );
+
+    const overrideRes = await claimService.decideClaim(claimZero.id, {
+      action: 'APPROVE',
+      approved_amount: 900000000,
+      comment: 'Phê duyệt ngoại lệ theo chỉ đạo BGĐ'
+    }, managerId);
+    assert.equal(overrideRes.claim.status, 'APPROVED');
+    assert.equal(overrideRes.claim.approved_amount, 900000000);
+
+    // 6c. Incident controller decideIncidentCompensation rejects 0 amount (BUG-SYS-33)
+    const mockRes = () => {
+      const state = { statusCode: 200, body: null };
+      return {
+        status(code) { state.statusCode = code; return this; },
+        json(payload) { state.body = payload; return state; },
+        _state: state
+      };
+    };
+    const resZero = mockRes();
+    await incidentController.decideIncidentCompensation(
+      { params: { id: '1' }, body: { action: 'APPROVE', approved_amount: 0 }, user: { id: managerId } },
+      resZero
+    );
+    assert.equal(resZero._state.statusCode, 400);
+
+    // 6d. Incident replacement rejects non-existent plate & driver (BUG-SYS-21 / TC_IC_01-07, TC_IC_01-08)
+    // and incidentService persists resolved_by, type, cargo_affected (BUG-SYS-22, 23, 25)
+    if (sampleTrip) {
+      const inc = await incidentService.createIncident({
+        trip_id: Number(sampleTrip.id),
+        type: 'BREAKDOWN',
+        description: '[UNIT_TEST] Incident guards'
+      }, dispatcherId);
+      createdIncidentIds.push(inc.raw_id);
+
+      await assert.rejects(
+        () => incidentModel.dispatchReplacementWithTransaction({
+          incidentId: inc.raw_id,
+          newTruckPlate: '29H-767.99-FAKE',
+          newDriverName: 'Non Existent Driver',
+          userId: dispatcherId
+        }),
+        (err) => err.statusCode === 404 || err.statusCode === 400
+      );
+
+      // Reclassify to CARGO_DAMAGED and escalate with cargo_affected = false (BUG-SYS-22, 23, 25)
+      const escalated = await incidentService.updateIncidentStatus(inc.raw_id, {
+        status: 'ESCALATED',
+        type: 'CARGO_DAMAGED',
+        cargo_affected: false,
+        escalation_reason: '[UNIT_TEST] Reclassified & escalated'
+      }, dispatcherId);
+      assert.equal(escalated.raw_type, 'CARGO_DAMAGED');
+      assert.equal(escalated.cargo_affected, false);
+      assert.equal(escalated.escalated_by, dispatcherId);
+
+      // Reclassify to Other and resolve -> resolved_by persisted (BUG-SYS-22, 23)
+      const resolved = await incidentService.updateIncidentStatus(inc.raw_id, {
+        status: 'RESOLVED',
+        type: 'Other',
+        resolution_note: '[UNIT_TEST] Resolved at scene'
+      }, dispatcherId);
+      assert.equal(resolved.raw_type, 'Other');
+      assert.equal(resolved.resolved_by, dispatcherId);
+    }
+  });
+
+  it('7. Audit regression checks: GPS persistence, INCIDENT_SAFE_SELECT, no evidence leak, BigInt log fix, ID/state guards', async () => {
+    const mockRes = () => {
+      const state = { statusCode: 200, body: null };
+      return {
+        status(code) { state.statusCode = code; return this; },
+        json(payload) { state.body = payload; return state; },
+        _state: state
+      };
+    };
+
+    // 7a. Invalid numeric ID & invalid action -> 400; non-existent ID -> 404
+    const resBadId = mockRes();
+    await incidentController.getIncidentById({ params: { id: 'abc' } }, resBadId);
+    assert.equal(resBadId._state.statusCode, 400);
+
+    const resBadAction = mockRes();
+    await incidentController.decideIncidentCompensation(
+      { params: { id: '1' }, body: { action: 'INVALID_ACTION' }, user: { id: managerId } },
+      resBadAction
+    );
+    assert.equal(resBadAction._state.statusCode, 400);
+
+    const resMissing = mockRes();
+    await incidentController.decideIncidentCompensation(
+      { params: { id: '999999999' }, body: { action: 'APPROVE', approved_amount: 500000 }, user: { id: managerId } },
+      resMissing
+    );
+    assert.equal(resMissing._state.statusCode, 404);
+
+    if (!sampleTrip) return;
+
+    // 7b. driverModel.createIncident persists incident_lat & incident_lng
+    const drvInc = await driverModel.createIncident({
+      tripId: Number(sampleTrip.id),
+      reportedBy: null,
+      type: 'CARGO_DAMAGED',
+      description: '[UNIT_TEST] Audit GPS persistence check',
+      photos: ['https://res.cloudinary.com/demo/image/upload/damage.jpg'],
+      incidentLat: 21.221155,
+      incidentLng: 105.806712
+    });
+    createdIncidentIds.push(drvInc.id);
+    assert.equal(Number(drvInc.incident_lat).toFixed(6), '21.221155');
+    assert.equal(Number(drvInc.incident_lng).toFixed(6), '105.806712');
+
+    const loadedModelInc = await incidentModel.findById(drvInc.id);
+    assert.equal(Number(loadedModelInc.incident_lat).toFixed(6), '21.221155');
+    assert.equal(Number(loadedModelInc.incident_lng).toFixed(6), '105.806712');
+
+    // Escalate incident so it appears in manager major-incident queries
+    await incidentService.updateIncidentStatus(drvInc.id, {
+      status: 'ESCALATED',
+      cargo_affected: true,
+      escalation_reason: '[UNIT_TEST] Escalate audit check'
+    }, dispatcherId);
+
+    // 7c. Create claim with damage evidence photo -> verify it does NOT leak as payment_proof_url
+    const tripStopWithOrder = await prisma.trip_stops.findFirst({
+      where: { trip_id: BigInt(sampleTrip.id), order_id: { not: null } },
+      select: { order_id: true }
+    });
+    const orderIdForTrip = tripStopWithOrder?.order_id ? Number(tripStopWithOrder.order_id) : Number(sampleOrder.id);
+    const dmgClaim = await claimService.createDispatcherClaim({
+      incident_id: drvInc.id,
+      order_id: orderIdForTrip,
+      claim_type: 'Damage',
+      amount: 1200000,
+      reason: '[UNIT_TEST] Check evidence vs payment_proof_url',
+      evidence_photos: ['https://res.cloudinary.com/demo/image/upload/damage-evidence-only.jpg']
+    }, dispatcherId);
+    createdClaimIds.push(dmgClaim.id);
+
+    const resBeforePay = mockRes();
+    await incidentController.getIncidentById({ params: { id: String(drvInc.id) } }, resBeforePay);
+    assert.equal(resBeforePay._state.statusCode, 200);
+    assert.equal(resBeforePay._state.body.incident.payment_proof_url, null);
+    assert.equal(resBeforePay._state.body.incident.status, 'ESCALATED');
+
+    // 7d. sendIncidentDecisionEmail must NOT mutate ESCALATED status into APPROVED/REJECTED
+    const resEmailOnly = mockRes();
+    await incidentController.sendIncidentDecisionEmail(
+      {
+        params: { id: String(drvInc.id) },
+        body: { email_type: 'APPROVAL', customer_email: 'audit-test@example.com', approved_amount: 1000000 },
+        user: { id: managerId }
+      },
+      resEmailOnly
+    );
+    const resAfterEmailOnly = mockRes();
+    await incidentController.getIncidentById({ params: { id: String(drvInc.id) } }, resAfterEmailOnly);
+    assert.equal(resAfterEmailOnly._state.statusCode, 200);
+    assert.equal(resAfterEmailOnly._state.body.incident.status, 'ESCALATED');
+
+    // 7e. closeIncidentCase must block when incident is not APPROVED (400)
+    const resCloseNotApproved = mockRes();
+    await incidentController.closeIncidentCase(
+      {
+        params: { id: String(drvInc.id) },
+        body: { transaction_code: 'FT-EARLY', payment_proof_url: 'https://res.cloudinary.com/demo/image/upload/receipt.jpg' },
+        user: { id: managerId }
+      },
+      resCloseNotApproved
+    );
+    assert.equal(resCloseNotApproved._state.statusCode, 400);
+
+    // 7f. decideIncidentCompensation APPROVE -> writes activity_logs without BigInt crash, returns SAFE_SELECT fields, blocks re-decide (400)
+    const resApprove = mockRes();
+    await incidentController.decideIncidentCompensation(
+      {
+        params: { id: String(drvInc.id) },
+        body: {
+          action: 'APPROVE',
+          fault: 'COMPANY',
+          approved_amount: 1000000,
+          damage_percentage: 25,
+          goods_handling_method: 'CUSTOMER_RETAIN',
+          contract_clause_ref: 'Điều 8.2 - Audit Test',
+          resolution_note: '[UNIT_TEST] Approved with audit checks'
+        },
+        user: { id: managerId }
+      },
+      resApprove
+    );
+    assert.equal(resApprove._state.statusCode, 200);
+
+    const approveLogs = await prisma.activity_logs.findMany({
+      where: {
+        target_type: 'INCIDENT',
+        target_id: BigInt(drvInc.id),
+        action: 'APPROVE_INCIDENT_COMPENSATION'
+      }
+    });
+    assert.equal(approveLogs.length, 1);
+
+    const resAfterApprove = mockRes();
+    await incidentController.getIncidentById({ params: { id: String(drvInc.id) } }, resAfterApprove);
+    assert.equal(resAfterApprove._state.statusCode, 200);
+    assert.equal(resAfterApprove._state.body.incident.status, 'APPROVED');
+    assert.equal(resAfterApprove._state.body.incident.damage_percentage, 25);
+    assert.equal(resAfterApprove._state.body.incident.goods_handling_method, 'CUSTOMER_RETAIN');
+    assert.equal(resAfterApprove._state.body.incident.contract_clause_ref, 'Điều 8.2 - Audit Test');
+    assert.equal(Number(resAfterApprove._state.body.incident.approved_compensation_amount), 1000000);
+    assert.equal(resAfterApprove._state.body.incident.payment_proof_url, null);
+
+    // Re-deciding finalized incident must be rejected (400)
+    const resReDecide = mockRes();
+    await incidentController.decideIncidentCompensation(
+      {
+        params: { id: String(drvInc.id) },
+        body: { action: 'REJECT', rejection_reason: 'Late reject', contract_clause_ref: 'Điều 4.2' },
+        user: { id: managerId }
+      },
+      resReDecide
+    );
+    assert.equal(resReDecide._state.statusCode, 400);
+
+    // closeIncidentCase before Dispatcher call must be rejected (400)
+    const resCloseNoCall = mockRes();
+    await incidentController.closeIncidentCase(
+      {
+        params: { id: String(drvInc.id) },
+        body: { transaction_code: 'FT-NOCALL', payment_proof_url: 'https://res.cloudinary.com/demo/image/upload/receipt.jpg' },
+        user: { id: managerId }
+      },
+      resCloseNoCall
+    );
+    assert.equal(resCloseNoCall._state.statusCode, 400);
   });
 });

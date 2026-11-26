@@ -51,7 +51,7 @@ export default function TripIncidentsTab({
       render: (_, r) => (
         <div>
           <span className="font-mono font-bold text-red-600 text-xs">{r.id}</span>
-          <div className="text-[11px] text-gray-500 mt-0.5">Báo cáo lúc: <b className="font-mono">{r.reported_at}</b></div>
+          <div className="text-[11px] text-gray-500 mt-0.5">Báo cáo lúc: <b className="font-mono">{r.reported_at || '—'}</b></div>
           <Tag color="error" className="font-bold text-[10px] mt-1">{r.severity === 'HIGH' ? 'MỨC ĐỘ CAO' : 'TRUNG BÌNH'}</Tag>
         </div>
       )
@@ -65,9 +65,9 @@ export default function TripIncidentsTab({
           <div className="font-bold text-[#7367f0] font-mono">{r.trip_code}</div>
           <div className="font-semibold text-gray-800 mt-0.5 flex items-center gap-1">
             <Truck size={13} className="text-gray-500" />
-            <span className="font-mono">{r.truck}</span>
+            <span className="font-mono">{r.truck || 'Chưa cập nhật'}</span>
           </div>
-          <div className="text-gray-500 text-[11px]">Tài xế: <b>{r.driver}</b></div>
+          <div className="text-gray-500 text-[11px]">Tài xế: <b>{r.driver || 'Chưa cập nhật'}</b></div>
         </div>
       )
     },
@@ -82,7 +82,7 @@ export default function TripIncidentsTab({
             <span>{r.type}</span>
           </div>
           <div className="text-gray-600 mt-1 line-clamp-2 text-[11px]">{r.description}</div>
-          <div className="text-gray-400 text-[10px] mt-0.5">Vị trí: {r.location}</div>
+          <div className="text-gray-400 text-[10px] mt-0.5">Vị trí: {r.location || 'Chưa có vị trí'}</div>
         </div>
       )
     },
@@ -98,7 +98,7 @@ export default function TripIncidentsTab({
               className="font-bold text-xs py-0.5 px-2"
             >
               {r.status === 'RESOLVED'
-                ? 'ĐÃ XỬ LÝ / ĐỔI XE'
+                ? (r.resolution_note?.includes('Điều xe thay thế') ? 'ĐÃ ĐỔI XE' : 'ĐÃ XỬ LÝ')
                 : r.status === 'ESCALATED'
                   ? 'ĐÃ CHUYỂN QUẢN LÝ'
                   : 'CHỜ ĐIỀU PHỐI XỬ LÝ'}

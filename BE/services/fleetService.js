@@ -167,6 +167,7 @@ const updateTruck = async (id, payload) => {
   return await fleetModel.updateTruck(id, updateData);
 };
 
+
 // ==========================================
 // DRIVER SHIFTS
 // ==========================================

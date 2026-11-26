@@ -222,6 +222,7 @@ model incidents {
   escalated_by                        BigInt?
   escalated_time                      DateTime?             @db.Timestamptz(6)
   escalation_reason                   String?
+  cargo_affected                      Boolean?
   resolution_note                     String?               @db.VarChar(500)
   resolved_by                         BigInt?
   resolved_time                       DateTime?             @db.Timestamptz(6)
