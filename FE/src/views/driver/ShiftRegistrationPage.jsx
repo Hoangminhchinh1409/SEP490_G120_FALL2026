@@ -326,7 +326,7 @@ export default function ShiftRegistrationPage() {
       const shiftLabel =
         selectedShiftType === "MORNING"
           ? "Ca Sáng (08:00 - 17:00)"
-          : "Ca Đêm (17:00 - 08:00 hôm sau)";
+          : "Ca Đêm (20:00 - 06:00 hôm sau)";
       message.success(
         `Đã gửi đăng ký ${shiftLabel} cho ${count} ngày trong tuần!`,
       );

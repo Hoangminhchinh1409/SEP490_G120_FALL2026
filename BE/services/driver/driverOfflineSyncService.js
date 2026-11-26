@@ -81,7 +81,7 @@ const formatActionDescription = (type, payload = {}, tripId, stopId) => {
         const label =
           st === "MORNING"
             ? "Ca Sáng (08:00 - 17:00)"
-            : "Ca Đêm (17:00 - 08:00 hôm sau)";
+            : "Ca Đêm (20:00 - 06:00 hôm sau)";
         return `Đăng ký ${label} cả tuần bắt đầu ${wk}`;
       }
       const hours = startStr && endStr ? ` (${startStr} - ${endStr})` : "";

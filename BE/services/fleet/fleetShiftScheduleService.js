@@ -123,13 +123,13 @@ const autoAssignNextWeekShifts = async ({ force = false, triggeredBy = null } = 
       assignedNight++;
     }
 
-    const shiftLabel = shiftType === 'MORNING' ? 'Ca Sáng (08:00 - 18:00)' : 'Ca Đêm (19:00 - 07:00 hôm sau)';
+    const shiftLabel = shiftType === 'MORNING' ? 'Ca Sáng (08:00 - 18:00)' : 'Ca Đêm (20:00 - 06:00 hôm sau)';
     const rows = [];
     let cur = nextMonday;
     while (cur <= nextSunday) {
-      const startIso = shiftType === 'MORNING' ? `${cur}T08:00:00+07:00` : `${cur}T19:00:00+07:00`;
+      const startIso = shiftType === 'MORNING' ? `${cur}T08:00:00+07:00` : `${cur}T20:00:00+07:00`;
       const endDate = shiftType === 'MORNING' ? cur : addDaysStrGMT7(cur, 1);
-      const endIso = shiftType === 'MORNING' ? `${endDate}T18:00:00+07:00` : `${endDate}T07:00:00+07:00`;
+      const endIso = shiftType === 'MORNING' ? `${endDate}T18:00:00+07:00` : `${endDate}T06:00:00+07:00`;
       rows.push({
         driver_id: drv.id,
         date: cur,
@@ -220,7 +220,7 @@ const switchDriverWeekShiftType = async ({ driverId, weekStart, shiftType, revie
   }
 
   const { weekStart: mon, weekEnd: sun } = driverModel.getWeekMondaySundayFromDateStr(String(weekStart).split('T')[0]);
-  const shiftLabel = normalizedType === 'MORNING' ? 'Ca Sáng (08:00 - 18:00)' : 'Ca Đêm (19:00 - 07:00 hôm sau)';
+  const shiftLabel = normalizedType === 'MORNING' ? 'Ca Sáng (08:00 - 18:00)' : 'Ca Đêm (20:00 - 06:00 hôm sau)';
   const existingShifts = await driverModel.getShiftsInRange(Number(driverId), mon, sun);
 
   let updatedList = [];
@@ -229,9 +229,9 @@ const switchDriverWeekShiftType = async ({ driverId, weekStart, shiftType, revie
     let cur = mon;
     const nowIso = new Date().toISOString();
     while (cur <= sun) {
-      const startIso = normalizedType === 'MORNING' ? `${cur}T08:00:00+07:00` : `${cur}T19:00:00+07:00`;
+      const startIso = normalizedType === 'MORNING' ? `${cur}T08:00:00+07:00` : `${cur}T20:00:00+07:00`;
       const endDate = normalizedType === 'MORNING' ? cur : addDaysStrGMT7(cur, 1);
-      const endIso = normalizedType === 'MORNING' ? `${endDate}T18:00:00+07:00` : `${endDate}T07:00:00+07:00`;
+      const endIso = normalizedType === 'MORNING' ? `${endDate}T18:00:00+07:00` : `${endDate}T06:00:00+07:00`;
       rows.push({
         driver_id: Number(driverId),
         date: cur,
@@ -251,9 +251,9 @@ const switchDriverWeekShiftType = async ({ driverId, weekStart, shiftType, revie
     const nowIso = new Date().toISOString();
     for (const sh of existingShifts) {
       const dStr = sh.date;
-      const startIso = normalizedType === 'MORNING' ? `${dStr}T08:00:00+07:00` : `${dStr}T19:00:00+07:00`;
+      const startIso = normalizedType === 'MORNING' ? `${dStr}T08:00:00+07:00` : `${dStr}T20:00:00+07:00`;
       const endDate = normalizedType === 'MORNING' ? dStr : addDaysStrGMT7(dStr, 1);
-      const endIso = normalizedType === 'MORNING' ? `${endDate}T18:00:00+07:00` : `${endDate}T07:00:00+07:00`;
+      const endIso = normalizedType === 'MORNING' ? `${endDate}T18:00:00+07:00` : `${endDate}T06:00:00+07:00`;
       const wasAuto = (sh.note && sh.note.includes('[Hệ thống tự động xếp lịch]')) || sh.registered_by === null;
       const prefix = wasAuto ? '[Hệ thống tự động xếp lịch] ' : '';
       const newNote = `${prefix}[Quản lý điều chỉnh sang ${shiftLabel}] (${mon} đến ${sun})`;
