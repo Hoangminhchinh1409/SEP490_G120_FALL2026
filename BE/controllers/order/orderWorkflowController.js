@@ -339,6 +339,16 @@ const cancelOrder = async (req, res) => {
             data: { status: "AVAILABLE", updated_at: nowDate },
           });
         }
+
+        // BUG-SYS-37: Đóng phân công tài xế và xe (released_time) khi hủy chuyến
+        await tx.trip_drivers.updateMany({
+          where: { trip_id: tId, released_time: null },
+          data: { released_time: nowDate },
+        });
+        await tx.trip_trucks.updateMany({
+          where: { trip_id: tId, released_time: null },
+          data: { released_time: nowDate },
+        });
       }
 
       return serializeOrderRow(freshOrder);

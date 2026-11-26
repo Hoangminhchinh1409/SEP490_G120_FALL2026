@@ -117,7 +117,7 @@ export default function MajorIncidentListPage({ readOnly = false }) {
         <div className="text-xs">
           <div className="font-mono font-bold text-secondary">{r.trip_code || `TRIP-${r.trip_id}`}</div>
           <div className="text-on-surface-variant text-[11px] mt-0.5">
-            Xe: <span className="font-mono font-semibold text-primary">{r.truck_plate || '29C-246.80'}</span>
+            Xe: <span className="font-mono font-semibold text-primary">{r.truck_plate || 'Chưa cập nhật'}</span>
           </div>
           <div className="text-outline text-[10px]">Tài xế: {r.driver_name || 'Tài xế'}</div>
         </div>

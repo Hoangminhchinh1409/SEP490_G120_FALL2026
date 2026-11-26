@@ -162,11 +162,16 @@ const createConsultationOrder = async (req, res) => {
       items,
     });
 
-    // Validate quá tải trọng Backend cho đơn tư vấn
+    // BUG-SYS-01: Giới hạn tối đa 4.000 kg / đơn hàng theo SRS & Validate quá tải trọng xe
     const effectiveWeightConsultation = Math.max(
       actualWeight,
       chargeableWeight,
     );
+    if (effectiveWeightConsultation > 4000) {
+      return res.status(400).json({
+        message: `Khối lượng đơn hàng (${effectiveWeightConsultation.toLocaleString("vi-VN")} kg) vượt quá giới hạn tối đa 4.000 kg mỗi đơn theo quy định vận chuyển.`,
+      });
+    }
     const maxPayloadConsultation = getVehicleMaxPayload(vehicle_type_required);
     if (effectiveWeightConsultation > maxPayloadConsultation) {
       return res.status(400).json({

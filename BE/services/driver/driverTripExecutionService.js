@@ -389,6 +389,15 @@ const recordDelivery = async (userId, tripId, stopId, deliveryData) => {
     throw error;
   }
 
+  // BUG-SYS-18: Không tạo thêm bằng chứng POD trùng lặp nếu điểm dừng đã hoàn tất giao hàng
+  if (["DONE", "DELIVERED", "COMPLETED"].includes(String(stop.status || "").trim().toUpperCase())) {
+    return {
+      success: true,
+      message: "Điểm dừng này đã được xác nhận giao hàng trước đó.",
+      stop,
+    };
+  }
+
   // 1. Kiểm tra ảnh theo loại điểm dừng (Điểm hoàn hàng về kho ALS / Xuất khẩu / Nhập khẩu)
   const isReturnToAls = isReturnWarehouseStop(stop);
   const isExport =

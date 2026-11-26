@@ -155,9 +155,14 @@ const decideIncidentCompensation = async (req, res) => {
       }
     }
 
-    // BUG-SYS-32: Chặn duyệt mức bồi thường vượt quá hạn mức trách nhiệm của hợp đồng (hoặc trần luật định 500.000.000 VNĐ)
+    // BUG-SYS-32 & BUG-SYS-33: Bắt buộc số tiền bồi thường > 0 và không vượt quá hạn mức trách nhiệm hợp đồng (hoặc trần luật định 500.000.000 VNĐ)
     if (isApprove) {
       const requestedApprove = Number(approved_amount || 0);
+      if (!Number.isFinite(requestedApprove) || requestedApprove <= 0) {
+        return res.status(400).json({
+          message: 'Vui lòng nhập số tiền bồi thường hợp lệ (> 0 VNĐ) khi phê duyệt.'
+        });
+      }
       const incCheck = await prisma.incidents.findUnique({
         where: { id: BigInt(id) },
         select: {

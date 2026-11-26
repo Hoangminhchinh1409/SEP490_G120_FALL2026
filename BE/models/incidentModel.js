@@ -384,12 +384,6 @@ const dispatchReplacementWithTransaction = async ({
     err.statusCode = 400;
     throw err;
   }
-  }
-  if (!newDriver) {
-    newDriver = await prisma.driver_profiles.findFirst({
-      include: { users: { select: { full_name: true } } }
-    });
-  }
 
   const prevWaybills = trip?.waybills || [];
   const nextVersion = prevWaybills.length + 1;
