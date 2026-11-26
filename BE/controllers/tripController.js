@@ -2,6 +2,7 @@ const prisma = require('../config/prisma');
 const tripService = require('../services/tripService');
 const vrptwService = require('../services/vrptwService');
 const routingController = require('./routingController');
+const gpsSimulatorService = require('../services/trip/gpsSimulatorService');
 const { serializePrisma } = require('../utils/prismaHelper');
 
 /**
@@ -243,6 +244,43 @@ const getPublicTrip = async (req, res) => {
   }
 };
 
+// 7. GPS ROUTE SIMULATOR (DEMO): Chạy / Dừng / Xem trạng thái mô phỏng xe di chuyển trên bản đồ
+const startGpsSimulation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { speedMultiplier, speed_multiplier, polyline } = req.body || {};
+    const result = await gpsSimulatorService.startSimulation(id, {
+      speedMultiplier: speedMultiplier ?? speed_multiplier,
+      polyline
+    });
+    return res.json({ success: true, ...result, simulation: result });
+  } catch (err) {
+    console.error('startGpsSimulation error:', err);
+    return res.status(err.statusCode || 400).json({ message: err.message || 'Lỗi khi bắt đầu mô phỏng GPS' });
+  }
+};
+
+const stopGpsSimulation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await gpsSimulatorService.stopSimulation(id);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('stopGpsSimulation error:', err);
+    return res.status(err.statusCode || 400).json({ message: err.message || 'Lỗi khi dừng mô phỏng GPS' });
+  }
+};
+
+const getGpsSimulationStatus = async (req, res) => {
+  try {
+    const simulations = gpsSimulatorService.getSimulationStatus();
+    return res.json({ success: true, simulations });
+  } catch (err) {
+    console.error('getGpsSimulationStatus error:', err);
+    return res.status(500).json({ message: err.message || 'Lỗi khi lấy trạng thái mô phỏng GPS' });
+  }
+};
+
 module.exports = {
   getAllTrips,
   createTrip,
@@ -252,5 +290,8 @@ module.exports = {
   getLeaveReassignments,
   reassignTripDriver,
   optimizeMultiStopRoute,
-  getPublicTrip
+  getPublicTrip,
+  startGpsSimulation,
+  stopGpsSimulation,
+  getGpsSimulationStatus
 };

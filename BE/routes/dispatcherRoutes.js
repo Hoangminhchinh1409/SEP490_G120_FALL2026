@@ -54,6 +54,9 @@ router.get('/trips/:id/replay', tripController.getTripReplay);
 router.get('/routing/road-route', tripController.calculateRoadRoute);
 router.get('/leave-reassignments', tripController.getLeaveReassignments);
 router.patch('/trips/:id/reassign-driver', requireDispatcherOrAdmin, tripController.reassignTripDriver);
+router.get('/trips/gps-simulate/status', tripController.getGpsSimulationStatus);
+router.post('/trips/:id/gps-simulate/start', requireDispatcherOrAdmin, tripController.startGpsSimulation);
+router.post('/trips/:id/gps-simulate/stop', requireDispatcherOrAdmin, tripController.stopGpsSimulation);
 
 // 5. Incidents & Claims (Xem sự cố & khiếu nại bồi thường)
 router.get('/incidents', incidentController.getAllIncidents);

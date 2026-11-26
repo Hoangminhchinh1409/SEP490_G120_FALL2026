@@ -29,27 +29,23 @@ export default function IncidentContractViewerModal({
     <Modal
       title={
         <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full pr-8 gap-2">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-red-600 text-[24px]">picture_as_pdf</span>
-            <div>
-              <h4 className="font-bold text-sm text-primary">
-                {hasFrameworkContract ? 'Hồ sơ Hợp đồng Pháp lý (2 Bản)' : 'Hợp đồng Vận tải Theo chuyến (Khách vãng lai)'}
-              </h4>
-              <p className="text-[11px] text-on-surface-variant font-normal">
-                {hasFrameworkContract
-                  ? 'Hệ thống tự động liên kết Hợp đồng khung đối tác & Hợp đồng vận tải của đơn hàng này'
-                  : 'Đơn hàng chưa có HĐ khung dài hạn · Áp dụng giới hạn trách nhiệm 500 triệu VNĐ (NĐ 163/2017/NĐ-CP)'}
-              </p>
-            </div>
+          <div>
+            <h4 className="font-bold text-sm text-primary">
+              {hasFrameworkContract ? 'Hồ sơ Hợp đồng Pháp lý (02 Bản)' : 'Hợp đồng Vận tải Theo chuyến (Khách hàng vãng lai)'}
+            </h4>
+            <p className="text-[11px] text-on-surface-variant font-normal">
+              {hasFrameworkContract
+                ? 'Hồ sơ bao gồm Hợp đồng nguyên tắc đối tác và Hợp đồng vận tải hàng hóa theo chuyến'
+                : 'Đơn hàng chưa có Hợp đồng nguyên tắc dài hạn · Áp dụng giới hạn trách nhiệm 500.000.000 VNĐ theo Nghị định 163/2017/NĐ-CP'}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => window.print()}
-              className="h-8 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
+              className="h-8 px-3.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary text-xs font-semibold cursor-pointer transition-colors border border-slate-300"
             >
-              <span className="material-symbols-outlined text-[16px]">print</span>
-              <span>In hợp đồng</span>
+              In hợp đồng
             </button>
           </div>
         </div>
@@ -67,34 +63,31 @@ export default function IncidentContractViewerModal({
             <button
               type="button"
               onClick={() => setContractViewerTab('FRAMEWORK')}
-              className={`flex-1 h-9 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 ${
+              className={`flex-1 h-9 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center ${
                 contractViewerTab === 'FRAMEWORK'
                   ? 'bg-white text-secondary shadow-xs border border-surface-container'
                   : 'text-on-surface-variant hover:text-primary'
               }`}
             >
-              <span className="material-symbols-outlined text-[18px]">verified</span>
-              <span>1. Hợp đồng Khung Đối tác ({contractNumber})</span>
+              <span>1. Hợp đồng Nguyên tắc Đối tác ({contractNumber})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setContractViewerTab('ORDER_TRIP')}
-              className={`flex-1 h-9 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 ${
+              className={`flex-1 h-9 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center ${
                 contractViewerTab === 'ORDER_TRIP'
                   ? 'bg-white text-secondary shadow-xs border border-surface-container'
                   : 'text-on-surface-variant hover:text-primary'
               }`}
             >
-              <span className="material-symbols-outlined text-[18px]">local_shipping</span>
-              <span>2. Hợp đồng Vận tải Chuyến ({orderCode})</span>
+              <span>2. Hợp đồng Vận tải Theo chuyến ({orderCode})</span>
             </button>
           </div>
         ) : (
           <Alert
             type="warning"
-            showIcon
-            title={<b className="text-xs">Đơn hàng không có Hợp đồng Khung Đối tác (Khách hàng Vãng lai)</b>}
+            title={<b className="text-xs">Đơn hàng không có Hợp đồng Nguyên tắc Đối tác (Khách hàng vãng lai)</b>}
             description="Doanh nghiệp này chưa ký hợp đồng nguyên tắc dài hạn. Mọi chế tài bồi thường được thẩm định trực tiếp theo Hợp đồng vận tải từng chuyến dưới đây và giới hạn trách nhiệm luật định 500.000.000 VNĐ theo Nghị định 163/2017/NĐ-CP."
             className="rounded-xl p-3 border border-amber-300"
           />
@@ -149,7 +142,7 @@ export default function IncidentContractViewerModal({
                     ĐIỀU 4: MIỄN TRỪ TRÁCH NHIỆM (CĂN CỨ TỪ CHỐI BỒI THƯỜNG)
                   </strong>
                   <p className="p-2.5 bg-slate-100 rounded-lg border border-slate-200">
-                    <b>Khoản 4.2:</b> Bên A được hoàn toàn miễn trừ trách nhiệm bồi thường nếu hàng hóa bị hư hỏng, rách nát xuất phát từ lỗi đóng gói không đúng quy chuẩn bảo vệ của chủ hàng, hoặc hàng hóa đã bị tổn thất từ trước thời điểm bàn giao bốc xếp lên phương tiện vận chuyển của Bên A (căn cứ theo ảnh chụp đối chiếu lúc nhận hàng Pickup).
+                    <b>Khoản 4.2:</b> Bên A được hoàn toàn miễn trừ trách nhiệm bồi thường nếu hàng hóa bị hư hỏng, rách nát xuất phát từ lỗi đóng gói không đúng quy chuẩn bảo vệ của chủ hàng, hoặc hàng hóa đã bị tổn thất từ trước thời điểm bàn giao bốc xếp lên phương tiện vận chuyển của Bên A (căn cứ theo ảnh chụp đối chiếu lúc nhận hàng).
                   </p>
                 </div>
 
@@ -169,7 +162,7 @@ export default function IncidentContractViewerModal({
                     Trong mọi trường hợp, tổng mức trách nhiệm bồi thường tối đa của Bên A cho mỗi vụ việc không vượt quá Hạn mức trách nhiệm hợp đồng đối tác là: <b className="font-mono text-error font-bold">{contractCap.toLocaleString('vi-VN')} VNĐ</b>.
                   </p>
                   <p>
-                    <b>Khoản 8.3:</b> Thời hạn khách hàng lập yêu cầu khiếu nại bồi thường tối đa 14 ngày kể từ thời điểm giao hàng (POD). Quá thời hạn trên, quyền khiếu nại không còn hiệu lực.
+                    <b>Khoản 8.3:</b> Thời hạn khách hàng lập yêu cầu khiếu nại bồi thường tối đa 14 ngày kể từ thời điểm bàn giao hàng hóa. Quá thời hạn trên, quyền khiếu nại không còn hiệu lực.
                   </p>
                 </div>
               </div>
@@ -178,8 +171,8 @@ export default function IncidentContractViewerModal({
                 <div className="space-y-1">
                   <strong className="block font-bold text-xs text-primary uppercase">ĐẠI DIỆN BÊN B (DOANH NGHIỆP)</strong>
                   <div className="h-14 flex items-center justify-center">
-                    <div className="px-3 py-1 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-700 text-[11px] font-bold">
-                      ✔ ĐÃ KÝ SỐ ĐỐI TÁC KHUNG
+                    <div className="px-3 py-1 bg-slate-50 border border-slate-300 rounded text-slate-800 text-[11px] font-bold">
+                      ĐÃ KÝ SỐ ĐỐI TÁC KHUNG
                     </div>
                   </div>
                   <strong className="block text-primary font-bold text-xs">{contactPerson}</strong>
@@ -188,8 +181,8 @@ export default function IncidentContractViewerModal({
                 <div className="space-y-1">
                   <strong className="block font-bold text-primary uppercase text-xs">ĐẠI DIỆN BÊN A (ALS LOGISTICS)</strong>
                   <div className="h-14 flex items-center justify-center">
-                    <div className="px-3 py-1 bg-red-50 border border-red-300 rounded-lg text-red-700 text-[11px] font-bold">
-                      ✔ CHỨNG THƯ SỐ ALS LOGISTICS
+                    <div className="px-3 py-1 bg-slate-50 border border-slate-300 rounded text-slate-800 text-[11px] font-bold">
+                      CHỨNG THƯ SỐ ALS LOGISTICS
                     </div>
                   </div>
                   <strong className="block text-primary font-bold text-xs">TỔNG GIÁM ĐỐC ALS</strong>
@@ -223,29 +216,25 @@ export default function IncidentContractViewerModal({
 
               {/* NẾU ĐƠN HÀNG CÓ TỆP SCAN HỢP ĐỒNG PDF ĐÍNH KÈM THẬT */}
               {(currentData.order?.order_contract?.contract_file || currentData.order?.signed_order_contract_file) && (
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-300 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">file_present</span>
-                    <div>
-                      <span className="font-bold text-emerald-950 block">
-                        Tệp scan hợp đồng đã ký của đơn hàng:
-                      </span>
-                      <span className="font-mono text-emerald-800 text-[11px]">
-                        {currentData.order?.order_contract?.contract_file || currentData.order?.signed_order_contract_file}
-                      </span>
-                    </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-300 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-slate-900 block">
+                      Tệp bản sao hợp đồng đã ký của đơn hàng:
+                    </span>
+                    <span className="font-mono text-slate-700 text-[11px]">
+                      {currentData.order?.order_contract?.contract_file || currentData.order?.signed_order_contract_file}
+                    </span>
                   </div>
                   {currentData.order?.order_contract?.contract_file_data ? (
                     <a
                       href={currentData.order.order_contract.contract_file_data}
                       download={currentData.order.order_contract.contract_file || `Hop_Dong_${orderCode}.pdf`}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-[11px] hover:bg-emerald-700 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 text-white font-bold text-[11px] hover:bg-slate-900 transition-colors cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[14px]">download</span>
-                      <span>Tải tệp PDF</span>
+                      Tải tệp PDF
                     </a>
                   ) : (
-                    <span className="text-[11px] text-emerald-800 italic">Đã lưu trữ hồ sơ điện tử</span>
+                    <span className="text-[11px] text-slate-600 italic">Đã lưu trữ hồ sơ điện tử</span>
                   )}
                 </div>
               )}
@@ -318,8 +307,8 @@ export default function IncidentContractViewerModal({
                 <div className="space-y-1">
                   <strong className="block font-bold text-xs text-primary uppercase">XÁC NHẬN CỦA KHÁCH HÀNG</strong>
                   <div className="h-14 flex items-center justify-center">
-                    <div className="px-3 py-1 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-700 text-[11px] font-bold">
-                      ✔ ĐÃ KÝ XÁC NHẬN CHUYẾN
+                    <div className="px-3 py-1 bg-slate-50 border border-slate-300 rounded text-slate-800 text-[11px] font-bold">
+                      ĐÃ KÝ XÁC NHẬN CHUYẾN
                     </div>
                   </div>
                   <strong className="block text-primary font-bold text-xs">{contactPerson}</strong>
@@ -328,8 +317,8 @@ export default function IncidentContractViewerModal({
                 <div className="space-y-1">
                   <strong className="block font-bold text-primary uppercase text-xs">ĐIỀU PHỐI VIÊN ALS</strong>
                   <div className="h-14 flex items-center justify-center">
-                    <div className="px-3 py-1 bg-blue-50 border border-blue-300 rounded-lg text-blue-700 text-[11px] font-bold">
-                      ✔ ĐÃ XÁC NHẬN ĐƠN (CONFIRMED)
+                    <div className="px-3 py-1 bg-slate-50 border border-slate-300 rounded text-slate-800 text-[11px] font-bold">
+                      ĐÃ XÁC NHẬN ĐƠN HÀNG
                     </div>
                   </div>
                   <strong className="block text-primary font-bold text-xs">BAN ĐIỀU PHỐI VẬN TẢI</strong>

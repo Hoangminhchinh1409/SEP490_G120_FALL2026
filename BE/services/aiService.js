@@ -97,6 +97,24 @@ const callGeminiGenerateContent = async (promptText, responseJson = true) => {
 };
 
 /**
+ * Trích xuất tên tỉnh/thành phố từ địa chỉ chi tiết để đảm bảo quyền riêng tư (BUG-CD-01)
+ */
+const extractProvinceOnly = (address = "") => {
+  const raw = String(address || "").trim();
+  if (!raw) return "Chưa xác định";
+  const parts = raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return "Chưa xác định";
+  const last = parts[parts.length - 1];
+  if (/^(việt nam|vietnam|vn)$/i.test(last) && parts.length >= 2) {
+    return parts[parts.length - 2];
+  }
+  return last;
+};
+
+/**
  * Trợ lý AI Phân tích & Gợi ý Chứng từ Hải quan Xuất Nhập Khẩu
  */
 const analyzeCustomsDocuments = async (payload = {}) => {
@@ -162,6 +180,9 @@ const analyzeCustomsDocuments = async (payload = {}) => {
     };
   }
 
+  const pickupProvince = extractProvinceOnly(order.pickup_address || order.pickup || "");
+  const deliveryProvince = extractProvinceOnly(order.delivery_address || order.dropoff || "");
+
   const prompt = `Bạn là Chuyên gia Thủ tục Hải quan & Logistics Xuất Nhập Khẩu tại Việt Nam (Hệ thống NEXLOG).
 Hãy phân tích thông tin lô hàng dưới đây và trả về kết quả JSON chuẩn xác để tư vấn bộ chứng từ cần nộp:
 
@@ -170,7 +191,7 @@ Hãy phân tích thông tin lô hàng dưới đây và trả về kết quả J
 - Loại hàng: "${order.cargo_type || ""}"
 - Số lượng / Quy cách: "${order.package_count || ""} ${order.package_unit || ""}"
 - Trọng lượng: "${order.weight || order.actual_weight_kg || ""} kg"
-- Tuyến vận chuyển: "${order.pickup_address || order.pickup || ""} -> ${order.delivery_address || order.dropoff || ""}"
+- Tuyến vận chuyển (Tỉnh/Thành phố): "${pickupProvince} -> ${deliveryProvince}"
 
 Yêu cầu trả về đúng định dạng JSON với cấu trúc sau:
 {

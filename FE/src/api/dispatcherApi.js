@@ -368,6 +368,29 @@ export const dispatcherApi = {
     }
   },
 
+  // --- 7. Mô phỏng GPS Demo (ghi thật vào trucks & trip_track_points) ---
+  startGpsSimulation: async (tripId, { speed_multiplier = 1, polyline = null } = {}) => {
+    return fetchWithAuth(`/dispatcher/trips/${encodeURIComponent(tripId)}/gps-simulate/start`, {
+      method: 'POST',
+      body: JSON.stringify({ speed_multiplier, polyline })
+    });
+  },
+
+  stopGpsSimulation: async (tripId) => {
+    return fetchWithAuth(`/dispatcher/trips/${encodeURIComponent(tripId)}/gps-simulate/stop`, {
+      method: 'POST'
+    });
+  },
+
+  getGpsSimulationStatus: async () => {
+    try {
+      const data = await fetchWithAuth('/dispatcher/trips/gps-simulate/status');
+      return Array.isArray(data?.simulations) ? data.simulations : [];
+    } catch {
+      return [];
+    }
+  },
+
   // --- 8. Duyệt phụ phí tài xế đề xuất (BUG-ITD-07) ---
   getExtraFees: async (status = '') => {
     try {

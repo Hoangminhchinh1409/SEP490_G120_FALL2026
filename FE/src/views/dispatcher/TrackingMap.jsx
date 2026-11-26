@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Input, Badge, Button, message } from 'antd';
-import { Search, MapPin, Truck, RefreshCw, Clock, Activity } from 'lucide-react';
+import { Input, Badge, Button, Select, message } from 'antd';
+import { Search, MapPin, Truck, RefreshCw, Clock, Activity, Play, Square, Radio } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -66,6 +66,9 @@ const TrackingMap = () => {
   const [incidents, setIncidents] = useState([]);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [simSpeed, setSimSpeed] = useState(5);
+  const [simStatusMap, setSimStatusMap] = useState({});
+  const [simLoading, setSimLoading] = useState(false);
 
   const handleSelectTruck = useCallback(async (truck) => {
     setSelectedTruck(truck);
@@ -205,6 +208,90 @@ const TrackingMap = () => {
       active = false;
     };
   }, [loadTrackingData]);
+
+  // Polling trạng thái mô phỏng GPS thời gian thực (600ms/lần) khi có ít nhất 1 chuyến đang chạy mô phỏng
+  const hasRunningSim = Object.values(simStatusMap).some((s) => s?.running);
+  useEffect(() => {
+    if (!allowed || !hasRunningSim) return undefined;
+    const poll = setInterval(async () => {
+      const sims = await dispatcherApi.getGpsSimulationStatus();
+      const nextMap = {};
+      sims.forEach((s) => {
+        nextMap[s.trip_code] = s;
+      });
+      setSimStatusMap(nextMap);
+
+      if (sims.length > 0) {
+        setActiveTrucks((prev) =>
+          prev.map((item) => {
+            const sim = nextMap[item.trip_code];
+            if (!sim) return item;
+            const nowTime = new Date().toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            });
+            return {
+              ...item,
+              lat: sim.lat,
+              lng: sim.lng,
+              progress: sim.progress,
+              speed: `${Math.round(sim.speed_kmh || 0)}km/h`,
+              status: sim.progress >= 100
+                ? 'Đã hoàn thành'
+                : sim.progress >= 85
+                  ? 'Sắp đến'
+                  : 'Đang di chuyển',
+              time: `GPS Live ${nowTime}`
+            };
+          })
+        );
+      }
+    }, 600);
+    return () => clearInterval(poll);
+  }, [allowed, hasRunningSim]);
+
+  const handleStartGpsSim = async () => {
+    if (!selectedTruck) return;
+    try {
+      setSimLoading(true);
+      const tripKey = selectedTruck.raw_trip_id || selectedTruck.trip_code;
+      const res = await dispatcherApi.startGpsSimulation(tripKey, {
+        speed_multiplier: simSpeed,
+        polyline: selectedRouteData?.polyline || null
+      });
+      if (res?.simulation) {
+        setSimStatusMap((prev) => ({
+          ...prev,
+          [res.simulation.trip_code]: res.simulation
+        }));
+        message.success(res.message || 'Đã bật mô phỏng GPS trực tuyến!');
+      }
+    } catch (err) {
+      message.error(err.message || 'Không thể bật mô phỏng GPS');
+    } finally {
+      setSimLoading(false);
+    }
+  };
+
+  const handleStopGpsSim = async () => {
+    if (!selectedTruck) return;
+    try {
+      setSimLoading(true);
+      const tripKey = selectedTruck.raw_trip_id || selectedTruck.trip_code;
+      await dispatcherApi.stopGpsSimulation(tripKey);
+      setSimStatusMap((prev) => {
+        const copy = { ...prev };
+        delete copy[selectedTruck.trip_code];
+        return copy;
+      });
+      message.info(`Đã dừng mô phỏng GPS chuyến ${selectedTruck.trip_code}`);
+    } catch (err) {
+      message.error(err.message || 'Lỗi khi dừng mô phỏng GPS');
+    } finally {
+      setSimLoading(false);
+    }
+  };
 
   const handleResolveIncident = async (incidentId, payload) => {
     try {
@@ -410,6 +497,51 @@ const TrackingMap = () => {
             </Marker>
           ))}
         </MapContainer>
+
+        {/* Thanh điều khiển Mô phỏng GPS Demo góc trái trên */}
+        {selectedTruck && (
+          <div className="absolute top-3 left-3 z-[1000] bg-white/95 backdrop-blur-md px-3 py-2 rounded-lg border border-indigo-200 shadow-md flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-bold text-indigo-900 flex items-center gap-1.5">
+              <Radio size={14} className={simStatusMap[selectedTruck.trip_code]?.running ? 'text-emerald-600 animate-pulse' : 'text-indigo-500'} />
+              GPS Demo ({selectedTruck.trip_code})
+            </span>
+            <Select
+              size="small"
+              value={simSpeed}
+              onChange={setSimSpeed}
+              className="w-16"
+              disabled={Boolean(simStatusMap[selectedTruck.trip_code]?.running)}
+              options={[
+                { value: 1, label: '1x' },
+                { value: 5, label: '5x' },
+                { value: 10, label: '10x' }
+              ]}
+            />
+            {simStatusMap[selectedTruck.trip_code]?.running ? (
+              <Button
+                size="small"
+                danger
+                icon={<Square size={12} />}
+                loading={simLoading}
+                onClick={handleStopGpsSim}
+                className="font-semibold text-xs"
+              >
+                Dừng
+              </Button>
+            ) : (
+              <Button
+                size="small"
+                type="primary"
+                icon={<Play size={12} />}
+                loading={simLoading}
+                onClick={handleStartGpsSim}
+                className="bg-emerald-600 hover:bg-emerald-700 font-semibold text-xs"
+              >
+                Chạy mô phỏng GPS
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Nhãn VietMap góc phải trên */}
         <div className="absolute top-3 right-3 z-[1000] flex items-center gap-2">

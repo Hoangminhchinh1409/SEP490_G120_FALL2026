@@ -18,8 +18,8 @@ const sendOrderPriceConfirmationEmail = async ({
   const mailTransporter = await getTransporter();
   const formattedPrice = (agreedPrice || 0).toLocaleString('vi-VN');
   const isExport = (orderType || '').toUpperCase().includes('EXPORT') || (orderType || '').toUpperCase().includes('XUẤT');
-  const typeText = isExport ? 'ĐƠN HÀNG XUẤT KHẨU (AIR CARGO EXPORT)' : 'ĐƠN HÀNG NHẬP KHẨU (AIR CARGO IMPORT)';
-  const typeBadgeColor = isExport ? '#4f46e5' : '#0284c7';
+  const typeText = isExport ? 'ĐƠN HÀNG XUẤT KHẨU' : 'ĐƠN HÀNG NHẬP KHẨU';
+  const typeBadgeColor = '#1e293b';
 
   const cleanPhone = (dispatcherPhone || '0988 123 456').toString().trim();
   const rawDigitsPhone = cleanPhone.replace(/[^0-9]/g, '');
@@ -33,7 +33,7 @@ const sendOrderPriceConfirmationEmail = async ({
       <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; color: #1e293b; }
         .container { max-width: 620px; margin: 20px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
-        .header { background: linear-gradient(135deg, ${typeBadgeColor} 0%, #7c3aed 100%); padding: 32px 24px; text-align: center; color: #ffffff; }
+        .header { background: #1e293b; padding: 28px 24px; text-align: center; color: #ffffff; }
         .header h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 0.5px; }
         .header p { margin: 8px 0 0; font-size: 14px; opacity: 0.9; }
         .content { padding: 32px 28px; }
@@ -62,7 +62,7 @@ const sendOrderPriceConfirmationEmail = async ({
         <div class="content">
           <div class="greeting">Kính gửi Quý khách: ${customerName || 'Quý khách hàng'},</div>
           <div style="text-align: center;">
-            <span class="type-badge">📦 ${typeText}</span>
+            <span class="type-badge">${typeText}</span>
           </div>
           <p style="font-size: 14px; line-height: 1.6; color: #475569;">
             Bộ phận Điều phối NEXLOG xin chân thành cảm ơn Quý khách đã tin tưởng và gửi yêu cầu vận chuyển từ Hệ thống. 
@@ -76,7 +76,7 @@ const sendOrderPriceConfirmationEmail = async ({
             </div>
             <div class="info-row">
               <span class="info-label">Phân loại đơn:</span>
-              <span class="info-value" style="color: ${isExport ? '#4338ca' : '#0369a1'};">${isExport ? 'Hàng Xuất Khẩu (Export)' : 'Hàng Nhập Khẩu (Import)'}</span>
+              <span class="info-value" style="color: #0f172a;">${isExport ? 'Hàng Xuất khẩu' : 'Hàng Nhập khẩu'}</span>
             </div>
             <div class="info-row">
               <span class="info-label">Hàng hóa &amp; Quy cách:</span>
@@ -106,9 +106,9 @@ const sendOrderPriceConfirmationEmail = async ({
 
           ${isExport ? `
           <div class="warning-box">
-            <b>⚠️ QUY ĐỊNH VẬN CHUYỂN HÀNG XUẤT KHẨU:</b><br/>
-            - Thời gian đến lấy hàng trên đã được Điều phối tính toán dựa trên khoảng cách di chuyển và thời gian cut-off kho ALS / kiểm tra an ninh sân bay.<br/>
-            - Quý khách vui lòng kiểm tra và thống nhất ngày lấy hàng. <b>Trường hợp Quý khách vẫn quyết định chọn ngày lấy hàng trễ hơn khuyến nghị dẫn đến muộn lịch bay, chi phí đổi chuyến bay khác hoặc chi phí lưu kho phát sinh sẽ do Quý khách tự chịu trách nhiệm. Hệ thống và điều phối NEXLOG sẽ không chịu trách nhiệm trong trường hợp này.</b>
+            <b>QUY ĐỊNH VẬN CHUYỂN HÀNG XUẤT KHẨU:</b><br/>
+            - Thời gian đến lấy hàng trên đã được Bộ phận Điều phối tính toán dựa trên khoảng cách di chuyển và thời hạn tiếp nhận hàng tại kho ALS / kiểm tra an ninh sân bay.<br/>
+            - Quý khách vui lòng kiểm tra và thống nhất ngày lấy hàng. <b>Trường hợp Quý khách quyết định chọn ngày lấy hàng trễ hơn khuyến nghị dẫn đến chậm lịch bay, chi phí đổi chuyến bay khác hoặc chi phí lưu kho phát sinh sẽ do Quý khách tự chịu trách nhiệm.</b>
           </div>
           ` : ''}
 
@@ -117,19 +117,19 @@ const sendOrderPriceConfirmationEmail = async ({
             <div class="price-val">${formattedPrice} VNĐ</div>
           </div>
 
-          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px; margin: 16px 0; text-align: center;">
-            <div style="font-size: 13px; font-weight: bold; color: #166534; margin-bottom: 6px;">
-              💬 Cần thương lượng giá hoặc đổi lịch trình ngay?
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin: 16px 0; text-align: center;">
+            <div style="font-size: 13px; font-weight: bold; color: #0f172a; margin-bottom: 6px;">
+              Trao đổi điều chỉnh báo giá hoặc lịch trình
             </div>
-            <p style="font-size: 12px; color: #15803d; margin: 0 0 10px;">
-              Quý khách có thể trao đổi trực tiếp với Điều phối viên phụ trách đơn hàng qua Hotline hoặc Zalo:
+            <p style="font-size: 12px; color: #475569; margin: 0 0 10px;">
+              Quý khách có thể liên hệ trực tiếp với Điều phối viên phụ trách đơn hàng qua Đường dây nóng hoặc Zalo:
             </p>
             <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
-              <a href="tel:${rawDigitsPhone || '0988123456'}" style="display: inline-block; background: #16a34a; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
-                📞 Gọi Hotline / Điều Phối: ${cleanPhone}
+              <a href="tel:${rawDigitsPhone || '0988123456'}" style="display: inline-block; background: #1e293b; color: #ffffff !important; padding: 8px 18px; border-radius: 6px; font-weight: bold; font-size: 12px; text-decoration: none;">
+                Đường dây nóng Điều phối: ${cleanPhone}
               </a>
-              <a href="${zaloUrl}" target="_blank" style="display: inline-block; background: #0284c7; color: #ffffff !important; padding: 8px 18px; border-radius: 8px; font-weight: bold; font-size: 12px; text-decoration: none;">
-                💬 Chat Zalo Điều Phối
+              <a href="${zaloUrl}" target="_blank" style="display: inline-block; background: #0369a1; color: #ffffff !important; padding: 8px 18px; border-radius: 6px; font-weight: bold; font-size: 12px; text-decoration: none;">
+                Liên hệ Zalo Điều phối
               </a>
             </div>
           </div>
@@ -148,8 +148,8 @@ const sendOrderPriceConfirmationEmail = async ({
           </p>
         </div>
         <div class="footer">
-          <p>Hotline Điều phối: 1900 6868 | Email: dispatch@nexlog.vn</p>
-          <p>© 2026 NEXLOG Supply Chain Solution. All rights reserved.</p>
+          <p>Đường dây nóng Điều phối: 1900 6868 | Thư điện tử: dispatch@nexlog.vn</p>
+          <p>Bản quyền thuộc về Công ty TNHH Vận tải &amp; Logistics Hàng không ALS — Hệ thống Điều vận NEXLOG.</p>
         </div>
       </div>
     </body>
@@ -220,7 +220,7 @@ const sendDocumentRejectionEmail = async ({
 
           <div class="reject-box">
             <div style="font-size: 14px; font-weight: 700; margin-bottom: 6px;">
-              ❌ Chứng từ bị từ chối: ${rejectedDocName}
+              Chứng từ bị từ chối: ${rejectedDocName}
             </div>
             <div style="font-size: 13px;">
               <b>Lý do yêu cầu tải lại:</b> ${rejectReason || 'Tệp đính kèm chưa hợp lệ hoặc bị mờ, vui lòng tải lại tệp đúng quy định.'}
@@ -302,7 +302,7 @@ const sendContractSigningEmail = async ({
         </div>
         <div class="content">
           <div style="text-align: center;">
-            <span class="badge-success">✓ HỒ SƠ CHỨNG TỪ ĐÃ ĐƯỢC DUYỆT</span>
+            <span class="badge-success">HỒ SƠ CHỨNG TỪ ĐÃ ĐƯỢC PHÊ DUYỆT</span>
           </div>
           <p style="font-size: 14px; line-height: 1.6; color: #475569;">
             Kính gửi Quý khách <b>${customerName || 'Quý khách'}</b>,<br/>
@@ -317,7 +317,7 @@ const sendContractSigningEmail = async ({
           </div>
 
           <p style="font-size: 12px; color: #64748b; line-height: 1.6; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px dashed #cbd5e1;">
-            💡 Sau khi Quý khách hoàn tất ký số, hệ thống sẽ tự động lưu hợp đồng vào hồ sơ đơn hàng và kích hoạt công đoạn xếp phương tiện &amp; điều xe vận chuyển ngay lập tức.
+            Lưu ý: Sau khi Quý khách hoàn tất ký số, hệ thống sẽ tự động lưu hợp đồng vào hồ sơ đơn hàng và tiến hành sắp xếp phương tiện vận chuyển theo lịch trình đã thống nhất.
           </p>
         </div>
         <div class="footer">
@@ -461,11 +461,11 @@ const sendContractToCustomerEmail = async ({
 
           <div class="instructions">
             <div style="font-weight: bold; color: #92400e; font-size: 13px; margin-bottom: 8px;">
-              ⚠️ HƯỚNG DẪN HOÀN THIỆN &amp; XÁC NHẬN HỢP ĐỒNG:
+              HƯỚNG DẪN HOÀN THIỆN &amp; XÁC NHẬN HỢP ĐỒNG:
             </div>
             <div style="font-size: 13px; line-height: 1.6; color: #78350f;">
               <p style="margin: 6px 0;">
-                <span class="step-num-green">1</span> <b>Kiểm tra &amp; Ký (Online):</b> Quý khách vui lòng kiểm tra nội dung dự thảo. Nếu đồng ý, Quý khách in ra giấy, ký tên &amp; đóng dấu tròn pháp nhân. Sau đó tải bản scan PDF có dấu lên hệ thống qua đường link bên dưới. <i>(Nếu Quý khách có yêu cầu chỉnh sửa điều khoản hay thông tin, xin vui lòng phản hồi qua link hoặc liên hệ Điều phối để được điều chỉnh lại hợp đồng trước khi ký).</i>
+                <span class="step-num-green">1</span> <b>Kiểm tra và ký xác nhận trực tuyến:</b> Quý khách vui lòng kiểm tra nội dung dự thảo. Nếu đồng ý, Quý khách in ra giấy, ký tên và đóng dấu tròn pháp nhân, sau đó tải bản sao PDF có dấu lên hệ thống qua đường dẫn bên dưới. <i>(Nếu Quý khách có yêu cầu chỉnh sửa điều khoản hoặc thông tin, vui lòng phản hồi qua đường dẫn hoặc liên hệ Bộ phận Điều phối để điều chỉnh trước khi ký).</i>
               </p>
               <div style="text-align: center; margin: 12px 0;">
                 <a href="${trackingUrl}" class="btn" target="_blank">Xem Chi Tiết &amp; Tải Lên Hợp Đồng Đã Ký</a>
@@ -477,12 +477,12 @@ const sendContractToCustomerEmail = async ({
           </div>
 
           <p style="font-size: 12px; color: #64748b; line-height: 1.5; margin-top: 20px;">
-            Đường dây nóng phản ánh, khiếu nại &amp; hỗ trợ Điều phối ALS: <b>1900 3133 / 0988 123 456</b> hoặc phản hồi trực tiếp qua email này.
+            Đường dây nóng phản ánh, khiếu nại và hỗ trợ Điều phối ALS: <b>1900 3133 / 0988 123 456</b> hoặc phản hồi trực tiếp qua thư điện tử này.
           </p>
         </div>
         <div class="footer">
           <p>CÔNG TY CỔ PHẦN LOGISTICS HÀNG KHÔNG (ALS) — HỆ THỐNG ĐIỀU VẬN NEXLOG</p>
-          <p>© 2026 NEXLOG ALS Logistics Solution. All rights reserved.</p>
+          <p>Cảng Hàng không Quốc tế Nội Bài, Sóc Sơn, Hà Nội</p>
         </div>
       </div>
     </body>

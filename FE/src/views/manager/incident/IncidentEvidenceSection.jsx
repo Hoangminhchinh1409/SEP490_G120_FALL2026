@@ -2,6 +2,26 @@
 import React from 'react';
 import { Image } from 'antd';
 
+const ORDER_TYPE_VI = {
+  IMPORT: 'Nhập khẩu',
+  EXPORT: 'Xuất khẩu'
+};
+
+const ORDER_STATUS_VI = {
+  DRAFT: 'Nháp',
+  PENDING: 'Chờ duyệt',
+  CONFIRMED: 'Đã xác nhận',
+  ASSIGNED: 'Đã phân công xe',
+  ACCEPTED: 'Tài xế đã nhận chuyến',
+  IN_PROGRESS: 'Đang thực hiện',
+  PICKED_UP: 'Đã lấy hàng',
+  IN_TRANSIT: 'Đang vận chuyển',
+  DELIVERED: 'Đã giao hàng',
+  COMPLETED: 'Hoàn thành',
+  CANCELLED: 'Đã hủy',
+  EXCEPTION: 'Gặp sự cố'
+};
+
 export default function IncidentEvidenceSection({
   orderCode,
   orderType,
@@ -53,11 +73,15 @@ export default function IncidentEvidenceSection({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-on-surface-variant shrink-0">Đơn hàng:</span>
-              <strong className="font-mono text-primary font-bold text-right">{orderCode} ({orderType})</strong>
+              <strong className="font-mono text-primary font-bold text-right">
+                {orderCode} ({ORDER_TYPE_VI[String(orderType || '').toUpperCase()] || orderType})
+              </strong>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-on-surface-variant shrink-0">Trạng thái đơn:</span>
-              <strong className="text-primary font-bold text-right">{orderStatus}</strong>
+              <strong className="text-primary font-bold text-right">
+                {ORDER_STATUS_VI[String(orderStatus || '').toUpperCase()] || orderStatus}
+              </strong>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-on-surface-variant shrink-0">Khách hàng:</span>
@@ -100,7 +124,7 @@ export default function IncidentEvidenceSection({
               <strong className="text-primary font-bold text-right">{driverName} ({driverPhone})</strong>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-on-surface-variant shrink-0">Số niêm phong chì (Seal):</span>
+              <span className="text-on-surface-variant shrink-0">Số niêm phong chì:</span>
               <strong className="font-mono text-primary font-bold text-right">{sealNumber}</strong>
             </div>
           </div>
@@ -108,18 +132,16 @@ export default function IncidentEvidenceSection({
 
         {/* Hàng chân Mục 1 & 2: Hợp đồng áp dụng & Nút Xem PDF */}
         <div className="pt-2 border-t border-surface-container/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <span className="text-primary font-semibold text-xs flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-[16px] text-secondary">contract</span>
-            <span>Hợp đồng áp dụng: <b>{contractNumber}</b></span>
+          <span className="text-primary font-semibold text-xs">
+            Hợp đồng áp dụng: <b>{contractNumber}</b>
           </span>
 
           <button
             type="button"
             onClick={onOpenContractViewer}
-            className="h-8.5 px-3.5 rounded-xl bg-surface-container hover:bg-surface-container-high text-primary font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer border border-surface-container-highest transition-all shadow-2xs hover:scale-102 shrink-0"
+            className="h-8.5 px-3.5 rounded-xl bg-surface-container hover:bg-surface-container-high text-primary font-bold text-xs cursor-pointer border border-surface-container-highest transition-all shadow-2xs shrink-0"
           >
-            <span className="material-symbols-outlined text-[18px] text-red-500">picture_as_pdf</span>
-            <span>Xem hợp đồng (PDF)</span>
+            Xem hợp đồng
           </button>
         </div>
       </div>

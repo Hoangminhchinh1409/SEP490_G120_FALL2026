@@ -10,7 +10,7 @@ export default function TripIncidentsTab({
   setActiveIncidentModal,
   onReportIncident,
   isReadOnly = false
-}) {
+}){
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedTripCode, setSelectedTripCode] = useState('');
   const [incidentType, setIncidentType] = useState('BREAKDOWN');
