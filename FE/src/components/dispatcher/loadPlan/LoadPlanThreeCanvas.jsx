@@ -8,7 +8,9 @@ export function LoadPlanThreeCanvas({
   stopPaletteMap = {},
   selectedBlockId,
   setSelectedBlockId,
-  onResetViewRef
+  onResetViewRef,
+  canEditLayout = false,
+  onMoveBlock = null
 }) {
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
@@ -16,6 +18,15 @@ export function LoadPlanThreeCanvas({
   const rendererRef = useRef(null);
   const controlsRef = useRef(null);
   const meshesMapRef = useRef(new Map());
+  const canEditRef = useRef(canEditLayout);
+  const onMoveBlockRef = useRef(onMoveBlock);
+  const blocksRef = useRef(visibleBlocks);
+
+  useEffect(() => {
+    canEditRef.current = canEditLayout;
+    onMoveBlockRef.current = onMoveBlock;
+    blocksRef.current = visibleBlocks;
+  }, [canEditLayout, onMoveBlock, visibleBlocks]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -158,8 +169,13 @@ export function LoadPlanThreeCanvas({
     backLabel.position.set(tL / 2 + 40, 15, 0);
     truckGroup.add(backLabel);
 
-    // 6. Camera Orbit đơn giản mượt mà (Mouse Drag & Wheel Zoom)
-    let isDragging = false;
+    // 6. Camera Orbit + Kéo thả kiện hàng trực tiếp bằng chuột (khi chưa xếp chuyến)
+    let isDraggingCamera = false;
+    let draggingBlock = null;
+    let dragPlane = null;
+    let dragOffset = new THREE.Vector3();
+    let dragStartY = 0;
+    let dragStartZVal = 0;
     let prevMouse = { x: 0, y: 0 };
     let spherical = { radius: Math.max(tL, tW, tH) * 2.2, theta: Math.PI / 4, phi: Math.PI / 3.2 };
 
@@ -181,13 +197,88 @@ export function LoadPlanThreeCanvas({
       onResetViewRef.current = resetView;
     }
 
+    const raycaster = new THREE.Raycaster();
+    const mouseCoord = new THREE.Vector2();
+    const dom = renderer.domElement;
+
+    const getMouseNDC = (e) => {
+      const rect = dom.getBoundingClientRect();
+      mouseCoord.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouseCoord.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    };
+
     const onMouseDown = (e) => {
-      isDragging = true;
       prevMouse = { x: e.clientX, y: e.clientY };
+      getMouseNDC(e);
+      raycaster.setFromCamera(mouseCoord, camera);
+      const meshes = Array.from(meshesMapRef.current.values());
+      const intersects = raycaster.intersectObjects(meshes, true);
+
+      if (intersects.length > 0) {
+        let hitObj = intersects[0].object;
+        while (hitObj && !hitObj.userData?.blockId && hitObj.parent) {
+          hitObj = hitObj.parent;
+        }
+        const hitBlockId = hitObj?.userData?.blockId;
+        if (hitBlockId) {
+          if (setSelectedBlockId) setSelectedBlockId(hitBlockId);
+          if (canEditRef.current && onMoveBlockRef.current) {
+            const blk = (blocksRef.current || []).find((b) => b.id === hitBlockId);
+            if (blk) {
+              draggingBlock = blk;
+              dragStartY = e.clientY;
+              dragStartZVal = blk.z;
+              const planeY = blk.z + blk.dz / 2;
+              dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
+              const hitPt = new THREE.Vector3();
+              if (raycaster.ray.intersectPlane(dragPlane, hitPt)) {
+                const centerX = blk.x + blk.dx / 2 - tL / 2;
+                const centerZ = blk.y + blk.dy / 2 - tW / 2;
+                dragOffset.set(centerX - hitPt.x, 0, centerZ - hitPt.z);
+              } else {
+                dragOffset.set(0, 0, 0);
+              }
+              dom.style.cursor = 'grabbing';
+              return;
+            }
+          }
+        }
+      }
+
+      isDraggingCamera = true;
     };
 
     const onMouseMove = (e) => {
-      if (!isDragging) return;
+      if (draggingBlock && onMoveBlockRef.current) {
+        if (e.shiftKey) {
+          // Giữ Shift + kéo chuột lên/xuống để nâng/hạ tầng (trục cao Z)
+          const deltaPx = dragStartY - e.clientY;
+          const nextZ = Math.round((dragStartZVal + deltaPx * 1.2) / 5) * 5;
+          onMoveBlockRef.current(draggingBlock.id, {
+            x: draggingBlock.x,
+            y: draggingBlock.y,
+            z: Math.max(0, Math.min(tH - draggingBlock.dz, nextZ))
+          });
+          return;
+        }
+        getMouseNDC(e);
+        raycaster.setFromCamera(mouseCoord, camera);
+        const hitPt = new THREE.Vector3();
+        if (dragPlane && raycaster.ray.intersectPlane(dragPlane, hitPt)) {
+          const rawX = hitPt.x + dragOffset.x + tL / 2 - draggingBlock.dx / 2;
+          const rawY = hitPt.z + dragOffset.z + tW / 2 - draggingBlock.dy / 2;
+          const snappedX = Math.round(rawX / 5) * 5;
+          const snappedY = Math.round(rawY / 5) * 5;
+          onMoveBlockRef.current(draggingBlock.id, {
+            x: Math.max(0, Math.min(tL - draggingBlock.dx, snappedX)),
+            y: Math.max(0, Math.min(tW - draggingBlock.dy, snappedY)),
+            z: draggingBlock.z
+          });
+        }
+        return;
+      }
+
+      if (!isDraggingCamera) return;
       const dx = e.clientX - prevMouse.x;
       const dy = e.clientY - prevMouse.y;
       prevMouse = { x: e.clientX, y: e.clientY };
@@ -198,7 +289,12 @@ export function LoadPlanThreeCanvas({
     };
 
     const onMouseUp = () => {
-      isDragging = false;
+      isDraggingCamera = false;
+      if (draggingBlock) {
+        draggingBlock = null;
+        dragPlane = null;
+        dom.style.cursor = 'grab';
+      }
     };
 
     const onWheel = (e) => {
@@ -207,32 +303,13 @@ export function LoadPlanThreeCanvas({
       updateCameraPos();
     };
 
-    const dom = renderer.domElement;
     dom.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     dom.addEventListener('wheel', onWheel, { passive: false });
 
-    // Click Raycaster để chọn kiện hàng trực tiếp trên 3D
-    const raycaster = new THREE.Raycaster();
-    const mouseCoord = new THREE.Vector2();
-
-    const onClick = (e) => {
-      const rect = dom.getBoundingClientRect();
-      mouseCoord.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseCoord.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouseCoord, camera);
-      const meshes = Array.from(meshesMapRef.current.values());
-      const intersects = raycaster.intersectObjects(meshes);
-
-      if (intersects.length > 0) {
-        const hitMesh = intersects[0].object;
-        if (hitMesh.userData?.blockId && setSelectedBlockId) {
-          setSelectedBlockId(hitMesh.userData.blockId);
-        }
-      }
-    };
+    // Click handler (giữ tương thích khi chỉ click chọn kiện hàng)
+    const onClick = () => {};
     dom.addEventListener('click', onClick);
 
     // Render loop

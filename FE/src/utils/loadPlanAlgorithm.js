@@ -479,9 +479,14 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
         effectiveMode,
       });
 
-      const isFragile = cargoItem.cargo_type === "FRAGILE";
-      const isLightCarton = unitWeightKg <= 45 && unitH <= 60;
-      const isStackable = (!isFragile || isLightCarton) && unitH <= truck.height_cm * 0.75;
+      // Mặc định cho phép xếp chồng để tối ưu diện tích thùng xe; chỉ tắt xếp chồng khi khách tích chọn "Không xếp chồng"
+      const explicitlyNoStack =
+        cargoItem.is_stackable === false ||
+        cargoItem.stackable === false ||
+        cargoItem.no_stack === true ||
+        ord?.is_stackable === false ||
+        ord?.no_stack === true;
+      const isStackable = !explicitlyNoStack;
 
       for (let k = 0; k < boxesToCreate; k++) {
         // Phân bổ kiện hàng vào các điểm dừng (nếu có nhiều điểm trả thì chia đều theo stop)
@@ -566,10 +571,15 @@ export function calculate3DLoadPlan(orders = [], truckConfig = {}) {
       });
     }
 
-    // Sắp xếp các điểm Extreme Point ứng viên theo quy chuẩn An toàn Logistics:
-    // Ưu tiên cao nhất: Sát mặt sàn (z thấp nhất) để hạ trọng tâm xe, chống rung lắc lật xe
-    // Khi cùng độ cao Z: Xếp từ vách đầu xe (x nhỏ) về phía sau, và từ vách trái (y nhỏ) sang phải
+    // Sắp xếp các điểm Extreme Point ứng viên để tối ưu diện tích sàn & thể tích thùng xe:
+    // - Nếu kiện cho phép xếp chồng: ưu tiên xếp đầy theo cột từ vách đầu xe (x nhỏ -> y nhỏ -> xếp chồng z lên trên)
+    // - Nếu kiện không xếp chồng: bắt buộc đặt sát sàn (z thấp nhất -> x nhỏ -> y nhỏ)
     candidatePoints.sort((p1, p2) => {
+      if (item.stackable) {
+        if (Math.abs(p1.x - p2.x) > 1) return p1.x - p2.x;
+        if (Math.abs(p1.y - p2.y) > 1) return p1.y - p2.y;
+        return p1.z - p2.z;
+      }
       if (Math.abs(p1.z - p2.z) > 1) return p1.z - p2.z;
       if (Math.abs(p1.x - p2.x) > 1) return p1.x - p2.x;
       return p1.y - p2.y;

@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Modal, Button, Tooltip, Tag, Alert } from 'antd';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Modal, Button, Tooltip, Tag, Alert, message } from 'antd';
 import {
   Eye,
   EyeOff,
@@ -14,6 +14,17 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
   const [packingMode, setPackingMode] = useState('AUTO');
   const [hiddenStopIds, setHiddenStopIds] = useState([]);
   const [selectedBlockId, setSelectedBlockId] = useState(null);
+  const [manualOverrides, setManualOverrides] = useState({});
+
+  const orderStatusUpper = String(trip?.order?.status || trip?.status || '').trim().toUpperCase();
+  const isLockedAfterAssignment =
+    ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED', 'CLOSED'].includes(orderStatusUpper) ||
+    Boolean(trip?.raw_id && orderStatusUpper && !['DRAFT', 'CONFIRMED', 'READY_FOR_PLANNING', 'PLANNING'].includes(orderStatusUpper));
+  const canEditLayout = !isLockedAfterAssignment;
+
+  useEffect(() => {
+    setManualOverrides({});
+  }, [packingMode, trip?.id, trip?.trip_code, open]);
 
   const [cameraAngle, setCameraAngle] = useState({ yaw: -22, pitch: 26 });
   const [dragStart, setDragStart] = useState(null);
@@ -92,7 +103,30 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
     stopPaletteMap[s.id] = s;
   });
 
-  const blocksData = autoPlan?.blocks || [];
+  const rawBlocksData = autoPlan?.blocks || [];
+  const blocksData = rawBlocksData.map((b) => {
+    const ov = manualOverrides[b.id];
+    if (!ov) return b;
+    const x = ov.x;
+    const y = ov.y;
+    const z = ov.z;
+    const dx = ov.dx;
+    const dy = ov.dy;
+    const dz = ov.dz;
+    const tierLevel = z > 0.5 ? Math.floor(z / Math.max(1, dz)) + 1 : 1;
+    return {
+      ...b,
+      x,
+      y,
+      z,
+      dx,
+      dy,
+      dz,
+      tierLevel,
+      dimensions: `${dx} × ${dy} × ${dz} cm`,
+      positionText: `Dài X: ${x}–${x + dx}cm · Rộng Y: ${y}–${y + dy}cm · Cao Z: ${z}–${z + dz}cm (Tầng ${tierLevel}) [Tùy chỉnh]`
+    };
+  });
   const overflowBlocks = autoPlan?.overflowBlocks || [];
   const bulkCargos = autoPlan?.bulkCargos || [];
   const summary = autoPlan?.summary || {};
@@ -100,6 +134,29 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
 
   const visibleBlocks = blocksData.filter((b) => !hiddenStopIds.includes(b.stopId));
   const selectedBlock = blocksData.find((b) => b.id === selectedBlockId) || null;
+
+  const updateSelectedBlock = (updater) => {
+    if (!selectedBlock || !canEditLayout) return;
+    const next = updater(selectedBlock);
+    const clampedX = Math.max(0, Math.min(truck.length_cm - next.dx, Math.round(next.x)));
+    const clampedY = Math.max(0, Math.min(truck.width_cm - next.dy, Math.round(next.y)));
+    const clampedZ = Math.max(0, Math.min(truck.height_cm - next.dz, Math.round(next.z)));
+    if (next.dx > truck.length_cm || next.dy > truck.width_cm || next.dz > truck.height_cm) {
+      message.warning('Kích thước sau khi xoay vượt quá kích thước thùng xe.');
+      return;
+    }
+    setManualOverrides((prev) => ({
+      ...prev,
+      [selectedBlock.id]: {
+        x: clampedX,
+        y: clampedY,
+        z: clampedZ,
+        dx: next.dx,
+        dy: next.dy,
+        dz: next.dz
+      }
+    }));
+  };
 
   const toggleStopVisibility = (stopId) => {
     setHiddenStopIds((prev) =>
@@ -360,13 +417,108 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                   setDragStart={setDragStart}
                   setCameraAngle={setCameraAngle}
                   onResetViewRef={resetThreeViewRef}
+                  canEditLayout={canEditLayout}
+                  onMoveBlock={(blockId, { x, y, z }) => {
+                    if (!canEditLayout) return;
+                    const target = blocksData.find((b) => b.id === blockId);
+                    if (!target) return;
+
+                    const others = blocksData.filter((b) => b.id !== blockId);
+                    const hasHitboxCollision = (cand) => {
+                      const eps = 0.5;
+                      return others.some(
+                        (o) =>
+                          cand.x < o.x + o.dx - eps &&
+                          cand.x + cand.dx > o.x + eps &&
+                          cand.y < o.y + o.dy - eps &&
+                          cand.y + cand.dy > o.y + eps &&
+                          cand.z < o.z + o.dz - eps &&
+                          cand.z + cand.dz > o.z + eps
+                      );
+                    };
+
+                    const tryAt = (cx, cy, cz, dx, dy, dz) => {
+                      if (dx > truck.length_cm || dy > truck.width_cm || dz > truck.height_cm) return null;
+                      const cand = {
+                        x: Math.max(0, Math.min(truck.length_cm - dx, Math.round(cx))),
+                        y: Math.max(0, Math.min(truck.width_cm - dy, Math.round(cy))),
+                        z: Math.max(0, Math.min(truck.height_cm - dz, Math.round(cz))),
+                        dx,
+                        dy,
+                        dz
+                      };
+                      return hasHitboxCollision(cand) ? null : cand;
+                    };
+
+                    const findBestSnap = (dx, dy, dz) => {
+                      // 1. Thử đúng vị trí chuột
+                      const direct = tryAt(x, y, z, dx, dy, dz);
+                      if (direct) return direct;
+
+                      // 2. Thử bám sát mép tường hoặc mép các kiện lân cận trong khe trống (Tetris snap)
+                      const snapCandidates = [
+                        { cx: x, cy: truck.width_cm - dy },
+                        { cx: x, cy: 0 },
+                        { cx: truck.length_cm - dx, cy: y },
+                        { cx: 0, cy: y }
+                      ];
+                      for (const o of others) {
+                        if (Math.abs(o.z - z) < dz) {
+                          snapCandidates.push(
+                            { cx: x, cy: o.y + o.dy },
+                            { cx: x, cy: o.y - dy },
+                            { cx: o.x + o.dx, cy: y },
+                            { cx: o.x - dx, cy: y }
+                          );
+                        }
+                      }
+
+                      let best = null;
+                      let bestDist = Infinity;
+                      for (const sc of snapCandidates) {
+                        const hit = tryAt(sc.cx, sc.cy, z, dx, dy, dz);
+                        if (hit) {
+                          const dist = Math.hypot(hit.x - x, hit.y - y);
+                          if (dist < bestDist && dist <= 150) {
+                            bestDist = dist;
+                            best = hit;
+                          }
+                        }
+                      }
+                      return best;
+                    };
+
+                    // Thử lần lượt: giữ nguyên -> xoay ngang 90° -> xoay nghiêng vào khe hẹp (kiểu xếp hình)
+                    const candidateOrients = [
+                      [target.dx, target.dy, target.dz],
+                      [target.dy, target.dx, target.dz],
+                      [target.dx, target.dz, target.dy],
+                      [target.dy, target.dz, target.dx]
+                    ];
+                    let validPlacement = null;
+                    for (const [odx, ody, odz] of candidateOrients) {
+                      validPlacement = findBestSnap(odx, ody, odz);
+                      if (validPlacement) break;
+                    }
+
+                    if (!validPlacement) return; // Chặn chèn vào hitbox kiện hàng khác
+
+                    setManualOverrides((prev) => ({
+                      ...prev,
+                      [blockId]: validPlacement
+                    }));
+                  }}
                 />
               </div>
 
               <div className="flex justify-between items-center text-[11px] text-gray-500 font-medium px-2 pt-1.5">
                 <span>◀ Đầu xe</span>
                 <span className="text-indigo-600">
-                  {activeView === '3D' ? '💡 Kéo chuột để xoay 360°': `Mặt cắt kỹ thuật tỷ lệ thực`}
+                  {activeView === '3D'
+                    ? (canEditLayout
+                        ? 'Kéo trực tiếp kiện hàng để di chuyển · Giữ Shift + kéo để nâng/hạ tầng · Kéo nền trống để xoay 360°'
+                        : 'Kéo chuột để xoay 360° (Đã xếp chuyến — chế độ chỉ xem)')
+                    : 'Mặt cắt kỹ thuật tỷ lệ thực'}
                 </span>
                 <span>Cửa sau ▶</span>
               </div>
@@ -397,12 +549,27 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                 </div>
                 <div className="text-gray-600 flex flex-wrap items-center justify-between gap-2 pt-0.5">
                   <span>
-                    📍 Vị trí 3D trong thùng xe: <b className="font-mono text-gray-800">{selectedBlock.positionText || selectedBlock.overflowReason}</b>
+                    Vị trí 3D trong thùng xe: <b className="font-mono text-gray-800">{selectedBlock.positionText || selectedBlock.overflowReason}</b>
                   </span>
                   <span>
                     Điểm giao: <b>{selectedBlock.stopName}</b> · Xếp chồng: <b>{selectedBlock.stackableText || 'Có'}</b>
                   </span>
                 </div>
+
+                {/* Nút đặt lại xếp tự động hoặc thông báo khóa sau khi xếp chuyến */}
+                {(canEditLayout ? Object.keys(manualOverrides).length > 0 : true) && (
+                  <div className="pt-2 mt-2 border-t border-indigo-200 flex items-center justify-end gap-2">
+                    {canEditLayout ? (
+                      <Button size="small" danger onClick={() => setManualOverrides({})}>
+                        Đặt lại xếp tự động
+                      </Button>
+                    ) : (
+                      <span className="text-[11px] text-slate-500 italic">
+                        Chuyến xe đã được phân công — khóa chỉnh sửa sơ đồ xếp hàng 3D (chế độ chỉ xem).
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

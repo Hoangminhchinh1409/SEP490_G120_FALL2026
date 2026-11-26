@@ -35,7 +35,9 @@ export function LoadPlanCanvas({
   dragStart,
   setDragStart,
   setCameraAngle,
-  onResetViewRef
+  onResetViewRef,
+  canEditLayout = false,
+  onMoveBlock = null
 }) {
   const svgW = 740;
   const svgH = 340;
@@ -49,6 +51,8 @@ export function LoadPlanCanvas({
         selectedBlockId={selectedBlockId}
         setSelectedBlockId={setSelectedBlockId}
         onResetViewRef={onResetViewRef}
+        canEditLayout={canEditLayout}
+        onMoveBlock={onMoveBlock}
       />
     );
   }
