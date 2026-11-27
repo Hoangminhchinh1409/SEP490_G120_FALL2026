@@ -47,10 +47,16 @@ const formatIncident = (inc) => {
 
   const upperStatus = (inc.status || '').toUpperCase();
   let feStatus = 'PENDING';
-  if (upperStatus === 'RESOLVED' || upperStatus === 'CLOSED') {
+  if (upperStatus === 'RESOLVED' || upperStatus === 'CLOSED' || upperStatus === 'DONE') {
     feStatus = 'RESOLVED';
-  } else if (upperStatus === 'ESCALATED' || upperStatus === 'ESCALATED_TO_MANAGER') {
+  } else if (upperStatus === 'ESCALATED' || upperStatus === 'ESCALATED_TO_MANAGER' || upperStatus === 'IN_PROGRESS') {
     feStatus = 'ESCALATED';
+  } else if (upperStatus === 'APPROVED') {
+    feStatus = 'APPROVED';
+  } else if (upperStatus === 'REJECTED') {
+    feStatus = 'REJECTED';
+  } else if (upperStatus === 'PAID') {
+    feStatus = 'PAID';
   }
 
   const upperType = String(inc.type || 'OTHER').toUpperCase().replace(/\s+/g, '_');

@@ -27,14 +27,14 @@ export default function IncidentDecisionModals({
         title={
           <div className="flex items-center gap-2 text-error">
             <span className="material-symbols-outlined text-[22px]">gavel</span>
-            <span className="font-bold text-sm">Xác nhận Từ chối Bồi thường (Close Case)</span>
+            <span className="font-bold text-sm">Xác nhận Từ chối Bồi thường</span>
           </div>
         }
         open={isRejectModalOpen}
         onCancel={() => setIsRejectModalOpen(false)}
         onOk={handleConfirmReject}
         confirmLoading={submitting}
-        okText="Xác nhận Từ chối & Đóng hồ sơ"
+        okText="Xác nhận Từ chối Bồi thường"
         okButtonProps={{ danger: true, className: "font-bold text-xs h-10 px-5 rounded-xl shadow-xs" }}
         cancelButtonProps={{ className: "text-xs h-10 px-4 rounded-xl" }}
         width={580}

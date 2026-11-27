@@ -61,8 +61,11 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
 
     let active = true;
     const initType = normalizeTypeCode(incident.raw_type || incident.type);
+    const hasPendingCallClaim = (Array.isArray(incident.claims) ? incident.claims : []).some(
+      (cl) => ['APPROVED', 'REJECTED'].includes(String(cl.status || '').toUpperCase()) && !cl.called_at
+    );
     setSelectedType(initType);
-    setMode('RESOLVE');
+    setMode(hasPendingCallClaim ? 'RECORD_CALL' : 'RESOLVE');
     setCargoAffectedOnEscalate(typeof incident.cargo_affected === 'boolean' ? incident.cargo_affected : null);
     setResolutionNote(incident.resolution_note || '');
     setEscalationReason(incident.escalation_reason || 'Sự cố nghiêm trọng vượt thẩm quyền Điều phối viên, đề xuất Quản lý phê duyệt phương án xử lý / bồi thường.');
@@ -107,6 +110,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
   if (!open || !incident) return null;
 
   const isAlreadyResolved = incident.status === 'RESOLVED';
+  const isDecisionLocked = ['RESOLVED', 'APPROVED', 'REJECTED', 'PAID'].includes(incident.status);
   const initialType = normalizeTypeCode(incident.raw_type || incident.type);
   const canEscalateToManager = ESCALATION_ELIGIBLE_TYPES.includes(selectedType);
   const pendingCallClaim = (Array.isArray(incident.claims) ? incident.claims : []).find(
@@ -322,7 +326,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             Lưu nhật ký cuộc gọi
           </Button>
         ),
-        !isAlreadyResolved && canEscalateToManager && mode !== 'ESCALATE' && (
+        !isDecisionLocked && canEscalateToManager && mode !== 'ESCALATE' && (
           <Button
             key="escalateMode"
             danger
@@ -332,7 +336,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             Chuyển tiếp Quản lý
           </Button>
         ),
-        !isAlreadyResolved && canEscalateToManager && mode === 'ESCALATE' && (
+        !isDecisionLocked && canEscalateToManager && mode === 'ESCALATE' && (
           <Button
             key="confirmEscalate"
             type="primary"
@@ -344,7 +348,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             {cargoAffectedOnEscalate ? 'Chuyển Quản lý & Tạo Claim' : 'Xác nhận chuyển Quản lý'}
           </Button>
         ),
-        !isAlreadyResolved && canEscalateToManager && mode !== 'CREATE_CLAIM' && (
+        !isDecisionLocked && canEscalateToManager && mode !== 'CREATE_CLAIM' && (
           <Button
             key="createClaimMode"
             icon={<FilePlus2 size={14} />}
@@ -354,7 +358,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             Hàng ảnh hưởng → Tạo Claim
           </Button>
         ),
-        !isAlreadyResolved && canEscalateToManager && mode === 'CREATE_CLAIM' && (
+        !isDecisionLocked && canEscalateToManager && mode === 'CREATE_CLAIM' && (
           <Button
             key="confirmCreateClaim"
             type="primary"
@@ -366,7 +370,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             Tạo yêu cầu bồi thường (Pending)
           </Button>
         ),
-        !isAlreadyResolved && mode !== 'REPLACE' && (
+        !isDecisionLocked && mode !== 'REPLACE' && (
           <Button
             key="replaceMode"
             type="primary"
@@ -376,7 +380,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             Điều xe thay thế
           </Button>
         ),
-        !isAlreadyResolved && mode === 'REPLACE' && (
+        !isDecisionLocked && mode === 'REPLACE' && (
           <Button
             key="confirmReplace"
             type="primary"
@@ -387,12 +391,12 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             Phát lệnh điều xe mới &amp; Cấp lại Vận đơn V2
           </Button>
         ),
-        !isAlreadyResolved && mode !== 'RESOLVE' && (
+        !isDecisionLocked && mode !== 'RESOLVE' && (
           <Button key="backResolve" onClick={() => setMode('RESOLVE')}>
             Xử lý tại chỗ
           </Button>
         ),
-        !isAlreadyResolved && mode === 'RESOLVE' && (
+        !isDecisionLocked && mode === 'RESOLVE' && (
           <Button
             key="resolve"
             type="primary"
@@ -458,7 +462,7 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
         </div>
 
         {/* Phân loại lại sự cố (TC_IC_02-02 / UI-35 / BUG-SYS-22) */}
-        {!isAlreadyResolved && !isReadOnly && (
+        {!isDecisionLocked && !isReadOnly && (
           <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-end justify-between gap-2 text-xs">
             <div className="flex-1">
               <label className="font-bold text-gray-700 block mb-1">
@@ -512,6 +516,27 @@ const IncidentDetailsModal = ({ open, incident, onCancel, onResolveSuccess, onCl
             <div className="text-emerald-900">
               <b>Biên bản / Phương án xử lý:</b> {incident.resolution_note || 'Đã xử lý xong.'}
             </div>
+          </div>
+        ) : isDecisionLocked ? (
+          <div className="p-4 bg-blue-50/70 rounded-xl border border-blue-200 space-y-2 text-xs">
+            <div className="font-bold text-blue-900 flex items-center gap-1.5">
+              <CheckCircle2 size={16} className="text-blue-600" />
+              {incident.status === 'APPROVED'
+                ? 'Quản lý đã phê duyệt bồi thường'
+                : incident.status === 'REJECTED'
+                  ? 'Quản lý đã từ chối bồi thường'
+                  : 'Quản lý đã ghi nhận thanh toán bồi thường (Chờ khách xác nhận)'}
+            </div>
+            {incident.resolution_note && (
+              <div className="text-blue-900">
+                <b>Ghi chú thẩm định:</b> {incident.resolution_note}
+              </div>
+            )}
+            {pendingCallClaim && !isReadOnly && (
+              <div className="text-amber-800 font-semibold">
+                Vui lòng bấm nút &quot;Ghi nhận gọi khách ({pendingCallClaim.claim_code})&quot; bên dưới để hoàn tất bước liên hệ khách hàng.
+              </div>
+            )}
           </div>
         ) : isReadOnly ? (
           <div className="p-4 bg-blue-50/70 rounded-xl border border-blue-200 text-xs space-y-2">

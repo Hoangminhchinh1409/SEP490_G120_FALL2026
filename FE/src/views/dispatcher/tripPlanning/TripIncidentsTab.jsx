@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Table, Tag, Button, Modal, Select, Input, message } from 'antd';
-import { AlertTriangle, Truck, PlusCircle, Eye } from 'lucide-react';
+import { AlertTriangle, Truck, PlusCircle, Eye, PhoneCall } from 'lucide-react';
 
 const { Option } = Select;
 
@@ -19,10 +19,10 @@ export default function TripIncidentsTab({
   const activeTrips = (trips || []).filter(t => t.status === 'IN_TRANSIT');
 
   const handleOpenReport = () => {
-    const defaultTrip = activeTrips[0]?.id || trips[0]?.id || 'TRIP-9993';
+    const defaultTrip = activeTrips[0]?.id || trips[0]?.id || '';
     setSelectedTripCode(defaultTrip);
     setIncidentType('BREAKDOWN');
-    setIncidentDesc('Xe gặp sự cố kỹ thuật trên cao tốc Nội Bài - Bắc Ninh, đề xuất điều xe cứu hộ chuyển tải.');
+    setIncidentDesc('');
     setReportModalOpen(true);
   };
 
@@ -90,31 +90,48 @@ export default function TripIncidentsTab({
       title: 'Trạng thái & Xử lý',
       key: 'status_action',
       width: '26%',
-      render: (_, r) => (
-        <div className="text-xs space-y-1.5">
-          <div>
-            <Tag
-              color={r.status === 'RESOLVED' ? 'green' : r.status === 'ESCALATED' ? 'orange' : 'red'}
-              className="font-bold text-xs py-0.5 px-2"
-            >
-              {r.status === 'RESOLVED'
-                ? (r.resolution_note?.includes('Điều xe thay thế') ? 'ĐÃ ĐỔI XE' : 'ĐÃ XỬ LÝ')
-                : r.status === 'ESCALATED'
-                  ? 'ĐÃ CHUYỂN QUẢN LÝ'
-                  : 'CHỜ ĐIỀU PHỐI XỬ LÝ'}
-            </Tag>
-          </div>
-          {r.status !== 'RESOLVED' ? (
-            isReadOnly ? (
+      render: (_, r) => {
+        const pendingCallClaim = (Array.isArray(r.claims) ? r.claims : []).find(
+          (cl) => ['APPROVED', 'REJECTED'].includes(String(cl.status || '').toUpperCase()) && !cl.called_at
+        );
+        const canDispatcherAct = !isReadOnly && (r.status === 'PENDING' || r.status === 'ESCALATED');
+        const statusTag = (() => {
+          if (r.status === 'RESOLVED') {
+            return { color: 'green', label: r.resolution_note?.includes('Điều xe thay thế') ? 'ĐÃ ĐỔI XE' : 'ĐÃ XỬ LÝ' };
+          }
+          if (r.status === 'PAID') {
+            return { color: 'cyan', label: 'ĐÃ CHI TRẢ - CHỜ KHÁCH XÁC NHẬN' };
+          }
+          if (r.status === 'APPROVED') {
+            return { color: 'blue', label: 'ĐÃ DUYỆT BỒI THƯỜNG' };
+          }
+          if (r.status === 'REJECTED') {
+            return { color: 'red', label: 'ĐÃ TỪ CHỐI BỒI THƯỜNG' };
+          }
+          if (r.status === 'ESCALATED') {
+            return { color: 'orange', label: 'ĐÃ CHUYỂN QUẢN LÝ' };
+          }
+          return { color: 'red', label: 'CHỜ ĐIỀU PHỐI XỬ LÝ' };
+        })();
+
+        return (
+          <div className="text-xs space-y-1.5">
+            <div>
+              <Tag color={statusTag.color} className="font-bold text-xs py-0.5 px-2">
+                {statusTag.label}
+              </Tag>
+            </div>
+            {!isReadOnly && pendingCallClaim ? (
               <Button
+                type="primary"
                 size="small"
-                className="text-xs font-semibold text-gray-700 bg-white"
-                icon={<Eye size={13} />}
+                className="bg-amber-600 hover:bg-amber-700 font-bold text-xs shadow-sm"
+                icon={<PhoneCall size={13} />}
                 onClick={() => setActiveIncidentModal(r)}
               >
-                Xem chi tiết sự cố
+                Ghi nhận gọi khách
               </Button>
-            ) : (
+            ) : canDispatcherAct ? (
               <Button
                 type="primary"
                 danger
@@ -123,21 +140,21 @@ export default function TripIncidentsTab({
                 icon={<AlertTriangle size={13} />}
                 onClick={() => setActiveIncidentModal(r)}
               >
-                Phát lệnh Đổi xe &amp; Cấp lại Vận đơn
+                Xử lý sự cố
               </Button>
-            )
-          ) : (
-            <Button
-              size="small"
-              className="text-xs text-gray-600"
-              icon={<Eye size={13} />}
-              onClick={() => setActiveIncidentModal(r)}
-            >
-              Xem biên bản giải quyết
-            </Button>
-          )}
-        </div>
-      )
+            ) : (
+              <Button
+                size="small"
+                className="text-xs text-gray-600"
+                icon={<Eye size={13} />}
+                onClick={() => setActiveIncidentModal(r)}
+              >
+                {r.status === 'RESOLVED' ? 'Xem biên bản giải quyết' : 'Xem chi tiết'}
+              </Button>
+            )}
+          </div>
+        );
+      }
     }
   ];
 

@@ -189,16 +189,15 @@ const reportIncident = async (userId, incidentData) => {
     });
 
     if (dispatchers && dispatchers.length > 0) {
-      for (const d of dispatchers) {
-        await driverModel
-          .createNotification({
-            user_account_id: Number(d.id),
-            target_type: "INCIDENT",
-            target_id: newIncident?.id,
-            message: `Cảnh báo sự cố: Tài xế báo cáo sự cố [${type}] trên chuyến xe [${tripCodeDisplay}]. Cần kiểm tra ngay!`,
-          })
-          .catch(() => {});
-      }
+      await prisma.notifications.createMany({
+        data: dispatchers.map((d) => ({
+          user_account_id: d.id,
+          target_type: "INCIDENT",
+          target_id: newIncident?.id ? BigInt(newIncident.id) : 0n,
+          message: `Cảnh báo sự cố: Tài xế báo cáo sự cố [${type}] trên chuyến xe [${tripCodeDisplay}]. Cần kiểm tra ngay!`,
+          created_time: new Date(),
+        })),
+      });
     }
   } catch (notifyErr) {
     console.warn(

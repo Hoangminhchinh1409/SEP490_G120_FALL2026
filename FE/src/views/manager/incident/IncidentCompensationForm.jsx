@@ -204,7 +204,7 @@ export default function IncidentCompensationForm({
           <Input
             value={contractClauseRef}
             onChange={(e) => setContractClauseRef(e.target.value)}
-            disabled={isDone || isReadOnly}
+            disabled={isFormLocked}
             placeholder="VD: Điều 8.2 - Bồi thường thiệt hại hàng hóa (HĐVC-2026/01)"
             className="w-full sm:w-[420px] h-9 rounded-xl text-xs font-medium"
           />
@@ -253,7 +253,7 @@ export default function IncidentCompensationForm({
             showCount
             value={resolutionNote}
             onChange={(e) => setResolutionNote(e.target.value)}
-            disabled={isDone || isReadOnly}
+            disabled={isFormLocked}
             placeholder="Nhập nhận xét; khi từ chối đây là lý do gửi cho khách..."
             className="rounded-xl text-xs p-3 leading-relaxed border-surface-container focus:border-secondary transition-colors"
           />

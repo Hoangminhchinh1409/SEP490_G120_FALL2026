@@ -159,6 +159,8 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
 
       const isRejected =
         claimStatusUpper === "REJECTED" ||
+        claimStatusUpper === "CLOSED_REJECTED" ||
+        Boolean(claimRow?.rejection_reason) ||
         Boolean(incidentRow?.rejection_reason) ||
         Boolean(rejectLog) ||
         rawStatusUpper === "REJECTED" ||
@@ -257,6 +259,7 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
         compensation_amount: compensationAmount,
         clause_ref:
           incidentRow?.contract_clause_ref ||
+          claimRow?.contract_clause_ref ||
           approveLog?.changes?.contract_clause_ref ||
           rejectLog?.changes?.contract_clause_ref ||
           (isRejected
@@ -266,6 +269,7 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
           incidentRow?.resolution_note || claimRow?.review_comment || null,
         rejection_reason: isRejected
           ? incidentRow?.rejection_reason ||
+            claimRow?.rejection_reason ||
             rejectLog?.reason ||
             claimRow?.review_comment ||
             incidentRow?.resolution_note ||
@@ -274,7 +278,7 @@ const resolveOrderIncidentAndEvidences = async (order, extraMeta) => {
         transaction_code: transactionCode || null,
         payment_date: paymentDate || null,
         payment_proof_url: rawPaymentProofUrl || null,
-        hotline: incidentRow?.contact_hotline || "1900 1234",
+        hotline: incidentRow?.contact_hotline || claimRow?.contact_hotline || "1900 1234",
       };
     }
   } catch (extraErr) {

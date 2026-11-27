@@ -626,13 +626,14 @@ const dispatchReplacementWithTransaction = async ({
         resolved_time: now,
         updated_at: now
       },
-      select: INCIDENT_SELECT
+      select: { id: true }
     });
-  });
+  }, { maxWait: 15000, timeout: 45000 });
 
-  // 7. Ghi activity log
-  try {
-    await prisma.activity_logs.create({
+  // 7. Ghi activity log & tải lại đầy đủ chi tiết sự cố sau khi transaction commit
+  const [refreshedInc] = await Promise.all([
+    findById(numIncId),
+    prisma.activity_logs.create({
       data: {
         actor_id: actorBigId,
         actor_type: 'DISPATCHER',
@@ -650,13 +651,14 @@ const dispatchReplacementWithTransaction = async ({
         reason: reasonText,
         created_time: now
       }
-    });
-  } catch (logErr) {
-    console.warn('[IncidentModel] activity_logs replacement error:', logErr.message);
-  }
+    }).catch((logErr) => {
+      console.warn('[IncidentModel] activity_logs replacement error:', logErr.message);
+      return null;
+    })
+  ]);
 
   return {
-    ...mapIncident(updatedInc || incident),
+    ...(refreshedInc || mapIncident(incident)),
     new_waybill_version: nextVersion,
     new_waybill_number: newWaybillNo,
     new_truck_plate: newTruck?.plate_number || newTruckPlate,
