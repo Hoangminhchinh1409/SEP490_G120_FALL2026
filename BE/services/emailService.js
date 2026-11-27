@@ -3,7 +3,8 @@ const {
   sendDocumentRejectionEmail,
   sendContractSigningEmail,
   sendPasswordResetEmail,
-  sendContractToCustomerEmail
+  sendContractToCustomerEmail,
+  sendOrderCancellationEmail
 } = require('./email/emailOrderTemplates');
 
 const {
@@ -22,5 +23,6 @@ module.exports = {
   sendIncidentCompensationApprovalEmail,
   sendIncidentCompensationRejectionEmail,
   sendClaimPaymentRecordedEmail,
-  sendIncidentCargoAffectedEmail
+  sendIncidentCargoAffectedEmail,
+  sendOrderCancellationEmail
 };

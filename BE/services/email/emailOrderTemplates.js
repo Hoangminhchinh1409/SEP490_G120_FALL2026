@@ -522,10 +522,57 @@ const sendContractToCustomerEmail = async ({
  * Gửi email thông báo PHÊ DUYỆT BỒI THƯỜNG sự cố tới Khách hàng
  */
 
+/**
+ * Gửi email xác nhận HỦY ĐƠN HÀNG tới Khách hàng (BUG-SYS-38)
+ */
+const sendOrderCancellationEmail = async ({
+  customerEmail,
+  customerName,
+  orderCode,
+  cancellationReason,
+  cancellationFee = 0
+}) => {
+  if (!customerEmail) return { success: false, skipped: true };
+  try {
+    const mailTransporter = await getTransporter();
+    const fromAddress = process.env.SMTP_FROM || `NEXLOG Logistics <${process.env.SMTP_USER || 'support@nexlog.vn'}>`;
+    const feeFormatted = Number(cancellationFee || 0).toLocaleString('vi-VN');
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="vi">
+      <head><meta charset="utf-8"></head>
+      <body style="font-family: 'Segoe UI', Arial, sans-serif; background:#f8fafc; padding:20px; color:#1e293b;">
+        <div style="max-width:600px; margin:0 auto; background:#fff; border-radius:12px; padding:24px; border:1px solid #e2e8f0;">
+          <h2 style="margin-top:0; color:#dc2626;">Xác nhận hủy đơn hàng #${orderCode}</h2>
+          <p>Kính gửi Quý khách <b>${customerName || 'Quý khách'}</b>,</p>
+          <p>Đơn hàng <b>${orderCode}</b> của Quý khách đã được hủy trên hệ thống NEXLOG.</p>
+          <ul>
+            <li><b>Lý do hủy:</b> ${cancellationReason || 'Theo yêu cầu'}</li>
+            <li><b>Phí hủy áp dụng:</b> ${feeFormatted} VNĐ</li>
+          </ul>
+          <p style="font-size:12px; color:#64748b;">Trân trọng,<br/>NEXLOG Logistics</p>
+        </div>
+      </body>
+      </html>
+    `;
+    const info = await mailTransporter.sendMail({
+      from: fromAddress,
+      to: customerEmail,
+      subject: `[NEXLOG] Xác nhận hủy đơn hàng #${orderCode}`,
+      html: htmlContent
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('[EmailService] Error sending order cancellation email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   sendOrderPriceConfirmationEmail,
   sendDocumentRejectionEmail,
   sendContractSigningEmail,
   sendPasswordResetEmail,
-  sendContractToCustomerEmail
+  sendContractToCustomerEmail,
+  sendOrderCancellationEmail
 };

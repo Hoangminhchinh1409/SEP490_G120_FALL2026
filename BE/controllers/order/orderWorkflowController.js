@@ -3,6 +3,7 @@ const { getClientIp } = require("../../utils/ipHelper");
 const prisma = require("../../config/prisma");
 const { serializePrisma, formatDateOnly } = require("../../utils/prismaHelper");
 const { parseOrderMeta, saveOrderMeta } = require("../../services/orderHelperService");
+const { sendOrderCancellationEmail } = require("../../services/emailService");
 
 const buildOrderWhere = (idParam) => {
   const clean = String(idParam || "").trim();
@@ -388,6 +389,72 @@ const cancelOrder = async (req, res) => {
       },
       actorId,
     );
+
+    // BUG-SYS-38: Thông báo cho tài xế phụ trách chuyến & gửi email xác nhận hủy đơn cho khách hàng
+    try {
+      const notifyTripIds = [
+        ...new Set((orderStops || []).map((s) => s.trip_id).filter(Boolean)),
+      ];
+      if (notifyTripIds.length > 0) {
+        const tripDrivers = await prisma.trip_drivers.findMany({
+          where: { trip_id: { in: notifyTripIds } },
+          select: {
+            driver_profiles: { select: { user_account_id: true } },
+          },
+        });
+        const driverUserIds = [
+          ...new Set(
+            (tripDrivers || [])
+              .map((td) => td.driver_profiles?.user_account_id)
+              .filter(Boolean)
+              .map((uid) => BigInt(uid)),
+          ),
+        ];
+        if (driverUserIds.length > 0) {
+          await prisma.notifications.createMany({
+            data: driverUserIds.map((uid) => ({
+              user_account_id: uid,
+              target_type: "ORDER",
+              target_id: currentOrder.id,
+              message: `[${currentOrder.order_code}] Đơn hàng đã bị hủy. Lý do: ${cancellation_reason.trim()}`,
+              created_time: nowDate,
+            })),
+          });
+        }
+      }
+    } catch (drvNotifErr) {
+      console.warn("cancelOrder driver notification warning:", drvNotifErr.message);
+    }
+
+    try {
+      const customerRow = currentOrder.customer_id
+        ? await prisma.customers.findUnique({
+            where: { id: BigInt(currentOrder.customer_id) },
+            select: { email: true, company_name: true, contact_person: true },
+          })
+        : null;
+      const meta = parseOrderMeta(currentOrder);
+      const customerEmail =
+        customerRow?.email ||
+        meta?.customer_email ||
+        meta?.contract_details?.customer_email ||
+        null;
+      if (customerEmail) {
+        await sendOrderCancellationEmail({
+          customerEmail,
+          customerName:
+            customerRow?.company_name ||
+            customerRow?.contact_person ||
+            currentOrder.receiver_name ||
+            "Quý khách",
+          orderCode: currentOrder.order_code,
+          cancellationReason: cancellation_reason.trim(),
+          cancellationFee: feeVal,
+        });
+      }
+    } catch (mailErr) {
+      console.warn("cancelOrder customer email warning:", mailErr.message);
+    }
 
     return res.json({
       message: "Đã hủy đơn hàng thành công!",
