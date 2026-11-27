@@ -62,7 +62,7 @@ async function fetchWithRetry(fullUrl, fetchOptions, retries = 2, delayMs = 800)
         try {
             return await fetch(fullUrl, fetchOptions);
         } catch (err) {
-            if (attempt === retries) {
+            if (err?.name === "AbortError" || fetchOptions?.signal?.aborted || attempt === retries) {
                 throw err;
             }
             await new Promise((resolve) => setTimeout(resolve, delayMs));

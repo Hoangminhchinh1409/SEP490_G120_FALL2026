@@ -27,6 +27,13 @@ const getAllOrders = async (req, res) => {
 
     if (req.query?.dispatcher_id) {
       dispatcherFilterId = Number(req.query.dispatcher_id);
+    } else if (
+      req.user &&
+      (Number(req.user.role_id) === 3 ||
+        String(req.user.role || "").toUpperCase() === "DISPATCHER")
+    ) {
+      dispatcherFilterId = Number(req.user.id);
+      isDispatcherRole = true;
     } else {
       let token = req.cookies?.token;
       if (!token && req.headers?.authorization?.startsWith("Bearer ")) {
@@ -48,18 +55,82 @@ const getAllOrders = async (req, res) => {
       }
     }
 
-    const whereClause =
-      dispatcherFilterId && (isDispatcherRole || req.query?.dispatcher_id)
-        ? { responsible_dispatcher_id: Number(dispatcherFilterId) }
-        : {};
+    const filterByDispatcherId =
+      dispatcherFilterId &&
+      Number.isFinite(dispatcherFilterId) &&
+      (isDispatcherRole || req.query?.dispatcher_id)
+        ? BigInt(dispatcherFilterId)
+        : null;
 
     let rawOrders;
     try {
-      rawOrders = await prisma.orders.findMany({
-        where: whereClause,
-        include: orderRelationInclude,
-        orderBy: { created_at: "desc" },
-      });
+      const baseSelect = `
+        SELECT
+          o.*,
+          CASE WHEN c.id IS NOT NULL THEN json_build_object(
+            'id', c.id,
+            'company_name', c.company_name,
+            'tax_code', c.tax_code,
+            'email', c.email,
+            'registered_address', c.registered_address
+          ) ELSE NULL END AS customers,
+          CASE WHEN pl.id IS NOT NULL THEN json_build_object(
+            'id', pl.id,
+            'name', pl.name,
+            'address', pl.address,
+            'latitude', pl.latitude,
+            'longitude', pl.longitude,
+            'type', pl.type,
+            'province', pl.province
+          ) ELSE NULL END AS "locations_orders_pickup_location_idTolocations",
+          CASE WHEN dl.id IS NOT NULL THEN json_build_object(
+            'id', dl.id,
+            'name', dl.name,
+            'address', dl.address,
+            'latitude', dl.latitude,
+            'longitude', dl.longitude,
+            'type', dl.type,
+            'province', dl.province
+          ) ELSE NULL END AS "locations_orders_delivery_location_idTolocations",
+          CASE WHEN u.id IS NOT NULL THEN json_build_object(
+            'id', u.id,
+            'username', u.username,
+            'full_name', u.full_name,
+            'phone', u.phone,
+            'zalo_link', u.zalo_link
+          ) ELSE NULL END AS "users_orders_responsible_dispatcher_idTousers",
+          COALESCE(oc.items, '[]'::json) AS order_cargos,
+          COALESCE(onotes.items, '[]'::json) AS order_notes,
+          COALESCE(ef.items, '[]'::json) AS extra_fees
+        FROM orders o
+        LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN locations pl ON pl.id = o.pickup_location_id
+        LEFT JOIN locations dl ON dl.id = o.delivery_location_id
+        LEFT JOIN users u ON u.id = o.responsible_dispatcher_id
+        LEFT JOIN LATERAL (SELECT json_agg(t) AS items FROM order_cargos t WHERE t.order_id = o.id) oc ON true
+        LEFT JOIN LATERAL (SELECT json_agg(t ORDER BY t.id ASC) AS items FROM order_notes t WHERE t.order_id = o.id) onotes ON true
+        LEFT JOIN LATERAL (SELECT json_agg(t) AS items FROM extra_fees t WHERE t.order_id = o.id) ef ON true
+      `;
+
+      try {
+        rawOrders = filterByDispatcherId
+          ? await prisma.$queryRawUnsafe(
+              `${baseSelect} WHERE o.responsible_dispatcher_id = $1 ORDER BY o.created_at DESC`,
+              filterByDispatcherId,
+            )
+          : await prisma.$queryRawUnsafe(
+              `${baseSelect} ORDER BY o.created_at DESC`,
+            );
+      } catch (rawErr) {
+        console.warn("Raw orders query fallback to Prisma findMany:", rawErr.message);
+        rawOrders = await prisma.orders.findMany({
+          where: filterByDispatcherId
+            ? { responsible_dispatcher_id: filterByDispatcherId }
+            : {},
+          include: orderRelationInclude,
+          orderBy: { created_at: "desc" },
+        });
+      }
     } catch (error) {
       console.error("Error fetching orders via Prisma:", error);
       return res

@@ -1,12 +1,9 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Modal, Tabs, Tag, message } from 'antd';
 import { MessageCircle } from 'lucide-react';
-import CancelOrderModal from './CancelOrderModal';
-import DocumentAssistantDrawer from './DocumentAssistantDrawer';
-import LoadPlan3DModal from './LoadPlan3DModal';
-import SplitOrderModal from './SplitOrderModal';
 import {
   getCoordsFromAddress,
   calculateAlsPricing,
@@ -15,6 +12,11 @@ import {
   VEHICLE_SPECS
 } from '../../data/dispatcherPresets';
 import { orderApi } from '../../api/orderApi';
+
+const CancelOrderModal = dynamic(() => import('./CancelOrderModal'), { ssr: false });
+const DocumentAssistantDrawer = dynamic(() => import('./DocumentAssistantDrawer'), { ssr: false });
+const LoadPlan3DModal = dynamic(() => import('./LoadPlan3DModal'), { ssr: false });
+const SplitOrderModal = dynamic(() => import('./SplitOrderModal'), { ssr: false });
 
 // Subcomponents đã được tách module
 import OrderOverviewTab from './orderDetails/OrderOverviewTab';

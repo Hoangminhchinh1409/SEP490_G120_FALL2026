@@ -122,6 +122,14 @@ export const driverApi = {
     });
   },
 
+  // Gửi tọa độ GPS thực tế từ thiết bị lên hệ thống để đồng bộ bản đồ theo dõi
+  sendDeviceGps: async (gpsPayload) => {
+    return await fetchWithAuth("/driver/gps", {
+      method: "POST",
+      body: JSON.stringify(gpsPayload)
+    });
+  },
+
   // Quản lý ca làm việc
   getMyShifts: async ({ from, to } = {}) => {
     let url = "/driver/shifts";

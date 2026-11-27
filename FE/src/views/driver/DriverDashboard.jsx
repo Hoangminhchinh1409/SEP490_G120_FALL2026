@@ -15,6 +15,7 @@ import DriverDashboardHeaderSection, {
 } from "./components/DriverDashboardHeaderSection";
 import DriverTripSummarySection from "./components/DriverTripSummarySection";
 import DriverWorkflowControlBox from "./components/DriverWorkflowControlBox";
+import DriverDeviceGpsCard from "./components/DriverDeviceGpsCard";
 import { getMondayOfWeek } from "./components/driverDashboardHelpers";
 import { useDriverWorkflowActions } from "./components/useDriverWorkflowActions";
 
@@ -237,6 +238,8 @@ export default function DriverDashboard() {
           stops={stops}
           fetchDashboardData={fetchDashboardData}
         />
+
+        <DriverDeviceGpsCard trip={trip} message={message} />
 
         {trip && (
           <DriverWorkflowControlBox

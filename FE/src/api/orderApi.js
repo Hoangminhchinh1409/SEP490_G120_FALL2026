@@ -1,17 +1,59 @@
 import { fetchWithAuth, fetchWithoutAuth } from './apiClient';
 import { API_URL } from './apiConfig';
 
+const ORDERS_CACHE_TTL_MS = 15000;
+const ordersCache = new Map();
+const inFlightOrdersRequests = new Map();
+
+const getOrdersCacheKey = (params = {}) =>
+  params?.dispatcher_id ? `disp_${params.dispatcher_id}` : 'all';
+
+const invalidateOrdersCache = () => {
+  ordersCache.clear();
+};
+
 export const orderApi = {
-  // 1. Lấy danh sách toàn bộ đơn hàng từ Backend Supabase (hỗ trợ lọc theo dispatcher_id)
+  invalidateOrdersCache,
+
+  getCachedOrders: (params = {}) => {
+    const entry = ordersCache.get(getOrdersCacheKey(params));
+    return entry ? entry.orders : null;
+  },
+
+  // 1. Lấy danh sách toàn bộ đơn hàng từ Backend Supabase (có cache ngắn hạn & chống gọi trùng)
   getAllOrders: async (params = {}) => {
-    try {
-      const queryStr = params?.dispatcher_id ? `?dispatcher_id=${params.dispatcher_id}` : '';
-      const data = await fetchWithAuth(`/orders${queryStr}`);
-      return data.orders || [];
-    } catch (error) {
-      console.error('orderApi.getAllOrders Error:', error);
-      throw error;
+    const cacheKey = getOrdersCacheKey(params);
+    const force = Boolean(params?.force);
+    const silent = Boolean(params?.silent);
+    const cached = ordersCache.get(cacheKey);
+    if (!force && cached && Date.now() - cached.updatedAt < ORDERS_CACHE_TTL_MS) {
+      return cached.orders;
     }
+
+    if (inFlightOrdersRequests.has(cacheKey)) {
+      return inFlightOrdersRequests.get(cacheKey);
+    }
+
+    const requestPromise = (async () => {
+      try {
+        const queryStr = params?.dispatcher_id ? `?dispatcher_id=${params.dispatcher_id}` : '';
+        const fetchOpts = params?.signal ? { signal: params.signal } : {};
+        const data = await fetchWithAuth(`/orders${queryStr}`, fetchOpts);
+        const orders = data.orders || [];
+        ordersCache.set(cacheKey, { orders, updatedAt: Date.now() });
+        return orders;
+      } catch (error) {
+        if (!silent && error?.name !== 'AbortError') {
+          console.warn('orderApi.getAllOrders warn:', error?.message || error);
+        }
+        throw error;
+      } finally {
+        inFlightOrdersRequests.delete(cacheKey);
+      }
+    })();
+
+    inFlightOrdersRequests.set(cacheKey, requestPromise);
+    return requestPromise;
   },
 
   // 2. Khách hàng gửi yêu cầu tư vấn & báo giá từ Homepage
@@ -21,6 +63,7 @@ export const orderApi = {
         method: 'POST',
         body: JSON.stringify(orderData)
       });
+      invalidateOrdersCache();
       return data.order;
     } catch (error) {
       console.error('orderApi.createConsultationOrder Error:', error);
@@ -35,6 +78,7 @@ export const orderApi = {
         method: 'POST',
         body: JSON.stringify(orderData)
       });
+      invalidateOrdersCache();
       return data.order;
     } catch (error) {
       console.error('orderApi.createDirectOrder Error:', error);
@@ -54,6 +98,7 @@ export const orderApi = {
           vehicle_analysis_note: extraOptions.vehicle_analysis_note || null
         })
       });
+      invalidateOrdersCache();
       return data;
     } catch (error) {
       console.error('orderApi.updateAgreedPrice Error:', error);
@@ -68,6 +113,7 @@ export const orderApi = {
         method: 'PATCH',
         body: JSON.stringify({ agreed_price: agreedPrice })
       });
+      invalidateOrdersCache();
       return data.order;
     } catch (error) {
       console.error('orderApi.confirmOrder Error:', error);
@@ -81,6 +127,7 @@ export const orderApi = {
       const data = await fetchWithoutAuth(`/orders/${orderId}/assign`, {
         method: 'POST'
       });
+      invalidateOrdersCache();
       return data.order;
     } catch (error) {
       console.error('orderApi.assignTrip Error:', error);
@@ -94,6 +141,7 @@ export const orderApi = {
       method: 'POST',
       body: JSON.stringify({ cancellation_reason, cancellation_fee })
     });
+    invalidateOrdersCache();
     return data.order;
   },
 
@@ -104,6 +152,7 @@ export const orderApi = {
         method: 'POST',
         body: JSON.stringify(payload)
       });
+      invalidateOrdersCache();
       return data.order;
     } catch (error) {
       console.warn('orderApi.closeOrder API note:', error);

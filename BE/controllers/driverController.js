@@ -267,6 +267,139 @@ const submitLeaveRequest = async (req, res) => {
   }
 };
 
+const prisma = require("../config/prisma");
+
+const updateDeviceGps = async (req, res) => {
+  try {
+    const {
+      latitude,
+      longitude,
+      accuracy = null,
+      altitude = null,
+      heading = null,
+      speed = null,
+      timestamp = null,
+      trip_id = null,
+    } = req.body || {};
+
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return res.status(400).json({
+        message: "Tọa độ GPS không hợp lệ (latitude/longitude).",
+      });
+    }
+
+    const recordedTime = timestamp ? new Date(timestamp) : new Date();
+    const validTime = Number.isNaN(recordedTime.getTime())
+      ? new Date()
+      : recordedTime;
+
+    // 1. Tìm chuyến xe hiện tại của tài xế (ưu tiên trip_id truyền lên, nếu không lấy chuyến đang hoạt động gần nhất)
+    let trip = null;
+    const includeTruck = {
+      trip_trucks: {
+        where: { released_time: null },
+        include: { trucks: { select: { id: true, plate_number: true } } },
+        take: 1,
+      },
+    };
+
+    if (trip_id && /^\d+$/.test(String(trip_id).trim())) {
+      trip = await prisma.trips.findFirst({
+        where: { id: BigInt(String(trip_id).trim()) },
+        include: includeTruck,
+      });
+    }
+
+    if (!trip && req.user?.id) {
+      const driverRow = await prisma.drivers.findFirst({
+        where: { user_id: BigInt(Number(req.user.id)) },
+        select: { id: true },
+      });
+
+      if (driverRow) {
+        trip = await prisma.trips.findFirst({
+          where: {
+            driver_id: driverRow.id,
+            status: { notIn: ["Completed", "Cancelled", "CLOSED"] },
+          },
+          orderBy: { updated_at: "desc" },
+          include: includeTruck,
+        });
+      }
+    }
+
+    const tripId = trip?.id ? Number(trip.id) : null;
+    const tripCode = trip?.trip_code || null;
+    const truckId = trip?.trip_trucks?.[0]?.truck_id
+      ? Number(trip.trip_trucks[0].truck_id)
+      : null;
+    const truckPlate = trip?.trip_trucks?.[0]?.trucks?.plate_number || null;
+
+    // 2. Lưu điểm GPS thực vào trip_track_points và cập nhật vị trí xe trucks để bản đồ Điều phối hiển thị ngay
+    const dbOps = [];
+    if (tripId) {
+      dbOps.push(
+        prisma.trip_track_points.create({
+          data: {
+            trip_id: BigInt(tripId),
+            latitude: lat,
+            longitude: lng,
+            recorded_time: validTime,
+          },
+        }),
+      );
+    }
+    if (truckId) {
+      dbOps.push(
+        prisma.trucks.update({
+          where: { id: BigInt(truckId) },
+          data: {
+            last_lat: lat,
+            last_lng: lng,
+            last_located_at: validTime,
+            updated_at: new Date(),
+          },
+        }),
+      );
+    }
+    if (dbOps.length > 0) {
+      await Promise.all(dbOps);
+    }
+
+    return res.json({
+      success: true,
+      synced_to_map: Boolean(truckId || tripId),
+      trip_id: tripId,
+      trip_code: tripCode,
+      truck_id: truckId,
+      truck_plate: truckPlate,
+      gps: {
+        latitude: lat,
+        longitude: lng,
+        accuracy: accuracy !== null ? Number(accuracy) : null,
+        altitude: altitude !== null ? Number(altitude) : null,
+        heading: heading !== null ? Number(heading) : null,
+        speed: speed !== null ? Number(speed) : null,
+        timestamp: validTime.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("updateDeviceGps error:", error);
+    return res
+      .status(error.statusCode || 500)
+      .json({ message: error.message || "Lỗi cập nhật GPS thiết bị" });
+  }
+};
+
 module.exports = {
   getMyProfile,
   getActiveTrip,
@@ -289,6 +422,7 @@ module.exports = {
   markAllNotificationsRead,
   reportIncident,
   syncOffline,
-  getSyncLogDetail
+  getSyncLogDetail,
+  updateDeviceGps,
 };
 

@@ -38,6 +38,9 @@ router.patch("/notifications/:id/read", driverController.markNotificationRead);
 // 5. Báo cáo sự cố khẩn cấp
 router.post("/incidents", driverController.reportIncident);
 
+// 5b. Gửi tọa độ GPS thực tế từ thiết bị tài xế (Live Demo Tracking)
+router.post("/gps", driverController.updateDeviceGps);
+
 // 6. Đồng bộ hành động ngoại tuyến
 router.post("/sync", driverController.syncOffline);
 router.get("/sync-log/:id", driverController.getSyncLogDetail);
