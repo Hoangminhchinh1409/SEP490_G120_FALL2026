@@ -277,6 +277,17 @@ const recordPickup = async (userId, tripId, stopId, pickupData) => {
     error.statusCode = 400;
     throw error;
   }
+  if (stop.order_id) {
+    const stopOrder = await prisma.orders.findUnique({
+      where: { id: BigInt(stop.order_id) },
+      select: { status: true },
+    });
+    if (String(stopOrder?.status || "").trim().toUpperCase() === "CANCELLED") {
+      const error = new Error("Đơn hàng của điểm dừng này đã bị hủy, không thể ghi nhận bốc hàng.");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
 
   const uploadFolder = `nexlog/trips/${tripId}/pickup`;
   const [resolvedCargoUrl, resolvedLoadedUrl, resolvedSealUrl] =
