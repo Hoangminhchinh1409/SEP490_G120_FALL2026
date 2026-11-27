@@ -22,9 +22,48 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
     Boolean(trip?.raw_id && orderStatusUpper && !['DRAFT', 'CONFIRMED', 'READY_FOR_PLANNING', 'PLANNING'].includes(orderStatusUpper));
   const canEditLayout = !isLockedAfterAssignment;
 
+  const layoutStorageKey = useMemo(() => {
+    const primaryOrder =
+      trip?.order?.order_id ||
+      trip?.order?.order_code ||
+      trip?.order?.id ||
+      trip?.orders?.[0]?.order_id ||
+      trip?.orders?.[0]?.order_code ||
+      trip?.orders?.[0]?.id ||
+      trip?.trip_code ||
+      trip?.id ||
+      'default';
+    return `nexlog_3d_layout_${primaryOrder}_${packingMode}`;
+  }, [trip, packingMode]);
+
   useEffect(() => {
+    if (!open) return;
+    try {
+      const saved = localStorage.getItem(layoutStorageKey);
+      setManualOverrides(saved ? JSON.parse(saved) : {});
+    } catch {
+      setManualOverrides({});
+    }
+  }, [layoutStorageKey, open]);
+
+  const handleSaveCustomLayout = () => {
+    try {
+      localStorage.setItem(layoutStorageKey, JSON.stringify(manualOverrides));
+      message.success('Đã lưu sơ đồ xếp hàng 3D thành công!');
+    } catch {
+      message.error('Không thể lưu sơ đồ xếp hàng 3D.');
+    }
+  };
+
+  const handleResetAutoLayout = () => {
     setManualOverrides({});
-  }, [packingMode, trip?.id, trip?.trip_code, open]);
+    try {
+      localStorage.removeItem(layoutStorageKey);
+    } catch {
+      // ignore
+    }
+    message.info('Đã đặt lại về sơ đồ xếp tự động.');
+  };
 
   const [cameraAngle, setCameraAngle] = useState({ yaw: -22, pitch: 26 });
   const [dragStart, setDragStart] = useState(null);
@@ -187,12 +226,28 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
               Thuật toán <b>3D Extreme-Point + LIFO Layer Bin Packing</b>
             </p>
           </div>
-          <Button 
-            onClick={onClose}
-            className="px-6 h-9 font-semibold text-gray-700 border-gray-400 hover:border-gray-600 rounded"
-          >
-            Đóng
-          </Button>
+          <div className="flex items-center gap-2">
+            {canEditLayout && Object.keys(manualOverrides).length > 0 && (
+              <>
+                <Button danger onClick={handleResetAutoLayout} className="h-9 font-semibold rounded">
+                  Đặt lại xếp tự động
+                </Button>
+                <Button
+                  type="primary"
+                  onClick={handleSaveCustomLayout}
+                  className="h-9 px-5 font-semibold bg-indigo-600 hover:bg-indigo-700 rounded"
+                >
+                  Lưu sơ đồ 3D
+                </Button>
+              </>
+            )}
+            <Button
+              onClick={onClose}
+              className="px-6 h-9 font-semibold text-gray-700 border-gray-400 hover:border-gray-600 rounded"
+            >
+              Đóng
+            </Button>
+          </div>
         </div>
 
         {/* Thông tin chuyến & Thông số */}
@@ -437,12 +492,33 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                       );
                     };
 
+                    // Trọng lực tự động: chỉ xếp lên nóc kiện dưới khi diện tích chồng lên kiện dưới >= 50%;
+                    // nếu chỉ chạm nhẹ mép khi đang kéo ra sàn trống -> rơi xuống sàn (z = 0) để bám sát cạnh kiện bên
+                    const computeGravityZ = (cx, cy, dx, dy, dz) => {
+                      const baseArea = Math.max(1, dx * dy);
+                      let maxTop = 0;
+                      for (const o of others) {
+                        const ox = Math.max(0, Math.min(cx + dx, o.x + o.dx) - Math.max(cx, o.x));
+                        const oy = Math.max(0, Math.min(cy + dy, o.y + o.dy) - Math.max(cy, o.y));
+                        const overlapRatio = (ox * oy) / baseArea;
+                        if (overlapRatio >= 0.5) {
+                          const topZ = o.z + o.dz;
+                          if (topZ > maxTop) maxTop = topZ;
+                        }
+                      }
+                      return maxTop + dz <= truck.height_cm + 0.5 ? maxTop : null;
+                    };
+
                     const tryAt = (cx, cy, cz, dx, dy, dz) => {
                       if (dx > truck.length_cm || dy > truck.width_cm || dz > truck.height_cm) return null;
+                      const clampedX = Math.max(0, Math.min(truck.length_cm - dx, Math.round(cx)));
+                      const clampedY = Math.max(0, Math.min(truck.width_cm - dy, Math.round(cy)));
+                      const gravityZ = computeGravityZ(clampedX, clampedY, dx, dy, dz);
+                      const finalZ = gravityZ !== null ? gravityZ : Math.max(0, Math.min(truck.height_cm - dz, Math.round(cz)));
                       const cand = {
-                        x: Math.max(0, Math.min(truck.length_cm - dx, Math.round(cx))),
-                        y: Math.max(0, Math.min(truck.width_cm - dy, Math.round(cy))),
-                        z: Math.max(0, Math.min(truck.height_cm - dz, Math.round(cz))),
+                        x: clampedX,
+                        y: clampedY,
+                        z: finalZ,
                         dx,
                         dy,
                         dz
@@ -503,10 +579,18 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
 
                     if (!validPlacement) return; // Chặn chèn vào hitbox kiện hàng khác
 
-                    setManualOverrides((prev) => ({
-                      ...prev,
-                      [blockId]: validPlacement
-                    }));
+                    setManualOverrides((prev) => {
+                      const next = {
+                        ...prev,
+                        [blockId]: validPlacement
+                      };
+                      try {
+                        localStorage.setItem(layoutStorageKey, JSON.stringify(next));
+                      } catch {
+                        // ignore storage quota errors
+                      }
+                      return next;
+                    });
                   }}
                 />
               </div>
@@ -560,7 +644,7 @@ export default function LoadPlan3DModal({ open, trip, onClose }) {
                 {(canEditLayout ? Object.keys(manualOverrides).length > 0 : true) && (
                   <div className="pt-2 mt-2 border-t border-indigo-200 flex items-center justify-end gap-2">
                     {canEditLayout ? (
-                      <Button size="small" danger onClick={() => setManualOverrides({})}>
+                      <Button size="small" danger onClick={handleResetAutoLayout}>
                         Đặt lại xếp tự động
                       </Button>
                     ) : (
